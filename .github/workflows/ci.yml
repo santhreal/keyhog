@@ -15,12 +15,21 @@ permissions:
 # `santhreal`. Everyone else (forks, other authors, push/main, tags) stays on
 # GitHub-hosted `ubuntu-24.04`. macOS/Windows stay GitHub-hosted for all events.
 #
-# Required push/PR path covers Format, Clippy (advisory), Build+install proof,
-# library surface, verifier/core/scanner/sources/CLI aggregators, detector recall
-# contracts, fail-closed security/e2e, bounded fuzz smoke, and macOS build.
-# Overnight still owns feature-matrix explosion, install-script batteries,
-# Windows portable build, static Hyperscan linkage, CLI property/adversarial/
-# reliability, and scanner property fuzz (ci-nightly.yml).
+# Two lanes in one workflow.
+#
+# Merge lane (every pull request): Format, Clippy (advisory), Build + smoke +
+# install-from-build proof, library surface, verifier/core/scanner/sources/CLI
+# aggregators, detector and recall contracts, fail-closed security/e2e, and the
+# install-script battery.
+#
+# Release lane (pushes to main and `v*` tags, i.e. the refs release.yml turns
+# into a published crate): the merge lane plus the feature-matrix explosion.
+# `ci-verdict` asserts a release-lane job is skipped on a pull request and
+# successful everywhere else, so neither direction can rot unnoticed.
+#
+# Overnight (ci-nightly.yml) owns scanner property fuzz, CLI property /
+# adversarial / reliability, bounded fuzz smoke, macOS and Windows builds, and
+# static Hyperscan linkage.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -447,36 +456,43 @@ jobs:
           done
       - name: detector self-validation
         run: cargo test -p keyhog-scanner --test all_detectors_self_validate --profile release-fast
-      - name: homoglyph ASCII-skip parity + shadow gate
-        run: |
-          cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test homoglyph_ascii_skip_parity homoglyph_ascii_skip_parity_default
-          cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_ac_overlap_shadow shadowed_inner_literal_is_ac_confirmed_with_variant_skipped
-      - name: finding-set eviction order-independence
-        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test fallback_order_independence push_match_eviction_set_is_insertion_order_independent
-      - name: basic-auth detector recall contract
-        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test basic_auth_credentials_recall
-      - name: named-detector anchor-floor recall contract
-        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_named_detector_anchor_floor_recall
-      - name: named-detector canonical-hex-key recall contract
-        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_named_canonical_hex_key_recall
-      - name: per-pattern weak-anchor recall contract
-        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_per_pattern_weak_anchor_recall
-      - name: char-class prefix expansion recall contract
-        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_charclass_prefix_expansion_recall
-      - name: leading-construct prefix recall contract
-        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_leading_assertion_and_alternation_prefix_recall
-      - name: distinctive-infix anchor recall contract
-        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_distinctive_infix_anchor_recall
-      - name: checksum boundary no-downgrade recall contract
-        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_checksum_boundary_no_downgrade
-      - name: keyword-separator canonicalization recall contract
-        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_detector_owned_keyword_separators
+      # One cargo invocation for every ci-lean detector/recall contract target.
+      # These were twelve separate steps sharing an identical
+      # `--no-default-features --features ci-lean --profile release-fast`
+      # invocation; each one re-entered cargo and re-linked, costing ~2.4 min of
+      # the job's 33 min for ~0 extra coverage. `--no-fail-fast` also reports
+      # every failing contract in one run instead of stopping at the first.
+      # The three targets that previously carried a name filter run whole here:
+      # each is a one-module wrapper, so the unfiltered run is a superset.
+      - name: detector + recall contracts (ci-lean)
+        run: >
+          cargo test -p keyhog-scanner --no-fail-fast
+          --no-default-features --features ci-lean --profile release-fast
+          --test homoglyph_ascii_skip_parity
+          --test regression_ac_overlap_shadow
+          --test fallback_order_independence
+          --test basic_auth_credentials_recall
+          --test regression_named_detector_anchor_floor_recall
+          --test regression_named_canonical_hex_key_recall
+          --test regression_per_pattern_weak_anchor_recall
+          --test regression_charclass_prefix_expansion_recall
+          --test regression_leading_assertion_and_alternation_prefix_recall
+          --test regression_distinctive_infix_anchor_recall
+          --test regression_checksum_boundary_no_downgrade
+          --test regression_detector_owned_keyword_separators
 
   # Preserve the established required-check name while making it an explicit
   # fail-closed aggregate of the five independent integration lanes.
 
   feature-matrix:
     name: Feature matrix sanity check
+    # Release lane only. This job is ~35 cargo invocations plus two dogfood
+    # builds: the most CPU-hungry job in the file, and the one whose failures
+    # are compile-time and cheap to repair late. Pull requests run the
+    # correctness lanes and skip it; pushes to main and `v*` tags run it,
+    # and those are exactly the refs release.yml turns into a published crate,
+    # so nothing is published without it.
+    if: github.event_name != 'pull_request'
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     # Cross-package feature combinations the release workflows and the
     # composite Action depend on. Anything anyone might `cargo install`
@@ -670,10 +686,22 @@ jobs:
     permissions: {}
     env:
       KEYHOG_BLOCKING_RESULTS: ${{ toJSON(needs) }}
+      # Jobs that only run outside pull requests. On a PR each must report
+      # `skipped`; anywhere else each must report `success`. Both directions are
+      # asserted, so a release-lane job that silently stops running on main
+      # fails the verdict instead of passing it.
+      KEYHOG_RELEASE_LANE_JOBS: '["feature-matrix"]'
+      KEYHOG_RELEASE_LANE: ${{ github.event_name != 'pull_request' }}
     steps:
       - name: Require every blocking CI job
         run: |
-          jq -e '
+          jq -e \
+            --argjson release_lane "$KEYHOG_RELEASE_LANE" \
+            --argjson release_lane_jobs "$KEYHOG_RELEASE_LANE_JOBS" '
             length == 11 and
-            all(.[]; .result == "success")
+            all(to_entries[];
+              if ($release_lane | not) and (.key | IN($release_lane_jobs[]))
+              then .value.result == "skipped"
+              else .value.result == "success"
+              end)
           ' <<<"$KEYHOG_BLOCKING_RESULTS" >/dev/null
