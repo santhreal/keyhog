@@ -215,21 +215,34 @@ fn compact_discovery_does_not_require_a_writable_temp_directory() {
     );
 }
 
-/// A single reader thread does not change what is enumerated.
+/// One direct reader and four ordered readers emit identical chunks and errors.
 ///
-/// Reader width and walk width are separate knobs, and constraining one must
-/// not silently change the input set.
+/// The multi-window file covers part boundaries as well as entry ordering.
 #[test]
-fn reader_width_does_not_change_the_enumerated_set() {
+fn reader_width_preserves_exact_chunk_output_order() {
     let tree = wide_tree();
-    let wide = enumerate(tree.path());
+    let large = "value = reader parity\n".repeat(150_000);
+    std::fs::write(tree.path().join("multi-window.txt"), large).expect("write multi-window file");
 
-    let narrow: Vec<String> = FilesystemSource::new(tree.path().to_path_buf())
-        .with_reader_threads(NonZeroUsize::new(1).expect("nonzero"))
-        .chunks()
-        .filter_map(Result::ok)
-        .filter_map(|chunk| chunk.metadata.path.map(|path| path.to_string()))
-        .collect();
+    let collect = |width| {
+        FilesystemSource::new(tree.path().to_path_buf())
+            .with_reader_threads(NonZeroUsize::new(width).expect("nonzero"))
+            .chunks()
+            .map(|row| {
+                row.map(|chunk| {
+                    (
+                        chunk.metadata.source_type.to_string(),
+                        chunk.metadata.path.map(|path| path.to_string()),
+                        chunk.metadata.base_offset,
+                        chunk.data.as_str().to_owned(),
+                    )
+                })
+                .map_err(|error| format!("{error:#}"))
+            })
+            .collect::<Vec<_>>()
+    };
 
-    assert_eq!(narrow, wide);
+    let ordered = collect(4);
+    let direct = collect(1);
+    assert_eq!(direct, ordered);
 }

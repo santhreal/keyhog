@@ -83,7 +83,7 @@ A dash means that layer intentionally has no surface.
 | Unicode norm | on | `no_unicode_norm = true` disables | `--no-unicode-norm` | Normalise homoglyphs before matching (anti-evasion). |
 | Scan comments | off | - | `--scan-comments` | Treat secrets in code comments at full confidence (default downgrades them). |
 | Threads | #cores | `[scan].threads` | `--threads` | Parallel scan workers. |
-| Reader threads | scan-pool-derived | `[scan].reader_threads` | `--reader-threads` | Dedicated filesystem read workers. |
+| Reader threads | `1` | `[scan].reader_threads` | `--reader-threads` | Dedicated filesystem read workers. Values above one add ordered reassembly. |
 | Fused batch | `1024` | `[scan].fused_batch` | `--fused-batch` | Maximum chunks per fused filesystem batch; the 1 MiB byte ceiling usually cuts large-input batches first. |
 | Fused depth | `0` (rendezvous) | `[scan].fused_depth` | `--fused-depth` | Queued fused filesystem batches. The default keeps no completed batch resident while another is scanned. |
 | Per-chunk timeout | off | `[scan].per_chunk_timeout_ms` | `--per-chunk-timeout-ms` | Optional hard deadline per chunk scan in milliseconds. |

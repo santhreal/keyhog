@@ -49,11 +49,12 @@
 //!
 //! FIX (landed) & what this floor now guards
 //! -----------------------------------------
-//! The reader no longer runs as a second full pool that double-counts cores
-//! against the consumer: `reader_thread_count` is a small FIXED crew (~scan/4,
-//! capped at `MAX_READER_THREADS` = 4, floored at 2) that never scales with the
-//! scan pool (the deterministic, host-independent proof lives in
-//! `tests/unit/filesystem.rs`). That lifted realized efficiency from ~0.48
+//! The default reader no longer runs as a second pool that double-counts cores
+//! against the consumer. One producer emits directly to the bounded scanner
+//! channel without an intermediate reorder thread. Explicit reader concurrency
+//! remains available for measured storage workloads (the deterministic,
+//! host-independent proof lives in `tests/unit/filesystem.rs`). That lifted
+//! realized efficiency from ~0.48
 //! (oversubscribed) to ~0.72. The residual gap to the pre-read ceiling is the
 //! SINGLE drain thread that bridges the `!Send` `chunks()` iterator into the
 //! channel, inherent to this A/B harness and to `scan_sources_fused`, not a
@@ -313,11 +314,11 @@ fn filesystem_source_multicore_scaling_floor() {
          slice) at {high} threads, floor is {:.0}%. The reader-pool \
          OVERSUBSCRIPTION that originally capped this (a dedicated rayon pool \
          sized clamp(scan_threads/2,2,16) running ON TOP OF the scan pool) is \
-         FIXED: `reader_thread_count` is now a small fixed crew (~scan/4, capped \
-         at MAX_READER_THREADS=4; proven host-independently in \
-         tests/unit/filesystem.rs) that never scales with the scan pool. A value \
+         FIXED: the default reader is one direct producer with no intermediate \
+         reorder thread (proven host-independently in tests/unit/filesystem.rs), \
+         so it never scales with the scan pool. A value \
          this low means that oversubscription crept back, re-check \
-         crates/sources/src/filesystem.rs `reader_thread_count` / the reader \
+         crates/sources/src/filesystem/reader.rs `reader_thread_count` / the reader \
          spawn. (The residual gap to the ceiling above this floor is the SINGLE \
          drain thread bridging the `!Send` chunks() iterator into the channel. \
          inherent to this harness and to scan_sources_fused, not a reader defect.)",

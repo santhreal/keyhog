@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The default filesystem reader is now one direct producer, so ordinary scans no longer retain a multi-reader crew or intermediate ordered-reassembly thread. Explicit reader counts above one retain deterministic ordered reassembly.
+
 ## 0.5.70 - 2026-08-10
 
 - fix(profile): fail-closed overlapping allocation session peaks.

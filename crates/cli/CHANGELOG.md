@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `--reader-threads` now defaults to one direct filesystem reader instead of a scan-pool-derived crew. Explicit values above one retain deterministic ordered reassembly.
 - Daemon guard and bounded batch dispatch now propagate authenticated ordered GPU selections into the shared scanner boundary, restoring GPU-feature builds and preserving multi-device route ownership.
 - Autoroute help and operator documentation now describe deterministic dead-heat resolution and fail-closed invalid-state behavior instead of claiming overlapping timings always fail or that missing evidence silently recovers through scalar execution.
 - Autoroute cache schema v57 distinguishes runtime-compiled GPU programs from installed GPU sidecars. Standalone release binaries can persist authenticated GPU calibration without weakening manifest binding for installed artifacts.
