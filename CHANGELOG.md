@@ -3,6 +3,7 @@
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+- Required CI again gates feature-matrix compile/dogfood coverage and the install-scripts battery (scenarios/edge cases/static analysis), not only overnight.
 - Required CI again covers library surface, sources/CLI aggregators, detector recall contracts, SARIF compliance, bounded fuzz smoke, and macOS Vectorscan/lib tests. Overnight keeps feature-matrix, install batteries, Windows/static linkage, CLI property/adversarial/reliability, and scanner property fuzz.
 - Install-from-build proofs pass an explicit `--backend cpu` after `--no-calibrate`, matching autoroute fail-closed behavior when no cache exists.
 

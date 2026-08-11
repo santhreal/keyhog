@@ -21,23 +21,23 @@ fn install_static_analysis_gate_requires_real_linters_in_ci() {
 }
 
 #[test]
-fn overnight_install_scripts_job_runs_static_analysis_in_required_mode() {
+fn ci_install_scripts_job_runs_static_analysis_in_required_mode() {
     let workflow = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../.github/workflows/ci-nightly.yml"
+        "/../../.github/workflows/ci.yml"
     ))
-    .expect("ci-nightly workflow readable");
+    .expect("ci workflow readable");
     assert!(
         workflow.contains("shellcheck shfmt"),
-        "overnight install-scripts job must install shellcheck and shfmt"
+        "install-scripts job must install shellcheck and shfmt"
     );
     assert!(
         workflow.contains("Install-Module -Name PSScriptAnalyzer"),
-        "overnight install-scripts job must install PSScriptAnalyzer"
+        "install-scripts job must install PSScriptAnalyzer"
     );
     assert!(
         workflow.contains("REQUIRE_INSTALL_LINTERS: '1'")
             && workflow.contains("bash scripts/gates/install_static_analysis.sh"),
-        "overnight install-scripts job must run the static-analysis gate in required mode"
+        "install-scripts job must run the static-analysis gate in required mode"
     );
 }
