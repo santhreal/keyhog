@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "subject": "matcher artifact startup section decoding",
+  "source_commit": "887c869d4fd8ce4273acdb0c7021743f2f837de7",
+  "baseline": {
+    "commit": "4b505ed6e0a9032c3c514253fdff7aef5fa2256f",
+    "executable_sha256": "8f14da33f7494b5d24a5206d1c922dedce7167f44ae36ddad8d858c28285c62e",
+    "artifact_sha256": "59a39e57ea52353acf6ca3c25c4ca1278bff924a539693cfe38c3c5da9415110",
+    "artifact_bytes": 2895472,
+    "section_bytes": [36181, 2858486, 185],
+    "complete_section_copy_bytes": 2894852,
+    "complete_section_allocations": 3,
+    "warm_elapsed_median_ms": 120,
+    "warm_maximum_rss_median_kib": 44264,
+    "trials": 7
+  },
+  "candidate": {
+    "complete_section_copy_bytes": 0,
+    "complete_section_allocations": 0,
+    "backing_artifact_buffers": 1,
+    "artifact_format_changed": false,
+    "public_owned_loader_changed": false
+  },
+  "result": {
+    "startup_section_copy_byte_reduction_percent": 100.0,
+    "startup_complete_section_allocation_reduction_percent": 100.0,
+    "bytes_not_copied_per_hit": 2894852
+  },
+  "verification": {
+    "focused_test": "startup_parser_borrows_every_matcher_section_from_one_buffer",
+    "focused_test_result": "1 passed, 5357 filtered",
+    "feature_set": "ml,entropy,decode,multiline,simdsieve,simd",
+    "ordered_section_bytes_preserved": true,
+    "content_digest_preserved": true
+  },
+  "limit": "JSON envelope decoding and the single capped file buffer remain required. No end-to-end wall-time claim is made."
+}

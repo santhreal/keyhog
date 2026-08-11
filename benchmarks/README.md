@@ -45,6 +45,12 @@ The default test/release gate excludes tests marked `target_spec`; those are
 executable product targets, not claims that the current release already meets.
 Run them explicitly with `make targets`.
 
+## Matcher artifact startup decoding evidence
+
+[`reports/matcher-artifact-startup-decoding.md`](reports/matcher-artifact-startup-decoding.md)
+records the section-copy elimination and its
+[`JSON receipt`](reports/matcher-artifact-startup-decoding.json).
+
 ## Bloom prefilter evidence
 
 `make bloom KEYHOG_BIN=/absolute/path/to/keyhog` rebuilds the canonical
