@@ -31,7 +31,7 @@ on:
       version:
         description: 'Published crates.io version the composite must install exactly.'
         required: true
-        default: '0.5.68'
+        default: '0.5.70'
         type: string
 
 concurrency:
@@ -40,7 +40,7 @@ concurrency:
 
 env:
   CC: ""
-  KEYHOG_ACTION_E2E_VERSION: ${{ inputs.version || '0.5.68' }}
+  KEYHOG_ACTION_E2E_VERSION: ${{ inputs.version || '0.5.70' }}
 jobs:
 
   action-contract:

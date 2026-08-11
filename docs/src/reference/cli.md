@@ -410,6 +410,7 @@ keyhog explain stripe-secret-key
 Manages perpetual repository and filesystem guard protection. Connects to
 the daemon and sends guard control frames. When no daemon is available,
 reports that clearly instead of silently doing nothing.
+The command requires the Unix daemon transport and exits unsupported on Windows.
 
 <!-- keyhog-generated: cli-reference command="guard" -->
 | Subcommand | Aliases | Description |

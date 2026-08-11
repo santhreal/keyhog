@@ -14,6 +14,7 @@ pub(crate) mod detectors;
 pub(crate) mod diff;
 pub(crate) mod doctor;
 pub(crate) mod explain;
+#[cfg(unix)]
 pub(crate) mod guard;
 pub(crate) mod hook;
 pub(crate) mod repair;

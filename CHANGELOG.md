@@ -17,6 +17,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Required CI again gates feature-matrix compile/dogfood coverage and the install-scripts battery (scenarios/edge cases/static analysis), not only overnight.
 - Required CI covers library surface, sources/CLI aggregators, detector recall contracts, SARIF compliance, feature-matrix, and install-scripts. Overnight keeps macos/windows builds, fuzz-smoke, static linkage, CLI property/adversarial/reliability, and scanner property fuzz.
 - Install-from-build proofs pass an explicit `--backend simd` after `--no-calibrate`, matching autoroute fail-closed behavior when no cache exists.
+- Action E2E now tests the published v0.5.70 crate, and Windows guard dispatch returns an explicit unsupported-transport error without compiling the Unix daemon client.
 
 - Unix mass-daemon filesystem scans now accept `--incremental`, retain the compiled scanner across transactions, skip unchanged clean files before read and dispatch, rescan every file that produced a finding, and atomically publish the spec-bound Merkle generation. Cache publication failures retain system-error exit `3`.
 - Daemon-local mass filesystem scans now retire all bounded batches after one drain request instead of requiring one client request round trip per batch. Each result remains a separately bounded response under socket backpressure, with exact source order, findings, gaps, and terminal receipts preserved.

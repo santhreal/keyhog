@@ -151,6 +151,27 @@ fn daemon_is_unix_only_with_explicit_windows_guidance() {
     );
 }
 
+/// `keyhog guard` shares the Unix daemon transport. Keep the command visible on
+/// Windows, but route it to an explicit unsupported-platform error without
+/// compiling the Unix-only daemon client.
+#[test]
+fn guard_is_unix_only_with_explicit_windows_guidance() {
+    let lib = read("crates/cli/src/lib.rs");
+    assert!(
+        lib.contains("Some(args::Command::Guard(args)) => subcommands::guard::run(args).await")
+            && lib.contains("Some(args::Command::Guard(_args))")
+            && lib.contains("`keyhog guard` requires the Unix daemon transport")
+            && lib.contains("no guard daemon ships"),
+        "guard dispatch must retain Unix execution and explicit Windows guidance"
+    );
+
+    let modules = read("crates/cli/src/subcommands/mod.rs");
+    assert!(
+        modules.contains("#[cfg(unix)]\npub(crate) mod guard;"),
+        "the Unix-only guard implementation must not compile on Windows"
+    );
+}
+
 // ===========================================================================
 // B. Portability target (the cross-OS BUILD blocker the dogfood surfaced).
 // ===========================================================================

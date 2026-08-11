@@ -6,6 +6,9 @@ attestation cache, and a policy identity that binds attestations to the exact
 detector corpus, suppression rules, and configuration the daemon was started
 with.
 
+Guard requires the Unix-domain daemon transport. On Windows, `keyhog guard`
+exits with an unsupported-platform error; use `keyhog scan <path>` in process.
+
 The guard supplements staged and working-tree scans. It does not replace them.
 A commit is allowed only after the exact staged-object transaction proves the
 content is clean.

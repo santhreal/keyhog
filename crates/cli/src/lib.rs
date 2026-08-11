@@ -502,7 +502,13 @@ pub async fn cli_main() -> ExitCode {
              Unix-domain socket). On Windows, run scans in-process: \
              `keyhog scan <path>`. No Windows daemon transport ships."
         )),
+        #[cfg(unix)]
         Some(args::Command::Guard(args)) => subcommands::guard::run(args).await,
+        #[cfg(not(unix))]
+        Some(args::Command::Guard(_args)) => Err(anyhow::anyhow!(
+            "`keyhog guard` requires the Unix daemon transport. On Windows, \
+             run `keyhog scan <path>` in process; no guard daemon ships."
+        )),
         None => {
             let mut cmd = args::command();
             let _ = cmd.print_help(); // LAW10: unused-binding marker; no runtime effect, not a fallback
