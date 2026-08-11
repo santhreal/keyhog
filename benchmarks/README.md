@@ -45,6 +45,12 @@ The default test/release gate excludes tests marked `target_spec`; those are
 executable product targets, not claims that the current release already meets.
 Run them explicitly with `make targets`.
 
+## Performance configuration ownership evidence
+
+[`reports/performance-config-ownership.md`](reports/performance-config-ownership.md)
+records the resolved-type and default-mapping consolidation with its
+[`JSON receipt`](reports/performance-config-ownership.json).
+
 ## Bloom prefilter evidence
 
 `make bloom KEYHOG_BIN=/absolute/path/to/keyhog` rebuilds the canonical
