@@ -1329,6 +1329,8 @@ impl CompiledScanner {
         }
         let scanner = Self {
             backend_state,
+            #[cfg(feature = "gpu")]
+            direct_gpu_resident_dispatch: std::sync::Mutex::new(()),
             quantized_confidence_authenticated,
             detector_digest,
             vocab_stage_absence_cache: dashmap::DashMap::with_hasher(ahash::RandomState::new()),

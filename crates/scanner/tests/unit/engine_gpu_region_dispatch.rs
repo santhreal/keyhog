@@ -258,6 +258,50 @@ fn issue32_gpu_region_batches_use_every_eligible_resident_depth() {
 }
 
 #[cfg(feature = "gpu")]
+/// Regression: direct GPU workers share one resident slot ring. Concurrent
+/// callers must serialize complete rings rather than treating another worker's
+/// in-flight fence as a backend failure. Ordered multi-device dispatch is not
+/// covered here because each acquired device set owns its own dispatch lock.
+#[test]
+fn issue32_concurrent_direct_gpu_batches_share_the_resident_ring() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
+    let (scanner, backend, seed_chunks, _) = gpu_recovery_fixture();
+    let chunks = std::sync::Arc::new(seed_chunks.into_iter().cycle().take(64).collect::<Vec<_>>());
+    let expected = std::sync::Arc::new(
+        scanner
+            .scan_coalesced_with_backend(&chunks, crate::hw_probe::ScanBackend::CpuFallback)
+            .expect("scalar concurrent-dispatch reference succeeds"),
+    );
+    scanner.clear_fragment_cache();
+    let scanner = std::sync::Arc::new(scanner);
+    let mut route = scanner.default_execution_route();
+    route.gpu_pipeline_depth = 1;
+
+    std::thread::scope(|scope| {
+        let handles = (0..8)
+            .map(|_| {
+                let scanner = std::sync::Arc::clone(&scanner);
+                let chunks = std::sync::Arc::clone(&chunks);
+                let expected = std::sync::Arc::clone(&expected);
+                scope.spawn(move || {
+                    let matches = with_test_region_presence_byte_limit(64, || {
+                        scanner.scan_coalesced_gpu_region_presence_recovering(
+                            &chunks, backend, route, false, None,
+                        )
+                    })
+                    .expect("concurrent direct dispatch must not exhaust another worker's slot")
+                    .matches;
+                    assert_eq!(matches, *expected);
+                })
+            })
+            .collect::<Vec<_>>();
+        for handle in handles {
+            handle.join().expect("direct GPU worker remains healthy");
+        }
+    });
+}
+
+#[cfg(feature = "gpu")]
 /// Proves phase-two recovery retains completed GPU shards while sharing no
 /// fault-injection or adapter state with concurrent parity tests.
 #[test]

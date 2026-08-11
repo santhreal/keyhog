@@ -92,6 +92,15 @@ impl CompiledScanner {
                 gpu_recovery_receipts: 0,
             });
         }
+        let _direct_dispatch_guard = if device.is_none() {
+            Some(self.direct_gpu_resident_dispatch.lock().map_err(|_| {
+                super::gpu_forced::SelectedGpuDispatchError::new(
+                    "direct GPU resident dispatch lock is unavailable after an internal panic",
+                )
+            })?)
+        } else {
+            None
+        };
 
         let dispatch_failure =
             |reason: String| Err(super::gpu_forced::SelectedGpuDispatchError::new(reason));

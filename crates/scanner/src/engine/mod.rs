@@ -546,6 +546,10 @@ pub struct CompiledScanner {
     pub(crate) ac: Option<AhoCorasick>,
     /// Exact selected route or the temporary all-peer calibration census.
     pub(crate) backend_state: ScannerBackendState,
+    /// Serializes complete direct-GPU dispatch rings that share one scanner-owned
+    /// resident slot set. Ordered multi-device routes own independent locks.
+    #[cfg(feature = "gpu")]
+    pub(crate) direct_gpu_resident_dispatch: std::sync::Mutex<()>,
     /// True only when a signed GPU execution pack authenticated the exact
     /// quantized feature schema, model artifact, and scoring ABI.
     pub(crate) quantized_confidence_authenticated: bool,
