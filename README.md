@@ -504,61 +504,17 @@ contracts.
 ## How KeyHog works
 
 KeyHog compiles its 926 detectors into a shared trigger/extraction plan,
-uses Hyperscan when that feature is present, decodes nested encodings before
-matching, and can apply explicit per-detector Bayesian Beta(α,β) confidence
-calibration. Hardware acceleration is an explicit backend selection layer;
-every selected backend must preserve the same detector ids and findings
-contract:
+decodes nested encodings before matching, and applies per-detector confidence
+and suppression. CPU, Hyperscan/SIMD, and GPU (CUDA, Metal, WGPU) are measured
+peers under a persisted, parity-proof autoroute selector, not a fallback chain.
+Every backend preserves the same detector ids and findings contract.
 
-| Layer / Backend | When | How |
-|---|---|---|
-| `simdsieve` prefilter | AVX-512 / AVX2 / NEON | Layer 1: skims every file for 12 high-value literal prefixes in one SIMD pass: AWS `AKIA`/`ASIA`, GitHub `ghp_`, OpenAI `sk-proj-`, Slack `xoxb-`/`xoxp-`, SendGrid `SG.`, Square `sq0csp-`, and Stripe `sk_live_`/`sk_test_`/`rk_live_`/`rk_test_` |
-| `gpu-cuda-region-presence` | executable CUDA peer + persisted calibration proof | VYRE literal-set region-presence through CUDA, followed by the shared CPU validation tail |
-| `gpu-metal-region-presence` | executable native Metal peer + persisted calibration proof | VYRE literal-set region-presence through Metal, followed by the shared CPU validation tail |
-| `gpu-wgpu-region-presence` | executable WGPU peer + persisted calibration proof | VYRE literal-set region-presence through WGPU, followed by the shared CPU validation tail |
-| `simd-regex` | Hyperscan compiled and live | parallel Hyperscan trigger scan plus full-regex extraction; portable builds do not expose this backend and report `cpu-fallback` instead |
-| `cpu-fallback` | portable build or explicit CPU selection | Aho-Corasick prefix + Rust `regex` extraction |
-
-An authenticated GPU route may name an ordered physical-device set rather than
-one adapter. Calibration proves every member and the complete set against the
-scalar reference, records per-device budgets and integer throughput weights,
-then normal scans shard one contiguous source range per device and retire the
-results in source order. Acquisition and dispatch are all-or-nothing.
-
-ML-enabled routes use one authenticated quantized confidence model across CPU,
-SIMD, and GPU execution. GPU candidates run through a separately retired,
-bounded VYRE score program after literal matching; it is not fused into the
-resident literal kernel. Invalid UTF-8 and unquantizable rows remain explicitly
-CPU-owned under the established confidence policy.
-
-### Autoroute
-
-KeyHog autoroute measures every eligible backend with phase-two localization on
-and off, then persists the fastest parity-checked route for the exact binary,
-host, resolved policy, and workload class. It is not a hardware heuristic or
-fallback hierarchy. A missing, stale, invalid, incomplete, or quarantined
-decision selects no backend: affected batches remain unscanned, the report
-records incomplete coverage, and the process returns a non-success exit with
-the recalibration command.
-
-Install performs the visible calibration. To recalibrate an installed binary,
-run `keyhog calibrate-autoroute`; inspect evidence with
-`keyhog backend --autoroute`. Explicit `--backend` values are diagnostic and
-benchmark overrides, not autoroute proof. Single-backend portable builds do
-not need a routing cache.
-
-If an automatically selected accelerated backend faults, KeyHog warns and
-replays the same stable input through the fastest remaining measured-correct
-peer. GPU recovery retains completed shards and scans only exact unprocessed
-ranges. KeyHog reports `complete_after_recovery`. The affected workload route is
-quarantined in a bounded runtime-health artifact separate from calibration
-timings, so a restart cannot retry it. Successful recalibration clears only the
-repaired workload identities. Explicit or required backends remain hard
-contracts and are never substituted.
-
-The complete parity contract, workload identity, GPU/Hyperscan behavior, daemon
-semantics, cache lifecycle, and troubleshooting matrix live in the
-[autoroute reference](docs/src/reference/autoroute-calibration.md).
+The [architecture guide](docs/src/architecture.md) covers the repository map,
+dependency direction, bytes-to-finding pipeline, and profiling entrypoints.
+The [backends guide](docs/src/backends.md) details CPU, SIMD, and GPU execution
+surfaces. The [autoroute reference](docs/src/reference/autoroute-calibration.md)
+owns the complete parity contract, workload identity, cache lifecycle, and
+troubleshooting matrix.
 
 **Full documentation:** [santhreal.github.io/keyhog](https://santhreal.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, autoroute, exit codes, env vars, and contributing. Source under `docs/`.
 
