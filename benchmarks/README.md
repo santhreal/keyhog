@@ -70,6 +70,14 @@ omits ordered reassembly while explicit wider crews retain exact output order.
 - [Warm incremental scanner-dispatch bypass](reports/incremental-startup.md):
   trusted all-unchanged fused and coalesced scans start no backend dispatch.
 
+## Focused daemon response framing evidence
+
+[`reports/daemon-response-framing.md`](reports/daemon-response-framing.md) records
+the release-mode direct-serialization comparison and its
+[`JSON receipt`](reports/daemon-response-framing.json). The measured near-ceiling
+response retains exact wire bytes while eliminating the complete temporary
+serialized body and its copy into the transport buffer.
+
 ## Bloom prefilter evidence
 
 `make bloom KEYHOG_BIN=/absolute/path/to/keyhog` rebuilds the canonical

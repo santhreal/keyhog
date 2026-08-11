@@ -166,7 +166,9 @@ each batch at no more than 8 MiB of raw payload and 1,024 chunks. The daemon
 processes each batch with its persisted autoroute decision while retaining one
 exclusive fragment-state lease for the transaction. It clears fragment state
 when the transaction ends or the client disconnects. This bounds batch memory
-independently of total inventory size.
+independently of total inventory size. Response JSON is written directly into
+its bounded transport frame, so the daemon does not retain a second complete
+serialized response body.
 Daemon-local acquisition uses one drain request. The daemon streams one bounded
 result response per batch followed by the terminal completion response. Socket
 backpressure remains the memory bound; the client does not pause each batch to

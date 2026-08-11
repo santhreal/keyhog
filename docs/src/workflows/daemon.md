@@ -313,6 +313,9 @@ daemon holds an exclusive fragment-state lease across the transaction and
 clears it on completion or disconnect. Additional concurrent clients do not
 create extra GPU lanes. Partition across separately budgeted hosts when one
 worker is saturated.
+Response JSON is written directly into the bounded transport frame. The 64 MiB
+frame ceiling is enforced during serialization, and a failed response rolls
+back without leaving partial bytes for the next frame.
 
 The completion receipt records exact total and GPU batches, chunks, bytes, and
 daemon execution time. The client verifies total chunks and bytes against its
