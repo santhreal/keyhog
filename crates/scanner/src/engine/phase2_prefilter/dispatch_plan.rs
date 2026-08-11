@@ -5,7 +5,7 @@ use super::trigger_evidence::ChunkTriggerEvidence;
 use super::{
     homoglyph_skip_applies, Phase2AlwaysActivePrefilter, PortablePrefilter, PrefilterBatch,
 };
-use crate::scanner_config::ResolvedRuntimeTuningConfig;
+use crate::scanner_config::ResolvedScannerTuningConfig;
 
 /// The pattern ownership slice served by one prefilter invocation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,7 +30,7 @@ pub(super) struct DispatchConfig {
 }
 impl DispatchConfig {
     #[inline]
-    pub(super) fn from_tuning(tuning: &ResolvedRuntimeTuningConfig) -> Self {
+    pub(super) fn from_tuning(tuning: &ResolvedScannerTuningConfig) -> Self {
         Self {
             #[cfg(feature = "simd")]
             fallback_hs: tuning.fallback_hs,

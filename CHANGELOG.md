@@ -17,6 +17,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Added periodic guard scrub. When `[guard].scrub_interval` is set, the daemon watcher loop periodically triggers reconciliation for all `current` roots, catching changes that filesystem events missed (NFS, bind mounts, external edits that bypass inotify). Omit the setting to disable scrubbing.
 - Added a clean-shutdown marker to the durable store. The daemon marks the service as unclean on startup and clean on graceful shutdown, enabling detection of unclean restarts.
 
+- Scanner runtime snapshots now use the same complete resolved tuning type and
+  default resolver as configuration identity. The duplicate runtime-only
+  performance configuration record is removed.
+
 - Autoroute cache schema v57 authenticates runtime-compiled GPU programs against the exact executable and detector corpus while retaining manifest-digest binding for installed GPU sidecars. Calibration from a standalone release binary now persists GPU route evidence instead of rejecting every measured workload when no sidecar is installed.
 
 - Autoroute JSON inspection now exposes the active GPU artifact binding and each authenticated ordered-device route body, including per-device topology, throughput weights, and resident budgets.

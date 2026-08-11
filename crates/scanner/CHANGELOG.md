@@ -4,6 +4,10 @@
 ## Unreleased
 
 - Detector property gates now preserve fixture paths for source-admission checks, compare Caesar prefix admission at exact token boundaries, compile backend-specific CPU and SIMD scanners, and retain minimized parity cases. The WordPress token contract includes its required `wpcom` owner anchor.
+- Runtime tuning snapshots now resolve through `ScannerTuningConfig::effective`
+  and use its complete resolved type instead of maintaining a duplicate field
+  list and default mapping.
+
 
 ## 0.5.70 - 2026-08-10
 
