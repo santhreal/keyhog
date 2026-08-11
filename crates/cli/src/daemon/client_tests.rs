@@ -61,6 +61,10 @@ fn mass_filesystem_acquisition_uses_workload_timeout() {
         incremental_cache: Some("/cache/keyhog/merkle.idx".into()),
     };
     assert_eq!(request_timeout(&request), DAEMON_REQUEST_TIMEOUT);
+}
+
+#[cfg(test)]
+#[test]
 fn mass_filesystem_drain_uses_full_workload_timeout() {
     assert_eq!(
         request_timeout(&Request::MassFilesystemDrain),

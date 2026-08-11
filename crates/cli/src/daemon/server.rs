@@ -988,7 +988,6 @@ fn is_system_path(path: &std::path::Path) -> bool {
     false
 }
 
-
 async fn run_accept_loop(
     listener: UnixListener,
     state: Arc<ServerState>,
@@ -1420,9 +1419,7 @@ async fn stream_mass_filesystem(
                         source_coverage_gaps,
                     },
                     Err(error) => Response::MassFilesystemIncrementalError {
-                        message: format!(
-                            "daemon: cannot persist mass incremental cache: {error}"
-                        ),
+                        message: format!("daemon: cannot persist mass incremental cache: {error}"),
                     },
                 }
             }
