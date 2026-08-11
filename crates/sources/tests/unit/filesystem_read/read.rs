@@ -5,6 +5,36 @@ use keyhog_sources::testing::{
     for_each_file_windowed_mmap_for_test, ForEachWindowedMmapOutcome, TestApi,
 };
 
+/// Exact-size reads preserve shrink and growth semantics while retaining at
+/// most the one-byte cap-crossing probe.
+#[test]
+fn stat_sized_read_preserves_content_and_growth_boundaries() {
+    assert_eq!(
+        TestApi
+            .read_stat_sized_to_cap(b"exact", 5, 8)
+            .expect("exact-sized read"),
+        b"exact"
+    );
+    assert_eq!(
+        TestApi
+            .read_stat_sized_to_cap(b"short", 8, 8)
+            .expect("stat-time shrink"),
+        b"short"
+    );
+    assert_eq!(
+        TestApi
+            .read_stat_sized_to_cap(b"0123456789", 4, 8)
+            .expect("stat-time growth"),
+        b"012345678"
+    );
+    assert_eq!(
+        TestApi
+            .read_stat_sized_to_cap(b"growth", 0, 3)
+            .expect("zero-to-nonzero growth"),
+        b"grow"
+    );
+}
+
 /// Regression: preserves the externally observable `read_file_windowed_mmap_roundtrip_matches_pure_helper` behavior after the inline suite split.
 #[test]
 fn read_file_windowed_mmap_roundtrip_matches_pure_helper() {

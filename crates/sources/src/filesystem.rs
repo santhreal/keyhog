@@ -589,6 +589,14 @@ pub(crate) fn read_file_safe_capped_for_test(
     read::read_file_safe_capped_for_test(path, cap)
 }
 
+pub(crate) fn read_stat_sized_to_cap_for_test(
+    bytes: &[u8],
+    expected_size: u64,
+    hard_cap: u64,
+) -> std::io::Result<Vec<u8>> {
+    read::read_stat_sized_to_cap_for_test(bytes, expected_size, hard_cap)
+}
+
 pub(crate) fn read_file_mmap_for_test(path: &std::path::Path) -> Option<String> {
     read::read_file_mmap_for_test(path)
 }
