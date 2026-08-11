@@ -191,12 +191,19 @@ impl CompiledScanner {
                     .map(|(index, chunk)| scan_one(index, chunk))
                     .collect::<crate::error::Result<Vec<_>>>()?
             } else {
-                let work_lanes = super::batch_topology::coalesced_work_lanes(chunks, threshold);
+                let (small_indices, work_lanes) =
+                    super::batch_topology::coalesced_work_lanes(chunks, threshold);
                 let lane_results: Vec<Vec<(usize, Vec<RawMatch>)>> = work_lanes
-                    .lanes()
                     .par_iter()
                     .map(|lane| {
-                        let indices = work_lanes.indices(lane);
+                        let indices = match lane {
+                            super::batch_topology::CoalescedLane::Small(range) => {
+                                &small_indices[range.clone()]
+                            }
+                            super::batch_topology::CoalescedLane::Large(index) => {
+                                std::slice::from_ref(index)
+                            }
+                        };
                         indices
                             .iter()
                             .map(|&index| Ok((index, scan_one(index, &chunks[index])?)))

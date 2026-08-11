@@ -51,10 +51,38 @@ fn measure_allocations<T>(run: impl FnOnce() -> T) -> (T, usize, usize) {
     (result, ALLOCATIONS.get(), ALLOCATED_BYTES.get())
 }
 
-/// WHY: every small work lane previously owned a separate `Vec<usize>`, so the
-/// production 1,024-chunk/32-worker topology made 34 allocations. One flat
-/// membership buffer plus the lane descriptor buffer closes that allocation
-/// class. This test does not measure allocator-internal byte rounding.
+fn legacy_small_lane_topology(
+    chunks: &[Chunk],
+    threshold: usize,
+    workers: usize,
+) -> Vec<Vec<usize>> {
+    let small_indices: Vec<usize> = chunks
+        .iter()
+        .enumerate()
+        .filter_map(|(index, chunk)| (chunk.data.len() <= threshold).then_some(index))
+        .collect();
+    let worker_lane_width = small_indices.len().div_ceil(workers).max(1);
+    let max_small_chunk_bytes = small_indices
+        .iter()
+        .map(|&index| chunks[index].data.len())
+        .max()
+        .unwrap_or(0);
+    let byte_bounded_width = if max_small_chunk_bytes == 0 {
+        worker_lane_width
+    } else {
+        ((512 * 1024) / max_small_chunk_bytes).max(1)
+    };
+    let lane_width = worker_lane_width.min(byte_bounded_width).max(1);
+    small_indices
+        .chunks(lane_width)
+        .map(<[usize]>::to_vec)
+        .collect()
+}
+
+/// WHY: every small work lane previously owned a separate `Vec<usize>`. One
+/// flat membership buffer plus the lane descriptor buffer closes that
+/// allocation class. This test does not measure allocator-internal byte
+/// rounding.
 #[test]
 fn production_small_lane_topology_uses_two_allocations() {
     const CHUNKS: usize = 1024;
@@ -66,6 +94,15 @@ fn production_small_lane_topology_uses_two_allocations() {
             metadata: ChunkMetadata::default(),
         })
         .collect();
+
+    let (legacy_lanes, legacy_allocations, legacy_allocated_bytes) = measure_allocations(|| {
+        black_box(legacy_small_lane_topology(
+            black_box(&chunks),
+            THRESHOLD,
+            WORKERS,
+        ))
+    });
+    assert_eq!(legacy_lanes.iter().map(Vec::len).sum::<usize>(), CHUNKS);
 
     let (shape, allocations, allocated_bytes) = measure_allocations(|| {
         black_box(
@@ -81,5 +118,12 @@ fn production_small_lane_topology_uses_two_allocations() {
     assert_eq!(
         allocations, 2,
         "topology allocated {allocations} blocks ({allocated_bytes} bytes); expected one flat index buffer and one lane descriptor buffer"
+    );
+    assert!(
+        legacy_allocations >= allocations * 10,
+        "legacy={legacy_allocations} allocations/{legacy_allocated_bytes} bytes candidate={allocations} allocations/{allocated_bytes} bytes"
+    );
+    eprintln!(
+        "batch topology allocations: legacy={legacy_allocations} ({legacy_allocated_bytes} bytes) candidate={allocations} ({allocated_bytes} bytes)"
     );
 }
