@@ -29,12 +29,16 @@ def test_candidate_channel_cannot_disagree_with_finding_identity():
 
 
 def test_recall_sensitive_policy_coverage_names_every_suppressing_channel():
-    assert detector_policy.recall_sensitive_finding_ids() == {
-        "entropy-api-key",
-        "entropy-generic",
-        "entropy-password",
-        "entropy-token",
+    """WHY: every generated channel with suppressing ML policy needs recall coverage."""
+    generated_ids = {
+        record["detector_id"] for record in corpus.generate(n_per_unit=1, seed=7)
     }
+    expected = {
+        detector_id
+        for detector_id in generated_ids
+        if detector_policy.model_can_reduce_recall(detector_id)
+    }
+    assert detector_policy.recall_sensitive_finding_ids() == expected
 
 
 def test_generated_corpus_uses_the_emitted_finding_identity_for_each_channel():
