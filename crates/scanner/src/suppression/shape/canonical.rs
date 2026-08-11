@@ -397,6 +397,24 @@ pub(crate) fn looks_like_bracketed_template_placeholder(value: &str) -> bool {
     bracketed && value.len() <= TEMPLATE_PLACEHOLDER_MAX_LEN
 }
 
+/// True when `value` is exactly a bare shell / Make / CI variable reference:
+/// `$` followed by one identifier (`$DB_PASSWORD`, `$db_pass_2`). The braced
+/// form `${VAR}` is [`looks_like_bracketed_template_placeholder`]'s; this is the
+/// unbraced twin, which that predicate cannot see because there is no closing
+/// marker to anchor on. A literal credential never begins with `$` followed by
+/// nothing but identifier bytes, so no length ceiling is needed here.
+pub(crate) fn looks_like_shell_variable_reference(value: &str) -> bool {
+    let Some(name) = value.strip_prefix('$') else {
+        return false;
+    };
+    let mut bytes = name.bytes();
+    let Some(first) = bytes.next() else {
+        return false;
+    };
+    (first.is_ascii_alphabetic() || first == b'_')
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
 /// Return true if the credential contains three or more consecutive identical characters.
 /// Iterate the maximal runs of identical bytes in `bytes` as `(byte, run_len)`.
 /// The single owner of the run-length scan shared by every masking/repetition
@@ -485,6 +503,19 @@ pub(crate) fn has_n_or_more_consecutive_identical(s: &str, n: usize) -> bool {
     // Dashes are legitimate delimiters in structured formats (PEM headers,
     // UUIDs, JWT separators). Don't count them as repetitive masking.
     byte_runs(s.as_bytes()).any(|(b, run)| run >= n && b != b'-')
+}
+
+/// A value that is one byte repeated (`xxxxxxxx`, `********`, `........`): a
+/// mask, never a secret.
+///
+/// Whole-value by design. The substring twin
+/// [`has_n_or_more_consecutive_identical`] cannot condemn a value on its own,
+/// because a real secret may carry a short repeated run; requiring the ENTIRE
+/// value to be one byte removes that ambiguity. Dashes are excluded for the
+/// same reason they are excluded there: they are structural delimiters.
+pub(crate) fn is_single_byte_mask(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() >= 4 && bytes[0] != b'-' && bytes.iter().all(|byte| *byte == bytes[0])
 }
 
 /// Heuristic for dash-segmented non-secret shapes. Matches fixed-width

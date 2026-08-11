@@ -143,38 +143,14 @@ pub(crate) fn is_source_code_path(path: Option<&str>) -> bool {
 /// emission produces a high-confidence decoded chunk whose body wins the
 /// per-line resolution group over the real connection-string detector.
 ///
-/// Match shape: `<scheme>://[^/@\s]+:[^/@\s]+@[^\s]+`. The presence of
-/// `:` between scheme and `@` is what distinguishes a credentialled URL
-/// (`postgres://u:p@h`) from a bare host URL (`https://example.com`) -
-/// the bare-host case has no credential to lose, so we leave it alone.
+/// The shape test lives in
+/// [`crate::credential_shapes::credential_url_userinfo_password`], which the
+/// suppression tree also uses to reach the password sub-field. The presence of
+/// a password is what distinguishes a credentialled URL (`postgres://u:p@h`)
+/// from a bare host URL (`https://example.com`) - the bare-host case has no
+/// credential to lose, so we leave it alone.
 pub(crate) fn line_has_credential_url(line: &str) -> bool {
-    let Some(scheme_end) = line.find("://") else {
-        return false;
-    };
-    // Scheme must be 2+ alphabetic bytes immediately before `://`.
-    let scheme_bytes = &line.as_bytes()[..scheme_end];
-    let scheme_ok = scheme_bytes.len() >= 2
-        && scheme_bytes
-            .iter()
-            .rev()
-            .take_while(|b| b.is_ascii_alphabetic() || **b == b'+')
-            .count()
-            >= 2;
-    if !scheme_ok {
-        return false;
-    }
-    let rest = &line[scheme_end + 3..];
-    // Walk userinfo: bytes up to the FIRST `/` or whitespace. The first
-    // `@` in that span splits user[:pass]@host. Require a `:` BEFORE the
-    // `@` so we only match URLs with embedded passwords.
-    let userinfo_end = rest
-        .find(|c: char| c == '/' || c == '?' || c == '#' || c.is_ascii_whitespace())
-        .unwrap_or(rest.len()); // LAW10: search/boundary miss => span end (whole remainder), recall-safe boundary default
-    let userinfo = &rest[..userinfo_end];
-    let Some(at_pos) = userinfo.find('@') else {
-        return false;
-    };
-    userinfo[..at_pos].contains(':')
+    crate::credential_shapes::credential_url_userinfo_password(line).is_some()
 }
 
 fn credential_url_line_spans(text: &str) -> Vec<(usize, usize)> {

@@ -2931,6 +2931,21 @@ pub fn looks_like_bracketed_template_placeholder_for_test(value: &str) -> bool {
     crate::suppression::shape::looks_like_bracketed_template_placeholder(value)
 }
 
+/// Test seam for [`crate::suppression::shape::looks_like_shell_variable_reference`]
+/// an unbraced `$VAR` reference; the twin of the bracketed form above.
+pub fn looks_like_shell_variable_reference_for_test(value: &str) -> bool {
+    crate::suppression::shape::looks_like_shell_variable_reference(value)
+}
+
+/// Test seam for [`crate::credential_shapes::credential_url_userinfo_password`]
+/// the password sub-field of a `scheme://user:password@host` URL. Integration
+/// tests derive the credentialled-URL detector union from this parser rather
+/// than from a hand-kept id list, so a new connection-string detector is in
+/// scope the day its spec lands.
+pub fn credential_url_userinfo_password_for_test(value: &str) -> Option<&str> {
+    crate::credential_shapes::credential_url_userinfo_password(value)
+}
+
 /// Test seam for [`crate::suppression::shape::source::looks_like_program_identifier`]
 /// a bare snake_case (`my_program`) or camelCase (`myProgram`) all-alpha program
 /// name; identifier grammar, not a secret.

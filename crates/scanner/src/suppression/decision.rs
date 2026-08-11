@@ -7,11 +7,12 @@ use super::decode::try_decode_b64_to_utf8;
 use super::doc_markers::{check_markers, MarkerVerdict};
 use super::shape::{
     has_n_or_more_consecutive_identical, has_repeated_block_mask,
-    has_three_or_more_consecutive_identical, is_uuid_v4_shape, looks_like_bare_hex_digest,
-    looks_like_base64_integrity_body, looks_like_bracketed_template_placeholder,
-    looks_like_dashed_serial_key, looks_like_prefixed_hash_digest, looks_like_standard_base64_blob,
-    looks_like_truncated_uuid_v4_suffix, HASH_ALGO_INTEGRITY_LABELS, HIGH_ENTROPY_BASE64_CUTOFF,
-    RFC7519_EXAMPLE_JWT_PREFIX,
+    has_three_or_more_consecutive_identical, is_single_byte_mask, is_uuid_v4_shape,
+    looks_like_bare_hex_digest, looks_like_base64_integrity_body,
+    looks_like_bracketed_template_placeholder, looks_like_dashed_serial_key,
+    looks_like_prefixed_hash_digest, looks_like_shell_variable_reference,
+    looks_like_standard_base64_blob, looks_like_truncated_uuid_v4_suffix,
+    HASH_ALGO_INTEGRITY_LABELS, HIGH_ENTROPY_BASE64_CUTOFF, RFC7519_EXAMPLE_JWT_PREFIX,
 };
 use crate::tier_b_list::{tier_b_vec, EXAMPLE_PATH_COMPONENTS};
 use crate::{adjudicate::StageId, context};
@@ -358,6 +359,43 @@ pub(super) fn suppression_stage_inner(
     //          template-placeholder.
     if looks_like_bracketed_template_placeholder(credential.trim()) {
         return suppress("template_placeholder");
+    }
+
+    // ── 5e4. Credentialled URLs whose PASSWORD SUB-FIELD is a placeholder.
+    //          A connection-string detector captures the whole
+    //          `scheme://user:pass@host` span as the credential, so every gate
+    //          above sees a URL, not a secret: `<password>` inside
+    //          `postgresql://olympus:<password>@localhost:5433/olympus` is not
+    //          the whole value, so 5e3 cannot fire, and the URL surfaces at
+    //          CRITICAL. Re-run the STRUCTURAL placeholder tests against the
+    //          extracted password alone.
+    //          The forms are the wrapped template (`<password>`, `{{db_pass}}`,
+    //          `${DB_PASSWORD}`), the unbraced shell reference (`$DB_PASSWORD`),
+    //          the single-byte mask (`xxxxxxxx`), and the curated placeholder
+    //          vocabulary.
+    //
+    //          Deliberately structural-only. The curated placeholder vocabulary
+    //          (`example`/`dummy`/`fake`/`mock`/`sample`/`placeholder`/
+    //          `changeme`) and the exact-value list (`password`, `secret`,
+    //          `null`, …) exclude operational words like `admin` or `test`
+    //          precisely because those appear in real passwords. The
+    //          instructional fragments (`insert`, `change`, `replace`) are NOT
+    //          consulted here: a URL is strong positive evidence that a real
+    //          credential is present, so a substring collision must not cost a
+    //          critical finding.
+    if let Some(password) =
+        crate::credential_shapes::credential_url_userinfo_password(credential.trim())
+    {
+        let password = password.trim();
+        if !password.is_empty()
+            && (looks_like_bracketed_template_placeholder(password)
+                || looks_like_shell_variable_reference(password)
+                || is_single_byte_mask(password)
+                || crate::placeholder_words::is_exact_entropy_placeholder(password.as_bytes())
+                || crate::placeholder_words::contains_placeholder_word(password))
+        {
+            return suppress("credential_url_placeholder_password");
+        }
     }
 
     // ── 5f. base64-of-arbitrary-bytes (e.g. protobuf wire dumps,

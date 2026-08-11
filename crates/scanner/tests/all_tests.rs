@@ -109,6 +109,8 @@ pub mod regression_creddata_url_credentials_recall;
 pub mod regression_creddata_vendor_prefixed_key_recall;
 #[path = "regression_credential_uri_scheme_coverage.rs"]
 pub mod regression_credential_uri_scheme_coverage;
+#[path = "regression_credential_url_placeholder_password.rs"]
+pub mod regression_credential_url_placeholder_password;
 #[path = "regression_crlf_entropy_line_offsets.rs"]
 pub mod regression_crlf_entropy_line_offsets;
 #[path = "regression_db_connection_string_recall.rs"]

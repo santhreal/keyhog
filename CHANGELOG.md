@@ -4,6 +4,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [Unreleased]
 
+- Scanner: a connection-string finding whose password sub-field is a placeholder is suppressed. A detector for a credentialled URL captures the whole `scheme://user:password@host` span, so `postgresql://app:<password>@localhost/db` in a `.env.example` reached the report as a critical finding; the password is now read out of the URL and tested on its own for the wrapped template (`<password>`, `{{db_pass}}`, `${DB_PASSWORD}`), the unbraced shell reference (`$DB_PASSWORD`), the single-byte mask (`xxxxxxxx`), and the placeholder vocabulary. A real password in the same position still reports.
+- CI: pull requests run the merge lane and skip `feature-matrix`, which stays required on pushes to `main` and on tags. The twelve detector-contract steps that shared one command line collapse into a single invocation.
 - Required CI runs the complete sources target matrix once, removing the earlier default `all_tests` replay before the all-feature run.
 - Sources: align filesystem profiling coverage with the default direct reader's bounded batch handoff, retaining exact acquire, walk, read, and input-total assertions.
 - Core: raise dedup additional-locations subquadratic tripwire ceiling to 3.25x to absorb CI thread-CPU jitter (observed 3.03x flake).

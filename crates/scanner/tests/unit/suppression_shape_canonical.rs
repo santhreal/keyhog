@@ -6,11 +6,12 @@ use super::super::assignment::{
 use super::HASH_ALGO_INTEGRITY_LABELS;
 use super::TEMPLATE_PLACEHOLDER_MAX_LEN;
 use super::{
-    is_dash_segmented_alnum_decoy, is_structured_dotted_token, is_uuid_v4_shape,
-    looks_like_aws_iam_arn, looks_like_bare_hex_digest, looks_like_base64_integrity_body,
-    looks_like_bracketed_template_placeholder, looks_like_dashed_serial_key,
-    looks_like_prefixed_hash_digest, looks_like_prefixed_masked_sequence,
-    looks_like_random_byte_base64_blob, looks_like_trimmed_aws_iam_arn, strip_hash_algo_prefix,
+    is_dash_segmented_alnum_decoy, is_single_byte_mask, is_structured_dotted_token,
+    is_uuid_v4_shape, looks_like_aws_iam_arn, looks_like_bare_hex_digest,
+    looks_like_base64_integrity_body, looks_like_bracketed_template_placeholder,
+    looks_like_dashed_serial_key, looks_like_prefixed_hash_digest,
+    looks_like_prefixed_masked_sequence, looks_like_random_byte_base64_blob,
+    looks_like_shell_variable_reference, looks_like_trimmed_aws_iam_arn, strip_hash_algo_prefix,
 };
 use crate::suppression::decision::decoded_benign_text_reason;
 
@@ -610,4 +611,71 @@ fn uuid_shape_owner_agrees_on_case_across_both_callers() {
     // emitted MiXeD-case), so it is not silently treated as a non-secret.
     assert!(!is_uuid_v4_shape(evil_mixed));
     assert!(!looks_like_entropy_uuid_shape(evil_mixed));
+}
+
+// ---- looks_like_shell_variable_reference: the unbraced `${VAR}` twin ----
+//
+// WHY: `looks_like_bracketed_template_placeholder` anchors on a closing marker,
+// so it cannot see `$DB_PASSWORD`. That form is the ordinary way a connection
+// string carries an environment lookup, and it reached the report as a critical
+// finding because no gate owned it.
+
+#[test]
+fn bare_variable_references_match() {
+    assert!(looks_like_shell_variable_reference("$DB_PASSWORD"));
+    assert!(looks_like_shell_variable_reference("$db_pass_2"));
+    assert!(looks_like_shell_variable_reference("$_private"));
+}
+
+#[test]
+fn anything_that_is_not_exactly_one_identifier_does_not_match() {
+    // No sigil, or sigil with nothing after it.
+    assert!(!looks_like_shell_variable_reference("DB_PASSWORD"));
+    assert!(!looks_like_shell_variable_reference("$"));
+    // A digit cannot open an identifier ($1 is a positional argument).
+    assert!(!looks_like_shell_variable_reference("$1"));
+    // The braced form is the other predicate's; this one must not claim it.
+    assert!(!looks_like_shell_variable_reference("${DB_PASSWORD}"));
+    // A real secret that merely starts with `$` carries non-identifier bytes.
+    assert!(!looks_like_shell_variable_reference(
+        "$2y$10$N9qo8uLOickgx2Z"
+    ));
+    assert!(!looks_like_shell_variable_reference(
+        "$sk-live-4eC39HqLyjWD"
+    ));
+    // Interpolation inside a larger value is not a whole-value reference.
+    assert!(!looks_like_shell_variable_reference("prefix$VAR"));
+    assert!(!looks_like_shell_variable_reference("$VAR/suffix"));
+}
+
+// ---- is_single_byte_mask: the whole-value twin of the run detector ----
+//
+// WHY: `has_n_or_more_consecutive_identical` is a SUBSTRING test, so it cannot
+// condemn a value on its own; a real secret may carry a short repeated run.
+// `xxxxxxxx` as an entire password field is unambiguous, and it is the form a
+// redacted connection string usually ships with.
+
+#[test]
+fn a_value_that_is_one_repeated_byte_is_a_mask() {
+    assert!(is_single_byte_mask("xxxxxxxxxxxx"));
+    assert!(is_single_byte_mask("XXXX"));
+    assert!(is_single_byte_mask("********"));
+    assert!(is_single_byte_mask("........"));
+    assert!(is_single_byte_mask("0000000000"));
+}
+
+#[test]
+fn a_value_with_any_second_byte_is_not_a_mask() {
+    // One differing byte anywhere disqualifies the value.
+    assert!(!is_single_byte_mask("xxxxxxxxxxxy"));
+    assert!(!is_single_byte_mask("yxxxxxxxxxxx"));
+    // A long repeated RUN inside a real secret is the substring predicate's
+    // business, not this one's.
+    assert!(!is_single_byte_mask("Xk29fjQ2mLpZvR7txxxxxxxx"));
+    // Below the length floor: `xx` is a plausible two-character value.
+    assert!(!is_single_byte_mask("xxx"));
+    assert!(!is_single_byte_mask(""));
+    // Dashes are structural delimiters, excluded for the same reason the
+    // substring predicate excludes them.
+    assert!(!is_single_byte_mask("--------"));
 }

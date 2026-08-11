@@ -349,3 +349,96 @@ fn credential_shorter_than_the_prefix_is_allowed() {
     assert!(rule.allows("sk-"));
     assert!(rule.allows(""));
 }
+
+// ---- credential_url_userinfo_password: single owner of the secret's span ----
+//
+// WHY: a connection-string detector captures the WHOLE `scheme://user:pass@host`
+// span, so the suppression tree cannot see the password without this parser, and
+// the Caesar decoder's "is this already a plaintext credential URL?" question is
+// the same question. Both share this function; these cases pin the boundary
+// decisions the two callers depend on.
+
+#[test]
+fn userinfo_password_is_the_span_between_the_first_colon_and_the_first_at() {
+    assert_eq!(
+        credential_url_userinfo_password("postgresql://olympus:<password>@localhost:5433/olympus"),
+        Some("<password>")
+    );
+    assert_eq!(
+        credential_url_userinfo_password("mysql://root:MyS3cretPass99@10.0.0.5:3306/app"),
+        Some("MyS3cretPass99")
+    );
+    // A `:` inside the password is part of the password: only the FIRST colon
+    // ends the username, and only the FIRST `@` ends the userinfo.
+    assert_eq!(
+        credential_url_userinfo_password("redis://default:a:b:c@redis:6379"),
+        Some("a:b:c")
+    );
+}
+
+#[test]
+fn urls_without_a_password_field_yield_none() {
+    // No userinfo at all.
+    assert_eq!(
+        credential_url_userinfo_password("https://example.com"),
+        None
+    );
+    // Userinfo with a username but no `:` (an ssh remote, not a credential).
+    assert_eq!(
+        credential_url_userinfo_password("ssh://git@github.com/o/r.git"),
+        None
+    );
+    // The `:` is in the PORT, past the path boundary, not in userinfo.
+    assert_eq!(
+        credential_url_userinfo_password("https://example.com:8443/a@b"),
+        None
+    );
+    // No scheme separator, and a one-letter scheme is not a scheme.
+    assert_eq!(credential_url_userinfo_password("user:pass@host"), None);
+    assert_eq!(credential_url_userinfo_password("a://user:pass@host"), None);
+}
+
+#[test]
+fn present_but_empty_password_is_some_empty_not_none() {
+    // The field exists and is empty, which is not the same as absent: the
+    // suppression caller skips empty, the Caesar caller still treats the line as
+    // a credential URL.
+    assert_eq!(
+        credential_url_userinfo_password("postgres://user:@host/db"),
+        Some("")
+    );
+    // Empty USERNAME with a real password is still a password.
+    assert_eq!(
+        credential_url_userinfo_password("postgres://:s3cr3t@host/db"),
+        Some("s3cr3t")
+    );
+}
+
+#[test]
+fn userinfo_never_reads_past_the_path_query_fragment_or_whitespace() {
+    // Every terminator ends the userinfo run, so an `@` after it cannot be
+    // mistaken for the userinfo delimiter and mint a bogus password span.
+    for url in [
+        "https://example.com/path:with@at",
+        "https://example.com?q=a:b@c",
+        "https://example.com#frag:a@b",
+        "https://example.com body:with@at",
+    ] {
+        assert_eq!(credential_url_userinfo_password(url), None, "{url}");
+    }
+}
+
+#[test]
+fn scheme_may_carry_a_plus_and_must_be_at_least_two_alphabetic_bytes() {
+    assert_eq!(
+        credential_url_userinfo_password("jdbc+postgresql://u:p@h"),
+        Some("p")
+    );
+    // Leading non-scheme bytes are allowed (the credential span can be captured
+    // with an assignment prefix); only the two bytes before `://` matter.
+    assert_eq!(
+        credential_url_userinfo_password("DATABASE_URL=postgres://u:p@h"),
+        Some("p")
+    );
+    assert_eq!(credential_url_userinfo_password("1://u:p@h"), None);
+}

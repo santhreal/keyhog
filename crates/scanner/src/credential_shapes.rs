@@ -29,6 +29,47 @@ pub(crate) fn is_pem_block(value: &str) -> bool {
     value.starts_with(PEM_BEGIN_MARKER)
 }
 
+/// The password component of a `scheme://user:password@host` URL, or `None`
+/// when `value` carries no such credentialled-URL prefix.
+///
+/// SINGLE OWNER of "where does the secret live inside a connection string?".
+/// Two callers need the same answer and previously could not agree, because
+/// only one of them existed: the Caesar decoder asks the yes/no form ("is this
+/// line already a plaintext credential URL, so ROT-N can reveal nothing?") and
+/// the suppression tree asks for the span itself, because a connection-string
+/// detector captures the WHOLE url as the credential, so a placeholder password
+/// (`postgresql://user:<password>@host`) is a sub-field, invisible to every
+/// whole-value placeholder gate.
+///
+/// Shape: `<scheme>://` where the scheme is 2+ alphabetic (or `+`) bytes, then
+/// userinfo up to the first `/`, `?`, `#`, or whitespace. The first `@` in that
+/// span ends the userinfo and the first `:` before it ends the username; the
+/// bytes between them are the password. A URL with no `:` before the `@`
+/// (`https://host`, `ssh://git@host`) carries no password and yields `None`.
+/// An empty password (`postgres://user:@host`) yields `Some("")`: the field is
+/// present and empty, which is not the same as absent.
+pub(crate) fn credential_url_userinfo_password(value: &str) -> Option<&str> {
+    let scheme_end = value.find("://")?;
+    let scheme_tail = value.as_bytes()[..scheme_end]
+        .iter()
+        .rev()
+        .take_while(|byte| byte.is_ascii_alphabetic() || **byte == b'+')
+        .count();
+    if scheme_tail < 2 {
+        return None;
+    }
+    let rest = &value[scheme_end + 3..];
+    // LAW10: a userinfo run with no terminator is the whole remainder; the `@`
+    // search below still decides whether a credential is present.
+    let userinfo_end = rest
+        .find(|c: char| c == '/' || c == '?' || c == '#' || c.is_ascii_whitespace())
+        .unwrap_or(rest.len());
+    let userinfo = &rest[..userinfo_end];
+    let at = userinfo.find('@')?;
+    let colon = userinfo[..at].find(':')?;
+    Some(&userinfo[colon + 1..at])
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CredentialShapeRule {
     exact_length: Option<usize>,

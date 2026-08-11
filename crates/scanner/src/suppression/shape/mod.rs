@@ -26,14 +26,15 @@ pub(crate) use assignment::{
 };
 pub(crate) use canonical::{
     has_n_or_more_consecutive_identical, has_repeated_block_mask,
-    has_three_or_more_consecutive_identical, is_dash_segmented_alnum_decoy,
+    has_three_or_more_consecutive_identical, is_dash_segmented_alnum_decoy, is_single_byte_mask,
     is_structured_dotted_token, is_uuid_v4_shape, looks_like_aws_iam_arn,
     looks_like_bare_hex_digest, looks_like_base64_integrity_body,
     looks_like_bracketed_template_placeholder, looks_like_dashed_serial_key,
     looks_like_prefixed_hash_digest, looks_like_prefixed_masked_sequence,
-    looks_like_random_byte_base64_blob, looks_like_standard_base64_blob,
-    looks_like_trimmed_aws_iam_arn, looks_like_truncated_uuid_v4_suffix, HASH_ALGO_COLON_LABELS,
-    HASH_ALGO_INTEGRITY_LABELS, RFC7519_EXAMPLE_JWT_PREFIX,
+    looks_like_random_byte_base64_blob, looks_like_shell_variable_reference,
+    looks_like_standard_base64_blob, looks_like_trimmed_aws_iam_arn,
+    looks_like_truncated_uuid_v4_suffix, HASH_ALGO_COLON_LABELS, HASH_ALGO_INTEGRITY_LABELS,
+    RFC7519_EXAMPLE_JWT_PREFIX,
 };
 pub(crate) use detector::is_canonical_service_hex_key;
 pub(crate) use path::{
