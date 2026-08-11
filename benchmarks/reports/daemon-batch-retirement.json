@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "subject": "daemon-local filesystem batch retirement requests",
+  "measured_at": "2026-08-11T06:58:15Z",
+  "source_commit": "43bcbd23c0f2db5f33e6e9e3e253e1354c8f09b8",
+  "host": {
+    "os": "Linux 6.17.0-19-generic",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "logical_cpus": 32
+  },
+  "workload": {
+    "files": 32768,
+    "logical_bytes": 32768,
+    "chunks": 32768,
+    "bounded_response_batches": 32,
+    "sha256": "b2a84330feb0a2700da1f961dfd6968027b4f651b55574e2a17f5a38f41dc2e4"
+  },
+  "measurement": {
+    "tool": "strace 6.8",
+    "syscalls": ["write", "writev", "sendto", "sendmsg"],
+    "method": "Count framed request op names in production mass-daemon client writev calls"
+  },
+  "legacy": {
+    "commit": "4b505ed6e0a9032c3c514253fdff7aef5fa2256f",
+    "executable_sha256": "8f14da33f7494b5d24a5206d1c922dedce7167f44ae36ddad8d858c28285c62e",
+    "retirement_op": "mass_filesystem_next",
+    "retirement_requests": 33,
+    "all_request_frames": 37,
+    "trace_sha256": "e9496a440b47bd95f1fae452ab91dfedc493a32f2c923704b0bfb169f39cb335"
+  },
+  "candidate": {
+    "commit": "43bcbd23c0f2db5f33e6e9e3e253e1354c8f09b8",
+    "executable_sha256": "1083504bbb1ed0b4c68a6a6757d8618a3a673b381055be489c2a996a89ba3917",
+    "retirement_op": "mass_filesystem_drain",
+    "retirement_requests": 1,
+    "all_request_frames": 5,
+    "trace_sha256": "f23be65525535df98a9ae31d93f3e4d100537f409128e0297594f05c1bde5c98"
+  },
+  "result": {
+    "retirement_request_ratio": 33.0,
+    "retirement_request_reduction_percent": 96.96969696969697,
+    "per_response_bounds_preserved": true,
+    "socket_backpressure_preserved": true
+  },
+  "parity": {
+    "baseline_exit_code": 0,
+    "candidate_exit_code": 0,
+    "scan_status": "success",
+    "source_chunks_scanned": 32768,
+    "source_bytes_scanned": 32768,
+    "finding_count": 0,
+    "ordered_findings_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "coverage_gap_summary": null
+  },
+  "limit": "This receipt measures the retired request round trips. It makes no wall-time claim because filesystem discovery and scanning dominate this tmpfs workload."
+}

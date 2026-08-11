@@ -45,6 +45,14 @@ The default test/release gate excludes tests marked `target_spec`; those are
 executable product targets, not claims that the current release already meets.
 Run them explicitly with `make targets`.
 
+## Focused daemon batch retirement evidence
+
+[`reports/daemon-batch-retirement.md`](reports/daemon-batch-retirement.md)
+records the production mass-daemon syscall comparison and its
+[`JSON receipt`](reports/daemon-batch-retirement.json). One drain request
+replaces the per-batch request round trips while responses retain their
+individual bounds and source order.
+
 ## Bloom prefilter evidence
 
 `make bloom KEYHOG_BIN=/absolute/path/to/keyhog` rebuilds the canonical
