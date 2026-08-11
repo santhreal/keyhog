@@ -677,9 +677,9 @@ Browse detector authoring and inspection in the
 ## Performance
 
 Use the reproducible harness in [`benchmarks/`](benchmarks/) to compare KeyHog,
-Betterleaks, Kingfisher, Nosey Parker, TruffleHog, and Titus under one scoring contract. The
-harness excludes the ground-truth manifest from every scan tree. The generated
-tables remain empty until current-schema runs exist. Run
+Betterleaks, Kingfisher, Nosey Parker, TruffleHog, and Titus under one scoring
+contract. The harness excludes the ground-truth manifest from every scan tree.
+The generated tables remain empty until current-schema runs exist. Run
 `make -C benchmarks report` after measurement. Do not edit generated tables by
 hand.
 
@@ -775,8 +775,8 @@ Finding identity binds detector, file, line, byte span, and credential SHA-256; 
 <!-- BENCH:bloom:end -->
 
 Reproduce: `make -C benchmarks canonical KEYHOG_BIN=/absolute/path/to/keyhog`
-reruns the exact KeyHog, Betterleaks, and Kingfisher mirror run set, including
-the executable-bound CredData Bloom differential, into `benchmarks/results/`;
+reruns the exact KeyHog, Betterleaks, Kingfisher, Nosey Parker, TruffleHog, and
+Titus mirror run set, including the executable-bound CredData Bloom differential,
 `make -C benchmarks report` regenerates the tables above and
 `benchmarks/reports/`. See [`benchmarks/README.md`](benchmarks/README.md)
 for the corpora (mirror, competitor home-turf, Samsung/CredData) and the
