@@ -45,6 +45,11 @@ The default test/release gate excludes tests marked `target_spec`; those are
 executable product targets, not claims that the current release already meets.
 Run them explicitly with `make targets`.
 
+## Focused production-path evidence
+
+- [Warm incremental scanner-dispatch bypass](reports/incremental-startup.md):
+  trusted all-unchanged fused and coalesced scans start no backend dispatch.
+
 ## Bloom prefilter evidence
 
 `make bloom KEYHOG_BIN=/absolute/path/to/keyhog` rebuilds the canonical
