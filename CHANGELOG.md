@@ -24,6 +24,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Detector property gates now preserve declared source-admission paths, compare Caesar prefix admission at exact token boundaries, compile backend-specific CPU and SIMD plans, and retain minimized parity cases. The WordPress token contract again carries its required `wpcom` owner anchor.
 
 - Complete autoroute sweeps now retry measured-point backend and recovery-route disagreements instead of treating timing variance as a permanent calibration failure. Non-timing failures remain non-retryable and leave the staged generation unpublished.
+- All-policy autoroute calibration now stages every isolated policy child into one generation and publishes the live cache once only after all children and their exact route receipts validate. Failure to prepare an eligible GPU peer aborts the generation instead of silently measuring a reduced CPU/SIMD candidate set.
+- Persistent daemon autoroute now compiles the runtime-policy GPU peer census instead of materializing a scalar-only scanner before loading authenticated GPU decisions.
 
 - Concurrent direct-GPU scan workers now serialize complete resident dispatch rings around the scanner-owned slot set. A second worker could previously observe the depth-one slot in flight, misclassify the healthy GPU as failed, leave one batch unscanned, and report partial coverage.
 - Builds without the `git` feature no longer compile the staged guard-commit client or reference Git-only source APIs. Their daemon rejects guard-commit frames with an actionable feature error instead of failing the portable build.

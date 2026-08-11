@@ -12,9 +12,9 @@ use super::run::{resolve_scan_exit, ScanOutcome};
 use super::setup_default_scan_runtime_for_test;
 use super::{
     apply_host_runtime_limits, daemon_compile_failure, daemon_gpu_preflight_failure,
-    daemon_requires_gpu, resolved_scan_config_for_scanner, validate_daemon_gpu_initialization,
-    validate_daemon_gpu_warmup, LOW_RAM_HOST_THRESHOLD_MB, LOW_RAM_MAX_DECODE_BYTES,
-    LOW_RAM_MAX_MATCHES_PER_CHUNK,
+    daemon_requires_gpu, default_runtime_gpu_init_policy, resolved_scan_config_for_scanner,
+    validate_daemon_gpu_initialization, validate_daemon_gpu_warmup, LOW_RAM_HOST_THRESHOLD_MB,
+    LOW_RAM_MAX_DECODE_BYTES, LOW_RAM_MAX_MATCHES_PER_CHUNK,
 };
 use crate::exit_codes::EXIT_REQUIRE_GPU_UNMET;
 use crate::exit_codes::{
@@ -153,6 +153,29 @@ fn daemon_gpu_warmup_follows_the_selected_routing_mode() {
     assert!(daemon_requires_gpu(Some(ScanBackend::GpuWgpu), true).expect("gpu policy"));
     assert!(!daemon_requires_gpu(Some(ScanBackend::SimdCpu), true).expect("simd policy"));
     assert!(!daemon_requires_gpu(Some(ScanBackend::CpuFallback), true).expect("cpu policy"));
+}
+
+/// WHY: an unforced persistent daemon must compile the peers its authenticated route may select.
+#[test]
+fn daemon_autoroute_keeps_runtime_gpu_census_open() {
+    use keyhog_scanner::{GpuInitPolicy, ScanBackend};
+
+    assert_eq!(
+        default_runtime_gpu_init_policy(None),
+        GpuInitPolicy::FromRuntimePolicy
+    );
+    for backend in [
+        ScanBackend::CpuFallback,
+        ScanBackend::SimdCpu,
+        ScanBackend::GpuCuda,
+        ScanBackend::GpuMetal,
+        ScanBackend::GpuWgpu,
+    ] {
+        assert_eq!(
+            default_runtime_gpu_init_policy(Some(backend)),
+            GpuInitPolicy::SelectedBackend(backend)
+        );
+    }
 }
 
 #[test]

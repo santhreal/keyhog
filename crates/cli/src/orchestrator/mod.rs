@@ -826,17 +826,26 @@ impl DefaultScanRuntime {
     }
 }
 
+fn default_runtime_gpu_init_policy(
+    backend_override: Option<keyhog_scanner::ScanBackend>,
+) -> GpuInitPolicy {
+    backend_override.map_or(
+        GpuInitPolicy::FromRuntimePolicy,
+        GpuInitPolicy::SelectedBackend,
+    )
+}
+
 pub(crate) fn compile_default_scan_runtime(
     detectors: Vec<DetectorSpec>,
     backend_override: Option<keyhog_scanner::ScanBackend>,
     map_compile_error: impl FnOnce(&keyhog_scanner::ScanError) -> anyhow::Error,
 ) -> Result<DefaultScanRuntime> {
-    let backend = backend_override.unwrap_or(keyhog_scanner::ScanBackend::CpuFallback); // LAW10: this compiler helper's absent diagnostic override means its declared CPU runtime; autoroute does not call this path.
+    let gpu_policy = default_runtime_gpu_init_policy(backend_override);
     let detectors: Arc<[DetectorSpec]> = detectors.into();
     let scanner = Arc::new(
         CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
             Arc::clone(&detectors),
-            GpuInitPolicy::SelectedBackend(backend),
+            gpu_policy,
             &keyhog_scanner::ScannerTuningConfig::default(),
         )
         .map_err(|error| map_compile_error(&error))?,

@@ -44,6 +44,9 @@ pub struct CalibrateAutorouteArgs {
     /// Bind persisted route evidence to this authenticated execution-pack generation.
     #[arg(long, value_name = "DIR", hide = true)]
     pub execution_packs: Option<PathBuf>,
+    /// Internal receipt sink used by the all-policy parent transaction.
+    #[arg(long, value_name = "PATH", hide = true)]
+    pub measurement_receipts: Option<PathBuf>,
 
     /// Select which scan policy to calibrate.
     ///

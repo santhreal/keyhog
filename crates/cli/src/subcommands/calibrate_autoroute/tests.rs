@@ -413,3 +413,30 @@ fn source_class_probe_materializes_exact_routing_metadata() {
         );
     }
 }
+
+/// WHY: the all-policy parent may publish only route classes proved by its isolated children.
+#[test]
+fn measurement_receipts_round_trip_exact_route_identity() {
+    let workspace = tempfile::tempdir().expect("receipt tempdir");
+    let path = workspace.path().join("receipts.json");
+    let receipts = [
+        (
+            "config-a".to_string(),
+            "host-a".to_string(),
+            "workload-a".to_string(),
+        ),
+        (
+            "config-b".to_string(),
+            "host-a".to_string(),
+            "workload-a".to_string(),
+        ),
+    ]
+    .into_iter()
+    .collect();
+
+    write_measurement_receipts(&path, &receipts).expect("write receipts");
+    assert_eq!(
+        read_measurement_receipts(&path).expect("read receipts"),
+        receipts
+    );
+}
