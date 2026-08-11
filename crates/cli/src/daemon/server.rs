@@ -218,6 +218,7 @@ struct ServerState {
     shutdown: Arc<Notify>,
     detector_count: usize,
     detector_rules_digest: String,
+    detector_spec_hash: [u8; 32],
     request_read_timeout: Duration,
     backend_override: Option<ScanBackend>,
     backend_recoveries: AtomicU64,
@@ -274,6 +275,7 @@ impl ServerState {
         shutdown: Arc<Notify>,
         detector_count: usize,
         detector_rules_digest: String,
+        detector_spec_hash: [u8; 32],
         options: ServerOptions,
         backend_override: Option<ScanBackend>,
         warm_backend: WarmBackendReadiness,
@@ -296,6 +298,7 @@ impl ServerState {
             shutdown,
             detector_count,
             detector_rules_digest,
+            detector_spec_hash,
             request_read_timeout: options.request_read_timeout,
             backend_override,
             backend_recoveries: AtomicU64::new(0),
@@ -479,6 +482,7 @@ pub(crate) async fn run_with_backend_override(
     // compiled count.
     announce_daemon_starting(detectors.len());
     let guard_filter = crate::orchestrator::DefaultScanFilter::for_guard(&detectors);
+    let detector_spec_hash = keyhog_core::compute_spec_hash(&detectors);
     let (scanner, router, detector_count, required_backends) =
         compile_daemon_scan_runtime(detectors, backend_override)?;
     let warm_backend =
@@ -531,6 +535,7 @@ pub(crate) async fn run_with_backend_override(
         shutdown.clone(),
         detector_count,
         detector_rules_digest.clone(),
+        detector_spec_hash,
         options,
         backend_override,
         warm_backend,
@@ -998,7 +1003,9 @@ mod system_path_tests {
 
     #[test]
     fn rejects_home_and_credential_stores() {
-        let home = std::env::var("HOME").expect("HOME");
+        let Ok(home) = std::env::var("HOME") else {
+            return;
+        };
         assert!(is_system_path(Path::new(&home)));
         assert!(is_system_path(Path::new(&format!("{home}/.ssh"))));
         assert!(is_system_path(Path::new(&format!(
@@ -1205,6 +1212,7 @@ fn spawn_mass_filesystem_source(
     ignore_paths: Vec<String>,
     respect_default_excludes: bool,
     reader_threads: Option<NonZeroUsize>,
+    merkle: Option<Arc<keyhog_core::MerkleIndex>>,
 ) -> mpsc::Receiver<MassFilesystemMessage> {
     let (sender, receiver) = mpsc::channel(2);
     tokio::task::spawn_blocking(move || {
@@ -1227,6 +1235,9 @@ fn spawn_mass_filesystem_source(
         if let Some(threads) = reader_threads {
             source = source.with_reader_threads(threads);
         }
+        if let Some(index) = merkle.as_ref() {
+            source = source.with_merkle_skip(index.clone());
+        }
 
         let mut batch = Vec::with_capacity(MASS_BATCH_CHUNKS);
         let mut batch_bytes = 0usize;
@@ -1243,6 +1254,18 @@ fn spawn_mass_filesystem_source(
                     continue;
                 }
             };
+            if let (Some(index), Some(path)) = (merkle.as_ref(), chunk.metadata.path.as_deref()) {
+                let _profile_span = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
+                if index.record_chunk_path_at_offset_and_check_unchanged(
+                    std::path::Path::new(path),
+                    chunk.metadata.base_offset as u64,
+                    chunk.metadata.mtime_ns.unwrap_or(0),
+                    chunk.metadata.size_bytes.unwrap_or(0),
+                    chunk.data.as_bytes(),
+                ) {
+                    continue;
+                }
+            }
             let chunks = match crate::subcommands::scan::split_chunk_for_mass(chunk) {
                 Ok(chunks) => chunks,
                 Err(error) => {
@@ -1287,6 +1310,11 @@ fn spawn_mass_filesystem_source(
     receiver
 }
 
+struct MassIncrementalState {
+    index: Arc<keyhog_core::MerkleIndex>,
+    path: PathBuf,
+}
+
 struct MassSession {
     state: Arc<ServerState>,
     dogfood: bool,
@@ -1294,12 +1322,18 @@ struct MassSession {
     stats: MassScanStats,
     started_at: Instant,
     filesystem_batches: Option<mpsc::Receiver<MassFilesystemMessage>>,
+    incremental: Option<MassIncrementalState>,
+    incremental_requested: Option<bool>,
+    finding_paths: std::collections::HashSet<PathBuf>,
+    pathless_findings: usize,
+    incremental_unpublishable: bool,
     _fragment_guard: OwnedMutexGuard<()>,
 }
 
 impl MassSession {
     fn record(&mut self, batch: &MassBatchDispatch) {
         if !matches!(batch.response, Response::ScanResults { .. }) {
+            self.incremental_unpublishable = true;
             return;
         }
         self.stats.batches = self.stats.batches.saturating_add(1);
@@ -1310,6 +1344,83 @@ impl MassSession {
             self.stats.gpu_chunks = self.stats.gpu_chunks.saturating_add(batch.chunks);
             self.stats.gpu_bytes = self.stats.gpu_bytes.saturating_add(batch.bytes);
         }
+        self.finding_paths
+            .extend(batch.finding_paths.iter().cloned());
+        self.pathless_findings = self
+            .pathless_findings
+            .saturating_add(batch.pathless_findings);
+    }
+
+    fn incremental_index(
+        &mut self,
+        configured_path: Option<String>,
+    ) -> std::result::Result<Option<Arc<keyhog_core::MerkleIndex>>, String> {
+        let requested = configured_path.is_some();
+        match self.incremental_requested {
+            Some(previous) if previous != requested => {
+                return Err(
+                    "daemon: one mass transaction cannot mix incremental and non-incremental filesystem roots"
+                        .to_string(),
+                );
+            }
+            None => self.incremental_requested = Some(requested),
+            Some(_) => {}
+        }
+        let Some(configured_path) = configured_path else {
+            return Ok(None);
+        };
+        let path = PathBuf::from(configured_path);
+        if !path.is_absolute() {
+            return Err(
+                "daemon: MassFilesystemBegin incremental cache path must be absolute".to_string(),
+            );
+        }
+        if let Some(incremental) = self.incremental.as_ref() {
+            if incremental.path != path {
+                return Err(
+                    "daemon: one mass transaction cannot mix incremental cache paths".to_string(),
+                );
+            }
+            return Ok(Some(incremental.index.clone()));
+        }
+        let report =
+            keyhog_core::MerkleIndex::load_with_spec_report(&path, &self.state.detector_spec_hash);
+        if let Some(warning) = crate::orchestrator::incremental_cache_warning(report.status()) {
+            tracing::warn!("{warning}");
+        }
+        let index = Arc::new(report.into_index());
+        self.incremental = Some(MassIncrementalState {
+            index: index.clone(),
+            path,
+        });
+        Ok(Some(index))
+    }
+
+    fn persist_incremental(&self) -> std::io::Result<()> {
+        let Some(incremental) = self.incremental.as_ref() else {
+            return Ok(());
+        };
+        if self.incremental_unpublishable {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "mass acquisition or scanning failed; refusing to publish an incremental cache",
+            ));
+        }
+        if self.pathless_findings > 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "{} finding(s) had no file path; refusing to publish an incremental cache",
+                    self.pathless_findings
+                ),
+            ));
+        }
+        for path in &self.finding_paths {
+            incremental.index.forget(path);
+        }
+        incremental
+            .index
+            .save_with_spec(&incremental.path, &self.state.detector_spec_hash)
     }
 
     fn finish_stats(&self) -> MassScanStats {
@@ -1416,6 +1527,11 @@ async fn handle_connection(
                         stats: MassScanStats::default(),
                         started_at: Instant::now(),
                         filesystem_batches: None,
+                        incremental: None,
+                        incremental_requested: None,
+                        finding_paths: std::collections::HashSet::new(),
+                        pathless_findings: 0,
+                        incremental_unpublishable: false,
                         _fragment_guard: guard,
                     });
                     Response::MassReady
@@ -1443,6 +1559,7 @@ async fn handle_connection(
                 ignore_paths,
                 respect_default_excludes,
                 reader_threads,
+                incremental_cache,
             } => match mass_session.as_mut() {
                 Some(session) if session.filesystem_batches.is_some() => Response::Error {
                     message: "daemon: finish the active daemon-local filesystem source before starting another"
@@ -1458,18 +1575,22 @@ async fn handle_connection(
                         Some(value) => Ok(NonZeroUsize::new(value)),
                         None => Ok(None),
                     };
-                    match (resolved, reader_threads) {
-                        (Ok(root), Ok(reader_threads)) => {
+                    let merkle = session.incremental_index(incremental_cache);
+                    match (resolved, reader_threads, merkle) {
+                        (Ok(root), Ok(reader_threads), Ok(merkle)) => {
                             session.filesystem_batches = Some(spawn_mass_filesystem_source(
                                 root,
                                 max_file_size,
                                 ignore_paths,
                                 respect_default_excludes,
                                 reader_threads,
+                                merkle,
                             ));
                             Response::MassFilesystemReady
                         }
-                        (Err(message), _) | (_, Err(message)) => Response::Error { message },
+                        (Err(message), _, _)
+                        | (_, Err(message), _)
+                        | (_, _, Err(message)) => Response::Error { message },
                     }
                 }
                 None => Response::Error {
@@ -1490,15 +1611,27 @@ async fn handle_connection(
                         }
                         Some(MassFilesystemMessage::Complete(source_coverage_gaps)) => {
                             session.filesystem_batches = None;
-                            Response::MassFilesystemComplete {
-                                source_coverage_gaps,
+                            if source_coverage_gaps.source_failed > 0 {
+                                session.incremental_unpublishable = true;
+                            }
+                            match session.persist_incremental() {
+                                Ok(()) => Response::MassFilesystemComplete {
+                                    source_coverage_gaps,
+                                },
+                                Err(error) => Response::MassFilesystemIncrementalError {
+                                    message: format!(
+                                        "daemon: cannot persist mass incremental cache: {error}"
+                                    ),
+                                },
                             }
                         }
                         Some(MassFilesystemMessage::Error(message)) => {
+                            session.incremental_unpublishable = true;
                             session.filesystem_batches = None;
                             Response::Error { message }
                         }
                         None => {
+                            session.incremental_unpublishable = true;
                             session.filesystem_batches = None;
                             Response::Error {
                                 message: "daemon: local filesystem producer ended without a completion receipt"
@@ -2886,6 +3019,8 @@ struct MassBatchDispatch {
     chunks: u64,
     bytes: u64,
     gpu: bool,
+    finding_paths: Vec<PathBuf>,
+    pathless_findings: usize,
 }
 
 impl MassBatchDispatch {
@@ -2895,6 +3030,8 @@ impl MassBatchDispatch {
             chunks: 0,
             bytes: 0,
             gpu: false,
+            finding_paths: Vec::new(),
+            pathless_findings: 0,
         }
     }
 }
@@ -3018,6 +3155,19 @@ async fn scan_mass_batch(
                     ));
                 }
             }
+            let mut pathless_findings = 0usize;
+            let finding_paths = matches
+                .iter()
+                .filter_map(|finding| match finding.location.file_path.as_deref() {
+                    Some(path) => Some(PathBuf::from(path)),
+                    None => {
+                        pathless_findings = pathless_findings.saturating_add(1);
+                        None
+                    }
+                })
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect();
             MassBatchDispatch {
                 response: scan_results_response(
                     None,
@@ -3030,6 +3180,8 @@ async fn scan_mass_batch(
                 chunks: chunk_count,
                 bytes: batch_bytes as u64,
                 gpu,
+                finding_paths,
+                pathless_findings,
             }
         }
         Ok(Err(error)) => MassBatchDispatch::error(format!("daemon: mass batch failed: {error:#}")),

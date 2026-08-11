@@ -813,7 +813,7 @@ async fn run_via_mass_daemon(args: &mut ScanArgs) -> Result<ExitCode> {
     let mass_ignore_paths =
         crate::sources::merge_scan_ignore_paths(&resolved.exclude_paths, allowlist_paths.clone());
     let sources = crate::sources::build_sources(args, &resolved, allowlist_paths, None)?;
-    let filesystem_requests = mass_filesystem_requests(&sources, &resolved, mass_ignore_paths);
+    let filesystem_requests = mass_filesystem_requests(&sources, &resolved, mass_ignore_paths)?;
     if sources.is_empty() {
         bail!(
             "mass daemon route: no source was selected. Pass a path, --stdin, or a remote source flag."
@@ -1000,11 +1000,6 @@ fn validate_mass_daemon_policy(
     if args.baseline.is_some() || args.update_baseline.is_some() {
         bail!("--daemon=mass cannot apply baseline state. Run this scan with --daemon=off.");
     }
-    if resolved.incremental || resolved.incremental_cache_path.is_some() {
-        bail!(
-            "--daemon=mass cannot apply Merkle incremental state. Run this scan with --daemon=off."
-        );
-    }
     if resolved.report.verify {
         bail!("--daemon=mass cannot run live verification. Run this scan with --daemon=off.");
     }
@@ -1040,6 +1035,8 @@ fn validate_mass_daemon_policy(
     // not change scanner semantics, so it must not poison the policy digest.
     let mut policy_resolved = resolved.clone();
     policy_resolved.scanner.profile = false;
+    policy_resolved.incremental = false;
+    policy_resolved.incremental_cache_path = None;
     let resolved_identity = format!(
         "{:016x}",
         crate::orchestrator_config::autoroute_config_digest(&policy_resolved)
@@ -1061,13 +1058,37 @@ fn mass_filesystem_requests(
     sources: &[Box<dyn keyhog_core::Source>],
     resolved: &crate::orchestrator_config::ResolvedScanConfig,
     ignore_paths: Vec<String>,
-) -> Option<Vec<Request>> {
+) -> Result<Option<Vec<Request>>> {
+    let incremental_cache = if resolved.incremental {
+        let path = resolved
+            .incremental_cache_path
+            .clone()
+            .or_else(keyhog_core::merkle_default_cache_path)
+            .context(
+                "--daemon=mass --incremental requires an available cache directory or --incremental-cache <PATH>",
+            )?;
+        let path = std::path::absolute(path).context(
+            "resolve --daemon=mass incremental cache path against the client working directory",
+        )?;
+        Some(
+            path.to_str()
+                .context("--daemon=mass incremental cache path must be valid UTF-8")?
+                .to_owned(),
+        )
+    } else {
+        None
+    };
     let mut requests = Vec::with_capacity(sources.len());
     for source in sources {
-        let filesystem = source
+        let Some(filesystem) = source
             .as_any()
-            .downcast_ref::<keyhog_sources::FilesystemSource>()?;
-        let root = filesystem.root_path().to_str()?.to_owned();
+            .downcast_ref::<keyhog_sources::FilesystemSource>()
+        else {
+            return Ok(None);
+        };
+        let Some(root) = filesystem.root_path().to_str().map(str::to_owned) else {
+            return Ok(None);
+        };
         requests.push(Request::MassFilesystemBegin {
             root,
             max_file_size: resolved
@@ -1078,9 +1099,10 @@ fn mass_filesystem_requests(
             ignore_paths: ignore_paths.clone(),
             respect_default_excludes: !resolved.no_default_excludes,
             reader_threads: resolved.reader_threads,
+            incremental_cache: incremental_cache.clone(),
         });
     }
-    Some(requests)
+    Ok(Some(requests))
 }
 
 #[cfg(unix)]
@@ -1116,6 +1138,10 @@ async fn scan_daemon_local_filesystems(
                 } => {
                     merge_source_coverage(&mut gaps, source_coverage_gaps);
                     break;
+                }
+                Response::MassFilesystemIncrementalError { message } => {
+                    return Err(std::io::Error::other(message))
+                        .context("mass daemon incremental cache publication");
                 }
                 Response::Error { message } => {
                     bail!("mass daemon local filesystem route: {message}")

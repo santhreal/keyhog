@@ -127,8 +127,9 @@ pub enum DaemonMode {
     Auto,
     /// Force the scan through a running `keyhog daemon`; fail if none is up.
     On,
-    /// Force a complete client-acquired source stream through a daemon started
-    /// with `keyhog daemon start --mass`.
+    /// Force a bounded source transaction through a daemon started with
+    /// `keyhog daemon start --mass`. Filesystem roots are acquired by the
+    /// daemon; credential-bearing remote sources use protected client batches.
     Mass,
     /// Force in-process scanning even when a daemon is running.
     Off,
@@ -495,11 +496,11 @@ pub struct ScanArgs {
     #[arg(long)]
     pub show_secrets: bool,
 
-    /// Incremental scan: skip files whose content hash matches the cached
-    /// `~/.cache/keyhog/merkle.idx`. After the scan completes, the index is
-    /// updated with the current file contents. On CI re-runs against a
-    /// monorepo where 99% of files are unchanged, this gives 10-100x
-    /// speedup. Pass `--incremental-cache <path>` to override the location.
+    /// Incremental scan: skip files whose metadata and content match the
+    /// spec-bound Merkle index. The index is updated after successful scanning.
+    /// This works in process and with `--daemon=mass` for daemon-local
+    /// filesystem roots. Pass `--incremental-cache <path>` to override the
+    /// default location.
     #[arg(long)]
     pub incremental: bool,
 

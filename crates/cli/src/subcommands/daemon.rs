@@ -315,15 +315,15 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
                 println!(
                     "scan scope: bounded directory, Git, archive, binary, remote, and cloud \
                      batches via --daemon=mass; warm stdin/single-file requests remain available. \
-                     Baseline, Merkle state, verification, lockdown, and per-request scanner policy \
-                     remain in-process."
+                     Daemon-local filesystems accept spec-bound Merkle incremental state. Baseline, \
+                     verification, lockdown, and per-request scanner policy remain in-process."
                 );
             } else {
                 println!(
                     "scan scope: warm stdin/single-file requests only; start with --mass for \
-                     bounded client-acquired source batches. Warm daemon requests return before baseline, \
-                     Merkle state, verification, lockdown, and per-request scanner policy; those post-steps \
-                     run in-process."
+                     bounded source transactions. Warm daemon requests return before baseline, \
+                     Merkle state, verification, lockdown, and per-request scanner policy; those \
+                     post-steps run in-process."
                 );
             }
             if backend_policy == "autoroute" {

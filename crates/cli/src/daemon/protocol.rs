@@ -76,7 +76,9 @@ use std::collections::BTreeMap;
 ///   `GuardStatus`, and `GuardReconcile` root control frames. The
 ///   client validates conservation of object count and bytes and
 ///   reacquires the index fingerprint before accepting the receipt.
-pub(crate) const WIRE_VERSION: u32 = 13;
+/// * v14 - lets daemon-local filesystem scans consume and publish the same
+///   spec-bound Merkle index as in-process incremental scans.
+pub(crate) const WIRE_VERSION: u32 = 14;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -206,6 +208,7 @@ pub(crate) enum Request {
         ignore_paths: Vec<String>,
         respect_default_excludes: bool,
         reader_threads: Option<usize>,
+        incremental_cache: Option<String>,
     },
     /// Pull and scan the next bounded daemon-local filesystem batch.
     MassFilesystemNext,
@@ -364,6 +367,9 @@ pub(crate) enum Response {
     MassFilesystemComplete {
         source_coverage_gaps: SourceCoverageGaps,
     },
+    /// The filesystem scan completed, but its incremental generation could not
+    /// be published. Clients classify this as a system I/O failure.
+    MassFilesystemIncrementalError { message: String },
     /// The mass transaction completed and released its scanner-state lease.
     MassComplete { stats: MassScanStats },
     Health {
@@ -929,6 +935,7 @@ pub(crate) fn response_kind(response: &Response) -> &'static str {
         Response::MassReady => "MassReady",
         Response::MassFilesystemReady => "MassFilesystemReady",
         Response::MassFilesystemComplete { .. } => "MassFilesystemComplete",
+        Response::MassFilesystemIncrementalError { .. } => "MassFilesystemIncrementalError",
         Response::MassComplete { .. } => "MassComplete",
         Response::Shutdown => "Shutdown",
         Response::Error { .. } => "Error",

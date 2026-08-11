@@ -1922,7 +1922,7 @@ impl ScanOrchestrator {
     }
 }
 
-fn incremental_cache_warning(status: &MerkleLoadStatus) -> Option<String> {
+pub(crate) fn incremental_cache_warning(status: &MerkleLoadStatus) -> Option<String> {
     match status {
         MerkleLoadStatus::Missing { .. } | MerkleLoadStatus::Loaded { .. } => None,
         MerkleLoadStatus::ReadFailed { path, error } => Some(format!(

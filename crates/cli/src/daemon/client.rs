@@ -32,14 +32,13 @@ const DAEMON_SCAN_TEXT_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Per-request-kind receive timeout (KH-1459). Health stays short so a stuck
 /// daemon does not block operator control; Shutdown allows for the server-side
-/// drain; ScanPath keeps the 300s full-file budget; ScanText is mid-tier for
-/// pre-commit chunks.
+/// drain; scan and daemon-local filesystem acquisition keep the 300s workload
+/// budget; ScanText is mid-tier for pre-commit chunks.
 fn request_timeout(request: &Request) -> Duration {
     match request {
         Request::Hello
         | Request::Health
         | Request::MassBegin { .. }
-        | Request::MassFilesystemBegin { .. }
         | Request::MassEnd
         | Request::GuardAdd { .. }
         | Request::GuardRemove { .. }
@@ -50,6 +49,7 @@ fn request_timeout(request: &Request) -> Duration {
         Request::ScanPath { .. }
         | Request::MassBatch { .. }
         | Request::MassFilesystemNext
+        | Request::MassFilesystemBegin { .. }
         | Request::GuardCommitBegin { .. }
         | Request::GuardCommitBlob { .. }
         | Request::GuardCommitFinish { .. }

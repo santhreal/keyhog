@@ -225,7 +225,7 @@ the relevant boundaries below as separate jobs and retains each
 | Organization or cloud inventory | `keyhog scan --daemon=off --github-org acme --format json-envelope --output acme.json` | Partition by provider, owner, or bucket. Run independent partitions concurrently with one report and status each. | One selected provider inventory per job. Pagination or object limits remain coverage boundaries. |
 | Confirm whether eligible findings are live | `keyhog scan . --verify` | Provider concurrency and rate controls are separate from scanner workers. | Sends credential-derived requests to declared provider endpoints. Not every detector supports verification. |
 | Whole-host health scan | `sudo keyhog scan-system --space 50G` | Uses all CPU cores by default and scans discovered Git history after filesystem data. | Local mounted filesystems. Network mounts are opt-in and the space ceiling is hard. |
-| GPU-backed directory, history, archive, remote, or cloud inventory on Unix | Calibrate autoroute, start `keyhog daemon start --mass`, then run `keyhog scan --daemon=mass <SOURCE>`. | Streams bounded batches through one compiled CPU, Hyperscan, CUDA, Metal, or WGPU worker. The terminal receipt reports exact total and GPU batches, chunks, bytes, GPU share, and throughput. | Baselines, incremental state, verification, lockdown, presets, overlays, and other scanner-policy changes are rejected before acquisition. |
+| GPU-backed directory, history, archive, remote, or cloud inventory on Unix | Calibrate autoroute, start `keyhog daemon start --mass`, then run `keyhog scan --daemon=mass <SOURCE>`. | Streams bounded batches through one compiled CPU, Hyperscan, CUDA, Metal, or WGPU worker. Add `--incremental` for warm unchanged filesystem trees. The terminal receipt reports exact total and GPU batches, chunks, bytes, GPU share, and throughput. | Baselines, verification, lockdown, presets, overlays, and other scanner-policy changes are rejected before acquisition. Incremental state applies only to daemon-local filesystem roots. |
 
 ### Scan every supported source boundary
 
@@ -411,7 +411,7 @@ One deterministic 8 MiB regular file (`sha256:afafbe7b6487fd62866f510e7c281a9e7b
 | CUDA | 1.65 s | 232 ms | 0.14× | 674 MiB | 666 MiB |
 | WGPU | 1.33 s | 237 ms | 0.18× | 596 MiB | 600 MiB |
 
-The daemon is not a general directory or CI accelerator. It accepts only eligible single-file and bounded-stdin requests on Unix, and it serializes execution.
+These rows cover the warm single-file route. The mass route also accepts bounded directory and remote-source batches; its incremental filesystem path is measured separately.
 <!-- BENCH:daemon:end -->
 <!-- BENCH:scaling:BEGIN -->
 ### CPU, reader, storage, size, and partition scaling
@@ -810,6 +810,11 @@ it in RAM. Local file payload bytes never cross the IPC socket. The daemon holds
 an exclusive fragment-state lease for the transaction and clears that state
 when the client finishes, disconnects, or fails.
 
+Add `--incremental --incremental-cache <PATH>` to a daemon-local filesystem
+scan to persist the spec-bound Merkle generation in the daemon. Unchanged clean
+files bypass file reads and scanner dispatch on later transactions while files
+that produced findings remain uncached and are rescanned.
+
 For protected wire batches, the client validates the completion receipt against
 the exact chunks and bytes it sent. For daemon-local paths, the daemon receipt
 is the source-byte authority. Stderr reports the transport, total and GPU
@@ -828,11 +833,11 @@ fails and returns an error instead of substituting CPU after a runtime fault.
 An explicit backend remains a diagnostic override, not autoroute proof.
 
 `--daemon=mass` is an explicit required route. It never falls back to an
-in-process scan. Baseline state, incremental state, live verification,
-lockdown, presets, detector overlays, custom allowlists, and scanner-policy
-overrides remain in-process contracts and are rejected before source
-acquisition. Warm one-file and stdin requests remain available on the same
-socket through `--daemon=on`.
+in-process scan. Baseline state, live verification, lockdown, presets, detector
+overlays, custom allowlists, and scanner-policy overrides remain in-process
+contracts and are rejected before source acquisition. Incremental state is
+supported for daemon-local filesystem roots. Warm one-file and stdin requests
+remain available on the same socket through `--daemon=on`.
 
 See
 [daemon and warm scans](https://santhreal.github.io/keyhog/workflows/daemon.html)

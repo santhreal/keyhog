@@ -796,6 +796,43 @@ def test_keyhog_daemon_commands_bind_one_detector_identity(tmp_path, backend):
     assert forbidden_client_flags.isdisjoint(client)
 
 
+def test_keyhog_mass_daemon_command_binds_incremental_cache(tmp_path):
+    executable = tmp_path / "keyhog"
+    socket_path = tmp_path / "daemon.sock"
+    detectors = tmp_path / "detectors"
+    root = tmp_path / "corpus"
+    output = tmp_path / "result.json"
+    cache = tmp_path / "merkle.idx"
+
+    command = keyhog_daemon.daemon_mass_client_command(
+        executable,
+        socket_path,
+        root,
+        output,
+        detectors,
+        cache,
+    )
+
+    assert command == [
+        str(executable),
+        "scan",
+        "--format",
+        "json-envelope",
+        "--no-config",
+        "--detectors",
+        str(detectors),
+        "--daemon=mass",
+        "--daemon-socket",
+        str(socket_path),
+        "--output",
+        str(output),
+        "--incremental",
+        "--incremental-cache",
+        str(cache),
+        str(root),
+    ]
+
+
 @pytest.mark.parametrize(
     "backend,cache,mode,message",
     [

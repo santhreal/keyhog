@@ -213,10 +213,7 @@ fn scan_daemon_fallback_warning_uses_resolved_daemon_mode() {
         .split("DaemonRoute::Opportunistic => {")
         .nth(1)
         .expect("scan.rs must have a DaemonRoute::Opportunistic arm");
-    let fallback_arm = arm
-        .split("let orchestrator = ScanOrchestrator::new(args)?;")
-        .next()
-        .unwrap_or(arm);
+    let fallback_arm = arm.split("DaemonRoute::Rejected").next().unwrap_or(arm);
 
     assert!(
         !fallback_arm.contains("matches!(args.daemon,"),

@@ -129,10 +129,10 @@ failure as a clean scan. Respect each provider's pagination and retry headers.
 
 ## Daemon and corpus semantics at scale
 
-Use `--daemon=off` when a scan needs baseline state, Merkle incremental state,
-live verification, lockdown, a preset, a detector overlay, a custom allowlist,
-or another per-scan engine policy. These contracts remain in the in-process
-orchestrator.
+Use `--daemon=off` when a scan needs baseline state, live verification,
+lockdown, a preset, a detector overlay, a custom allowlist, or another per-scan
+engine policy. The mass route accepts spec-bound incremental state for
+daemon-local filesystem roots; the other contracts remain in process.
 
 Use the explicit mass service for standard-policy directory trees, Git history,
 hosted inventories, cloud buckets, archives, binaries, and remote endpoints:
@@ -146,6 +146,11 @@ keyhog scan --daemon=mass \
   ./partitions/team-a \
   --format json-envelope --output team-a.json
 ```
+
+For warm unchanged-tree scans, add `--incremental --incremental-cache
+/absolute/path/merkle.idx`. The daemon loads and publishes that spec-bound
+generation without rebuilding its scanner. Files with findings are forgotten
+before publication and remain visible on every scan.
 
 `--daemon=mass` is required routing. A missing, warm-only, stale, or
 incompatible service is an error. KeyHog does not fall back to an in-process
