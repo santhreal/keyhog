@@ -45,6 +45,15 @@ The default test/release gate excludes tests marked `target_spec`; those are
 executable product targets, not claims that the current release already meets.
 Run them explicitly with `make targets`.
 
+
+## Focused daemon response framing evidence
+
+[`reports/daemon-response-framing.md`](reports/daemon-response-framing.md) records
+the release-mode direct-serialization comparison and its
+[`JSON receipt`](reports/daemon-response-framing.json). The measured near-ceiling
+response retains exact wire bytes while eliminating the complete temporary
+serialized body and its copy into the transport buffer.
+
 ## Bloom prefilter evidence
 
 `make bloom KEYHOG_BIN=/absolute/path/to/keyhog` rebuilds the canonical
