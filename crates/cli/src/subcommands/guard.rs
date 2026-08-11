@@ -601,4 +601,3 @@ mod exit_code_for_guard_state_tests;
 #[cfg(test)]
 #[path = "../../tests/unit/subcommands_guard_resolve_root.rs"]
 mod resolve_root_for_control_tests;
-

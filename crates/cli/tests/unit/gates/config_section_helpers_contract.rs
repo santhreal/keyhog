@@ -6,8 +6,8 @@ fn config_schema_structs_reject_unknown_toml_fields() {
 
     // Count every on-disk schema struct (pub(super) and pub(crate)), not only
     // pub(super): GuardSection/LockdownSection/ConfigFile are pub(crate).
-    let schema_structs = schema.matches("pub(super) struct ").count()
-        + schema.matches("pub(crate) struct ").count();
+    let schema_structs =
+        schema.matches("pub(super) struct ").count() + schema.matches("pub(crate) struct ").count();
     let strict_deserializers = schema
         .matches("#[serde(default, deny_unknown_fields)]")
         .count();

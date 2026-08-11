@@ -1,6 +1,4 @@
-use super::{
-    baseline_terminal_transition, guard_event_action, BaselineResult, GuardEventAction,
-};
+use super::{baseline_terminal_transition, guard_event_action, BaselineResult, GuardEventAction};
 use keyhog_core::guard_state::{GuardRootState, GuardTransition};
 
 #[test]

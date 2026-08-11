@@ -3,6 +3,7 @@
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+- cargo fmt: collapse path-include blank lines and deny_unknown schema count expression.
 - Cut duplicate required library-surface core/sources `--lib` suites already owned by focused/sources jobs.
 - Fix CLI/docs/gate drift from unfinished `guard` landing: snapshot, exit-code help, docs reference, HOME allowlist, path-split daemon/guard unit tests, sources discovery no-unwrap move.
 - Adjust WordPress/redis-sentinel fixtures and vendor-token boundary path metadata for focused scanner contracts.

@@ -535,4 +535,3 @@ impl Default for GuardRuntime {
 #[cfg(test)]
 #[path = "../../tests/unit/daemon_guard_runtime.rs"]
 mod tests;
-

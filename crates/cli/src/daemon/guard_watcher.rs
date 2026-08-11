@@ -214,4 +214,3 @@ fn normalize_notify_event(event: &notify::Event) -> Vec<GuardEvent> {
 #[cfg(test)]
 #[path = "../../tests/unit/daemon_guard_watcher.rs"]
 mod tests;
-
