@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "subject": "scanner performance configuration ownership",
+  "source_commit": "67fb55497c",
+  "measurement": {
+    "method": "complete Rust source inventory plus feature-neutral library compile",
+    "command": "cargo check -p keyhog-scanner --lib --no-default-features"
+  },
+  "legacy": {
+    "resolved_configuration_structs": 2,
+    "runtime_default_field_mappings": 14
+  },
+  "candidate": {
+    "resolved_configuration_structs": 1,
+    "runtime_default_field_mappings": 0,
+    "canonical_resolver": "ScannerTuningConfig::effective"
+  },
+  "result": {
+    "duplicate_resolved_struct_reduction_percent": 100.0,
+    "duplicate_runtime_default_mapping_reduction_percent": 100.0
+  },
+  "contract": {
+    "runtime_snapshot_equals_complete_effective_configuration": true,
+    "new_fields_require_an_explicit_snapshot_decision": true,
+    "scan_route_behavior_changed": false
+  },
+  "limit": "This ownership change removes drift and duplicate resolution work; it does not claim an end-to-end scan speedup."
+}

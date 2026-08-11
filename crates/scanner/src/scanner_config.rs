@@ -274,24 +274,6 @@ impl ScanExecutionRoute {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct ResolvedRuntimeTuningConfig {
-    pub fallback_hs: bool,
-    pub hs_prefilter_max_len: usize,
-    pub fallback_anchor: bool,
-    pub homoglyph_gate: bool,
-    pub homoglyph_ascii_skip: bool,
-    pub fallback_reverse: bool,
-    pub prefilter_truncate: bool,
-    pub fallback_prefix_gate: bool,
-    pub decode_focus: bool,
-    pub confirmed_suffix_gate: bool,
-    pub confirmed_companion_gate: bool,
-    pub no_candidate_gate: bool,
-    pub fallback_localizer: bool,
-    pub gpu_recall_floor: bool,
-}
-
 /// Scanner-side configuration: the canonical [`ScanConfig`], the single owned
 /// source of truth for every shared detection knob (decode depth, entropy, ML,
 /// confidence floor, keyword lists, …). PLUS the two knobs that are

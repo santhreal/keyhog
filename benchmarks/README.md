@@ -87,6 +87,11 @@ records the section-copy elimination and its
 [`reports/phase2-scratch-reuse.md`](reports/phase2-scratch-reuse.md) records the
 helper-vector allocation-site elimination, aggregate retention ceiling, and
 [`JSON receipt`](reports/phase2-scratch-reuse.json).
+## Performance configuration ownership evidence
+
+[`reports/performance-config-ownership.md`](reports/performance-config-ownership.md)
+records the resolved-type and default-mapping consolidation with its
+[`JSON receipt`](reports/performance-config-ownership.json).
 
 ## Bloom prefilter evidence
 

@@ -15,6 +15,9 @@
 - Confirmed shared-anchor extraction now reuses bounded worker scratch for its
   sparse active-pattern and literal-id lists instead of allocating both vectors
   for every phase-two pass.
+- Runtime tuning snapshots now resolve through `ScannerTuningConfig::effective`
+  and use its complete resolved type instead of maintaining a duplicate field
+  list and default mapping.
 
 ## 0.5.70 - 2026-08-10
 

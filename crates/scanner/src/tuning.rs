@@ -13,7 +13,7 @@
 //! prefilter, the decode-recursion focus, and the confirmed-pass suffix gate, so
 //! this carries every recall-identical per-scan route lever in one place.
 //! Re-exported through `engine::phase2` (`pub use crate::tuning::*`).
-use crate::scanner_config::{ResolvedRuntimeTuningConfig, ScannerTuningConfig};
+use crate::scanner_config::{ResolvedScannerTuningConfig, ScannerTuningConfig};
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering::Relaxed};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,6 +52,14 @@ impl BoolOverride {
             Self::ForceOff => false,
         }
     }
+
+    fn as_option(self) -> Option<bool> {
+        match self {
+            Self::Default => None,
+            Self::ForceOn => Some(true),
+            Self::ForceOff => Some(false),
+        }
+    }
 }
 
 /// Per-scanner performance tuning. Carried on [`CompiledScanner`] and passed to
@@ -66,6 +74,9 @@ pub(crate) struct ScannerTuning {
     phase2_hs: AtomicU8,
     /// Override for the HS-prefilter size gate (`usize::MAX` = compiled default).
     hs_max_len: AtomicUsize,
+    /// Compile-time Hyperscan shard target retained for canonical snapshots
+    /// (0 = compiled default).
+    hs_shard_target: AtomicUsize,
     /// Override for shared-anchor phase-2 localization.
     phase2_anchor: AtomicU8,
     /// Override for the homoglyph ASCII gate.
@@ -110,6 +121,7 @@ impl ScannerTuning {
         Self {
             phase2_hs: AtomicU8::new(BoolOverride::Default.as_byte()),
             hs_max_len: AtomicUsize::new(usize::MAX),
+            hs_shard_target: AtomicUsize::new(0),
             phase2_anchor: AtomicU8::new(BoolOverride::Default.as_byte()),
             homoglyph_gate: AtomicU8::new(BoolOverride::Default.as_byte()),
             homoglyph_ascii_skip: AtomicU8::new(BoolOverride::Default.as_byte()),
@@ -131,6 +143,8 @@ impl ScannerTuning {
         config.validate()?;
         self.set_phase2_hs(config.phase2_hs);
         self.set_hs_prefilter_max_len(config.hs_prefilter_max_len);
+        self.hs_shard_target
+            .store(config.hs_shard_target.unwrap_or(0), Relaxed);
         self.set_phase2_anchor_mode(config.phase2_anchor);
         self.set_phase2_homoglyph_gate(config.homoglyph_gate);
         self.set_homoglyph_ascii_skip(config.homoglyph_ascii_skip);
@@ -152,43 +166,38 @@ impl ScannerTuning {
     /// re-matching compiled defaults inside each phase-2 prefilter/admission
     /// call. Test hooks still mutate `ScannerTuning` before invoking a scan; the
     /// scan observes those mutations when it takes this snapshot.
-    pub(crate) fn resolve(&self) -> ResolvedRuntimeTuningConfig {
-        let hs_prefilter_max_len = match self.hs_max_len.load(Relaxed) {
-            usize::MAX => ScannerTuningConfig::HS_PREFILTER_MAX_LEN_DEFAULT,
-            value => value,
-        };
-
-        ResolvedRuntimeTuningConfig {
-            fallback_hs: BoolOverride::from_raw(self.phase2_hs.load(Relaxed))
-                .resolve(ScannerTuningConfig::FALLBACK_HS_DEFAULT),
-            hs_prefilter_max_len,
-            fallback_anchor: BoolOverride::from_raw(self.phase2_anchor.load(Relaxed))
-                .resolve(ScannerTuningConfig::FALLBACK_ANCHOR_DEFAULT),
-            homoglyph_gate: BoolOverride::from_raw(self.homoglyph_gate.load(Relaxed))
-                .resolve(ScannerTuningConfig::HOMOGLYPH_GATE_DEFAULT),
+    pub(crate) fn resolve(&self) -> ResolvedScannerTuningConfig {
+        let optional_usize =
+            |value: usize, default_sentinel: usize| (value != default_sentinel).then_some(value);
+        ScannerTuningConfig {
+            phase2_hs: BoolOverride::from_raw(self.phase2_hs.load(Relaxed)).as_option(),
+            hs_prefilter_max_len: optional_usize(self.hs_max_len.load(Relaxed), usize::MAX),
+            hs_shard_target: optional_usize(self.hs_shard_target.load(Relaxed), 0),
+            phase2_anchor: BoolOverride::from_raw(self.phase2_anchor.load(Relaxed)).as_option(),
+            homoglyph_gate: BoolOverride::from_raw(self.homoglyph_gate.load(Relaxed)).as_option(),
             homoglyph_ascii_skip: BoolOverride::from_raw(self.homoglyph_ascii_skip.load(Relaxed))
-                .resolve(ScannerTuningConfig::HOMOGLYPH_ASCII_SKIP_DEFAULT),
-            fallback_reverse: BoolOverride::from_raw(self.phase2_reverse.load(Relaxed))
-                .resolve(ScannerTuningConfig::FALLBACK_REVERSE_DEFAULT),
+                .as_option(),
+            fallback_reverse: BoolOverride::from_raw(self.phase2_reverse.load(Relaxed)).as_option(),
             prefilter_truncate: BoolOverride::from_raw(self.prefilter_truncate.load(Relaxed))
-                .resolve(ScannerTuningConfig::PREFILTER_TRUNCATE_DEFAULT),
+                .as_option(),
             fallback_prefix_gate: BoolOverride::from_raw(self.phase2_prefix_gate.load(Relaxed))
-                .resolve(ScannerTuningConfig::FALLBACK_PREFIX_GATE_DEFAULT),
-            decode_focus: BoolOverride::from_raw(self.decode_focus.load(Relaxed))
-                .resolve(ScannerTuningConfig::DECODE_FOCUS_DEFAULT),
+                .as_option(),
+            decode_focus: BoolOverride::from_raw(self.decode_focus.load(Relaxed)).as_option(),
             confirmed_suffix_gate: BoolOverride::from_raw(self.confirmed_suffix_gate.load(Relaxed))
-                .resolve(ScannerTuningConfig::CONFIRMED_SUFFIX_GATE_DEFAULT),
+                .as_option(),
             confirmed_companion_gate: BoolOverride::from_raw(
                 self.confirmed_companion_gate.load(Relaxed),
             )
-            .resolve(ScannerTuningConfig::CONFIRMED_COMPANION_GATE_DEFAULT),
+            .as_option(),
             no_candidate_gate: BoolOverride::from_raw(self.no_candidate_gate.load(Relaxed))
-                .resolve(ScannerTuningConfig::NO_CANDIDATE_GATE_DEFAULT),
+                .as_option(),
             fallback_localizer: BoolOverride::from_raw(self.phase2_plain_localizer.load(Relaxed))
-                .resolve(ScannerTuningConfig::FALLBACK_LOCALIZER_DEFAULT),
+                .as_option(),
             gpu_recall_floor: BoolOverride::from_raw(self.gpu_recall_floor.load(Relaxed))
-                .resolve(ScannerTuningConfig::GPU_RECALL_FLOOR_DEFAULT),
+                .as_option(),
+            chunk_lane_threshold: optional_usize(self.chunk_lane_threshold.load(Relaxed), 0),
         }
+        .effective()
     }
 
     // ── Hyperscan always-active prefilter engine ───────────────────────────
@@ -415,5 +424,43 @@ impl ScannerTuning {
     pub(crate) fn gpu_recall_floor_enabled(&self) -> bool {
         BoolOverride::from_raw(self.gpu_recall_floor.load(Relaxed))
             .resolve(ScannerTuningConfig::GPU_RECALL_FLOOR_DEFAULT)
+    }
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+
+    /// WHY: runtime snapshots and configuration identity must resolve through
+    /// one owner. Equality on the complete resolved struct makes every added
+    /// tuning field fail this test until runtime ownership is explicit.
+    #[test]
+    fn runtime_snapshot_equals_canonical_effective_configuration() {
+        let runtime = ScannerTuning::from_defaults();
+        assert_eq!(
+            runtime.resolve(),
+            ScannerTuningConfig::default().effective()
+        );
+
+        let configured = ScannerTuningConfig {
+            phase2_hs: Some(false),
+            hs_prefilter_max_len: Some(8192),
+            hs_shard_target: Some(777),
+            phase2_anchor: Some(false),
+            homoglyph_gate: Some(false),
+            homoglyph_ascii_skip: Some(false),
+            fallback_reverse: Some(true),
+            prefilter_truncate: Some(false),
+            fallback_prefix_gate: Some(true),
+            decode_focus: Some(false),
+            confirmed_suffix_gate: Some(false),
+            confirmed_companion_gate: Some(false),
+            no_candidate_gate: Some(false),
+            fallback_localizer: Some(false),
+            gpu_recall_floor: Some(true),
+            chunk_lane_threshold: Some(2048),
+        };
+        runtime.apply_config(&configured).expect("valid tuning");
+        assert_eq!(runtime.resolve(), configured.effective());
     }
 }

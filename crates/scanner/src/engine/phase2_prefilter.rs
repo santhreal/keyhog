@@ -8,7 +8,7 @@ use super::phase2::*;
 use super::phase2_hs::Phase2HsEngine;
 use super::phase2_truncate::truncate_for_prefilter;
 use super::*;
-use crate::scanner_config::ResolvedRuntimeTuningConfig;
+use crate::scanner_config::ResolvedScannerTuningConfig;
 use aho_corasick::AhoCorasick;
 use dispatch_plan::{BatchMatcher, DispatchConfig, DispatchPlan, PrefilterScope};
 use gating::{combined_gate_decision, CombinedGateDecision};
@@ -771,7 +771,7 @@ impl Phase2AlwaysActivePrefilter {
         scratch: &mut ActivePatternsScratch,
         anchor_mode: bool,
         localize_plain: bool,
-        tuning: &ResolvedRuntimeTuningConfig,
+        tuning: &ResolvedScannerTuningConfig,
         allow_hyperscan: bool,
     ) {
         #[cfg(not(feature = "simd"))]
@@ -900,7 +900,7 @@ impl Phase2AlwaysActivePrefilter {
         &self,
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         match_text: &str,
-        tuning: &ResolvedRuntimeTuningConfig,
+        tuning: &ResolvedScannerTuningConfig,
         allow_hyperscan: bool,
     ) -> bool {
         #[cfg(not(feature = "simd"))]
