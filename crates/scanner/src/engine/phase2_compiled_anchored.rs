@@ -129,6 +129,7 @@ impl CompiledScanner {
         let shift = focus.map_or(0u32, |(fs, _)| fs as u32);
         // Whole-chunk extraction restricts match starts to the focus window.
         // Keyword seeding still uses normalized full text.
+        let cursor = focus;
         self.with_active_phase2_scratch(
             &preprocessed.text,
             scan_text,

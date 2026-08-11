@@ -204,7 +204,6 @@ pub(crate) const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
 /// Chunks shorter than 64 bytes bypass the bigram-bloom prefilter because they
 /// are cheap to scan and a bloom miss must not risk recall. Both the coalesced
 /// phase-1 producer and single-chunk entry use this shared threshold.
-///
 pub(crate) const BIGRAM_BLOOM_MIN_CHUNK_BYTES: usize = 64;
 
 /// Retain at most one scan chunk of route-local candidate scratch; discard
