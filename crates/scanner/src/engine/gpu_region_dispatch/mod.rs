@@ -1,11 +1,8 @@
 //! Live wiring of the coalesced GPU literal-region trigger path.
 //!
-//! One resident VYRE dispatch produces detector presence plus positions for the
-//! shared confirmed-anchor and generic-keyword localizers. Presence becomes the
-//! same per-chunk trigger bitmap the Hyperscan prefilter produces; positions are
-//! optional evidence consumed by the same phase-two implementations that would
-//! otherwise collect them on the CPU. Regex extraction, entropy, ML,
-//! suppression, deduplication, recovery, and boundary scans retain one owner.
+//! Resident VYRE dispatches produce detector presence, positions, and equivalent trigger bitmaps.
+//! Positions replace CPU localization; extraction, entropy, ML, suppression, deduplication,
+//! recovery, and boundary scans retain one owner.
 //!
 //! Recall + precision: GPU presence only admits candidate detector bits and GPU
 //! positions only replace equivalent CPU localization. Phase 2 still validates
@@ -105,9 +102,6 @@ impl CompiledScanner {
         let dispatch_failure =
             |reason: String| Err(super::gpu_forced::SelectedGpuDispatchError::new(reason));
 
-        // This phase-2 tail is backend-neutral. GPU-only builds use it without
-        // linking Hyperscan, while SIMD builds feed the same trigger bitmap into
-        // the same extraction and policy pipeline.
         let kh = super::profile::diagnostic();
         let t_matcher = kh.then(std::time::Instant::now);
         let Some(matcher) = self.gpu_matcher() else {

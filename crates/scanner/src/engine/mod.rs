@@ -533,10 +533,8 @@ pub struct CompiledScanner {
         crate::engine::scan::VocabStageAbsence,
         ahash::RandomState,
     >,
-    /// Cached [`Self::entropy_evidence_config_digest`]. Cleared by `with_config`
-    /// and `clear_fragment_cache` (the latter covers the known in-place config
-    /// mutation test path). Callers that mutate `config` in place must clear
-    /// via one of those entry points so absence keys track live policy.
+    /// Cached [`Self::entropy_evidence_config_digest`]; callers mutating config in place must
+    /// clear via `with_config` or `clear_fragment_cache` so absence keys track live policy.
     pub(crate) entropy_config_digest_cache: parking_lot::Mutex<Option<[u8; 32]>>,
     /// Complete BLAKE3 identity for the compiled detector and decoder execution plan.
     pub(crate) compiled_plan_digest: [u8; 32],
@@ -546,8 +544,6 @@ pub struct CompiledScanner {
     pub(crate) ac: Option<AhoCorasick>,
     /// Exact selected route or the temporary all-peer calibration census.
     pub(crate) backend_state: ScannerBackendState,
-    /// Serializes complete direct-GPU dispatch rings that share one scanner-owned
-    /// resident slot set. Ordered multi-device routes own independent locks.
     #[cfg(feature = "gpu")]
     pub(crate) direct_gpu_resident_dispatch: std::sync::Mutex<()>,
     /// True only when a signed GPU execution pack authenticated the exact
