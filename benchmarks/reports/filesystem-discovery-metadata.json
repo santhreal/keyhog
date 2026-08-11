@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "subject": "filesystem discovery archive-symlink metadata traversal",
+  "measured_at": "2026-08-11T07:00:38Z",
+  "source_commit": "d2ad5d9eaf7b90d89ccda74ff0a34e5b5c8fdf9d",
+  "host": {
+    "os": "Linux 6.17.0-19-generic",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "logical_cpus": 32
+  },
+  "workload": {
+    "files": 32768,
+    "logical_bytes": 32768,
+    "sha256": "b2a84330feb0a2700da1f961dfd6968027b4f651b55574e2a17f5a38f41dc2e4"
+  },
+  "measurement": {
+    "tool": "strace 6.8 summary",
+    "syscalls": ["statx", "newfstatat", "getdents64", "readlink"],
+    "route": "production in-process filesystem scan with explicit CPU backend"
+  },
+  "legacy": {
+    "commit": "4b505ed6e0a9032c3c514253fdff7aef5fa2256f",
+    "executable_sha256": "8f14da33f7494b5d24a5206d1c922dedce7167f44ae36ddad8d858c28285c62e",
+    "archive_symlink_audit_walks": 1,
+    "configured_metadata_walks": 1,
+    "getdents64_calls": 71,
+    "statx_calls": 99356,
+    "trace_sha256": "7afc3a37f6a63c6942577849cae6bab2b81b13948cf16e3c9dd6a9002cead213"
+  },
+  "candidate": {
+    "commit": "d2ad5d9eaf7b90d89ccda74ff0a34e5b5c8fdf9d",
+    "executable_sha256": "32cfb7bb3782652d84ae6e554ae51d29d0c501eaab7e9c5fe62844e784e60da1",
+    "archive_symlink_audit_walks": 0,
+    "configured_metadata_walks": 1,
+    "getdents64_calls": 37,
+    "statx_calls": 99356,
+    "trace_sha256": "7509da22cab93bf273958d41c7cf7fbbe6bd6b09667501f17d8f53c41aa42d48"
+  },
+  "result": {
+    "redundant_audit_walk_reduction_percent": 100.0,
+    "getdents64_reduction_percent": 47.887323943661976,
+    "getdents64_calls_eliminated": 34
+  },
+  "parity": {
+    "baseline_exit_code": 0,
+    "candidate_exit_code": 0,
+    "scan_status": "success",
+    "source_chunks_scanned": 32768,
+    "source_bytes_scanned": 32768,
+    "finding_count": 0,
+    "ordered_findings_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "limit": "One required configured discovery walk remains, so total traversal syscalls cannot improve by 10x from removing one redundant full-tree audit."
+}
