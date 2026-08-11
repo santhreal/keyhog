@@ -88,6 +88,7 @@ def daemon_client_command(
     socket_path: pathlib.Path,
     root: pathlib.Path,
     output: pathlib.Path,
+    detector_corpus: pathlib.Path | None = None,
 ) -> list[str]:
     return [
         str(executable),
@@ -95,6 +96,7 @@ def daemon_client_command(
         "--format",
         "json-envelope",
         "--no-config",
+        *(["--detectors", str(detector_corpus)] if detector_corpus is not None else []),
         "--daemon=on",
         "--daemon-socket",
         str(socket_path),
@@ -106,31 +108,44 @@ def daemon_client_command(
 
 
 def daemon_mass_client_command(
-    executable: pathlib.Path, socket_path: pathlib.Path, root: pathlib.Path,
+    executable: pathlib.Path,
+    socket_path: pathlib.Path,
+    root: pathlib.Path,
     output: pathlib.Path,
+    detector_corpus: pathlib.Path | None = None,
 ) -> list[str]:
     return [
         str(executable), "scan", "--format", "json-envelope", "--no-config",
+        *(["--detectors", str(detector_corpus)] if detector_corpus is not None else []),
         "--daemon=mass", "--daemon-socket", str(socket_path), "--output",
         str(output), str(root),
     ]
 
 
 def daemon_mass_remote_client_command(
-    executable: pathlib.Path, socket_path: pathlib.Path, endpoint: str, output: pathlib.Path,
+    executable: pathlib.Path,
+    socket_path: pathlib.Path,
+    endpoint: str,
+    output: pathlib.Path,
+    detector_corpus: pathlib.Path | None = None,
 ) -> list[str]:
     return [
         str(executable), "scan", "--format", "json-envelope", "--no-config",
+        *(["--detectors", str(detector_corpus)] if detector_corpus is not None else []),
         "--daemon=mass", "--daemon-socket", str(socket_path), "--output", str(output),
         "--allow-private-cloud-endpoint", "--source", f"slack:xoxb-benchmark\n{endpoint}",
     ]
 
 
 def daemon_stdin_client_command(
-    executable: pathlib.Path, socket_path: pathlib.Path, output: pathlib.Path
+    executable: pathlib.Path,
+    socket_path: pathlib.Path,
+    output: pathlib.Path,
+    detector_corpus: pathlib.Path | None = None,
 ) -> list[str]:
     return [
         str(executable), "scan", "--format", "json-envelope", "--no-config",
+        *(["--detectors", str(detector_corpus)] if detector_corpus is not None else []),
         "--daemon=on", "--daemon-socket", str(socket_path), "--stdin",
         "--output", str(output),
     ]
@@ -262,7 +277,13 @@ class OwnedKeyhogDaemon:
     def run_client(self, root: pathlib.Path, output: pathlib.Path, timeout: int) -> RunStats:
         self._assert_owned_peer()
         _stdout, stderr, stats = run_measured(
-            daemon_client_command(self.executable, self.socket_path, root, output),
+            daemon_client_command(
+                self.executable,
+                self.socket_path,
+                root,
+                output,
+                self.detector_corpus,
+            ),
             timeout=timeout,
             pass_fds=self.pass_fds,
         )
@@ -289,7 +310,13 @@ class OwnedKeyhogDaemon:
     ) -> RunStats:
         self._assert_owned_peer()
         _stdout, stderr, stats = run_measured(
-            daemon_mass_client_command(self.executable, self.socket_path, root, output),
+            daemon_mass_client_command(
+                self.executable,
+                self.socket_path,
+                root,
+                output,
+                self.detector_corpus,
+            ),
             timeout=timeout, pass_fds=self.pass_fds,
         )
         if stats.timed_out:
@@ -305,7 +332,13 @@ class OwnedKeyhogDaemon:
     def run_mass_remote_client(self, endpoint: str, output: pathlib.Path, timeout: int) -> RunStats:
         self._assert_owned_peer()
         _stdout, stderr, stats = run_measured(
-            daemon_mass_remote_client_command(self.executable, self.socket_path, endpoint, output),
+            daemon_mass_remote_client_command(
+                self.executable,
+                self.socket_path,
+                endpoint,
+                output,
+                self.detector_corpus,
+            ),
             timeout=timeout, pass_fds=self.pass_fds,
         )
         if stats.timed_out:
@@ -319,7 +352,12 @@ class OwnedKeyhogDaemon:
     ) -> RunStats:
         self._assert_owned_peer()
         _stdout, stderr, stats = run_measured(
-            daemon_stdin_client_command(self.executable, self.socket_path, output),
+            daemon_stdin_client_command(
+                self.executable,
+                self.socket_path,
+                output,
+                self.detector_corpus,
+            ),
             timeout=timeout, pass_fds=self.pass_fds, stdin_path=input_path,
         )
         if stats.timed_out:

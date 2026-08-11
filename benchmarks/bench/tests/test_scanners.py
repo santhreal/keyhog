@@ -765,7 +765,7 @@ def test_keyhog_run_binds_digest_and_scan_to_immutable_detector_snapshot(
 
 
 @pytest.mark.parametrize("backend", ["gpu-cuda", "gpu-wgpu"])
-def test_keyhog_daemon_commands_keep_server_and_client_ownership_separate(tmp_path, backend):
+def test_keyhog_daemon_commands_bind_one_detector_identity(tmp_path, backend):
     executable = tmp_path / "keyhog"
     socket_path = tmp_path / "daemon.sock"
     detectors = tmp_path / "detectors"
@@ -776,7 +776,7 @@ def test_keyhog_daemon_commands_keep_server_and_client_ownership_separate(tmp_pa
         executable, socket_path, detectors, backend,
     )
     client = keyhog_daemon.daemon_client_command(
-        executable, socket_path, input_file, output,
+        executable, socket_path, input_file, output, detectors,
     )
 
     assert server == [
@@ -785,12 +785,12 @@ def test_keyhog_daemon_commands_keep_server_and_client_ownership_separate(tmp_pa
     ]
     assert client == [
         str(executable), "scan", "--format", "json-envelope", "--no-config",
-        "--daemon=on", "--daemon-socket", str(socket_path),
-        "--output", str(output), str(input_file),
+        "--detectors", str(detectors), "--daemon=on", "--daemon-socket",
+        str(socket_path), "--output", str(output), str(input_file),
     ]
     forbidden_client_flags = {
-        "--backend", "--detectors", "--show-secrets", "--no-gpu",
-        "--require-gpu", "--incremental", "--fast", "--deep", "--precision",
+        "--backend", "--show-secrets", "--no-gpu", "--require-gpu",
+        "--incremental", "--fast", "--deep", "--precision",
         "--no-suppress-test-fixtures",
     }
     assert forbidden_client_flags.isdisjoint(client)
