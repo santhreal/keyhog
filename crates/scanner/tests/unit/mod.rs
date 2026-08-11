@@ -185,6 +185,7 @@ mod suppression_decode_b64_peek;
 mod suppression_decode_b64_roundtrip_proptest;
 mod telemetry_serial;
 pub mod token_randomness;
+mod tuning_ownership;
 pub mod unicode_ascii_control_evasion;
 pub mod unicode_combining_mark_blocks;
 pub mod unicode_combining_marks_normalization;

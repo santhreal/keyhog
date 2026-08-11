@@ -389,7 +389,8 @@ fn backend_affecting_config_parse_failures_are_loud() {
 
     let tuning = scanner_src("tuning.rs");
     assert!(
-        tuning.contains("ScannerTuningConfig::HS_PREFILTER_MAX_LEN_DEFAULT")
+        tuning.contains("pub(crate) fn resolve(&self) -> ResolvedScannerTuningConfig")
+            && tuning.contains(".effective()")
             && tuning.contains("apply_config")
             && !tuning.contains("std::env::var")
             && scanner_config.contains("pub hs_prefilter_max_len: Option<usize>")
