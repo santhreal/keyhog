@@ -11,7 +11,7 @@ fn macos_build_job_tests_default_features_with_hyperscan() {
     let macos_block = text
         .split("macos-build:")
         .nth(1)
-        .and_then(|rest| rest.split("\n  feature-matrix:").next())
+        .and_then(|rest| rest.split("\n  ci-verdict:").next())
         .expect("ci.yml must define macos-build job");
 
     let exercises_default = macos_block.lines().any(|line| {
