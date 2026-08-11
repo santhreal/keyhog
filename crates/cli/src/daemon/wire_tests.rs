@@ -286,10 +286,11 @@ async fn daemon_frame_rejects_oversized_length_prefix() {
     );
 }
 
-/// Locks the v14 bump: daemon-local incremental cache state changes the
-/// MassFilesystemBegin frame, so older peers must fail at Hello.
+/// Locks the v14 bump: daemon-local filesystem scans now carry incremental
+/// cache state and stream bounded responses after one drain request. Older
+/// peers must fail at Hello instead of disagreeing about frame cardinality.
 #[test]
-fn daemon_wire_version_is_v14_with_mass_incremental_state() {
+fn daemon_wire_version_is_v14_with_mass_filesystem_protocol() {
     assert_eq!(WIRE_VERSION, 14);
 }
 
@@ -310,6 +311,19 @@ async fn daemon_wire_v14_mass_incremental_cache_roundtrips() {
         reencoded, encoded,
         "the exact incremental cache identity must survive the wire boundary"
     );
+}
+
+#[tokio::test]
+async fn daemon_wire_v14_mass_filesystem_drain_roundtrips() {
+    let (mut client, mut server) = tokio::io::duplex(1024);
+    frame::write_request(&mut client, &Request::MassFilesystemDrain)
+        .await
+        .expect("write mass filesystem drain");
+    let request = frame::read_request(&mut server)
+        .await
+        .expect("read request")
+        .expect("mass filesystem drain frame");
+    assert!(matches!(request, Request::MassFilesystemDrain));
 }
 
 /// The v12 `profile` opt-in must survive the frame round-trip verbatim on

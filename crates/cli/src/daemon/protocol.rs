@@ -76,8 +76,8 @@ use std::collections::BTreeMap;
 ///   `GuardStatus`, and `GuardReconcile` root control frames. The
 ///   client validates conservation of object count and bytes and
 ///   reacquires the index fingerprint before accepting the receipt.
-/// * v14 - lets daemon-local filesystem scans consume and publish the same
-///   spec-bound Merkle index as in-process incremental scans.
+/// * v14 - lets daemon-local filesystem scans consume and publish spec-bound
+///   Merkle state, then stream bounded batch responses after one drain request.
 pub(crate) const WIRE_VERSION: u32 = 14;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -210,8 +210,9 @@ pub(crate) enum Request {
         reader_threads: Option<usize>,
         incremental_cache: Option<String>,
     },
-    /// Pull and scan the next bounded daemon-local filesystem batch.
-    MassFilesystemNext,
+    /// Scan and stream every bounded batch from the active daemon-local
+    /// filesystem source. The terminal response is `MassFilesystemComplete`.
+    MassFilesystemDrain,
     /// Finish the transaction, clear fragment state, and release the worker.
     MassEnd,
     /// Liveness + cheap status (uptime, scans served, detector count).
@@ -910,7 +911,7 @@ pub(crate) fn request_kind(request: &Request) -> &'static str {
         Request::MassBegin { .. } => "MassBegin",
         Request::MassBatch { .. } => "MassBatch",
         Request::MassFilesystemBegin { .. } => "MassFilesystemBegin",
-        Request::MassFilesystemNext => "MassFilesystemNext",
+        Request::MassFilesystemDrain => "MassFilesystemDrain",
         Request::MassEnd => "MassEnd",
         Request::Health => "Health",
         Request::Shutdown => "Shutdown",

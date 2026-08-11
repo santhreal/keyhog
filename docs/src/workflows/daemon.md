@@ -240,7 +240,7 @@ On Unix, omitting `--daemon` is equivalent to `--daemon=auto`. Bare
 |---|---|---|---|
 | `--daemon=auto` or omitted | Use the daemon. A connection, handshake, request, or daemon execution error is printed, then the request is retried in process. | Run in process. A stale socket that exists is attempted, so its failure is printed before the retry. | Run in process without sending a daemon request. An explicit `--daemon` prints the reason. |
 | `--daemon=on` or bare `--daemon` | Require the daemon result. | Exit with the specific availability, trust, identity, or protocol error. | Exit with the specific unsupported requirement. |
-| `--daemon=mass` | Require a daemon started with `--mass`, stream bounded source batches, and validate its execution receipt. | Exit with the specific availability, trust, identity, or protocol error. | Exit before source acquisition when scanner policy is incompatible. |
+| `--daemon=mass` | Require a daemon started with `--mass`, stream bounded source batches, and validate its execution receipt. Daemon-local filesystem batches retire as a bounded response stream after one drain request. | Exit with the specific availability, trust, identity, or protocol error. | Exit before source acquisition when scanner policy is incompatible. |
 | `--daemon=off` | Do not connect. | Run in process. | Run in process. |
 
 `--daemon=on`, bare `--daemon`, and `--daemon=mass` require the daemon route.

@@ -809,6 +809,10 @@ batch memory, so the same route can process a TB-scale tree without collecting
 it in RAM. Local file payload bytes never cross the IPC socket. The daemon holds
 an exclusive fragment-state lease for the transaction and clears that state
 when the client finishes, disconnects, or fails.
+Daemon-local acquisition starts with one drain request. The daemon then emits
+one bounded response per batch and a terminal completion response, so filesystem
+reading, scanning, and client retirement continue under socket backpressure
+without a request round trip between batches.
 
 Add `--incremental --incremental-cache <PATH>` to a daemon-local filesystem
 scan to persist the spec-bound Merkle generation in the daemon. Unchanged clean

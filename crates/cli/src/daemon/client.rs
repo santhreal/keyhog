@@ -1,5 +1,5 @@
-//! Daemon client: connect to a running `keyhog daemon` and exchange
-//! one request/response pair at a time over a Unix socket.
+//! Daemon client: connect to a running `keyhog daemon`, exchange ordinary
+//! request/response pairs, and receive the bounded mass-filesystem response stream.
 
 use crate::daemon::frame;
 use crate::daemon::protocol::{response_kind, Request, Response, WarmBackendStatus, WIRE_VERSION};
@@ -48,8 +48,8 @@ fn request_timeout(request: &Request) -> Duration {
         Request::ScanText { .. } => DAEMON_SCAN_TEXT_TIMEOUT,
         Request::ScanPath { .. }
         | Request::MassBatch { .. }
-        | Request::MassFilesystemNext
         | Request::MassFilesystemBegin { .. }
+        | Request::MassFilesystemDrain
         | Request::GuardCommitBegin { .. }
         | Request::GuardCommitBlob { .. }
         | Request::GuardCommitFinish { .. }

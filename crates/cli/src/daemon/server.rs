@@ -1362,6 +1362,95 @@ impl Drop for MassSession {
     }
 }
 
+async fn stream_mass_filesystem(
+    state: &ServerState,
+    session: Option<&mut MassSession>,
+    transport: &mut frame::ServerTransport,
+) -> Result<()> {
+    let Some(session) = session else {
+        return send_response(
+            transport,
+            Response::Error {
+                message: "daemon: MassFilesystemDrain requires an active MassBegin transaction"
+                    .to_string(),
+            },
+        )
+        .await;
+    };
+    if session.filesystem_batches.is_none() {
+        return send_response(
+            transport,
+            Response::Error {
+                message:
+                    "daemon: MassFilesystemDrain requires an active daemon-local filesystem source"
+                        .to_string(),
+            },
+        )
+        .await;
+    }
+
+    loop {
+        let message = match session.filesystem_batches.as_mut() {
+            Some(receiver) => receiver.recv().await,
+            None => {
+                return send_response(
+                    transport,
+                    Response::Error {
+                        message:
+                            "daemon: local filesystem source ended before its terminal response"
+                                .to_string(),
+                    },
+                )
+                .await;
+            }
+        };
+        let response = match message {
+            Some(MassFilesystemMessage::Batch(chunks)) => {
+                let batch = scan_mass_batch(state, chunks, session.dogfood, session.profile).await;
+                session.record(&batch);
+                batch.response
+            }
+            Some(MassFilesystemMessage::Complete(source_coverage_gaps)) => {
+                session.filesystem_batches = None;
+                if source_coverage_gaps.source_failed > 0 {
+                    session.incremental_unpublishable = true;
+                }
+                match session.persist_incremental() {
+                    Ok(()) => Response::MassFilesystemComplete {
+                        source_coverage_gaps,
+                    },
+                    Err(error) => Response::MassFilesystemIncrementalError {
+                        message: format!(
+                            "daemon: cannot persist mass incremental cache: {error}"
+                        ),
+                    },
+                }
+            }
+            Some(MassFilesystemMessage::Error(message)) => {
+                session.incremental_unpublishable = true;
+                session.filesystem_batches = None;
+                Response::Error { message }
+            }
+            None => {
+                session.incremental_unpublishable = true;
+                session.filesystem_batches = None;
+                Response::Error {
+                    message: "daemon: local filesystem producer ended without a completion receipt"
+                        .to_string(),
+                }
+            }
+        };
+        let terminal = !matches!(response, Response::ScanResults { .. });
+        if terminal {
+            session.filesystem_batches = None;
+        }
+        send_response(transport, response).await?;
+        if terminal {
+            return Ok(());
+        }
+    }
+}
+
 async fn handle_connection(
     state: Arc<ServerState>,
     stream: UnixStream,
@@ -1415,6 +1504,15 @@ async fn handle_connection(
 
         if let Some(refusal) = admission_refusal(&state, admission, &request) {
             send_response(&mut transport, refusal).await?;
+            continue;
+        }
+
+        if matches!(request, Request::MassFilesystemDrain) {
+            let work_slot = RequestSlot::claim(&state);
+            let streamed =
+                stream_mass_filesystem(&state, mass_session.as_mut(), &mut transport).await;
+            drop(work_slot);
+            streamed?;
             continue;
         }
 
@@ -1519,55 +1617,9 @@ async fn handle_connection(
                             .to_string(),
                 },
             },
-            Request::MassFilesystemNext => match mass_session.as_mut() {
-                Some(session) => match session.filesystem_batches.as_mut() {
-                    Some(receiver) => match receiver.recv().await {
-                        Some(MassFilesystemMessage::Batch(chunks)) => {
-                            let batch =
-                                scan_mass_batch(&state, chunks, session.dogfood, session.profile)
-                                    .await;
-                            session.record(&batch);
-                            batch.response
-                        }
-                        Some(MassFilesystemMessage::Complete(source_coverage_gaps)) => {
-                            session.filesystem_batches = None;
-                            if source_coverage_gaps.source_failed > 0 {
-                                session.incremental_unpublishable = true;
-                            }
-                            match session.persist_incremental() {
-                                Ok(()) => Response::MassFilesystemComplete {
-                                    source_coverage_gaps,
-                                },
-                                Err(error) => Response::MassFilesystemIncrementalError {
-                                    message: format!(
-                                        "daemon: cannot persist mass incremental cache: {error}"
-                                    ),
-                                },
-                            }
-                        }
-                        Some(MassFilesystemMessage::Error(message)) => {
-                            session.incremental_unpublishable = true;
-                            session.filesystem_batches = None;
-                            Response::Error { message }
-                        }
-                        None => {
-                            session.incremental_unpublishable = true;
-                            session.filesystem_batches = None;
-                            Response::Error {
-                                message: "daemon: local filesystem producer ended without a completion receipt"
-                                    .to_string(),
-                            }
-                        }
-                    },
-                    None => Response::Error {
-                        message: "daemon: MassFilesystemNext requires an active daemon-local filesystem source"
-                            .to_string(),
-                    },
-                },
-                None => Response::Error {
-                    message: "daemon: MassFilesystemNext requires an active MassBegin transaction"
-                        .to_string(),
-                },
+            Request::MassFilesystemDrain => Response::Error {
+                message: "daemon: MassFilesystemDrain reached the non-streaming dispatch path"
+                    .to_string(),
             },
             Request::MassEnd
                 if mass_session
@@ -1636,7 +1688,7 @@ fn is_work_request(request: &Request) -> bool {
             | Request::MassBegin { .. }
             | Request::MassBatch { .. }
             | Request::MassFilesystemBegin { .. }
-            | Request::MassFilesystemNext
+            | Request::MassFilesystemDrain
             | Request::MassEnd
             | Request::GuardCommitBegin { .. }
             | Request::GuardCommitBlob { .. }
@@ -1791,7 +1843,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
         Request::MassBegin { .. }
         | Request::MassBatch { .. }
         | Request::MassFilesystemBegin { .. }
-        | Request::MassFilesystemNext
+        | Request::MassFilesystemDrain
         | Request::MassEnd => Response::Error {
             message: "daemon: mass transaction request reached invalid dispatch state".to_string(),
         },
