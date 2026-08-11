@@ -210,10 +210,19 @@ fn guard_commit_auto_falls_back_to_in_process() {
     std::fs::write(repo.join("staged_clean.txt"), "ok\n").unwrap();
     git_add(repo, "staged_clean.txt");
 
-    // No daemon running; auto mode should fall back to in-process.
+    // No daemon is running. Pin the diagnostic CPU route so this test isolates
+    // daemon fallback from the independent fail-closed autoroute contract.
     let output = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
-        .args(["scan", "--git-staged", "--daemon=auto", "--format", "json"])
+        .args([
+            "scan",
+            "--git-staged",
+            "--daemon=auto",
+            "--backend",
+            "cpu",
+            "--format",
+            "json",
+        ])
         .current_dir(repo)
         .arg(".")
         .output()
