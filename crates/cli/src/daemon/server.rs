@@ -982,85 +982,6 @@ fn is_system_path(path: &std::path::Path) -> bool {
     }
     false
 }
-#[cfg(test)]
-mod system_path_tests {
-    use super::is_system_path;
-    use std::path::Path;
-
-    #[test]
-    fn rejects_filesystem_root_and_system_prefixes() {
-        assert!(is_system_path(Path::new("/")));
-        assert!(is_system_path(Path::new("/etc")));
-        assert!(is_system_path(Path::new("/etc/passwd")));
-        assert!(is_system_path(Path::new("/var/lib/foo")));
-        assert!(is_system_path(Path::new("/credentials")));
-    }
-
-    #[test]
-    fn rejects_home_and_credential_stores() {
-        let home = std::env::var("HOME").expect("HOME");
-        assert!(is_system_path(Path::new(&home)));
-        assert!(is_system_path(Path::new(&format!("{home}/.ssh"))));
-        assert!(is_system_path(Path::new(&format!(
-            "{home}/.aws/credentials"
-        ))));
-        assert!(is_system_path(Path::new(&format!("{home}/.gnupg"))));
-        // Project trees under home remain allowed.
-        assert!(!is_system_path(Path::new(&format!("{home}/src/keyhog"))));
-    }
-}
-
-#[cfg(test)]
-mod guard_event_action_tests {
-    use super::{
-        baseline_terminal_transition, guard_event_action, BaselineResult, GuardEventAction,
-    };
-    use keyhog_core::guard_state::{GuardRootState, GuardTransition};
-
-    #[test]
-    fn overflow_during_indexing_defers_coverage_lost() {
-        assert_eq!(
-            guard_event_action(Some(GuardRootState::Indexing), true),
-            GuardEventAction::MarkDuringIndexing {
-                coverage_lost: true
-            }
-        );
-    }
-
-    #[test]
-    fn events_during_indexing_mark_dirty_only() {
-        assert_eq!(
-            guard_event_action(Some(GuardRootState::Indexing), false),
-            GuardEventAction::MarkDuringIndexing {
-                coverage_lost: false
-            }
-        );
-    }
-
-    #[test]
-    fn overflow_on_current_uses_coverage_lost() {
-        assert_eq!(
-            guard_event_action(Some(GuardRootState::Current), true),
-            GuardEventAction::Transition(GuardTransition::CoverageLost)
-        );
-    }
-
-    #[test]
-    fn clean_with_indexing_overflow_is_degraded() {
-        assert_eq!(
-            baseline_terminal_transition(BaselineResult::Clean, true),
-            GuardTransition::ReconciliationDegraded
-        );
-        assert_eq!(
-            baseline_terminal_transition(BaselineResult::Clean, false),
-            GuardTransition::ReconciliationClean
-        );
-        assert_eq!(
-            baseline_terminal_transition(BaselineResult::Findings, true),
-            GuardTransition::ReconciliationFindings
-        );
-    }
-}
 
 async fn run_accept_loop(
     listener: UnixListener,
@@ -3396,6 +3317,14 @@ fn source_coverage_gaps_since(before: keyhog_sources::SkipCounts) -> SourceCover
         source_failed: 0,
     }
 }
+#[cfg(test)]
+#[path = "../../tests/unit/daemon_server_system_path.rs"]
+mod system_path_tests;
+
+#[cfg(test)]
+#[path = "../../tests/unit/daemon_server_guard_event_action.rs"]
+mod guard_event_action_tests;
+
 // Sibling file (daemon/server_tests.rs), not server/ subdir.
 #[path = "server_tests.rs"]
 mod server_tests;

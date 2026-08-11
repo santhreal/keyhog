@@ -37,6 +37,7 @@ const BASE_SUBCOMMANDS: &[&str] = &[
     "diff",
     "doctor",
     "explain",
+    "guard",
     "hook",
     "repair",
     "scan",

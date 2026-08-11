@@ -672,6 +672,7 @@ diagnostic override and does not replace autoroute evidence.
 |----------|-------|---------|-------------|
 | `--autoroute-cache` | `PATH` |  | Override the persistent autoroute cache file every probe writes to. Must be a writable path. Calibration exists to PERSIST routing decisions, so `off` (which disables persistence) is rejected up front rather than failing every probe closed. Defaults to the same cache a normal scan reads, so a plain `keyhog calibrate-autoroute` primes exactly what later scans resolve against. |
 | `--execution-packs` *(hidden)* | `DIR` |  | Bind persisted route evidence to this authenticated execution-pack generation |
+| `--measurement-receipts` *(hidden)* | `PATH` |  | Internal receipt sink used by the all-policy parent transaction |
 | `--policy` | `POLICY` | `all` | Select which scan policy to calibrate. `all` preserves the install-time sweep. Select one policy when you need to repair or refresh only the configuration you run. Possible values: `default`, `fast`, `deep`, `precision`, `all`. |
 | `--quiet` |  |  | Suppress the per-probe progress lines; print only the final summary |
 <!-- /keyhog-generated: cli-reference command="calibrate-autoroute" -->

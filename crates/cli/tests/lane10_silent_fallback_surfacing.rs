@@ -213,10 +213,18 @@ fn scan_daemon_fallback_warning_uses_resolved_daemon_mode() {
         .split("DaemonRoute::Opportunistic => {")
         .nth(1)
         .expect("scan.rs must have a DaemonRoute::Opportunistic arm");
+    // Prefer the warm-route acquire_via_daemon fallback. The git-staged guard
+    // commit arm also constructs a ScanOrchestrator and would truncate the
+    // Opportunistic block before the operator-visible auto-route warning.
     let fallback_arm = arm
-        .split("let orchestrator = ScanOrchestrator::new(args)?;")
-        .next()
-        .unwrap_or(arm);
+        .split("match acquire_via_daemon(&mut policy.effective_args).await {")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("DaemonRoute::Rejected(reason) =>")
+                .next()
+                .map(str::to_string)
+        })
+        .expect("scan.rs Opportunistic arm must fall back through acquire_via_daemon");
 
     assert!(
         !fallback_arm.contains("matches!(args.daemon,"),

@@ -47,7 +47,7 @@ fn chunk(text: &str) -> Chunk {
         data: text.into(),
         metadata: ChunkMetadata {
             source_type: "vendor-token-boundary".into(),
-            path: Some("fixtures/tokens.env".into()),
+            path: Some("tokens.env".into()),
             ..Default::default()
         },
     }

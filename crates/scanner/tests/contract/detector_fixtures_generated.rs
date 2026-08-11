@@ -27123,8 +27123,8 @@ negative_fixture!(
 positive_fixture!(
     redis_sentinel_credentials_evasion_0,
     "redis-sentinel-credentials",
-    r#"Authorization: Bearer token="RedisSentPass123""#,
-    r#"token="RedisSentPass123"#,
+    r##"# sentinel auth-pass mymaster "RedisSentPass123""##,
+    r#"RedisSentPass123"#,
     r#"redis-sentinel-credentials.txt"#
 );
 contract_schema!(
@@ -37385,14 +37385,14 @@ contract_schema!(
 positive_fixture!(
     wordpress_api_token_positive_0,
     "wordpress-api-token",
-    r#"access-token '    : "  '     =   : =     =  '' =     '  '" '=    " " =:  lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc"#,
+    r#"wpcom access-token '    : "  '     =   : =     =  '' =     '  '" '=    " " =:  lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc"#,
     r#"lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc"#,
     r#"wordpress-api-token.txt"#
 );
 positive_fixture!(
     wordpress_api_token_positive_1,
     "wordpress-api-token",
-    r#"access-token '    : "  '     =   : =     =  '' =     '  '" '=    " " =:  lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc"#,
+    r#"wpcom access-token '    : "  '     =   : =     =  '' =     '  '" '=    " " =:  lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc"#,
     r#"lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc"#,
     r#"wordpress-api-token.txt"#
 );

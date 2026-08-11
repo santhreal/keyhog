@@ -334,25 +334,14 @@ jobs:
             sleep $((i * 2))
             if [ "$i" -eq 5 ]; then exit 1; fi
           done
-      - run: cargo test -p keyhog-core --lib
+      # Dedupe: focused-integration owns core/scanner all_tests; sources job owns
+      # sources all_tests. library-surface keeps lean scanner feature boundary,
+      # CLI/docs lib tests, verifier lib units, and profile contracts only.
       - run: cargo check -p keyhog-core --all-targets
-      # Hosted runners have no accelerator. Keep this broad library gate on the
-      # complete CPU/SIMD detection stack; real GPU execution and parity belong
-      # to the GPU-labelled fleet lane, where an unavailable adapter is a hard
-      # configuration failure instead of a false failure on GitHub hardware.
-      # Several library contracts compile the complete detector corpus. Bound
-      # test concurrency so high-core runners do not multiply that resident set.
-      # The public scanner crate promises a dependency-light build with every
-      # optional detector subsystem absent. Compile that exact feature boundary.
       - run: cargo check -p keyhog-scanner --lib --no-default-features
       - run: cargo test -p keyhog-scanner --lib --no-default-features --features ci-lean -- --test-threads=4
       - run: cargo test -p keyhog --lib
-      # verifier + sources inline unit tests: previously only their `--test`
-      # aggregators ran in CI, so a lib-internal unit test (e.g. the
-      # verification-cache eviction contracts) was never executed on the
-      # default build.
       - run: cargo test -p keyhog-verifier --lib
-      - run: cargo test -p keyhog-sources --lib
       - name: Profiler runtime contracts
         run: cargo test -p keyhog-profile
 

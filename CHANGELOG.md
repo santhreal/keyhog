@@ -3,6 +3,9 @@
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+- Cut duplicate required library-surface core/sources `--lib` suites already owned by focused/sources jobs.
+- Fix CLI/docs/gate drift from unfinished `guard` landing: snapshot, exit-code help, docs reference, HOME allowlist, path-split daemon/guard unit tests, sources discovery no-unwrap move.
+- Adjust WordPress/redis-sentinel fixtures and vendor-token boundary path metadata for focused scanner contracts.
 - Align required CI with MUST-RETURN gates (library/sources/CLI/detector/install-scripts/feature-matrix); keep macos/fuzz/windows/static overnight. Re-enable path-filtered action-e2e and push/PR keyhog dogfood.
 - Required CI again gates feature-matrix compile/dogfood coverage and the install-scripts battery (scenarios/edge cases/static analysis), not only overnight.
 - Required CI covers library surface, sources/CLI aggregators, detector recall contracts, SARIF compliance, feature-matrix, and install-scripts. Overnight keeps macos/windows builds, fuzz-smoke, static linkage, CLI property/adversarial/reliability, and scanner property fuzz.

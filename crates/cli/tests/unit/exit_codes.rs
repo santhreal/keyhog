@@ -212,7 +212,7 @@ fn generated_help_is_byte_identical_to_the_documented_block() {
 10  Live credentials found under scan --verify, or update available under update --check\n  \
 11  Scanner thread panicked mid-scan (state is unreliable)\n  \
 12  Required GPU unavailable (--require-gpu, explicit gpu, or proof-selected daemon GPU before readiness)\n  \
-13  Requested source failed or input coverage was incomplete\n  \
+13  Requested source failed, input coverage incomplete, or guard root degraded/stale/stopped/indexing (run `keyhog guard status <root>` for the repair command)\n  \
 130 Interrupted (SIGINT / Ctrl-C)";
     assert_eq!(help(), expected);
 }

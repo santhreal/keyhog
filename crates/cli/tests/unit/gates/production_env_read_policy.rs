@@ -109,6 +109,12 @@ fn allowed_env_read(rel: &str, name: &str) -> bool {
                 | "crates/cli/src/orchestrator/run.rs"
         ),
         "XDG_RUNTIME_DIR" => rel == "crates/cli/src/daemon/server.rs",
+        // HOME: refuse scanning the operator home root / credential stores, and
+        // expand `~` in daemon state paths.
+        "HOME" => matches!(
+            rel,
+            "crates/cli/src/daemon/server.rs" | "crates/cli/src/subcommands/daemon.rs"
+        ),
         "AWS_ACCESS_KEY_ID"
         | "AWS_SECRET_ACCESS_KEY"
         | "AWS_REGION"
