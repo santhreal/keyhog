@@ -25,6 +25,7 @@ use crate::hw_probe::ScanBackend;
 use crate::types::ScannerTuningConfig;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -389,11 +390,47 @@ pub struct LoadedMatcherArtifact {
     pub sections: CompiledRouteMatcherSections,
 }
 
-fn parse_loaded_matcher_artifact(
+#[derive(Clone, Debug)]
+struct MatcherArtifactSectionRanges {
+    backend: ExecutionPackBackend,
+    literal_index: Range<usize>,
+    regex_programs: Range<usize>,
+    suppression_policy: Range<usize>,
+}
+
+#[derive(Debug)]
+struct BorrowedMatcherArtifact {
+    bytes: Vec<u8>,
+    ranges: MatcherArtifactSectionRanges,
+}
+
+impl BorrowedMatcherArtifact {
+    fn section_bytes(&self) -> (&[u8], &[u8], &[u8]) {
+        (
+            &self.bytes[self.ranges.literal_index.clone()],
+            &self.bytes[self.ranges.regex_programs.clone()],
+            &self.bytes[self.ranges.suppression_policy.clone()],
+        )
+    }
+
+    // Public loader compatibility only. The scanner startup path hydrates from
+    // `section_bytes` and never materializes this second owned section set.
+    fn to_owned_sections(&self) -> CompiledRouteMatcherSections {
+        let (literal_index, regex_programs, suppression_policy) = self.section_bytes();
+        CompiledRouteMatcherSections {
+            backend: self.ranges.backend,
+            literal_index: literal_index.to_vec(),
+            regex_programs: regex_programs.to_vec(),
+            suppression_policy: suppression_policy.to_vec(),
+        }
+    }
+}
+
+fn parse_matcher_artifact_ranges(
     path: &Path,
     bytes: &[u8],
     expected_identity: Option<&MatcherArtifactIdentity>,
-) -> std::result::Result<(MatcherArtifactIdentity, LoadedMatcherArtifact), String> {
+) -> std::result::Result<(MatcherArtifactIdentity, MatcherArtifactSectionRanges), String> {
     if bytes.len() < 8 {
         return Err(format!("matcher artifact {} is truncated", path.display()));
     }
@@ -442,12 +479,22 @@ fn parse_loaded_matcher_artifact(
     let stored_content_digest: [u8; 32] = read_exact(bytes, &mut offset, 32, path)?
         .try_into()
         .map_err(|_| format!("matcher artifact {} is truncated", path.display()))?;
+
     let literal_len = read_u32_le(bytes, &mut offset, path)? as usize;
-    let literal_index = read_exact(bytes, &mut offset, literal_len, path)?.to_vec();
+    let literal_start = offset;
+    read_exact(bytes, &mut offset, literal_len, path)?;
+    let literal_index = literal_start..offset;
+
     let regex_len = read_u32_le(bytes, &mut offset, path)? as usize;
-    let regex_programs = read_exact(bytes, &mut offset, regex_len, path)?.to_vec();
+    let regex_start = offset;
+    read_exact(bytes, &mut offset, regex_len, path)?;
+    let regex_programs = regex_start..offset;
+
     let supp_len = read_u32_le(bytes, &mut offset, path)? as usize;
-    let suppression_policy = read_exact(bytes, &mut offset, supp_len, path)?.to_vec();
+    let suppression_start = offset;
+    read_exact(bytes, &mut offset, supp_len, path)?;
+    let suppression_policy = suppression_start..offset;
+
     // v4: no trailing detector-IR blob. Reject unexpected trailing bytes so a
     // truncated/extended file cannot be accepted after the section digests.
     if offset != bytes.len() {
@@ -457,29 +504,46 @@ fn parse_loaded_matcher_artifact(
         ));
     }
 
-    let sections = CompiledRouteMatcherSections {
-        backend: parse_backend_name(&decoded_identity.backend).ok_or_else(|| {
-            format!(
-                "matcher artifact {} has unknown backend {}",
-                path.display(),
-                decoded_identity.backend
-            )
-        })?,
-        literal_index,
-        regex_programs,
-        suppression_policy,
-    };
-    let content = sections.content_digest();
+    let backend = parse_backend_name(&decoded_identity.backend).ok_or_else(|| {
+        format!(
+            "matcher artifact {} has unknown backend {}",
+            path.display(),
+            decoded_identity.backend
+        )
+    })?;
+    let content = CompiledRouteMatcherSections::content_digest_for(
+        &bytes[literal_index.clone()],
+        &bytes[regex_programs.clone()],
+        &bytes[suppression_policy.clone()],
+    );
     if content != stored_content_digest {
         return Err(format!(
             "matcher artifact {} content digest mismatch",
             path.display()
         ));
     }
-    // Intentionally skip validate_canonical here: hydrate/decode re-parses the
-    // section envelopes and fails closed. Avoiding a second 2.8 MiB JSON parse
-    // keeps second-run tiny-file CPU near the warm-daemon reference.
-    Ok((decoded_identity, LoadedMatcherArtifact { sections }))
+    // Hydration re-parses the section envelopes and fails closed. Avoiding a
+    // second canonical parse and keeping the sections borrowed from the capped
+    // file buffer removes the startup-path copies.
+    Ok((
+        decoded_identity,
+        MatcherArtifactSectionRanges {
+            backend,
+            literal_index,
+            regex_programs,
+            suppression_policy,
+        },
+    ))
+}
+
+fn load_borrowed_matcher_artifact(
+    cache_dir: &Path,
+    identity: &MatcherArtifactIdentity,
+) -> std::result::Result<BorrowedMatcherArtifact, String> {
+    let path = cache_dir.join(identity.cache_filename());
+    let bytes = read_matcher_artifact_bytes(&path)?;
+    let (_identity, ranges) = parse_matcher_artifact_ranges(&path, &bytes, Some(identity))?;
+    Ok(BorrowedMatcherArtifact { bytes, ranges })
 }
 
 /// Load a MatcherArtifact for `identity` from `cache_dir`.
@@ -495,10 +559,10 @@ pub fn load_matcher_artifact_with_ir(
     cache_dir: &Path,
     identity: &MatcherArtifactIdentity,
 ) -> std::result::Result<LoadedMatcherArtifact, String> {
-    let path = cache_dir.join(identity.cache_filename());
-    let bytes = read_matcher_artifact_bytes(&path)?;
-    let (_identity, loaded) = parse_loaded_matcher_artifact(&path, &bytes, Some(identity))?;
-    Ok(loaded)
+    let loaded = load_borrowed_matcher_artifact(cache_dir, identity)?;
+    Ok(LoadedMatcherArtifact {
+        sections: loaded.to_owned_sections(),
+    })
 }
 
 fn read_capped_matcher_artifact(
@@ -878,10 +942,17 @@ pub fn compile_shared_with_matcher_artifact_cache(
     // (hydrate/compile failure after a successful load), do not immediately
     // rewrite the same identity - that would delete+recreate forever.
     let mut allow_store = true;
-    let rebuild_outcome = match load_matcher_artifact_with_ir(cache_dir, &identity) {
+    let rebuild_outcome = match load_borrowed_matcher_artifact(cache_dir, &identity) {
         Ok(loaded) => {
-            match hydrate_matcher_artifact_state(&loaded.sections, detector_digest, sorted.as_ref())
-            {
+            let (literal_index, regex_programs, suppression_policy) = loaded.section_bytes();
+            match hydrate_matcher_artifact_bytes(
+                loaded.ranges.backend,
+                literal_index,
+                regex_programs,
+                suppression_policy,
+                detector_digest,
+                sorted.as_ref(),
+            ) {
                 Ok(state) => {
                     match CompiledScanner::compile_shared_from_compile_state(
                         Arc::clone(&sorted),
@@ -1072,15 +1143,32 @@ fn hydrate_matcher_artifact_state(
     detector_digest: [u8; 32],
     detectors: &[keyhog_core::DetectorSpec],
 ) -> Result<CompileState> {
-    // Outer identity/content digests already bound these bytes to the live
-    // process (and `--lockdown` disables the cache). Skip only the untrusted-pack
-    // JSON canonical re-encode (~1 CPU-s on a ~6 MiB artifact); still run
-    // companion validation before constructing LazyRegex programs.
-    decode_local_matcher_artifact_compile_state_sections(
+    hydrate_matcher_artifact_bytes(
         sections.backend,
         &sections.literal_index,
         &sections.regex_programs,
         &sections.suppression_policy,
+        detector_digest,
+        detectors,
+    )
+}
+
+fn hydrate_matcher_artifact_bytes(
+    backend: ExecutionPackBackend,
+    literal_index: &[u8],
+    regex_programs: &[u8],
+    suppression_policy: &[u8],
+    detector_digest: [u8; 32],
+    detectors: &[keyhog_core::DetectorSpec],
+) -> Result<CompileState> {
+    // Outer identity/content digests already bind these bytes to the live
+    // process (and `--lockdown` disables the cache). Keep the capped artifact
+    // buffer alive through decode and borrow its section ranges directly.
+    decode_local_matcher_artifact_compile_state_sections(
+        backend,
+        literal_index,
+        regex_programs,
+        suppression_policy,
         detector_digest,
         detectors,
     )

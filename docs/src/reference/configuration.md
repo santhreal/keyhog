@@ -422,7 +422,26 @@ then `--autoroute-cache`. The value must be an absolute file path or `off`.
 The cache path is printed by `keyhog config --effective`; it is storage
 configuration, not part of the scan identity digest.
 
-`matcher_cache` overrides the MatcherArtifact cache directory used to reuse the eager compiled matcher graph across process invocations. This is not the Hyperscan `--cache-dir` database cache: a directory that only contains `hs-*.db` shards still pays the detector-spec compile floor. When unset, KeyHog defaults to `dirs::cache_dir()/keyhog-matcher-artifacts` (sibling of the Hyperscan `keyhog/` cache root so lockdown's past-findings audit of `<cache>/keyhog` is not tripped by matcher graphs). Pass an absolute directory or `off`. The trust model matches Hyperscan `.db` shards: the artifact is unsigned local state bound by binary/config/detector digests under a uid-owned allowlisted path; `--lockdown` disables MatcherArtifact entirely rather than reading unsigned detector graphs. The cache key binds binary identity, target/features, detector corpus digest, matcher-relevant config digest (scanner tuning / disabled detectors / confidence floors / regex DFA limit - not thread counts, exclude paths, or volatile cache locations), pack/generation identity when packs apply, and backend-relevant runtime identity. A mismatch misses and rebuilds; a foreign matcher is never served. LazyRegex programs remain compile-on-first-use, so peak RSS stays near the MemoryFootprint baseline rather than retaining every detector regex.
+`matcher_cache` overrides the MatcherArtifact cache directory used to reuse the
+eager compiled matcher graph across process invocations. This is not the
+Hyperscan `--cache-dir` database cache: a directory that only contains
+`hs-*.db` shards still pays the detector-spec compile floor. When unset, KeyHog
+defaults to `dirs::cache_dir()/keyhog-matcher-artifacts` (sibling of the
+Hyperscan `keyhog/` cache root so lockdown's past-findings audit of
+`<cache>/keyhog` is not tripped by matcher graphs). Pass an absolute directory
+or `off`. The trust model matches Hyperscan `.db` shards: the artifact is
+unsigned local state bound by binary/config/detector digests under a uid-owned
+allowlisted path; `--lockdown` disables MatcherArtifact entirely rather than
+reading unsigned detector graphs. The cache key binds binary identity,
+target/features, detector corpus digest, matcher-relevant config digest
+(scanner tuning / disabled detectors / confidence floors / regex DFA limit,
+not thread counts, exclude paths, or volatile cache locations),
+pack/generation identity when packs apply, and backend-relevant runtime
+identity. A mismatch misses and rebuilds; a foreign matcher is never served.
+Cache hits validate and decode each matcher section directly from one capped
+artifact buffer instead of allocating a second complete section set. LazyRegex
+programs remain compile-on-first-use, so peak RSS stays near the
+MemoryFootprint baseline rather than retaining every detector regex.
 
 `calibration_cache` opts a scan into per-detector Bayesian confidence
 calibration written by `keyhog calibrate`. The scanner never reads the default

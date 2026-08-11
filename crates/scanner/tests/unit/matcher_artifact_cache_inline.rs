@@ -62,3 +62,71 @@ fn eviction_bounds_retained_artifacts_and_ignores_other_files() {
     assert_eq!(retained, MATCHER_ARTIFACT_MAX_ENTRIES);
     assert!(unrelated.exists());
 }
+
+/// WHY: cache hits must decode directly from the bounded file buffer; copying
+/// every persisted matcher section recreated the startup allocation floor.
+#[test]
+fn startup_parser_borrows_every_matcher_section_from_one_buffer() {
+    let identity = MatcherArtifactIdentity {
+        version: MATCHER_ARTIFACT_VERSION,
+        binary_digest: "binary".to_owned(),
+        binary_version: "version".to_owned(),
+        git_hash: "commit".to_owned(),
+        target: "target".to_owned(),
+        features: "features".to_owned(),
+        detector_corpus_digest: "detectors".to_owned(),
+        resolved_config_digest: "config".to_owned(),
+        pack_generation: "none".to_owned(),
+        backend: "Cpu".to_owned(),
+        runtime_identity: "none".to_owned(),
+        route_matcher_section_version: crate::execution_pack::ROUTE_MATCHER_SECTION_VERSION,
+    };
+    let literal = br#"{"literal":"section"}"#;
+    let regex = br#"{"regex":"section"}"#;
+    let suppression = br#"{"suppression":"section"}"#;
+    let identity_json = serde_json::to_vec(&identity).expect("serialize identity");
+    let content_digest =
+        CompiledRouteMatcherSections::content_digest_for(literal, regex, suppression);
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(MATCHER_ARTIFACT_MAGIC);
+    bytes.extend_from_slice(&MATCHER_ARTIFACT_VERSION.to_le_bytes());
+    bytes.extend_from_slice(
+        &u32::try_from(identity_json.len())
+            .expect("identity length")
+            .to_le_bytes(),
+    );
+    bytes.extend_from_slice(&identity_json);
+    bytes.extend_from_slice(&identity.digest());
+    bytes.extend_from_slice(&content_digest);
+    for section in [literal.as_slice(), regex.as_slice(), suppression.as_slice()] {
+        bytes.extend_from_slice(
+            &u32::try_from(section.len())
+                .expect("section length")
+                .to_le_bytes(),
+        );
+        bytes.extend_from_slice(section);
+    }
+
+    let path = std::path::Path::new("borrowed.khm");
+    let (_, ranges) =
+        parse_matcher_artifact_ranges(path, &bytes, Some(&identity)).expect("parse artifact");
+    let loaded = BorrowedMatcherArtifact { bytes, ranges };
+    let base = loaded.bytes.as_ptr() as usize;
+    let end = base + loaded.bytes.len();
+    let (loaded_literal, loaded_regex, loaded_suppression) = loaded.section_bytes();
+    for section in [loaded_literal, loaded_regex, loaded_suppression] {
+        let address = section.as_ptr() as usize;
+        assert!(
+            address >= base && address + section.len() <= end,
+            "matcher section was not borrowed from the capped artifact buffer"
+        );
+    }
+    assert_eq!(loaded_literal, literal);
+    assert_eq!(loaded_regex, regex);
+    assert_eq!(loaded_suppression, suppression);
+
+    let owned = loaded.to_owned_sections();
+    assert_eq!(owned.literal_index, literal);
+    assert_eq!(owned.regex_programs, regex);
+    assert_eq!(owned.suppression_policy, suppression);
+}
