@@ -741,66 +741,25 @@ backend/cache/daemon/OS/GPU matrix.
 ## GPU-backed mass daemon workers
 
 The optional Unix mass daemon keeps one compiled scanner and its calibrated
-CPU, Hyperscan, CUDA, Metal, or WGPU backend state warm. Local filesystem scans send
-only canonical root and source-policy metadata; the daemon reads and batches
-those bytes in its own process. Git, binary, remote, and cloud sources that
-require client-side credentials still use protected bounded chunk frames:
+backend state warm. Local filesystem scans send only root and source-policy
+metadata; the daemon reads and batches those bytes in its own process. Git,
+binary, remote, and cloud sources that require client-side credentials still
+use protected bounded chunk frames:
 
 ```sh
-# Calibrate on this worker class, then run the service in the foreground
-# or under a service manager.
 keyhog calibrate-autoroute --policy default
 keyhog daemon start --mass
-
-# Stream one independently retryable inventory partition.
 keyhog scan --daemon=mass /srv/inventory/team-a \
   --format json-envelope --output team-a.json
-keyhog daemon status
 keyhog daemon stop
 ```
 
-Daemon-local filesystem batches and protected wire batches each carry at most
-8 MiB of raw payload and 1,024 chunks. Input size does not determine resident
-batch memory, so the same route can process a TB-scale tree without collecting
-it in RAM. Local file payload bytes never cross the IPC socket. The daemon holds
-an exclusive fragment-state lease for the transaction and clears that state
-when the client finishes, disconnects, or fails.
-Daemon-local acquisition starts with one drain request. The daemon then emits
-one bounded response per batch and a terminal completion response, so filesystem
-reading, scanning, and client retirement continue under socket backpressure
-without a request round trip between batches.
+`--daemon=mass` is an explicit required route that never falls back to an
+in-process scan. Batches are bounded (8 MiB, 1,024 chunks); input size does not
+determine resident memory. Incremental state, GPU-majority receipts, and
+forced-backend diagnostics are documented in the daemon guide.
 
-Add `--incremental --incremental-cache <PATH>` to a daemon-local filesystem
-scan to persist the spec-bound Merkle generation in the daemon. Unchanged clean
-files bypass file reads and scanner dispatch on later transactions while files
-that produced findings remain uncached and are rescanned.
-
-For protected wire batches, the client validates the completion receipt against
-the exact chunks and bytes it sent. For daemon-local paths, the daemon receipt
-is the source-byte authority. Stderr reports the transport, total and GPU
-batches, chunks, bytes, GPU byte share, whether GPU processed more than half of
-all bytes, and daemon-side throughput. Invalid receipt invariants fail instead
-of emitting a scan report. Acquisition gaps remain visible in the envelope and
-use exit `13`.
-
-Routine workers use persisted autoroute evidence. Add `--mass-gpu-primary` at
-daemon startup when a TB-scale worker must prove that GPU processed more than
-half of all non-empty payload bytes. The client fails before reporting when the
-terminal receipt is CPU-majority. To diagnose a GPU-only worker, force
-`--backend gpu-cuda-region-presence` or `--backend
-gpu-wgpu-region-presence`. A forced GPU service exits `12` when GPU startup
-fails and returns an error instead of substituting CPU after a runtime fault.
-An explicit backend remains a diagnostic override, not autoroute proof.
-
-`--daemon=mass` is an explicit required route. It never falls back to an
-in-process scan. Baseline state, live verification, lockdown, presets, detector
-overlays, custom allowlists, and scanner-policy overrides remain in-process
-contracts and are rejected before source acquisition. Incremental state is
-supported for daemon-local filesystem roots. Warm one-file and stdin requests
-remain available on the same socket through `--daemon=on`.
-
-See
-[daemon and warm scans](https://santhreal.github.io/keyhog/workflows/daemon.html)
+See [daemon and warm scans](https://santhreal.github.io/keyhog/workflows/daemon.html)
 and [mass scanning](https://santhreal.github.io/keyhog/guides/mass-scanning.html).
 
 ## System-wide credential triage
