@@ -52,5 +52,21 @@
     "rollback_after_partial_serializer_error": true,
     "maximum_body_bytes": 67108864
   },
+  "production_smoke": {
+    "route": "mass daemon-local filesystem path with explicit CPU backend",
+    "workload_sha256": "7319d8a0f2dbe027460d694c703d3cb689ece29a1430c134ea93a20a2c8c0844",
+    "workload_bytes": 19500,
+    "baseline_commit": "4b505ed6e0a9032c3c514253fdff7aef5fa2256f",
+    "baseline_executable_sha256": "8f14da33f7494b5d24a5206d1c922dedce7167f44ae36ddad8d858c28285c62e",
+    "candidate_commit": "b86317abba1b751ada2b85ab5adbb032fe79c96f",
+    "candidate_executable_sha256": "ed8d3289e83e0ebd92472cdc5cf3a43e1d165ded5569aff7ee6f7e5a85a48a96",
+    "baseline_exit_code": 1,
+    "candidate_exit_code": 1,
+    "scan_status": "success",
+    "finding_count": 500,
+    "redacted_output_bytes": 489219,
+    "ordered_findings_sha256": "9aa8f3e9a6f7a1dca99a05bbdc8cff65324d44762f1e09bd3debb534b68710c5",
+    "exact_ordered_finding_parity": true
+  },
   "limit": "The response value and completed transport frame remain required live objects. Removing the one avoidable response-sized staging object cannot produce a 10x total peak-RSS reduction."
 }

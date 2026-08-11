@@ -19,6 +19,16 @@ The release-mode harness encoded a valid `Response::Error` containing a 60 MiB m
 
 The synthetic response isolates the production framing path from scanner and socket scheduling. It does not claim mass-scan throughput. The committed JSON receipt binds the source revision, executable hash, host, workload, trial count, timing, memory, and exact framing contracts.
 
+## Production smoke
+
+The committed release binary served one daemon-local mass batch containing 500
+findings through the direct response encoder. The client returned
+`scan_status=success`, exit code 1, and 489,219 redacted output bytes. The
+baseline and candidate produced the same 500 findings in the same order, with
+ordered finding SHA-256
+`9aa8f3e9a6f7a1dca99a05bbdc8cff65324d44762f1e09bd3debb534b68710c5`.
+The receipt binds both executable hashes and the 19,500-byte workload hash.
+
 ## Compatibility checks
 
 The framing regressions compare direct output byte-for-byte with `serde_json::to_vec`, including nested values, escaped bytes, a pre-populated destination buffer, and the production response writer. Cap failures and serializer failures after partial output must restore the destination buffer exactly. The decoder continues to reject announced bodies above 64 MiB.
