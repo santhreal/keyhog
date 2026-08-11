@@ -45,6 +45,12 @@ The default test/release gate excludes tests marked `target_spec`; those are
 executable product targets, not claims that the current release already meets.
 Run them explicitly with `make targets`.
 
+## Confirmed phase-two scratch evidence
+
+[`reports/phase2-scratch-reuse.md`](reports/phase2-scratch-reuse.md) records the
+helper-vector allocation-site elimination, aggregate retention ceiling, and
+[`JSON receipt`](reports/phase2-scratch-reuse.json).
+
 ## Bloom prefilter evidence
 
 `make bloom KEYHOG_BIN=/absolute/path/to/keyhog` rebuilds the canonical
