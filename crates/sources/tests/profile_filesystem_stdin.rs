@@ -53,9 +53,10 @@ fn filesystem_records_acquire_walk_read_and_input_totals() {
     assert_eq!(stage_calls(&profile, Stage::SourceAcquire), 1);
     assert_eq!(stage_calls(&profile, Stage::SourceWalk), 1);
     assert_eq!(stage_calls(&profile, Stage::SourceRead), 2);
-    assert!(
-        stage_calls(&profile, Stage::SourceQueueWait) >= 2,
-        "each reader batch handoff records a queue-wait span: {profile:?}"
+    assert_eq!(
+        stage_calls(&profile, Stage::SourceQueueWait),
+        1,
+        "the default direct reader coalesces this sub-threshold tree into one handoff"
     );
     assert_eq!(profile.input_units, 2);
     assert_eq!(profile.input_bytes, expected_bytes);
