@@ -468,8 +468,7 @@ impl ScanOrchestrator {
         // Backend routing owns hardware identity and may allocate calibrated
         // runtime state. Delay it until a changed chunk survives incremental
         // acquisition so an all-unchanged run performs no scanner startup.
-        #[cfg(test)]
-        self.scanner_dispatch_starts.fetch_add(1, Ordering::Relaxed);
+        self.record_scanner_dispatch_start();
         let scanner = Arc::clone(&self.scanner);
         let recover_automatic_backend_faults = super::automatic_backend_recovery_allowed(
             explicit_backend,

@@ -1230,6 +1230,13 @@ pub(crate) struct ScanOrchestrator {
 }
 
 impl ScanOrchestrator {
+    #[inline]
+    fn record_scanner_dispatch_start(&self) {
+        #[cfg(test)]
+        self.scanner_dispatch_starts
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
     pub(crate) fn new(mut args: ScanArgs) -> Result<Self> {
         let early_profile_session = if args.profile || args.profile_out.is_some() {
             let identity = keyhog_profile::RunIdentity::new(
