@@ -195,36 +195,20 @@ use keyhog_core::{Chunk, RawMatch};
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-/// Per-pattern hard iteration cap shared by every inner match-walk loop in the
-/// engine (`extract.rs`'s confirmed/anchored extractors and
-/// `phase2_anchor_scan.rs`'s anchored phase-2 walk).
-///
-/// The deadline path (`LoopDeadline` + `loop_expired_on_cadence`) is the
-/// operator's wall-clock defense; this cap is the per-pattern budget that fires
-/// even when `--timeout` is unset (`deadline == None`). Without it a single
-/// regex matching every byte on a 64 MiB chunk (false-prefix storm, catastrophic
-/// backtracking) would loop ~64M times. 1M iterations per pattern is ~6 orders of
-/// magnitude above any legitimate detector's per-chunk match count, so a real
-/// scan never reaches it. Defined once here so the three walk sites can never
-/// drift apart (each used to carry its own byte-identical copy).
+/// Per-pattern iteration cap shared by every inner match walk. The deadline is
+/// the wall-clock defense; this bound also terminates scans without a timeout.
+/// One million iterations exceeds any valid detector's per-chunk match count
+/// while bounding false-prefix and pathological-regex storms.
 pub(crate) const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
 
-/// Minimum chunk length (bytes) at or above which the bigram-bloom prefilter is
-/// consulted to skip a chunk. Below this length the bloom is bypassed and the
-/// chunk always advances to scanning: short chunks are too cheap to scan for the
-/// prefilter to earn its keep, and dropping one on a bloom miss risks a
-/// false-negative for negligible speed gain.
+/// Chunks shorter than 64 bytes bypass the bigram-bloom prefilter because they
+/// are cheap to scan and a bloom miss must not risk recall. Both the coalesced
+/// phase-1 producer and single-chunk entry use this shared threshold.
 ///
-/// Defined once here so the two admission sites that gate on it, the coalesced
-/// phase-1 producer ([`scan_coalesced`]) and the single-chunk entry
-/// ([`crate::compiled_scanner`]), can never carry divergent copies of the
-/// threshold (each
-/// used to hardcode a bare `64`).
 pub(crate) const BIGRAM_BLOOM_MIN_CHUNK_BYTES: usize = 64;
 
-/// A worker may retain at most one scan chunk of route-local candidate scratch.
-/// A hostile high-anchor chunk can grow beyond this while it is processed, but
-/// the outlier allocation is released before the worker accepts another route.
+/// Retain at most one scan chunk of route-local candidate scratch; discard
+/// hostile outlier allocations before the worker accepts another route.
 pub(crate) const MAX_RETAINED_WORKER_SCRATCH_BYTES: usize = crate::types::MAX_SCAN_CHUNK_BYTES;
 
 #[derive(Default)]
@@ -266,7 +250,6 @@ static CANDIDATE_SCRATCH_POOL: std::sync::Mutex<Vec<CandidateScratch>> =
 fn release_idle_candidate_scratch() {
     CANDIDATE_SCRATCH_POOL
         .lock()
-        // LAW10: poison recovery still drops every idle scratch allocation.
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clear();
 }
@@ -274,10 +257,8 @@ fn release_idle_candidate_scratch() {
 pub(crate) fn with_candidate_scratch<R>(f: impl FnOnce(&mut CandidateScratch) -> R) -> R {
     let mut values = CANDIDATE_SCRATCH_POOL
         .lock()
-        // LAW10: poison recovery retains the complete scratch pool; an absent buffer allocates empty bounded scratch.
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .pop()
-        // LAW10: no idle scratch buffer means fresh empty vectors, with identical scan semantics.
         .unwrap_or_default();
     let result = f(&mut values);
     release_candidate_scratch(&mut values);
@@ -287,7 +268,6 @@ pub(crate) fn with_candidate_scratch<R>(f: impl FnOnce(&mut CandidateScratch) ->
     {
         let mut pool = CANDIDATE_SCRATCH_POOL
             .lock()
-            // LAW10: poison recovery retains the complete scratch pool before bounded reinsertion.
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if pool.len() < MAX_IDLE_CANDIDATE_SCRATCH_BUFFERS {
             pool.push(values);
@@ -300,7 +280,6 @@ pub(crate) fn with_candidate_scratch<R>(f: impl FnOnce(&mut CandidateScratch) ->
 pub(crate) fn candidate_scratch_idle_count_for_test() -> usize {
     CANDIDATE_SCRATCH_POOL
         .lock()
-        // LAW10: test-only inspection recovers the retained pool value after poison.
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .len()
 }

@@ -1,18 +1,12 @@
-//! Shared-anchor localized phase-2 scan, extracted from `phase2_compiled.rs`
-//! (Law 5). `scan_phase2_with_anchors` (+ its anchor-only scratch helper
-//! `with_active_phase2_scratch`) collapses the per-pattern whole-chunk walks
-//! into one Aho-Corasick pass plus anchored verification; recall is identical to
-//! the legacy active-set loop (`phase2_anchor_parity`). Reached via the same
-//! `use super::*` / `use super::phase2::*` globs the parent uses.
+//! Shared-anchor localized phase-two scan. One Aho-Corasick pass produces
+//! anchored verification candidates while preserving legacy active-set recall.
 use super::phase2::*;
 use super::*;
 use std::time::Instant;
 
 impl CompiledScanner {
-    /// As `with_active_phase2_patterns`, but hands the closure the full
-    /// `ActivePatternsScratch` (not just the sparse list) so it can also test
-    /// `is_active(idx)` in O(1) - the shared-anchor path needs that to gate
-    /// candidate positions to the active set.
+    /// Exposes the full active-pattern scratch so shared anchors can test
+    /// membership in constant time.
     fn with_active_phase2_scratch<R>(
         &self,
         data: &str,
@@ -25,8 +19,7 @@ impl CompiledScanner {
         ACTIVE_PATTERNS_POOL.with(|cell| {
             let mut scratch = cell.borrow_mut();
             scratch.begin(self.phase2_patterns.len())?;
-            // anchor_mode = true: this method only runs on the shared-anchor
-            // path, where eligible always-active patterns are gated by the AC.
+            // Shared anchors gate eligible always-active patterns through AC.
             self.populate_active_phase2(
                 data,
                 match_text,
@@ -43,15 +36,9 @@ impl CompiledScanner {
         })
     }
 
-    /// Verify a run of anchored `(pattern, pos)` candidates, grouped by pattern
-    /// (each pattern's contiguous run verified together so its per-pattern signal
-    /// cache builds at most once). A pattern whose anchored regex compiled runs
-    /// `extract_anchored` at its candidate positions; one whose anchored regex
-    /// failed to compile falls back LOUDLY to the cursor-bounded whole-chunk walk
-    /// so recall is preserved. Shared by the main shared-anchor candidate pass
-    /// and the localized-homoglyph plain candidate pass, the two passes ran
-    /// byte-identical copies of this loop, a drift hazard for the
-    /// anchored-vs-fallback verify logic.
+    /// Verify candidates by pattern so each signal cache builds once. Missing
+    /// anchored regexes fall back to the cursor-bounded whole-chunk walk, which
+    /// preserves recall for both shared-anchor candidate paths.
     #[allow(clippy::too_many_arguments)]
     fn verify_anchored_candidates(
         &self,
@@ -110,17 +97,10 @@ impl CompiledScanner {
         }
     }
 
-    /// Shared-anchor phase-2 scan. Computes the active set once, then:
-    ///   1. runs ONE Aho-Corasick pass over the chunk for every eligible
-    ///      pattern's required-prefix literals, collecting `(pattern, pos)`
-    ///      candidates for the patterns that are active;
-    ///   2. verifies each active eligible pattern anchored at its candidate
-    ///      positions (O(match length) each, no per-pattern chunk scan);
-    ///   3. runs the remaining active NON-eligible patterns on the legacy
-    ///      whole-chunk path.
-    /// The union of (2) and (3) is exactly the active set the legacy loop would
-    /// have scanned, producing an identical match set (asserted by
-    /// `phase2_anchor_parity`).
+    /// Collect shared-anchor candidates once, verify active eligible patterns at
+    /// those offsets, then run active non-eligible patterns through the legacy
+    /// whole-chunk path. Together both sets equal the legacy active set.
+    ///
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn scan_phase2_with_anchors(
         &self,
@@ -130,9 +110,8 @@ impl CompiledScanner {
         chunk: &Chunk,
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
-        // Decode focus window in preprocessed/chunk coordinates. AC candidates,
-        // prefiltering and extraction are windowed; keyword/context signals use
-        // full raw plus normalized text so in-window matches stay byte-identical.
+        // Window candidate collection and extraction; keep keyword and context
+        // signals on full raw and normalized text.
         focus: Option<(usize, usize)>,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
@@ -148,11 +127,8 @@ impl CompiledScanner {
         let skip_homoglyph =
             homoglyph_skip_applies(scan_text, self.tuning.homoglyph_ascii_skip_enabled());
         let shift = focus.map_or(0u32, |(fs, _)| fs as u32);
-        // `cursor_range` for whole-chunk phase-2 extraction: restrict match
-        // STARTS to the focus window (matches still extend right freely).
-        let cursor = focus;
-        // The keyword index seeds from normalized full text; only the
-        // always-active prefilter text is windowed under decode focus.
+        // Whole-chunk extraction restricts match starts to the focus window.
+        // Keyword seeding still uses normalized full text.
         self.with_active_phase2_scratch(
             &preprocessed.text,
             scan_text,
