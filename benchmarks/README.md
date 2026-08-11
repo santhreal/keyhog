@@ -52,6 +52,13 @@ records the production mass-daemon syscall comparison and its
 [`JSON receipt`](reports/daemon-batch-retirement.json). One drain request
 replaces the per-batch request round trips while responses retain their
 individual bounds and source order.
+## Focused filesystem discovery evidence
+
+[`reports/filesystem-discovery-metadata.md`](reports/filesystem-discovery-metadata.md)
+records the production syscall comparison and its
+[`JSON receipt`](reports/filesystem-discovery-metadata.json). Ordinary scans
+classify archive symlinks inside the required metadata walk instead of
+re-enumerating the complete tree.
 
 ## Bloom prefilter evidence
 

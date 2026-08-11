@@ -38,6 +38,7 @@ fn path_beyond_path_max_scans_descriptor_relative() {
     use std::ffi::CString;
     use std::io::Write;
     use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::fs::symlink;
 
     let dir = tempfile::tempdir().expect("tempdir");
     let mut directory = std::fs::File::open(dir.path()).expect("open fixture root");
@@ -92,12 +93,25 @@ fn path_beyond_path_max_scans_descriptor_relative() {
         "fixture must exceed the pathname syscall limit"
     );
     let logical_leaf_display = logical_leaf.to_string_lossy().into_owned();
+    // The pathname walk sees this before it reaches the overlong leaf. A
+    // successful descriptor rebuild must replace, not duplicate, that partial
+    // archive-symlink classification.
+    let archive_link = dir.path().join("credentials.zip");
+    symlink("/etc/hostname", &archive_link).expect("create archive symlink");
     let source = FilesystemSource::new(dir.path().to_path_buf());
     let rows: Vec<_> = source.chunks().collect();
     let (chunks, errors) = split_chunk_results(&rows);
+    assert_eq!(
+        errors.len(),
+        1,
+        "descriptor replacement must retain one archive-symlink refusal: {errors:?}"
+    );
+    let refusal = format!("{:#}", errors[0]);
+    let archive_display = archive_link.to_string_lossy();
     assert!(
-        errors.is_empty(),
-        "descriptor-relative traversal should cover the overlong path: {errors:?}"
+        refusal.contains(archive_display.as_ref())
+            && refusal.contains("archive symlink expansion is blocked"),
+        "descriptor replacement must preserve the exact archive refusal: {refusal}"
     );
     assert!(
         chunks.iter().any(|chunk| {

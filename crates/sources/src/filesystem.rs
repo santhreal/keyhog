@@ -348,6 +348,32 @@ fn archive_symlink_error(path: &Path) -> SourceError {
     SourceError::Other(message)
 }
 
+fn classify_archive_symlink(path: &Path) -> Option<SourceError> {
+    let path_is_expandable = is_expandable_path(path);
+    match resolved_link_target_for_classification(path) {
+        Ok(target) if path_is_expandable || is_expandable_path(&target) => {
+            Some(archive_symlink_error(path))
+        }
+        Ok(_) => None,
+        Err(error) if path_is_expandable => {
+            tracing::warn!(
+                path = %path.display(),
+                %error,
+                "failed to inspect archive symlink target; refusing by link name"
+            );
+            Some(archive_symlink_error(path))
+        }
+        Err(error) => {
+            tracing::warn!(
+                path = %path.display(),
+                %error,
+                "failed to inspect symlink target during archive-symlink audit"
+            );
+            Some(symlink_target_classification_error(path, &error))
+        }
+    }
+}
+
 fn collect_walk_archive_symlink_errors(
     root: &Path,
     respect_default_excludes: bool,
@@ -361,36 +387,9 @@ fn collect_walk_archive_symlink_errors(
         Ok(metadata) => {
             let file_type = metadata.file_type();
             if file_type.is_symlink() {
-                let root_is_expandable = is_expandable_path(root);
-                let target = match resolved_link_target_for_classification(root) {
-                    Ok(target) => target,
-                    Err(error) if root_is_expandable => {
-                        tracing::warn!(
-                            path = %root.display(),
-                            %error,
-                            "failed to inspect archive symlink target; refusing by link name"
-                        );
-                        root.to_path_buf()
-                    }
-                    Err(error) => {
-                        tracing::warn!(
-                            path = %root.display(),
-                            %error,
-                            "failed to inspect symlink target during archive-symlink audit"
-                        );
-                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                        errors.push(symlink_target_classification_error(root, &error));
-                        return errors;
-                    }
-                };
-                if root_is_expandable || is_expandable_path(&target) {
-                    tracing::warn!(
-                        path = %root.display(),
-                        target = %target.display(),
-                        "refusing archive symlink at filesystem root"
-                    );
+                if let Some(error) = classify_archive_symlink(root) {
                     let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                    errors.push(archive_symlink_error(root));
+                    errors.push(error);
                 }
             } else if file_type.is_dir() {
                 stack.push(root.to_path_buf());
@@ -414,20 +413,17 @@ fn collect_walk_archive_symlink_errors(
         }
     }
 
+    // Ordinary discovery classifies symlinks in the configured walk below.
+    // Budgeted discovery retains this path-sorted prewalk because its byte
+    // ceiling applies before regular-file admission.
+    if discovery_byte_limit.is_none() {
+        return errors;
+    }
+
     while let Some(dir) = stack.pop() {
         let entries = match std::fs::read_dir(&dir) {
             Ok(entries) => entries,
             Err(error) => {
-                #[cfg(target_os = "linux")]
-                if discovery_byte_limit.is_none()
-                    && error.raw_os_error() == Some(libc::ENAMETOOLONG)
-                {
-                    errors.extend(collect_descriptor_archive_symlink_errors(
-                        root,
-                        respect_default_excludes,
-                    ));
-                    return errors;
-                }
                 tracing::warn!(
                     dir = %dir.display(),
                     %error,
@@ -442,70 +438,22 @@ fn collect_walk_archive_symlink_errors(
             }
         };
 
-        if discovery_byte_limit.is_some() {
-            // Budgeted scans retain the previous path-sorted charging order.
-            let mut paths = entries
-                .filter_map(|entry| archive_walk_entry_path(&dir, entry, &mut errors))
-                .collect::<Vec<_>>();
-            paths.sort();
-            for path in paths {
-                if !inspect_walk_archive_path(
-                    path,
-                    root,
-                    respect_default_excludes,
-                    discovery_byte_limit,
-                    &mut discovery_charge,
-                    &mut stack,
-                    &mut errors,
-                ) {
-                    return errors;
-                }
-            }
-        } else {
-            // Ordinary unbounded scans inspect only non-files here. A regular
-            // entry cannot itself be an archive symlink, and every later open
-            // still uses the no-follow/read-time checks that close link swaps.
-            // Skipping its duplicate path allocation and metadata syscall is
-            // material on directories containing hundreds of thousands of
-            // ordinary files.
-            for entry in entries {
-                let path = match entry {
-                    Ok(entry) => {
-                        if entry.file_type().is_ok_and(|file_type| file_type.is_file()) {
-                            continue;
-                        }
-                        entry.path()
-                    }
-                    Err(error) => {
-                        let Some(path) = archive_walk_entry_path(&dir, Err(error), &mut errors)
-                        else {
-                            continue;
-                        };
-                        path
-                    }
-                };
-                #[cfg(target_os = "linux")]
-                {
-                    use std::os::unix::ffi::OsStrExt;
-                    if path.as_os_str().as_bytes().len() >= libc::PATH_MAX as usize {
-                        errors.extend(collect_descriptor_archive_symlink_errors(
-                            root,
-                            respect_default_excludes,
-                        ));
-                        return errors;
-                    }
-                }
-                if !inspect_walk_archive_path(
-                    path,
-                    root,
-                    respect_default_excludes,
-                    discovery_byte_limit,
-                    &mut discovery_charge,
-                    &mut stack,
-                    &mut errors,
-                ) {
-                    return errors;
-                }
+        // Budgeted scans retain the previous path-sorted charging order.
+        let mut paths = entries
+            .filter_map(|entry| archive_walk_entry_path(&dir, entry, &mut errors))
+            .collect::<Vec<_>>();
+        paths.sort();
+        for path in paths {
+            if !inspect_walk_archive_path(
+                path,
+                root,
+                respect_default_excludes,
+                discovery_byte_limit,
+                &mut discovery_charge,
+                &mut stack,
+                &mut errors,
+            ) {
+                return errors;
             }
         }
     }
@@ -540,14 +488,12 @@ fn collect_descriptor_archive_symlink_errors(
                 entry.path.parent().unwrap_or(root).join(target) // LAW10: a parentless relative symlink entry is resolved from the enumerated scan root; expansion checks still run on the result.
             };
             if is_expandable_path(&entry.path) || is_expandable_path(&resolved_target) {
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                 errors.push((entry.path.clone(), archive_symlink_error(&entry.path)));
             }
         }
         Ok(true)
     });
     if let Err(error) = result {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
         errors.push((root.to_path_buf(), error));
     }
     errors.sort_unstable_by(|left, right| left.0.cmp(&right.0));
@@ -626,36 +572,9 @@ fn inspect_walk_archive_path(
     }
 
     if file_type.is_symlink() {
-        let path_is_expandable = is_expandable_path(&path);
-        let target = match resolved_link_target_for_classification(&path) {
-            Ok(target) => target,
-            Err(error) if path_is_expandable => {
-                tracing::warn!(
-                    path = %path.display(),
-                    %error,
-                    "failed to inspect archive symlink target; refusing by link name"
-                );
-                path.clone()
-            }
-            Err(error) => {
-                tracing::warn!(
-                    path = %path.display(),
-                    %error,
-                    "failed to inspect symlink target during archive-symlink audit"
-                );
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                errors.push(symlink_target_classification_error(&path, &error));
-                return true;
-            }
-        };
-        if path_is_expandable || is_expandable_path(&target) {
-            tracing::warn!(
-                path = %path.display(),
-                target = %target.display(),
-                "refusing archive symlink discovered during filesystem walk"
-            );
+        if let Some(error) = classify_archive_symlink(&path) {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            errors.push(archive_symlink_error(&path));
+            errors.push(error);
         }
     } else if file_type.is_dir() {
         stack.push(path);

@@ -4,8 +4,8 @@
 //! `regression_fs_walk_symlink.rs` (which pins the walker's cycle/plain-file
 //! multiplicity and the `.zip`/`.tar` refusals): here we pin
 //!   * the remaining expandable-archive extensions (`.gz`/`.7z`/`.rar`/`.pdf`/
-//!     `.tgz`/`.har`) each refused LOUDLY during the walk-time archive-symlink
-//!     audit (`filesystem.rs::collect_walk_archive_symlink_errors`);
+//!     `.tgz`/`.har`) each refused LOUDLY during configured filesystem
+//!     discovery;
 //!   * name-based vs target-based expandable classification (an archive-NAMED
 //!     link to a plain target, and a plain-NAMED link to an archive target, are
 //!     BOTH refused; a dangling archive link is refused by name);
@@ -139,6 +139,27 @@ fn refusal_strings_for_archive_link(link_name: &str) -> Vec<String> {
     symlink("/etc/hostname", root_dir.path().join(link_name)).unwrap();
     let (_chunks, errors) = drain(&FilesystemSource::new(root_dir.path().to_path_buf()));
     error_strings(&errors)
+}
+
+/// WHY: ordinary discovery and byte-budgeted discovery use different
+/// traversal paths; each must emit exactly one refusal for the same symlink.
+#[test]
+fn archive_symlink_refusal_is_conserved_across_discovery_modes() {
+    for budgeted in [false, true] {
+        let root_dir = tempfile::tempdir().unwrap();
+        symlink("/etc/hostname", root_dir.path().join("credentials.zip")).unwrap();
+        let mut source = FilesystemSource::new(root_dir.path().to_path_buf());
+        if budgeted {
+            source = source.with_discovery_byte_limit(u64::MAX);
+        }
+        let (chunks, errors) = drain(&source);
+        assert!(chunks.is_empty());
+        assert_eq!(
+            generic_archive_refusals(&errors),
+            1,
+            "discovery mode budgeted={budgeted} must emit one refusal: {errors:?}"
+        );
+    }
 }
 
 #[test]

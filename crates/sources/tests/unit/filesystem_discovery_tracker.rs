@@ -1,12 +1,25 @@
 use super::*;
 
+fn must<T, E: std::fmt::Debug>(result: Result<T, E>, action: &str) -> T {
+    match result {
+        Ok(value) => value,
+        Err(error) => panic!("{action}: {error:?}"),
+    }
+}
+
 #[test]
 fn tracked_walk_counts_production_events_and_early_termination() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = must(tempfile::tempdir(), "create temporary directory");
     let sub_dir = temp_dir.path().join("sub");
-    std::fs::create_dir(&sub_dir).unwrap();
-    std::fs::write(temp_dir.path().join("sample1.txt"), "hello world").unwrap();
-    std::fs::write(sub_dir.join("sample2.txt"), "nested hello").unwrap();
+    must(std::fs::create_dir(&sub_dir), "create fixture subdirectory");
+    must(
+        std::fs::write(temp_dir.path().join("sample1.txt"), "hello world"),
+        "write first fixture",
+    );
+    must(
+        std::fs::write(sub_dir.join("sample2.txt"), "nested hello"),
+        "write second fixture",
+    );
 
     let tracker = DiscoveryTracker::default();
     let config = super::super::filter::walker_config(0, &[], true);
@@ -24,7 +37,7 @@ fn tracked_walk_counts_production_events_and_early_termination() {
 
 #[test]
 fn tracked_walk_records_root_validation_failure_without_walker_events() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = must(tempfile::tempdir(), "create temporary directory");
     let missing = temp_dir.path().join("missing");
     let tracker = DiscoveryTracker::default();
     let config = super::super::filter::walker_config(0, &[], true);

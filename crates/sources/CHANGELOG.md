@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Ordinary unbounded filesystem scans now classify archive symlinks during the configured metadata walk instead of traversing every directory once for archive-symlink audit and again for file admission. Byte-budgeted scans retain their path-sorted audit, and long-path fallback retains descriptor-relative symlink classification.
+
 ## 0.5.70 - 2026-08-10
 
 - fix(profile): fail-closed overlapping allocation session peaks.
