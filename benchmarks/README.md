@@ -59,6 +59,13 @@ records the production syscall comparison and its
 [`JSON receipt`](reports/filesystem-discovery-metadata.json). Ordinary scans
 classify archive symlinks inside the required metadata walk instead of
 re-enumerating the complete tree.
+
+## Focused safe-open metadata evidence
+
+[`reports/safe-open-metadata.md`](reports/safe-open-metadata.md) records the
+production syscall comparison and its
+[`JSON receipt`](reports/safe-open-metadata.json). Safe-open metadata is reused
+by callers without changing regular-file validation or advisory locking.
 ## Focused reader crew memory evidence
 
 [`reports/reader-crew-memory.md`](reports/reader-crew-memory.md) records the
