@@ -9,6 +9,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - CI: test binaries build under a new `ci-test` profile, identical to `release-fast` except that thin LTO and 16 codegen units are dropped. The sources lane links 116 test binaries, so cross-crate optimization was paid once per binary for nothing a test can observe. Measured on a 16-core host: the sources target matrix compiles in 97 s instead of 866 s, and the suite runs in 73 s with the same results. Shipped-binary builds, smoke tests, install proofs, and dogfood runs stay on `release-fast`.
 - Required CI runs the complete sources target matrix once, removing the earlier default `all_tests` replay before the all-feature run.
 - Sources: align filesystem profiling coverage with the default direct reader's bounded batch handoff, retaining exact acquire, walk, read, and input-total assertions.
+- CPU confidence scoring now evaluates large authenticated quantized batches across the configured Rayon worker pool while preserving bit-exact row order; batches below 64 candidates remain serial.
 - Core: raise dedup additional-locations subquadratic tripwire ceiling to 3.25x to absorb CI thread-CPU jitter (observed 3.03x flake).
 - Scanner: sensitive-path keyword-free confidence ownership test pins ordinary entropy_very_high cannot demote admitted hits.
 - Scanner: sensitive-path keyword-free entropy keeps ML as lift and scores against the sensitive very-high band so assignment RHS like `VALUE=<token>` in secrets.env is not soft-dropped.

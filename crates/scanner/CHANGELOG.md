@@ -3,6 +3,7 @@
 
 ## Unreleased
 
+- Large authenticated quantized-confidence CPU batches now score in parallel through the configured Rayon pool with bit-exact ordered output; batches below the established 64-row crossover remain serial.
 - Sensitive-path keyword-free confidence ownership regression pins that ordinary entropy_very_high cannot demote admitted secrets.env hits.
 - Sensitive-path keyword-free entropy keeps ML as lift and scores against the sensitive very-high band so `VALUE=<token>` in secrets.env is not soft-dropped.
 - Redis-sentinel evasion contract uses `REDIS_SENTINEL_AUTH=` instead of a commented auth-pass so comment soft-suppression cannot hide the credential.

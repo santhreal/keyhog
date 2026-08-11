@@ -37,6 +37,25 @@ fn generated_feature_union_matches_integer_golden() {
     );
 }
 
+/// WHY: parallel CPU batches retain the scalar model's exact row order and
+/// fixed-point scores across every generated feature dimension.
+#[test]
+fn parallel_batch_matches_scalar_scores_in_input_order() {
+    let model = model().expect("embedded model");
+    let row_count = crate::ml_scorer::ML_PARALLEL_BATCH_THRESHOLD * 4;
+    let rows: Vec<_> = (0..row_count)
+        .map(|row_index| {
+            let mut features = [0i16; crate::ml_scorer::model_arch::INPUT_DIM];
+            for (feature_index, value) in features.iter_mut().enumerate() {
+                *value = ((row_index * 17 + feature_index * 31) % (SCALE as usize + 1)) as i16;
+            }
+            QuantizedFeatureRow(features)
+        })
+        .collect();
+    let expected: Vec<_> = rows.iter().map(|row| model.score(row)).collect();
+    assert_eq!(score_batch(&rows).expect("parallel batch"), expected);
+}
+
 #[test]
 fn corrupt_stale_or_noncanonical_artifacts_fail_closed() {
     for offset in [0usize, 8, 10, 12, 20, 22, 24, 28, 60, MODEL_BYTES.len() - 1] {
