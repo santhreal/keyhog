@@ -475,6 +475,31 @@ def test_keyhog_auto_calibrates_exact_workload_before_timed_scan(tmp_path, monke
         for command in commands
     )
 
+def test_keyhog_auto_cache_calibrates_the_warm_workload(tmp_path, monkeypatch):
+    scanner = scanners.KeyhogScanner(binary="/unused/keyhog")
+    autoroute_cache = tmp_path / "autoroute.json"
+    monkeypatch.setenv("KEYHOG_BENCH_AUTOROUTE_CACHE", str(autoroute_cache))
+    commands = []
+
+    def successful_scan(cmd, **kwargs):
+        commands.append(cmd)
+        pathlib.Path(cmd[cmd.index("--output") + 1]).write_text("[]")
+        return "", "", base.RunStats(exit_code=0)
+
+    monkeypatch.setattr(keyhog_adapter, "run_measured", successful_scan)
+    scanner.run(tmp_path, ScannerConfig(backend="auto", cache="on"))
+
+    assert len(commands) == 3
+    warmup, calibration, timed = commands
+    assert warmup[warmup.index("--backend") + 1] == "simd"
+    assert "--autoroute-calibrate" not in warmup
+    assert "--autoroute-calibrate" in calibration
+    assert "--autoroute-calibrate" not in timed
+    incremental_paths = [
+        command[command.index("--incremental-cache") + 1] for command in commands
+    ]
+    assert len(set(incremental_paths)) == 1
+
 
 def test_keyhog_single_file_perf_command_keeps_daemon_fixture_policy(tmp_path):
     input_file = tmp_path / "workload.txt"

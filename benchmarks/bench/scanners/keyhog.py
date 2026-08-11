@@ -653,6 +653,39 @@ class KeyhogScanner(Scanner):
                 # Warmup and timed pass share only this run's private index.
                 assert run_dir is not None
                 inc_cache = run_dir / "merkle.idx"
+            if cfg.cache == "on":
+                assert run_dir is not None
+                warm_out = run_dir / "warm.json"
+                warm_cfg = cfg
+                if cfg.backend == "auto":
+                    # Populate the private incremental index through an
+                    # explicit peer before calibrating. Cache hits change the
+                    # admission/decode workload key, so calibrating the cold
+                    # tree cannot authorize the warm row that is timed below.
+                    warm_cfg = ScannerConfig(
+                        backend="simd",
+                        cache=cfg.cache,
+                        daemon=cfg.daemon,
+                        mode=cfg.mode,
+                        min_confidence=cfg.min_confidence,
+                    )
+                warm_stdout, warm_stderr, warm_stats = run_measured(
+                    self._cmd(
+                        root, warm_cfg, warm_out, inc_cache, executable, detector_corpus
+                    ),
+                    env=env,
+                    timeout=timeout,
+                    pass_fds=pass_fds,
+                )
+                self._require_success(
+                    warm_stdout,
+                    warm_stderr,
+                    warm_stats,
+                    cfg,
+                    timeout,
+                    phase="warmup",
+                )
+                self._parse(warm_out, config_id=f"{cfg.config_id} warmup")
             if cfg.backend == "auto":
                 assert run_dir is not None
                 calibration_out = run_dir / "autoroute-calibration.json"
@@ -683,26 +716,6 @@ class KeyhogScanner(Scanner):
                     calibration_out,
                     config_id=f"{cfg.config_id} autoroute calibration",
                 )
-            if cfg.cache == "on":
-                assert run_dir is not None
-                warm_out = run_dir / "warm.json"
-                warm_stdout, warm_stderr, warm_stats = run_measured(
-                    self._cmd(
-                        root, cfg, warm_out, inc_cache, executable, detector_corpus
-                    ),
-                    env=env,
-                    timeout=timeout,
-                    pass_fds=pass_fds,
-                )
-                self._require_success(
-                    warm_stdout,
-                    warm_stderr,
-                    warm_stats,
-                    cfg,
-                    timeout,
-                    phase="warmup",
-                )
-                self._parse(warm_out, config_id=f"{cfg.config_id} warmup")
 
             cmd = self._cmd(
                 root, cfg, result_output, inc_cache, executable, detector_corpus

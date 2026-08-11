@@ -399,10 +399,11 @@ make -C benchmarks readme-matrix \
 
 The cache path is benchmark-owned and must not be the operator's normal cache.
 Before timing each `auto` row, the adapter calibrates that exact detector,
-policy, incremental-cache, source, and workload identity into this cache. The
-timed scan then performs a normal lookup. Explicit CPU and GPU rows never read
-the cache. This prevents stale ambient decisions and keeps calibration outside
-the measured interval.
+policy, incremental-cache, source, and workload identity into this cache. Warm
+incremental rows first populate their private index with an untimed SIMD pass,
+then calibrate and time the same cache-hit workload. The timed scan performs a
+normal lookup. Explicit CPU and GPU rows never read the cache. This prevents
+stale ambient decisions and keeps calibration outside the measured interval.
 
 This command requires every explicit CPU, Hyperscan, CUDA, WGPU, policy, cache,
 daemon, worker, reader, storage, corpus-size, and partition row. It writes two
