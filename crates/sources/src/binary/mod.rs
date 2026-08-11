@@ -337,8 +337,8 @@ fn read_binary_capped(path: &Path, cap: usize) -> std::io::Result<CappedBinaryRe
     // read cap. The binary source is constructed with an explicit path, but the
     // FIFO-hang and special-file reads are robustness bugs regardless of trust, and
     // one open boundary keeps every content read consistent (NO DUPLICATION).
-    let file = crate::filesystem::open_file_safe(path)?;
-    let capacity_hint = file.metadata()?.len();
+    let (file, metadata) = crate::filesystem::open_file_safe_with_metadata(path)?;
+    let capacity_hint = metadata.len();
     let cap = u64::try_from(cap).map_err(|_| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,

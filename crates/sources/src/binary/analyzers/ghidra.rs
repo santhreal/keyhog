@@ -132,8 +132,8 @@ pub(super) fn parse_decompiled_output(
     request: BinaryAnalysisRequest<'_>,
 ) -> Result<BinaryAnalysisOutcome, SourceError> {
     // Safe-open first, then size the opened descriptor so path swaps cannot bypass the cap.
-    let file = crate::filesystem::open_file_safe(output_path).map_err(SourceError::Io)?;
-    let metadata = file.metadata().map_err(SourceError::Io)?;
+    let (file, metadata) =
+        crate::filesystem::open_file_safe_with_metadata(output_path).map_err(SourceError::Io)?;
     if metadata.len() > request.decompiled_bytes_limit {
         return Ok(BinaryAnalysisOutcome::Degraded(
             BinaryAnalysisDegradation::OutputTooLarge {

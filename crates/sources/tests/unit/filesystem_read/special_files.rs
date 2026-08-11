@@ -182,6 +182,26 @@ fn open_file_safe_accepts_regular_file() {
     assert_eq!(s, "hello");
 }
 
+/// The metadata returned by safe-open belongs to the validated descriptor, not
+/// to a path that can be replaced after open.
+#[test]
+fn open_file_safe_metadata_is_bound_to_opened_descriptor() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = write_regular(dir.path(), "opened.txt", b"first");
+    let moved_path = dir.path().join("moved.txt");
+    let (mut file, metadata) = TestApi
+        .open_file_safe_with_metadata(&path)
+        .expect("regular file and metadata must open");
+
+    std::fs::rename(&path, &moved_path).unwrap();
+    std::fs::write(&path, b"replacement-is-longer").unwrap();
+
+    assert_eq!(metadata.len(), 5);
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).unwrap();
+    assert_eq!(contents, "first");
+}
+
 /// The advisory-flock DoS / torn-write guard is enforced by `open_file_safe`
 /// (`LOCK_SH | LOCK_NB` fails closed when another owner holds the file
 /// exclusively). That is the SINGLE owner of the guard: the per-read-path

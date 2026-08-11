@@ -386,6 +386,13 @@ pub mod testing {
             crate::filesystem::open_file_safe(path)
         }
 
+        pub fn open_file_safe_with_metadata(
+            &self,
+            path: &std::path::Path,
+        ) -> std::io::Result<(std::fs::File, std::fs::Metadata)> {
+            crate::filesystem::open_file_safe_with_metadata(path)
+        }
+
         pub fn duplicate_zip_central_entries_error(
             &self,
             path: &std::path::Path,

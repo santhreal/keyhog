@@ -8,7 +8,7 @@ use memmap2::MmapOptions;
 use std::fs::File;
 use std::path::Path;
 
-use super::raw::open_file_safe;
+use super::raw::open_file_safe_with_metadata;
 
 /// Buffered read bounded at `cap` bytes, routed through the same
 /// already-open descriptor the mmap attempt used. Replaces the bare whole-file
@@ -95,25 +95,13 @@ pub(in crate::filesystem) fn read_file_for_compressed_input(
     } else {
         size_cap
     };
-    let file = match open_file_safe(path) {
-        Ok(f) => f,
+    let (file, metadata) = match open_file_safe_with_metadata(path) {
+        Ok(opened) => opened,
         Err(error) => {
             tracing::warn!(
                 path = %path.display(),
                 %error,
                 "cannot open compressed file; skipping"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return None;
-        }
-    };
-    let metadata = match file.metadata() {
-        Ok(m) => m,
-        Err(error) => {
-            tracing::warn!(
-                path = %path.display(),
-                %error,
-                "cannot stat compressed file; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             return None;

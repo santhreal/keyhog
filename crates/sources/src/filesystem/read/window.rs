@@ -8,7 +8,7 @@ use memmap2::MmapOptions;
 use std::fs::File;
 use std::path::Path;
 
-use super::raw::open_file_safe;
+use super::raw::open_file_safe_with_metadata;
 use super::MMAP_TOCTOU_SANITY_CAP_BYTES;
 
 /// One scanning window over a large file: an absolute byte offset into
@@ -90,7 +90,7 @@ fn window_fingerprint(bytes: &[u8]) -> [u8; 32] {
 
 pub(in crate::filesystem) enum WindowedMmapOutcome {
     Consumed,
-    Fallback(File),
+    Fallback(File, std::fs::Metadata),
 }
 
 /// Host page size, queried once. `MADV_DONTNEED` only acts on whole pages, so
@@ -362,6 +362,7 @@ fn for_each_sparse_window(
 #[cfg(target_os = "linux")]
 fn sparse_buffered_fallback(
     file: File,
+    metadata: std::fs::Metadata,
     path: &Path,
     error: std::io::Error,
     stage: &'static str,
@@ -386,7 +387,7 @@ fn sparse_buffered_fallback(
         )));
         WindowedMmapOutcome::Consumed
     } else {
-        WindowedMmapOutcome::Fallback(file)
+        WindowedMmapOutcome::Fallback(file, metadata)
     }
 }
 
@@ -425,7 +426,7 @@ pub(in crate::filesystem) fn read_file_windowed_mmap(
         }
     }) {
         WindowedMmapOutcome::Consumed => {}
-        WindowedMmapOutcome::Fallback(_) => return None,
+        WindowedMmapOutcome::Fallback(_, _) => return None,
     }
     if terminal_error {
         return Some(Vec::new());
@@ -446,8 +447,8 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
     mut emit: impl FnMut(Result<FileWindow, SourceError>) -> bool,
 ) -> WindowedMmapOutcome {
     debug_assert!(window_size > overlap, "window must exceed overlap");
-    let file = match open_file_safe(path) {
-        Ok(file) => file,
+    let (file, meta) = match open_file_safe_with_metadata(path) {
+        Ok(opened) => opened,
         Err(error) => {
             tracing::warn!(
                 path = %path.display(),
@@ -469,22 +470,6 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
     // windowed-mmap path. The walker decides which files reach this
     // function based on its own size budget; this cap is a defense
     // against the file growing AFTER the walker's stat completed.
-    let meta = match file.metadata() {
-        Ok(meta) => meta,
-        Err(error) => {
-            tracing::warn!(
-                path = %path.display(),
-                %error,
-                "cannot stat opened large file for windowed mmap sanity cap; skipping"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            let _continue_scan = emit(Err(windowed_mmap_error(
-                path,
-                format!("cannot stat opened large file for windowed mmap ({error})"),
-            )));
-            return WindowedMmapOutcome::Consumed;
-        }
-    };
     if meta.len() > MMAP_TOCTOU_SANITY_CAP_BYTES {
         tracing::warn!(
             path = %path.display(),
@@ -514,6 +499,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
                     Err(error) => {
                         return sparse_buffered_fallback(
                             file,
+                            meta,
                             path,
                             error,
                             "extent discovery",
@@ -537,6 +523,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
                     Err((error, false)) => {
                         return sparse_buffered_fallback(
                             file,
+                            meta,
                             path,
                             error,
                             "first extent read",
@@ -564,7 +551,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
             }
 
             #[cfg(not(target_os = "linux"))]
-            return WindowedMmapOutcome::Fallback(file);
+            return WindowedMmapOutcome::Fallback(file, meta);
         }
     }
     // No re-flock: `open_file_safe` already holds the advisory LOCK_SH on this
@@ -588,7 +575,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
                 %error,
                 "cannot windowed-mmap file; falling back to buffered read"
             );
-            return WindowedMmapOutcome::Fallback(file);
+            return WindowedMmapOutcome::Fallback(file, meta);
         }
     };
     let mapped_len = match u64::try_from(mmap.len()) {
@@ -881,8 +868,11 @@ mod sparse_tests {
             Some(17)
         );
         let mut emitted_error = false;
+        let metadata = file.metadata().expect("fallback metadata");
+        let metadata_len = metadata.len();
         let outcome = sparse_buffered_fallback(
             file,
+            metadata,
             Path::new("sparse-fallback-test"),
             error,
             "extent discovery",
@@ -891,10 +881,11 @@ mod sparse_tests {
                 true
             },
         );
-        let WindowedMmapOutcome::Fallback(file) = outcome else {
+        let WindowedMmapOutcome::Fallback(file, returned_metadata) = outcome else {
             panic!("extent-query failure did not select buffered fallback");
         };
         assert!(!emitted_error);
+        assert_eq!(returned_metadata.len(), metadata_len);
         assert_eq!(
             seek_extent(&file, 0, libc::SEEK_CUR).expect("query rewound cursor"),
             Some(0)

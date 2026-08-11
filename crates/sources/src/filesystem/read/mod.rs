@@ -30,7 +30,7 @@ pub(crate) use decode::decode_text_file;
 /// reinventing a weaker `String::from_utf8` decode (no-duplication).
 pub(in crate::filesystem) use decode::decode_text_file_owned_or_bytes;
 pub(in crate::filesystem) use decode::{has_utf16_bom_prefix, looks_binary, looks_binary_prefix};
-pub(crate) use raw::open_file_safe;
+pub(crate) use raw::{open_file_safe, open_file_safe_with_metadata};
 pub(super) use raw::{
     read_file_buffered, read_file_prefix_safe, read_file_safe, read_file_whole_capped,
     BufferedFileRead,
@@ -170,7 +170,7 @@ where
         )
     }) {
         window::WindowedMmapOutcome::Consumed => ForEachWindowedMmapTestOutcome::Consumed,
-        window::WindowedMmapOutcome::Fallback(_) => ForEachWindowedMmapTestOutcome::Fallback,
+        window::WindowedMmapOutcome::Fallback(_, _) => ForEachWindowedMmapTestOutcome::Fallback,
     }
 }
 

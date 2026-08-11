@@ -27,7 +27,7 @@ pub(crate) use extract::validate_scan_archive_entry_name;
 use filter::{walker_config, FilesystemWalkConfig};
 pub(crate) use path::display_path;
 pub(crate) use read::decode_text_file;
-pub(crate) use read::open_file_safe;
+pub(crate) use read::{open_file_safe, open_file_safe_with_metadata};
 
 /// Emit image-metadata chunks for an in-memory layer member whose extension is a
 /// recognised image type. Returns `Ok(Some(true))` when the member was an image and
