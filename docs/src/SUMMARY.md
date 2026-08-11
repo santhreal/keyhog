@@ -38,6 +38,7 @@
 # Performance, worker sizing, and routing
 
 - [CPU, Hyperscan, GPU, and automatic routing](./backends.md)
+- [Performance evidence and comparison](./performance-evidence.md)
 - [Autoroute calibration](./reference/autoroute-calibration.md)
 
 # Detection policy and trust

@@ -47,6 +47,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Scanner runtime snapshots now use the same complete resolved tuning type and
   default resolver as configuration identity. The duplicate runtime-only
   performance configuration record is removed.
+- Added one performance-evidence reference that distinguishes canonical
+  generated receipts from historical investigation reports and defines the
+  executable, workload, host, route, lifecycle, parity, and coverage fields
+  required for comparisons.
 
 - Autoroute cache schema v57 authenticates runtime-compiled GPU programs against the exact executable and detector corpus while retaining manifest-digest binding for installed GPU sidecars. Calibration from a standalone release binary now persists GPU route evidence instead of rejecting every measured workload when no sidecar is installed.
 
