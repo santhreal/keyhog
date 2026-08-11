@@ -3,6 +3,7 @@
 
 ## Unreleased
 
+- CPU phase-one admission now reuses the bounded trigger bitmap scratch and stores clean trigger evidence as an allocation-free empty row. Hit rows retain their exact bitmap.
 - Sensitive-path keyword-free confidence ownership regression pins that ordinary entropy_very_high cannot demote admitted secrets.env hits.
 - Sensitive-path keyword-free entropy keeps ML as lift and scores against the sensitive very-high band so `VALUE=<token>` in secrets.env is not soft-dropped.
 - Redis-sentinel evasion contract uses `REDIS_SENTINEL_AUTH=` instead of a commented auth-pass so comment soft-suppression cannot hide the credential.

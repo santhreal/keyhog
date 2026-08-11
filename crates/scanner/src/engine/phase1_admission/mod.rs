@@ -886,7 +886,7 @@ impl CompiledScanner {
             let Some(chunk) = chunks.get(chunk_idx) else {
                 continue;
             };
-            *hint = Some(self.collect_triggered_patterns_cpu(&chunk.data));
+            *hint = Some(self.collect_triggered_patterns_cpu_compact(&chunk.data));
         }
     }
 
@@ -1186,7 +1186,7 @@ impl CompiledScanner {
         // Reusable no-hit absences need them to prove confirmed-pattern absence.
         // Unique SIMD/GPU windows pay neither.
         let cpu_trigger_hints = ((collect_cpu_trigger_hints && admitted) || reuse_nohit_absence)
-            .then(|| self.collect_triggered_patterns_cpu(&chunk.data));
+            .then(|| self.collect_triggered_patterns_cpu_compact(&chunk.data));
         let confirmed_patterns_absence = reuse_nohit_absence
             && cpu_trigger_hints
                 .as_deref()
