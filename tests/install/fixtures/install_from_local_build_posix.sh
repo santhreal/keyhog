@@ -120,17 +120,17 @@ if [ -x "$KEYHOG" ]; then
     # Install used --no-calibrate, so there is no autoroute cache. Explicit
     # --backend is the documented diagnostic override (same contract as the
     # CI smoke test); auto scan must fail closed without a calibrated route.
-    scan_output=$("$KEYHOG" scan "$WORK/scanme" --backend cpu --daemon=off 2>&1); sc=$?
+    scan_output=$("$KEYHOG" scan --backend simd "$WORK/scanme" 2>&1); sc=$?
     [ "$sc" = "1" ] && ok_ "A.6 seeded scan exits 1 (findings)" || \
         bad_ "A.6 seeded scan exits 1 (findings)" "exit=$sc; $(printf '%s' "$scan_output" | tail -4)"
 
     # Empty input is not a clean bill of health: no bytes were examined.
     mkdir -p "$WORK/empty"
-    "$KEYHOG" scan "$WORK/empty" --backend cpu --daemon=off >/dev/null 2>&1; ec=$?
+    "$KEYHOG" scan --backend simd "$WORK/empty" >/dev/null 2>&1; ec=$?
     [ "$ec" = "13" ] && ok_ "A.7 empty scan fails closed" || bad_ "A.7 empty scan fails closed" "exit=$ec"
 
     # SARIF emission is well-formed and carries results.
-    sarif_output=$("$KEYHOG" scan "$WORK/scanme" --format sarif --output "$WORK/out.sarif" --backend cpu --daemon=off 2>&1); sarif_rc=$?
+    sarif_output=$("$KEYHOG" scan --backend simd "$WORK/scanme" --format sarif --output "$WORK/out.sarif" 2>&1); sarif_rc=$?
     if [ -s "$WORK/out.sarif" ] && grep -q '2.1.0' "$WORK/out.sarif" && grep -q '"results"' "$WORK/out.sarif"; then
         ok_ "A.8 SARIF output well-formed with results"
     else
