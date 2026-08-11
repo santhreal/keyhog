@@ -5,8 +5,8 @@ corpus = "mirror"
 scanner = "keyhog"
 config_id = "simd-nocache-nodaemon-full"
 path = "mirror-keyhog-simd-nocache-nodaemon-full.json"
-generated_at = "2026-08-10T12:51:17Z"
-executable_sha256 = "78ae0cb540e450aecefdfde8d5aff988c3ae1b73cff7a6748f0d640a67a02fcc"
+generated_at = "2026-08-11T01:29:39Z"
+executable_sha256 = "2899ee53789bff9c531f72645f6c8380a7c873230dfb2b6857079467bc8d2dcd"
 hostname_hash = "82fcd9288623"
 fixture_count = 15000
 labeled_positives = 3000
@@ -16,7 +16,7 @@ corpus_bytes = 2431242
 scanner = "kingfisher"
 config_id = "default-nocache-nodaemon-low-no-validate"
 path = "mirror-kingfisher-default-nocache-nodaemon-low-no-validate.json"
-generated_at = "2026-08-10T12:51:26Z"
+generated_at = "2026-08-11T01:29:50Z"
 executable_sha256 = "a49f8e9838d7f1da1e9f328a4dbc45a16996bce5078cde3ff1b8ad422d8ab07a"
 hostname_hash = "82fcd9288623"
 fixture_count = 15000
@@ -27,8 +27,41 @@ corpus_bytes = 2431242
 scanner = "betterleaks"
 config_id = "default-nocache-nodaemon-no-validate"
 path = "mirror-betterleaks-default-nocache-nodaemon-no-validate.json"
-generated_at = "2026-08-10T12:51:20Z"
+generated_at = "2026-08-11T01:29:43Z"
 executable_sha256 = "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4"
+hostname_hash = "82fcd9288623"
+fixture_count = 15000
+labeled_positives = 3000
+corpus_bytes = 2431242
+
+[[run]]
+scanner = "noseyparker"
+config_id = "default-nocache-nodaemon-no-git-history"
+path = "mirror-noseyparker-default-nocache-nodaemon-no-git-history.json"
+generated_at = "2026-08-11T01:29:53Z"
+executable_sha256 = "42d6e88bf77904866a9dda49d7cf333501e76b62e9054b112e67f81dc88e2b71"
+hostname_hash = "82fcd9288623"
+fixture_count = 15000
+labeled_positives = 3000
+corpus_bytes = 2431242
+
+[[run]]
+scanner = "trufflehog"
+config_id = "default-nocache-nodaemon-no-verify"
+path = "mirror-trufflehog-default-nocache-nodaemon-no-verify.json"
+generated_at = "2026-08-11T01:29:58Z"
+executable_sha256 = "6eb1f98fb890bf9361d8833c061e122dcb4f14fb7b71c65e603b7c096153c724"
+hostname_hash = "82fcd9288623"
+fixture_count = 15000
+labeled_positives = 3000
+corpus_bytes = 2431242
+
+[[run]]
+scanner = "titus"
+config_id = "default-nocache-nodaemon-no-validate"
+path = "mirror-titus-default-nocache-nodaemon-no-validate.json"
+generated_at = "2026-08-11T01:30:03Z"
+executable_sha256 = "0b9c126a6c280ba28c6ed8795f88bf9bd793164c15959a34921f47a7ed276bcf"
 hostname_hash = "82fcd9288623"
 fixture_count = 15000
 labeled_positives = 3000
