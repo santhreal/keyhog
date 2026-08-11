@@ -1,9 +1,9 @@
 //! Detection-truth: database CONNECTION STRINGS + provider tokens (#177/#184).
 //! A URI with embedded `user:password@host` is one of the most common real
 //! leaks. keyhog fires both the service-specific connection-string detector AND
-//! generic-password on the embedded secret. Each test pins the specific
-//! detector + the recovered password value (Law 6). ML-independent; run without
-//! `ml` while the embedded weights are mid-retrain.
+//! the URL-embedded credential detector on the password inside it. Each test
+//! pins the specific detector + the recovered password value (Law 6).
+//! ML-independent; run without `ml` while the embedded weights are mid-retrain.
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
@@ -37,12 +37,16 @@ fn assert_fires(text: &str, want_id: &str) {
     );
 }
 
+/// The password inside the URI is recovered as its own finding, separately from
+/// the whole-URI connection-string finding. `url-credentials` owns that span:
+/// `generic-password` needs a `password=`-style key and never sees a userinfo
+/// field.
 fn assert_password_recovered(text: &str, want_pw: &str) {
     let f = findings(text);
     assert!(
         f.iter()
-            .any(|(id, cred)| id == "generic-password" && cred == want_pw),
-        "expected generic-password `{want_pw}` on {text:?}; got {f:?}"
+            .any(|(id, cred)| id == "url-credentials" && cred == want_pw),
+        "expected url-credentials `{want_pw}` on {text:?}; got {f:?}"
     );
 }
 
@@ -83,9 +87,9 @@ fn sendgrid_api_key_in_env() {
 }
 
 #[test]
-fn mongodb_uri_password_is_recovered_by_generic_password() {
-    // The specific detector and the generic password recovery are both expected
-    // on every backend; this assertion pins the embedded-password half.
+fn mongodb_uri_password_is_recovered_separately() {
+    // The specific detector and the URL-embedded password recovery are both
+    // expected on every backend; this assertion pins the embedded-password half.
     assert_password_recovered(
         "MONGO_URI=mongodb://admin:Str0ngMongoPwd@cluster0.example.com:27017/db",
         "Str0ngMongoPwd",
