@@ -415,6 +415,10 @@ provenance-bound snapshots:
 - `reports/readme-scaling.json` owns worker, reader, corpus-size, storage, and
   concurrent-partition evidence. It injects five detailed tables directly from
   measured trials.
+- `reports/daemon-incremental.json` records the production mass-daemon
+  high-byte incremental workload, exact ordered-finding parity, executable
+  identity, latency trials, source work, and peak resident memory. The paired
+  `reports/daemon-incremental.md` states the measured scope and limitation.
 
 The scaling generator creates three exact finding-free workloads: 256 files at
 32 KiB each, 1,024 files at 64 KiB each, and 2,048 files at 128 KiB each. It
