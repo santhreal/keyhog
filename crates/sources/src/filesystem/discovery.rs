@@ -233,6 +233,7 @@ fn metadata_walk_result(
     config: &FilesystemWalkConfig,
     result: Result<ignore::DirEntry, ignore::Error>,
     tracker: Option<&DiscoveryTracker>,
+    archive_symlink_errors: Option<&mut Vec<SourceError>>,
 ) -> Option<MetadataWalkResult> {
     let entry = match result {
         Ok(entry) => entry,
@@ -243,10 +244,8 @@ fn metadata_walk_result(
             return Some(Err(error.to_string()));
         }
     };
-    if entry
-        .file_type()
-        .is_some_and(|file_type| file_type.is_dir())
-    {
+    let file_type = entry.file_type();
+    if file_type.is_some_and(|file_type| file_type.is_dir()) {
         if let Some(tracker) = tracker {
             tracker
                 .directories_seen
@@ -254,10 +253,15 @@ fn metadata_walk_result(
         }
         return None;
     }
-    if !entry
-        .file_type()
-        .is_some_and(|file_type| file_type.is_file())
-    {
+    if file_type.is_some_and(|file_type| file_type.is_symlink()) {
+        if let Some(errors) = archive_symlink_errors {
+            if let Some(error) = super::classify_archive_symlink(entry.path()) {
+                errors.push(error);
+            }
+        }
+        return None;
+    }
+    if !file_type.is_some_and(|file_type| file_type.is_file()) {
         return None;
     }
     let path = entry.into_path();
@@ -296,13 +300,30 @@ pub(super) fn walk_metadata_tracked(
     tracker: &DiscoveryTracker,
     visit: impl FnMut(MetadataWalkResult) -> bool,
 ) {
-    walk_metadata_tracked_opt(root, config, Some(tracker), visit);
+    walk_metadata_tracked_opt(root, config, Some(tracker), None, visit);
+}
+
+fn walk_metadata_with_archive_symlinks_tracked(
+    root: &Path,
+    config: &FilesystemWalkConfig,
+    tracker: &DiscoveryTracker,
+    archive_symlink_errors: &mut Vec<SourceError>,
+    visit: impl FnMut(MetadataWalkResult) -> bool,
+) {
+    walk_metadata_tracked_opt(
+        root,
+        config,
+        Some(tracker),
+        Some(archive_symlink_errors),
+        visit,
+    );
 }
 
 fn walk_metadata_tracked_opt(
     root: &Path,
     config: &FilesystemWalkConfig,
     tracker: Option<&DiscoveryTracker>,
+    mut archive_symlink_errors: Option<&mut Vec<SourceError>>,
     mut visit: impl FnMut(MetadataWalkResult) -> bool,
 ) {
     if let Err(error) = validate_walk_root(root, tracker) {
@@ -318,7 +339,13 @@ fn walk_metadata_tracked_opt(
                 .walk_entries_seen
                 .fetch_add(1, AtomicOrdering::Relaxed);
         }
-        let Some(mapped) = metadata_walk_result(root, config, result, tracker) else {
+        let Some(mapped) = metadata_walk_result(
+            root,
+            config,
+            result,
+            tracker,
+            archive_symlink_errors.as_deref_mut(),
+        ) else {
             continue;
         };
         if !visit(mapped) {
@@ -351,6 +378,8 @@ pub(super) fn collect_unbounded_sorted(
     #[cfg(target_os = "linux")]
     let mut rebuild_attempted = false;
     #[cfg(target_os = "linux")]
+    let mut descriptor_archive_symlink_errors = None;
+    #[cfg(target_os = "linux")]
     let excluded_before_walk = crate::skip_counts().excluded;
     #[cfg(target_os = "linux")]
     let rebuild_viable = descriptor_rebuild_viable(root, config, has_ignore_patterns);
@@ -370,70 +399,91 @@ pub(super) fn collect_unbounded_sorted(
     #[cfg(not(unix))]
     let can_walk = true;
 
+    let mut archive_symlink_errors = Vec::new();
     if can_walk {
-        walk_metadata_tracked(root, config, tracker, |result| {
-            match result {
-                Ok(entry) => {
-                    let size = entry.size;
-                    #[cfg(unix)]
-                    {
-                        let Some(active_builder) = builder.as_mut() else {
-                            return false;
-                        };
-                        if let Err(error) = active_builder.push(entry) {
-                            let _event =
-                                crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                            errors.push(error);
-                            builder = None;
-                            return false;
-                        }
-                    }
-                    #[cfg(not(unix))]
-                    entries.push(entry);
-                    count = count.saturating_add(1);
-                    bytes = bytes.saturating_add(size);
-                }
-                Err(error) => {
-                    #[cfg(target_os = "linux")]
-                    if is_name_too_long(&error) && rebuild_viable && !rebuild_attempted {
-                        rebuild_attempted = true;
-                        let walk_excluded = crate::skip_counts()
-                            .excluded
-                            .saturating_sub(excluded_before_walk);
-                        let excluded_before_rebuild = crate::skip_counts().excluded;
-                        match collect_descriptor_entries(root, config, has_ignore_patterns) {
-                            Ok((replacement, replacement_count, replacement_bytes)) => {
-                                builder = Some(replacement);
-                                count = replacement_count;
-                                bytes = replacement_bytes;
-                                crate::skip::subtract_excluded(walk_excluded);
+        walk_metadata_with_archive_symlinks_tracked(
+            root,
+            config,
+            tracker,
+            &mut archive_symlink_errors,
+            |result| {
+                match result {
+                    Ok(entry) => {
+                        let size = entry.size;
+                        #[cfg(unix)]
+                        {
+                            let Some(active_builder) = builder.as_mut() else {
+                                return false;
+                            };
+                            if let Err(error) = active_builder.push(entry) {
+                                let _event =
+                                    crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                                errors.push(error);
+                                builder = None;
                                 return false;
                             }
-                            Err(_rebuild_error) => {
-                                // Roll back Excluded events recorded by the aborted
-                                // rebuild so the resumed pathname walk does not
-                                // double-count the same pruned paths.
-                                let rebuild_excluded = crate::skip_counts()
-                                    .excluded
-                                    .saturating_sub(excluded_before_rebuild);
-                                crate::skip::subtract_excluded(rebuild_excluded);
-                                // Keep walking so coverage is not truncated. Do not
-                                // retry descriptor rebuild on later ENAMETOOLONG rows.
+                        }
+                        #[cfg(not(unix))]
+                        entries.push(entry);
+                        count = count.saturating_add(1);
+                        bytes = bytes.saturating_add(size);
+                    }
+                    Err(error) => {
+                        #[cfg(target_os = "linux")]
+                        if is_name_too_long(&error) && rebuild_viable && !rebuild_attempted {
+                            rebuild_attempted = true;
+                            let walk_excluded = crate::skip_counts()
+                                .excluded
+                                .saturating_sub(excluded_before_walk);
+                            let excluded_before_rebuild = crate::skip_counts().excluded;
+                            match collect_descriptor_entries(root, config, has_ignore_patterns) {
+                                Ok((replacement, replacement_count, replacement_bytes)) => {
+                                    descriptor_archive_symlink_errors =
+                                        Some(super::collect_descriptor_archive_symlink_errors(
+                                            root,
+                                            config.respect_default_excludes,
+                                        ));
+                                    builder = Some(replacement);
+                                    count = replacement_count;
+                                    bytes = replacement_bytes;
+                                    crate::skip::subtract_excluded(walk_excluded);
+                                    return false;
+                                }
+                                Err(_rebuild_error) => {
+                                    // Roll back Excluded events recorded by the aborted
+                                    // rebuild so the resumed pathname walk does not
+                                    // double-count the same pruned paths.
+                                    let rebuild_excluded = crate::skip_counts()
+                                        .excluded
+                                        .saturating_sub(excluded_before_rebuild);
+                                    crate::skip::subtract_excluded(rebuild_excluded);
+                                    // Keep walking so coverage is not truncated. Do not
+                                    // retry descriptor rebuild on later ENAMETOOLONG rows.
+                                }
                             }
                         }
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                        tracing::warn!(
+                            error = %error,
+                            "skipping unreadable filesystem entry; scan continues"
+                        );
+                        errors.push(SourceError::Other(format!(
+                            "failed to inspect filesystem entry: {error}; entry was not scanned"
+                        )));
                     }
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                    tracing::warn!(
-                        error = %error,
-                        "skipping unreadable filesystem entry; scan continues"
-                    );
-                    errors.push(SourceError::Other(format!(
-                        "failed to inspect filesystem entry: {error}; entry was not scanned"
-                    )));
                 }
-            }
-            true
-        });
+                true
+            },
+        );
+        #[cfg(target_os = "linux")]
+        if let Some(descriptor_errors) = descriptor_archive_symlink_errors {
+            archive_symlink_errors = descriptor_errors;
+        }
+        for _ in 0..archive_symlink_errors.len() {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        }
+        archive_symlink_errors.append(&mut errors);
+        errors = archive_symlink_errors;
     }
 
     #[cfg(unix)]
@@ -1022,13 +1072,26 @@ impl DiscoveryTracker {
 mod tests {
     use super::*;
 
+    fn must<T, E: std::fmt::Debug>(result: Result<T, E>, action: &str) -> T {
+        match result {
+            Ok(value) => value,
+            Err(error) => panic!("{action}: {error:?}"),
+        }
+    }
+
     #[test]
     fn tracked_walk_counts_production_events_and_early_termination() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = must(tempfile::tempdir(), "create temporary directory");
         let sub_dir = temp_dir.path().join("sub");
-        std::fs::create_dir(&sub_dir).unwrap();
-        std::fs::write(temp_dir.path().join("sample1.txt"), "hello world").unwrap();
-        std::fs::write(sub_dir.join("sample2.txt"), "nested hello").unwrap();
+        must(std::fs::create_dir(&sub_dir), "create fixture subdirectory");
+        must(
+            std::fs::write(temp_dir.path().join("sample1.txt"), "hello world"),
+            "write first fixture",
+        );
+        must(
+            std::fs::write(sub_dir.join("sample2.txt"), "nested hello"),
+            "write second fixture",
+        );
 
         let tracker = DiscoveryTracker::default();
         let config = super::super::filter::walker_config(0, &[], true);
@@ -1046,7 +1109,7 @@ mod tests {
 
     #[test]
     fn tracked_walk_records_root_validation_failure_without_walker_events() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = must(tempfile::tempdir(), "create temporary directory");
         let missing = temp_dir.path().join("missing");
         let tracker = DiscoveryTracker::default();
         let config = super::super::filter::walker_config(0, &[], true);
