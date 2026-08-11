@@ -444,10 +444,16 @@ impl CompiledScanner {
         // anchor on a service prefix and take engine/scan.rs's path
         // before this fallback, so a real 40-char anchored secret (AWS
         // etc.) is unaffected - the negative twin still fires.
+        //
+        // Keep entropy-path coherence: TOKEN/API_KEY/JWT_SECRET positives can
+        // be opaque base64-looking random bytes. Require decoded NUL evidence
+        // before hard-dropping (same rule as phase2_entropy/gates.rs).
+        // SecretBench pure-alnum decoys that carry NULs still suppress.
         if !high_entropy_punctuation_payload
             && !allow_canonical_hex_key
             && !allow_ambiguous_base64_candidate
             && !allow_encoded_text_secret
+            && decode_evidence.decoded_contains_nul_byte()
             && crate::suppression::shape::looks_like_random_byte_base64_blob(value)
         {
             return Some(GenericValueShapeStage::RandomByteBlob);

@@ -5471,7 +5471,6 @@ pub(crate) mod decode_structure {
         crate::decode_structure::evidence(candidate).decoded_contains_placeholder()
     }
 
-    #[cfg(any(feature = "entropy", test))]
     pub(crate) fn decoded_contains_nul_byte(candidate: &str) -> bool {
         crate::decode_structure::evidence(candidate).decoded_contains_nul_byte()
     }

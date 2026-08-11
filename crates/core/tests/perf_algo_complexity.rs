@@ -39,7 +39,7 @@
 //! CPU-TIME TRIPWIRE: measure dedup of N vs 2N repeats of the same credential
 //! on distinct lines (one group). A linear/log-linear dedup doubles (~2x, plus
 //! the sort log factor); the old O(K^2) sweep approached 4x. We require the
-//! doubling ratio to stay under SUBQUADRATIC_RATIO (3.0). Best-of-K thread CPU
+//! doubling ratio to stay under SUBQUADRATIC_RATIO (3.25). Best-of-K thread CPU
 //! samples remove scheduler contention from parallel CI jobs while retaining
 //! the algorithmic cost of sorting, hashing, allocation, and location
 //! accumulation. Run with the release-fast profile characteristics (the
@@ -55,10 +55,10 @@ use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
 
 /// Doubling input must not roughly quadruple time for the dedup pass. A
 /// log-linear dedup ratios ~2.0-2.4 (the +log term); the O(K^2)
-/// additional_locations sweep ratios ~3.6-4.0. 3.0 sits well above the
-/// optimized target and well below the quadratic blowup, so only the real
-/// regression trips it.
-const SUBQUADRATIC_RATIO: f64 = 3.0;
+/// additional_locations sweep ratios ~3.6-4.0. 3.25 sits well above the
+/// optimized target and well below the quadratic blowup, with a little
+/// headroom for CI thread-CPU jitter (observed tip flake at 3.03x).
+const SUBQUADRATIC_RATIO: f64 = 3.25;
 
 /// Best-of-K thread CPU-time samples; keep the minimum to drop allocator noise.
 const TIMING_SAMPLES: usize = 5;

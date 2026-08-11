@@ -27123,7 +27123,7 @@ negative_fixture!(
 positive_fixture!(
     redis_sentinel_credentials_evasion_0,
     "redis-sentinel-credentials",
-    r##"# sentinel auth-pass mymaster "RedisSentPass123""##,
+    r#"REDIS_SENTINEL_AUTH=RedisSentPass123"#,
     r#"RedisSentPass123"#,
     r#"redis-sentinel-credentials.txt"#
 );

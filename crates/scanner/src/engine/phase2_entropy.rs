@@ -286,11 +286,22 @@ impl CompiledScanner {
             } else {
                 compiled_policy.bpe_bound(self.config.entropy_bpe_max_bytes_per_token_override)
             };
+            // Sensitive-path keyword-free admission uses
+            // `sensitive_path_entropy_very_high` as the floor. Score the same
+            // band here so a candidate that cleared that floor is not stuck in
+            // the ordinary "high" tier and then erased by soft confidence.
+            let entropy_very_high_for_confidence = if sensitive_path
+                && entropy_match.keyword == crate::entropy::KEYWORD_FREE_LABEL
+            {
+                compiled_policy.sensitive_path_entropy_very_high
+            } else {
+                compiled_policy.entropy_very_high
+            };
             let policy_conf = crate::confidence::policy::entropy_fallback_confidence(
                 entropy_match.entropy,
                 &entropy_match.keyword,
                 compiled_policy.entropy_high,
-                compiled_policy.entropy_very_high,
+                entropy_very_high_for_confidence,
                 compiled_policy.fallback_confidence,
             );
             let mapped_line = preprocessed
@@ -418,6 +429,17 @@ impl CompiledScanner {
             #[cfg(feature = "ml")]
             let entropy_ml_mode = if detector_owned_canonical_hex_key {
                 entropy_ml_policy.match_mode
+            } else if sensitive_path
+                && entropy_match.keyword == crate::entropy::KEYWORD_FREE_LABEL
+            {
+                // Keyword-free on a sensitive path already cleared the
+                // detector's sensitive entropy floor (e.g. VALUE=<token> in
+                // secrets.env). Authoritative ML must not veto that structural
+                // evidence when nearby assignment context looks generic; keep
+                // ML as a lift on top of the heuristic floor.
+                entropy_ml_policy
+                    .entropy_mode
+                    .map(|_| crate::detector_ml_policy::ActiveMlMode::Lift)
             } else {
                 entropy_ml_policy.entropy_mode
             };

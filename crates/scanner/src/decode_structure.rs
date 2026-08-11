@@ -73,7 +73,6 @@ pub(crate) struct DecodeEvidence {
     structure: DecodeStructure,
     decoded_is_base64_blob: bool,
     decoded_hex_text_len: Option<usize>,
-    #[cfg(any(feature = "entropy", test))]
     decoded_contains_nul_byte: bool,
     decoded_contains_placeholder: bool,
 }
@@ -99,7 +98,6 @@ impl DecodeEvidence {
         self.decoded_hex_text_len
     }
 
-    #[cfg(any(feature = "entropy", test))]
     #[must_use]
     pub(crate) const fn decoded_contains_nul_byte(self) -> bool {
         self.decoded_contains_nul_byte
@@ -334,7 +332,6 @@ fn compute_decode_facts(candidate: &str) -> DecodeEvidence {
             .iter()
             .all(|byte| byte.is_ascii_hexdigit())
             .then_some(bytes.len()),
-        #[cfg(any(feature = "entropy", test))]
         decoded_contains_nul_byte: bytes.contains(&0),
         decoded_contains_placeholder: crate::placeholder_words::bytes_contain_placeholder_word(
             &bytes,

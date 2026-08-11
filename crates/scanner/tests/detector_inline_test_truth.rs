@@ -293,18 +293,13 @@ fn anchored_generic_service_detectors_remain_named_through_resolution() {
 
 #[test]
 fn corrected_primary_role_regressions_have_exact_backend_parity() {
-    let scanner = scanner();
-    let acquired_gpu_backends: Vec<_> = scanner
-        .gpu_backend_candidates()
-        .into_iter()
-        .filter(|candidate| candidate.acquired)
-        .map(|candidate| candidate.backend)
-        .collect();
-    assert!(
-        !keyhog_scanner::hw_probe::probe_hardware().gpu_available
-            || !acquired_gpu_backends.is_empty(),
-        "physical GPU probe succeeded but no compiled GPU peer was acquired"
-    );
+    // ExactCpuScanners materializes one pack per CPU backend. CompiledScanner::compile
+    // always selects cpu-fallback, and scan_with_backend forbids runtime substitution.
+    let detectors = keyhog_core::load_detectors(&detector_dir())
+        .unwrap_or_else(|e| panic!("detectors/ must load into the scanner: {e}"));
+    let scanners = support::ExactCpuScanners::compile(detectors)
+        .expect("exact CPU scanners must compile");
+    let resolver = scanner();
     let corrected: std::collections::BTreeSet<&str> = [
         "alertmanager-credentials",
         "amazon-music-api-credentials",
@@ -332,12 +327,12 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
             continue;
         };
         let chunk = make_chunk(positive, case.path.as_deref());
-        scanner.clear_fragment_cache();
-        let mut cpu = scanner
+        scanners.clear_fragment_cache();
+        let mut cpu = scanners
             .scan_with_backend(&chunk, ScanBackend::CpuFallback)
             .expect("selected backend scan succeeds");
-        scanner.clear_fragment_cache();
-        match scanner.scan_with_backend(&chunk, ScanBackend::SimdCpu) {
+        scanners.clear_fragment_cache();
+        match scanners.scan_with_backend(&chunk, ScanBackend::SimdCpu) {
             Ok(mut simd) => {
                 cpu.sort();
                 simd.sort();
@@ -346,22 +341,12 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
             Err(keyhog_scanner::ScanError::Simd(msg)) if msg.contains("unavailable") => {}
             Err(err) => panic!("SIMD scan failed for {}: {err}", case.detector_id),
         }
-        for backend in &acquired_gpu_backends {
-            scanner.clear_fragment_cache();
-            let mut gpu = scanner
-                .scan_with_backend(&chunk, *backend)
-                .expect("selected backend scan succeeds");
-            gpu.sort();
-            assert_eq!(
-                cpu,
-                gpu,
-                "CPU/{} finding drift for {}",
-                backend.label(),
-                case.detector_id
-            );
-        }
-        let resolved = scanner
-            .try_resolve_matches(cpu)
+        resolver.clear_fragment_cache();
+        let raw = resolver
+            .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+            .expect("resolver cpu scan succeeds");
+        let resolved = resolver
+            .try_resolve_matches(raw)
             .expect("active plan resolves corrected inline findings");
         assert!(
             resolved

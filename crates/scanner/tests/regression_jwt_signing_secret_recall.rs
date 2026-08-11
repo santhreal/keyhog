@@ -30,9 +30,19 @@ fn shared() -> &'static CompiledScanner {
 /// case + digits, no dictionary word, no repeated run, so a miss is a real
 /// recall gap, not a value the low-diversity / placeholder gates legitimately drop.
 fn secret(n: usize, seed: usize) -> String {
+    // SplitMix64-fed stream so nearby seeds stay independent and the body
+    // clears low-diversity / repeated-block gates. A miss is a real recall gap.
     const ALNUM: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let mut s = (seed as u64)
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(0x2545_F491_4F6C_DD1D);
     (0..n)
-        .map(|i| ALNUM[(i * 7 + seed * 13 + i * i) % ALNUM.len()] as char)
+        .map(|_| {
+            s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ALNUM[((s >> 33) % ALNUM.len() as u64) as usize] as char
+        })
         .collect()
 }
 
