@@ -12,6 +12,9 @@
   capped artifact file buffer through hydration instead of allocating a second
   complete section set.
 
+- Confirmed shared-anchor extraction now reuses bounded worker scratch for its
+  sparse active-pattern and literal-id lists instead of allocating both vectors
+  for every phase-two pass.
 
 ## 0.5.70 - 2026-08-10
 

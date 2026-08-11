@@ -163,7 +163,8 @@ impl CompiledScanner {
                 let pattern_is_live =
                     |pat: usize| !skip_homoglyph || !this.phase2_patterns[pat].0.homoglyph_variant;
                 let localize_keyword_anchors = route.phase2_keyword_localizer;
-                super::with_candidate_scratch(|cands| {
+                super::with_candidate_scratch(|candidate_scratch| {
+                    let cands = &mut candidate_scratch.candidates;
                     let mut candidates_are_full_text_offsets = false;
                     {
                         let _g = super::profile::span(keyhog_profile::Stage::Phase2SharedAc);
@@ -239,7 +240,8 @@ impl CompiledScanner {
                     && !phase2_always_active_gpu_evidence
                         .is_some_and(|evidence| self.phase2_prefixless_gpu_absence_proven(evidence))
                 {
-                    super::with_candidate_scratch(|cands| {
+                    super::with_candidate_scratch(|candidate_scratch| {
+                        let cands = &mut candidate_scratch.candidates;
                         {
                             let _g = super::profile::span(keyhog_profile::Stage::Phase2SharedAc);
                             anchor_idx.collect_plain_candidates(scan_text, pattern_is_live, cands);

@@ -198,10 +198,12 @@ impl ConfirmedAnchorIndex {
         active_patterns: &[usize],
         is_active: impl Fn(usize) -> bool,
         out: &mut Vec<(u32, u32)>,
+        sparse: &mut Vec<usize>,
+        sparse_literal_ids: &mut Vec<u32>,
     ) {
         out.clear();
-        let mut sparse: Vec<usize> = Vec::new();
-        let mut sparse_literal_ids: Vec<u32> = Vec::new();
+        sparse.clear();
+        sparse_literal_ids.clear();
         for &pat_idx in active_patterns {
             if !(self.is_eligible(pat_idx) && is_active(pat_idx)) {
                 continue;

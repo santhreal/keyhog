@@ -41,6 +41,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - MatcherArtifact cache hits now validate and decode the three persisted matcher
   sections directly from the capped artifact file buffer. Startup no longer
   allocates and copies a second complete section set before hydration.
+- Confirmed phase-two shared-anchor collection now reuses the bounded
+  worker-candidate scratch for eligible-pattern and literal-id lists. Repeated
+  chunks no longer allocate two temporary vectors per confirmed-anchor pass.
 
 - Autoroute cache schema v57 authenticates runtime-compiled GPU programs against the exact executable and detector corpus while retaining manifest-digest binding for installed GPU sidecars. Calibration from a standalone release binary now persists GPU route evidence instead of rejecting every measured workload when no sidecar is installed.
 

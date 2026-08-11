@@ -82,6 +82,11 @@ serialized body and its copy into the transport buffer.
 [`reports/matcher-artifact-startup-decoding.md`](reports/matcher-artifact-startup-decoding.md)
 records the section-copy elimination and its
 [`JSON receipt`](reports/matcher-artifact-startup-decoding.json).
+## Confirmed phase-two scratch evidence
+
+[`reports/phase2-scratch-reuse.md`](reports/phase2-scratch-reuse.md) records the
+helper-vector allocation-site elimination, aggregate retention ceiling, and
+[`JSON receipt`](reports/phase2-scratch-reuse.json).
 
 ## Bloom prefilter evidence
 

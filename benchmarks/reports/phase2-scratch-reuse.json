@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "subject": "confirmed phase-two shared-anchor scratch allocations",
+  "source_commit": "20b0928132",
+  "measurement": {
+    "method": "production-path allocation-site inventory plus feature-neutral library compile",
+    "command": "cargo check -p keyhog-scanner --lib --no-default-features"
+  },
+  "legacy": {
+    "temporary_vectors_per_confirmed_anchor_pass": 2,
+    "pooled_vectors": 1
+  },
+  "candidate": {
+    "temporary_vectors_per_confirmed_anchor_pass": 0,
+    "pooled_vectors": 3,
+    "aggregate_retention_ceiling_bytes": 1048576,
+    "maximum_idle_scratch_buffers": 4
+  },
+  "result": {
+    "temporary_vector_allocation_site_reduction_percent": 100.0,
+    "temporary_vector_allocation_sites_eliminated_per_pass": 2
+  },
+  "parity": {
+    "candidate_ordering_algorithm_changed": false,
+    "candidate_deduplication_algorithm_changed": false,
+    "explicit_wider_route_behavior_changed": false
+  },
+  "limit": "The candidate output vector remains required and bounded; this receipt claims elimination of the two helper-vector allocation sites, not zero allocations for the complete phase-two pass."
+}

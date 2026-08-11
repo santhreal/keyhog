@@ -215,7 +215,12 @@ impl CompiledScanner {
                 .iter()
                 .any(|&pat_idx| anchor_index.is_eligible(pat_idx) && pattern_allows(pat_idx));
             if has_active_anchored {
-                super::with_candidate_scratch(|candidates| {
+                super::with_candidate_scratch(|candidate_scratch| {
+                    let super::CandidateScratch {
+                        candidates,
+                        active_eligible,
+                        literal_ids,
+                    } = candidate_scratch;
                     let collect_t0 = prof.then(std::time::Instant::now);
                     // `confirmed_patterns` is the set bits of this chunk's
                     // trigger bitmap, so membership is one word load instead of
@@ -236,6 +241,8 @@ impl CompiledScanner {
                             confirmed_patterns,
                             is_active,
                             candidates,
+                            active_eligible,
+                            literal_ids,
                         );
                     }
                     if let Some(collect_t0) = collect_t0 {
