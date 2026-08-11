@@ -38,6 +38,22 @@ fn mixed_batch_topology_never_serializes_a_large_chunk_with_neighbors() {
 }
 
 #[test]
+fn small_lane_topology_uses_one_flat_index_buffer() {
+    const CHUNKS: usize = 4096;
+    const WORKERS: usize = 32;
+    let sizes = vec![1; CHUNKS];
+    let (small_lanes, stored_indices, index_buffers) =
+        keyhog_scanner::testing::chunk_lane_storage_shape_for_test(&sizes, 64 * 1024, WORKERS);
+
+    assert_eq!(small_lanes, WORKERS);
+    assert_eq!(stored_indices, CHUNKS);
+    assert_eq!(
+        index_buffers, 1,
+        "small-lane membership must use one flat index buffer, not one allocation per lane"
+    );
+}
+
+#[test]
 fn production_topology_covers_every_boundary_variant_exactly_once() {
     const THRESHOLD: usize = 8;
     const WORKERS: usize = 4;

@@ -913,13 +913,44 @@ pub fn chunk_lane_topology_for_test(
             metadata: keyhog_core::ChunkMetadata::default(),
         })
         .collect();
-    crate::engine::batch_topology::coalesced_work_lanes_for_workers(&chunks, threshold, workers)
-        .into_iter()
+    let topology = crate::engine::batch_topology::coalesced_work_lanes_for_workers(
+        &chunks, threshold, workers,
+    );
+    topology
+        .lanes()
+        .iter()
         .map(|lane| match lane {
-            crate::engine::batch_topology::CoalescedLane::Small(indices) => (false, indices),
-            crate::engine::batch_topology::CoalescedLane::Large(index) => (true, vec![index]),
+            crate::engine::batch_topology::CoalescedLane::Small(_) => {
+                (false, topology.indices(lane).to_vec())
+            }
+            crate::engine::batch_topology::CoalescedLane::Large(index) => (true, vec![*index]),
         })
         .collect()
+}
+
+/// Returns `(small_lanes, stored_small_indices, small_index_buffers)`.
+pub fn chunk_lane_storage_shape_for_test(
+    chunk_sizes: &[usize],
+    threshold: usize,
+    workers: usize,
+) -> (usize, usize, usize) {
+    let chunks: Vec<keyhog_core::Chunk> = chunk_sizes
+        .iter()
+        .map(|&size| keyhog_core::Chunk {
+            data: "x".repeat(size).into(),
+            metadata: keyhog_core::ChunkMetadata::default(),
+        })
+        .collect();
+    chunk_lane_storage_shape_for_chunks_for_test(&chunks, threshold, workers)
+}
+
+pub fn chunk_lane_storage_shape_for_chunks_for_test(
+    chunks: &[keyhog_core::Chunk],
+    threshold: usize,
+    workers: usize,
+) -> (usize, usize, usize) {
+    crate::engine::batch_topology::coalesced_work_lanes_for_workers(chunks, threshold, workers)
+        .storage_shape()
 }
 
 /// Returns the effective runtime threshold stored by a compiled scanner.
