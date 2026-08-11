@@ -1101,8 +1101,9 @@ async fn scan_daemon_local_filesystems(
                 response_kind(&other)
             ),
         }
+        conn.send(&Request::MassFilesystemDrain).await?;
         loop {
-            match conn.round_trip(&Request::MassFilesystemNext).await? {
+            match conn.recv().await? {
                 response @ Response::ScanResults { .. } => {
                     if let Some(profile) = request_profile_of(&response) {
                         crate::orchestrator::render_daemon_request_profile(&profile);

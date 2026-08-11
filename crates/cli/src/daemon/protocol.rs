@@ -76,7 +76,10 @@ use std::collections::BTreeMap;
 ///   `GuardStatus`, and `GuardReconcile` root control frames. The
 ///   client validates conservation of object count and bytes and
 ///   reacquires the index fingerprint before accepting the receipt.
-pub(crate) const WIRE_VERSION: u32 = 13;
+/// * v14 - daemon-local filesystem batches stream to the client after one
+///   `MassFilesystemDrain` request. Batch responses remain individually bounded,
+///   but per-batch request/response lock-step no longer stalls retirement.
+pub(crate) const WIRE_VERSION: u32 = 14;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -207,8 +210,9 @@ pub(crate) enum Request {
         respect_default_excludes: bool,
         reader_threads: Option<usize>,
     },
-    /// Pull and scan the next bounded daemon-local filesystem batch.
-    MassFilesystemNext,
+    /// Scan and stream every bounded batch from the active daemon-local
+    /// filesystem source. The terminal response is `MassFilesystemComplete`.
+    MassFilesystemDrain,
     /// Finish the transaction, clear fragment state, and release the worker.
     MassEnd,
     /// Liveness + cheap status (uptime, scans served, detector count).
@@ -904,7 +908,7 @@ pub(crate) fn request_kind(request: &Request) -> &'static str {
         Request::MassBegin { .. } => "MassBegin",
         Request::MassBatch { .. } => "MassBatch",
         Request::MassFilesystemBegin { .. } => "MassFilesystemBegin",
-        Request::MassFilesystemNext => "MassFilesystemNext",
+        Request::MassFilesystemDrain => "MassFilesystemDrain",
         Request::MassEnd => "MassEnd",
         Request::Health => "Health",
         Request::Shutdown => "Shutdown",

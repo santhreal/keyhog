@@ -48,3 +48,12 @@ fn scan_path_uses_full_file_timeout() {
     assert_eq!(request_timeout(&req), DAEMON_REQUEST_TIMEOUT);
     assert_eq!(DAEMON_REQUEST_TIMEOUT.as_secs(), 300);
 }
+
+#[cfg(test)]
+#[test]
+fn mass_filesystem_drain_uses_full_workload_timeout() {
+    assert_eq!(
+        request_timeout(&Request::MassFilesystemDrain),
+        DAEMON_REQUEST_TIMEOUT
+    );
+}

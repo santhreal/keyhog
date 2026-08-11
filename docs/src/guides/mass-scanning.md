@@ -162,6 +162,10 @@ processes each batch with its persisted autoroute decision while retaining one
 exclusive fragment-state lease for the transaction. It clears fragment state
 when the transaction ends or the client disconnects. This bounds batch memory
 independently of total inventory size.
+Daemon-local acquisition uses one drain request. The daemon streams one bounded
+result response per batch followed by the terminal completion response. Socket
+backpressure remains the memory bound; the client does not pause each batch to
+send another request.
 
 The completion receipt contains exact total and GPU batches, chunks, bytes, and
 daemon execution time. Protected wire mode compares total chunks and bytes with

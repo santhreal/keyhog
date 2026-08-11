@@ -286,13 +286,25 @@ async fn daemon_frame_rejects_oversized_length_prefix() {
     );
 }
 
-/// Locks the v13 bump: the guard commit transaction frames are an
-/// incompatible wire change, so the version constant must move and peers
-/// stay refused at the Hello handshake (client::connect_inner bails on
-/// any version mismatch).
+/// Locks the v14 bump: one drain request now produces a bounded stream of
+/// daemon-local filesystem batch responses. Older peers must fail at Hello
+/// instead of disagreeing about the request/response cardinality.
 #[test]
-fn daemon_wire_version_is_v13_with_guard_transaction() {
-    assert_eq!(WIRE_VERSION, 13);
+fn daemon_wire_version_is_v14_with_mass_filesystem_streaming() {
+    assert_eq!(WIRE_VERSION, 14);
+}
+
+#[tokio::test]
+async fn daemon_wire_v14_mass_filesystem_drain_roundtrips() {
+    let (mut client, mut server) = tokio::io::duplex(1024);
+    frame::write_request(&mut client, &Request::MassFilesystemDrain)
+        .await
+        .expect("write mass filesystem drain");
+    let request = frame::read_request(&mut server)
+        .await
+        .expect("read request")
+        .expect("mass filesystem drain frame");
+    assert!(matches!(request, Request::MassFilesystemDrain));
 }
 
 /// The v12 `profile` opt-in must survive the frame round-trip verbatim on
