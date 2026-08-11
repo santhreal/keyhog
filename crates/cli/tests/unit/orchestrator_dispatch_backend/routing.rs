@@ -1675,9 +1675,10 @@ fn issue32_autoroute_cache_rejects_stale_v53_before_payload_decode() {
     )
     .expect_err("v53 cache must be rejected before payload decode")
     .to_string();
+    let expected_version = format!("expects {AUTOROUTE_CACHE_VERSION}");
     assert!(
         error.contains("unsupported autoroute cache version 53")
-            && error.contains("expects 56")
+            && error.contains(&expected_version)
             && !error.contains("missing field"),
         "v53 rejection must be version-first and actionable: {error}"
     );
