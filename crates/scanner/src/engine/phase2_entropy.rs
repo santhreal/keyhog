@@ -290,13 +290,12 @@ impl CompiledScanner {
             // `sensitive_path_entropy_very_high` as the floor. Score the same
             // band here so a candidate that cleared that floor is not stuck in
             // the ordinary "high" tier and then erased by soft confidence.
-            let entropy_very_high_for_confidence = if sensitive_path
-                && entropy_match.keyword == crate::entropy::KEYWORD_FREE_LABEL
-            {
-                compiled_policy.sensitive_path_entropy_very_high
-            } else {
-                compiled_policy.entropy_very_high
-            };
+            let entropy_very_high_for_confidence =
+                if sensitive_path && entropy_match.keyword == crate::entropy::KEYWORD_FREE_LABEL {
+                    compiled_policy.sensitive_path_entropy_very_high
+                } else {
+                    compiled_policy.entropy_very_high
+                };
             let policy_conf = crate::confidence::policy::entropy_fallback_confidence(
                 entropy_match.entropy,
                 &entropy_match.keyword,
@@ -429,8 +428,7 @@ impl CompiledScanner {
             #[cfg(feature = "ml")]
             let entropy_ml_mode = if detector_owned_canonical_hex_key {
                 entropy_ml_policy.match_mode
-            } else if sensitive_path
-                && entropy_match.keyword == crate::entropy::KEYWORD_FREE_LABEL
+            } else if sensitive_path && entropy_match.keyword == crate::entropy::KEYWORD_FREE_LABEL
             {
                 // Keyword-free on a sensitive path already cleared the
                 // detector's sensitive entropy floor (e.g. VALUE=<token> in

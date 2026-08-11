@@ -66,10 +66,16 @@ fn entropy_fallback_uses_its_detector_owned_tiers() {
 #[cfg(feature = "entropy")]
 #[test]
 fn production_entropy_confidence_changes_with_only_the_owning_toml_tier() {
+    // Keyword-free VALUE=<token> under secrets.env admits and scores on
+    // `sensitive_path_entropy_very_high` (same floor as keyword_free_threshold).
+    // Because those floors are coupled, an admitted hit is always the full
+    // confidence tier; ordinary `entropy_very_high` must not demote it.
+    // Pure very-high/high tier stepping stays covered by
+    // `entropy_fallback_uses_its_detector_owned_tiers`.
     const CREDENTIAL: &str = "qA9zM4nB7vC2xL8pR5tY1uI6oP3sD0fG9hJ2kL7mN4bV8cX1zQ6wE5rT0yU3iO";
     let entropy = shannon_entropy_scalar_for_test(CREDENTIAL.as_bytes());
 
-    let confidence = |very_high: f64| {
+    let confidence = |ordinary_very_high: f64| {
         let mut detector = keyhog_core::embedded_detector_specs()
             .iter()
             .find(|detector| detector.id == "generic-secret")
@@ -77,8 +83,8 @@ fn production_entropy_confidence_changes_with_only_the_owning_toml_tier() {
             .clone();
         detector.entropy_low = Some((entropy - 2.0).max(0.0));
         detector.entropy_high = Some(entropy - 1.0);
-        detector.entropy_very_high = Some(very_high);
-        detector.sensitive_path_entropy_very_high = Some(entropy - 1.0);
+        detector.entropy_very_high = Some(ordinary_very_high);
+        detector.sensitive_path_entropy_very_high = Some(entropy - 0.05);
         let mut config = ScannerConfig::default();
         config.min_confidence = 0.0;
         config.ml_enabled = false;
@@ -105,11 +111,16 @@ fn production_entropy_confidence_changes_with_only_the_owning_toml_tier() {
             .expect("focused entropy owner emits exact credential")
     };
 
-    let full_tier = confidence(entropy - 0.05);
-    let partial_tier = confidence(entropy + 0.05);
+    let sensitive_full = confidence(entropy + 1.0);
+    let sensitive_ordinary_raised = confidence(entropy + 0.05);
     assert!(
-        ((full_tier - partial_tier) - 0.1).abs() < 1e-12,
-        "compiled owner tiers must change final confidence by exactly one tier: {full_tier} vs {partial_tier}"
+        (sensitive_full - 0.75).abs() < 1e-12,
+        "sensitive-path keyword-free must score the full tier once admitted: {sensitive_full}"
+    );
+    assert!(
+        (sensitive_ordinary_raised - sensitive_full).abs() < 1e-12,
+        "ordinary entropy_very_high must not own sensitive-path keyword-free confidence: \
+         {sensitive_ordinary_raised} vs {sensitive_full}"
     );
 }
 

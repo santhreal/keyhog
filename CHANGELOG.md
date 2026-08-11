@@ -5,6 +5,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ## [Unreleased]
 
 - Core: raise dedup additional-locations subquadratic tripwire ceiling to 3.25x to absorb CI thread-CPU jitter (observed 3.03x flake).
+- Scanner: sensitive-path keyword-free confidence ownership test pins ordinary entropy_very_high cannot demote admitted hits.
 - Scanner: sensitive-path keyword-free entropy keeps ML as lift and scores against the sensitive very-high band so assignment RHS like `VALUE=<token>` in secrets.env is not soft-dropped.
 - Scanner contracts: redis-sentinel evasion uses `REDIS_SENTINEL_AUTH=` (non-comment) so comment soft-suppression cannot hide the credential.
 - Generic assignment RandomByteBlob suppression requires decoded NUL evidence (entropy-path coherence) so JWT/API_KEY/TOKEN opaque secrets remain reportable; corrected-primary-role parity uses ExactCpuScanners for SIMD pack selection.

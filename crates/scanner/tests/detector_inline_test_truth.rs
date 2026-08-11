@@ -297,8 +297,8 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
     // always selects cpu-fallback, and scan_with_backend forbids runtime substitution.
     let detectors = keyhog_core::load_detectors(&detector_dir())
         .unwrap_or_else(|e| panic!("detectors/ must load into the scanner: {e}"));
-    let scanners = support::ExactCpuScanners::compile(detectors)
-        .expect("exact CPU scanners must compile");
+    let scanners =
+        support::ExactCpuScanners::compile(detectors).expect("exact CPU scanners must compile");
     let resolver = scanner();
     let corrected: std::collections::BTreeSet<&str> = [
         "alertmanager-credentials",
