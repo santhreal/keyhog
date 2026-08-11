@@ -45,6 +45,13 @@ The default test/release gate excludes tests marked `target_spec`; those are
 executable product targets, not claims that the current release already meets.
 Run them explicitly with `make targets`.
 
+## Focused reader crew memory evidence
+
+[`reports/reader-crew-memory.md`](reports/reader-crew-memory.md) records the
+production maximum-RSS comparison and its
+[`JSON receipt`](reports/reader-crew-memory.json). The default one-reader path
+omits ordered reassembly while explicit wider crews retain exact output order.
+
 ## Bloom prefilter evidence
 
 `make bloom KEYHOG_BIN=/absolute/path/to/keyhog` rebuilds the canonical
