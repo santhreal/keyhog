@@ -29,8 +29,8 @@ fn ci_workflows_invoke_fuzz_targets_or_cargo_fuzz() {
 /// executes an input, leaving the sanitizer gate reproducible across commits.
 #[test]
 fn fuzz_smoke_pins_the_rust_toolchain() {
-    let workflow = std::fs::read_to_string(repo_root().join(".github/workflows/ci.yml"))
-        .expect("read CI workflow");
+    let workflow = std::fs::read_to_string(repo_root().join(".github/workflows/ci-nightly.yml"))
+        .expect("read overnight CI workflow");
 
     assert!(
         workflow.contains("rustup toolchain install nightly-2026-08-07")

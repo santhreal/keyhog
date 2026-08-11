@@ -1,8 +1,7 @@
 name: keyhog
 
-# Run keyhog secret scanner once nightly (and on manual dispatch) through the
-# bundled composite Action. Push/PR dogfood moved off the required path to cut
-# duplicate matrix load; ci.yml still smoke-tests the binary. Runtime errors fail the job. Findings upload to Code Scanning and
+# Run keyhog secret scanner on every push + PR (plus nightly/manual) through the
+# bundled composite Action. Runtime errors fail the job. Findings upload to Code Scanning and
 # fail only when `.github/keyhog-strict` is present.
 #
 # Hosted GitHub runners have no usable GPU, and this workflow invokes the
@@ -10,10 +9,12 @@ name: keyhog
 # backend. Published release refs use separately calibrated routing evidence.
 
 on:
+  push:
+    branches: [main, master]
+  pull_request:
   schedule:
     - cron: "45 7 * * *"
   workflow_dispatch:
-
 
 # Cancel superseded nightly/manual scans on the same ref.
 concurrency:

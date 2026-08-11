@@ -70,7 +70,7 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
             with self.subTest(obsolete=obsolete):
                 self.assertNotIn(obsolete, CI)
         # Required push/PR verdict after restoring comprehensive coverage.
-        self.assertIn("length == 13", CI)
+        self.assertIn("length == 11", CI)
 
     def test_release_dogfood_build_includes_the_simd_backend_it_exercises(self) -> None:
         """The release dogfood matrix must not request SIMD from a portable-only binary."""

@@ -485,85 +485,6 @@ jobs:
   # Preserve the established required-check name while making it an explicit
   # fail-closed aggregate of the five independent integration lanes.
 
-  fuzz-smoke:
-    name: Fuzz target smoke
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
-    timeout-minutes: 30
-    steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            # Stale hooksPath=/dev/null breaks `git lfs install --local`
-            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Install Vectorscan
-        run: |
-          for i in 1 2 3 4 5; do
-            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-            sleep $((i * 2))
-            if [ "$i" -eq 5 ]; then exit 1; fi
-          done
-      # Pin the fuzz compiler so toolchain changes cannot silently alter this
-      # sanitizer gate between otherwise identical commits.
-      - name: Install pinned nightly toolchain
-        run: rustup toolchain install nightly-2026-08-07 --profile minimal
-      - name: Install cargo-fuzz
-        run: cargo +nightly-2026-08-07 install cargo-fuzz --locked
-      - name: Run bounded fuzz smoke
-        run: |
-          cargo +nightly-2026-08-07 fuzz run decode_target -- -runs=64
-          cargo +nightly-2026-08-07 fuzz run scanner_target -- -runs=32
-
-  macos-build:
-    name: macOS Build
-    runs-on: macos-15
-    # macOS must exercise both the default Vectorscan/Hyperscan path and the
-    # native Metal release asset path without a Vectorscan dependency.
-    steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            # Stale hooksPath=/dev/null breaks `git lfs install --local`
-            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Install Vectorscan
-        run: brew update && brew install vectorscan pkg-config
-      # Prove the documented Homebrew Vectorscan path builds the actual CLI,
-      # not only the scanner library. The portable release build remains below.
-      - run: cargo build -p keyhog
-      - run: cargo test -p keyhog-core --lib
-      - run: cargo test -p keyhog-scanner --lib -- --nocapture
-      - run: cargo test -p keyhog-sources --lib
-      # Lock the exact invocation used by the macOS release matrix. Native
-      # Metal and WGPU are enabled without pulling in Hyperscan.
-      - run: cargo build --release -p keyhog --no-default-features --features portable,gpu
-      # Prove the freshly-built macOS binary actually INSTALLS and RUNS via
-      # install.sh's --from-file path: doctor self-test (exit 0), seeded scan
-      # (exit 1 + findings), SARIF, and the local-checksum gate. The mocked
-      # detection scenarios never touch a real binary, and integration-smoke is
-      # manual + installs a published release; this is the only gate that proves
-      # current-source -> install -> working binary on macOS, every push.
-      - name: install-from-build proof (macOS)
-        run: bash tests/install/macos/install_from_local_build.sh target/release/keyhog
-
   feature-matrix:
     name: Feature matrix sanity check
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
@@ -755,8 +676,6 @@ jobs:
       - security-fast
       - feature-matrix
       - install-scripts
-      - fuzz-smoke
-      - macos-build
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     permissions: {}
     env:
@@ -765,6 +684,6 @@ jobs:
       - name: Require every blocking CI job
         run: |
           jq -e '
-            length == 13 and
+            length == 11 and
             all(.[]; .result == "success")
           ' <<<"$KEYHOG_BLOCKING_RESULTS" >/dev/null

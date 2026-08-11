@@ -6,13 +6,13 @@ use super::support::read_workflow;
 /// execution path and the panic or typed error that caused the failing test.
 #[test]
 fn macos_build_job_tests_default_features_with_hyperscan() {
-    let text = read_workflow("ci.yml");
+    let text = read_workflow("ci-nightly.yml");
 
     let macos_block = text
         .split("macos-build:")
         .nth(1)
-        .and_then(|rest| rest.split("\n  ci-verdict:").next())
-        .expect("ci.yml must define macos-build job");
+        .and_then(|rest| rest.split("\n  windows-build:").next())
+        .expect("ci-nightly.yml must define macos-build job");
 
     let exercises_default = macos_block.lines().any(|line| {
         line.contains("cargo test -p keyhog-scanner --lib")
