@@ -283,12 +283,20 @@ impl CompiledRouteMatcherSections {
     }
 
     pub fn content_digest(&self) -> [u8; 32] {
+        Self::content_digest_for(
+            &self.literal_index,
+            &self.regex_programs,
+            &self.suppression_policy,
+        )
+    }
+
+    pub(crate) fn content_digest_for(
+        literal_index: &[u8],
+        regex_programs: &[u8],
+        suppression_policy: &[u8],
+    ) -> [u8; 32] {
         let mut hasher = blake3::Hasher::new();
-        for bytes in [
-            self.literal_index.as_slice(),
-            self.regex_programs.as_slice(),
-            self.suppression_policy.as_slice(),
-        ] {
+        for bytes in [literal_index, regex_programs, suppression_policy] {
             hasher.update(&(bytes.len() as u64).to_le_bytes());
             hasher.update(bytes);
         }

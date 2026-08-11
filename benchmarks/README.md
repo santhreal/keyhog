@@ -77,6 +77,11 @@ the release-mode direct-serialization comparison and its
 [`JSON receipt`](reports/daemon-response-framing.json). The measured near-ceiling
 response retains exact wire bytes while eliminating the complete temporary
 serialized body and its copy into the transport buffer.
+## Matcher artifact startup decoding evidence
+
+[`reports/matcher-artifact-startup-decoding.md`](reports/matcher-artifact-startup-decoding.md)
+records the section-copy elimination and its
+[`JSON receipt`](reports/matcher-artifact-startup-decoding.json).
 
 ## Bloom prefilter evidence
 

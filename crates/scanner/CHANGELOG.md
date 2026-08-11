@@ -8,6 +8,10 @@
 - Redis-sentinel evasion contract uses `REDIS_SENTINEL_AUTH=` instead of a commented auth-pass so comment soft-suppression cannot hide the credential.
 - Generic RandomByteBlob suppression now requires decoded NUL evidence, matching the entropy path, so strong assignment secrets (JWT_SECRET/API_KEY/TOKEN) remain reportable while SecretBench NUL-bearing pure-alnum decoys stay suppressed. Corrected-primary-role backend parity compiles ExactCpuScanners so SIMD dispatch uses a real simd-regex pack.
 - Detector property gates now preserve fixture paths for source-admission checks, compare Caesar prefix admission at exact token boundaries, compile backend-specific CPU and SIMD scanners, and retain minimized parity cases. The WordPress token contract includes its required `wpcom` owner anchor.
+- MatcherArtifact cache hits now borrow all persisted matcher sections from the
+  capped artifact file buffer through hydration instead of allocating a second
+  complete section set.
+
 
 ## 0.5.70 - 2026-08-10
 
