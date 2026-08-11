@@ -11,6 +11,7 @@ use anyhow::{bail, Context, Result};
 use bytes::{Buf, BufMut, BytesMut};
 #[cfg(test)]
 use futures_util::{SinkExt, StreamExt};
+use std::io::Write;
 use std::marker::PhantomData;
 #[cfg(test)]
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -146,9 +147,9 @@ impl Encoder<Response> for ResponseEncoder {
     type Error = anyhow::Error;
 
     fn encode(&mut self, item: Response, dst: &mut BytesMut) -> Result<()> {
-        let body = serde_json::to_vec(&item)
-            .with_context(|| format!("frame: serialize Response::{}", response_kind(&item)))?;
-        encode_body(dst, &body)
+        let kind = response_kind(&item);
+        encode_json_frame(dst, &item, MAX_FRAME_BYTES as usize)
+            .with_context(|| format!("frame: serialize Response::{kind}"))
     }
 }
 
@@ -164,6 +165,78 @@ fn encode_body(dst: &mut BytesMut, body: &[u8]) -> Result<()> {
     dst.put_u32(body.len() as u32);
     dst.extend_from_slice(body);
     Ok(())
+}
+
+struct FrameBodyWriter<'a> {
+    dst: &'a mut BytesMut,
+    body_start: usize,
+    max_body_bytes: usize,
+}
+
+impl Write for FrameBodyWriter<'_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let written = self.dst.len().saturating_sub(self.body_start);
+        let attempted = written.checked_add(bytes.len()).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "frame: serialized body length overflow",
+            )
+        })?;
+        if attempted > self.max_body_bytes {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "frame: body exceeds {} byte cap while serializing",
+                    self.max_body_bytes
+                ),
+            ));
+        }
+        self.dst.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn encode_json_frame<T: serde::Serialize>(
+    dst: &mut BytesMut,
+    value: &T,
+    max_body_bytes: usize,
+) -> Result<()> {
+    let frame_start = dst.len();
+    dst.reserve(LENGTH_PREFIX_BYTES);
+    dst.put_u32(0);
+    let body_start = dst.len();
+    let encoded = {
+        let mut writer = FrameBodyWriter {
+            dst,
+            body_start,
+            max_body_bytes,
+        };
+        serde_json::to_writer(&mut writer, value)
+    };
+    if let Err(error) = encoded {
+        dst.truncate(frame_start);
+        return Err(error.into());
+    }
+    let body_len = dst.len() - body_start;
+    let body_len = u32::try_from(body_len).map_err(|_| {
+        dst.truncate(frame_start);
+        anyhow::anyhow!("frame: serialized body length exceeds u32")
+    })?;
+    dst[frame_start..body_start].copy_from_slice(&body_len.to_be_bytes());
+    Ok(())
+}
+
+#[cfg(test)]
+pub(crate) fn encode_json_frame_for_test<T: serde::Serialize>(
+    dst: &mut BytesMut,
+    value: &T,
+    max_body_bytes: usize,
+) -> Result<()> {
+    encode_json_frame(dst, value, max_body_bytes)
 }
 
 #[derive(Default)]

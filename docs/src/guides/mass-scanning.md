@@ -160,8 +160,10 @@ as hosted Git and cloud inventories, use protected wire frames. Both paths keep
 each batch at no more than 8 MiB of raw payload and 1,024 chunks. The daemon
 processes each batch with its persisted autoroute decision while retaining one
 exclusive fragment-state lease for the transaction. It clears fragment state
-when the transaction ends or the client disconnects. This bounds batch memory
-independently of total inventory size.
+when the transaction ends or the client disconnects. Response JSON is written
+directly into its bounded transport frame, so the daemon does not retain a
+second complete serialized response body. This bounds batch memory independently
+of total inventory size.
 
 The completion receipt contains exact total and GPU batches, chunks, bytes, and
 daemon execution time. Protected wire mode compares total chunks and bytes with
