@@ -31,7 +31,7 @@ use backend::{
     MeasuredBackendRouter,
 };
 use keyhog_core::{Chunk, RawMatch, Source};
-use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
+use keyhog_scanner::hw_probe::ScanBackend;
 use keyhog_scanner::CompiledScanner;
 use pipeline::{coalesced_pipeline_plan, CoalescedPipelinePlan};
 use std::sync::atomic::Ordering;
@@ -118,27 +118,44 @@ pub(super) fn finalize_source_outcome(src_chunks: usize, src_errored: bool) {
     }
 }
 
-/// The batch channel as a `Send` iterator that charges its blocking time to the
-/// profiler.
+/// A `Send` batch iterator that charges blocking reads to the profiler.
 ///
 /// `par_bridge` pulls from here under its internal cursor lock, so the measured
 /// wait is the summed time consumer threads spent with no batch to scan. That
 /// is [`keyhog_profile::Stage::ScannerQueueWait`], and it is the only place the
-/// figure is produced. A private `AtomicU64` used to time the identical
-/// interval one line below the span so `--perf-trace` could print its own
-/// `recv_wait`; two clocks over one interval is exactly the split this file no
-/// longer keeps.
-struct TimedBatches {
-    batches: std::sync::mpsc::IntoIter<Vec<Chunk>>,
+/// figure is produced.
+struct TimedBatches<I> {
+    batches: I,
 }
 
-impl Iterator for TimedBatches {
+impl<I> Iterator for TimedBatches<I>
+where
+    I: Iterator<Item = Vec<Chunk>>,
+{
     type Item = Vec<Chunk>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerQueueWait);
         self.batches.next()
     }
+}
+
+/// Invoke scanner setup only after the producer supplies a non-empty batch.
+///
+/// An incremental filesystem walk can legitimately close the channel without
+/// one: every file was unchanged and filtered at acquisition. Keeping the
+/// setup closure outside that case avoids constructing a backend router and
+/// starting its scanner work for an empty workload.
+fn with_nonempty_batches<I, F, T>(mut batches: I, scan: F) -> Option<T>
+where
+    I: Iterator<Item = Vec<Chunk>>,
+    F: FnOnce(std::iter::Chain<std::iter::Once<Vec<Chunk>>, I>) -> T,
+{
+    let first = {
+        let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerQueueWait);
+        batches.next()?
+    };
+    Some(scan(std::iter::once(first).chain(batches)))
 }
 
 /// The scan's terminal routing failure, if one has been recorded.
@@ -175,8 +192,6 @@ enum CoalescedBatchRouter {
 }
 
 struct CoalescedMeasuredRouterConfig {
-    hw_caps: HardwareCaps,
-    pattern_count: usize,
     rules_digest: String,
     config_digest: u64,
     gpu_runtime_participates: bool,
@@ -185,6 +200,26 @@ struct CoalescedMeasuredRouterConfig {
     autoroute_calibration: bool,
     autoroute_cache_path: std::result::Result<Option<std::path::PathBuf>, String>,
     measurement_observer: Option<AutorouteMeasurementObserver>,
+}
+
+enum CoalescedScannerWorkerConfig {
+    Explicit(ScanBackend),
+    Measured(CoalescedMeasuredRouterConfig),
+}
+
+impl CoalescedScannerWorkerConfig {
+    fn start(
+        self,
+        scanner: Arc<CompiledScanner>,
+        #[cfg(test)] dispatch_starts: Arc<std::sync::atomic::AtomicUsize>,
+    ) -> CoalescedScannerWorker {
+        #[cfg(test)]
+        dispatch_starts.fetch_add(1, Ordering::Relaxed);
+        match self {
+            Self::Explicit(backend) => CoalescedScannerWorker::explicit(scanner, backend),
+            Self::Measured(config) => CoalescedScannerWorker::measured(scanner, config),
+        }
+    }
 }
 
 impl CoalescedBatchRouter {
@@ -281,9 +316,11 @@ impl CoalescedScannerWorker {
             config.gpu_runtime_policy,
         );
         let calibrating = config.autoroute_calibration;
+        let hw_caps = keyhog_scanner::hw_probe::probe_hardware().clone();
+        let pattern_count = scanner.runtime_status().pattern_count;
         let router = MeasuredBackendRouter::new(
-            config.hw_caps,
-            config.pattern_count,
+            hw_caps,
+            pattern_count,
             config.rules_digest,
             config.config_digest,
             config.gpu_runtime_participates,
@@ -315,51 +352,49 @@ impl CoalescedScannerWorker {
     /// Output bytes do not move: findings are canonically ordered downstream,
     /// which is why the fused path can already be parallel and still emit the
     /// same file as this one.
-    fn run(
-        mut self,
-        rx: std::sync::mpsc::Receiver<Vec<Chunk>>,
-    ) -> std::result::Result<Vec<RawMatch>, AutorouteRoutingError> {
+    fn run<I>(mut self, batches: I) -> std::result::Result<Vec<RawMatch>, AutorouteRoutingError>
+    where
+        I: Iterator<Item = Vec<Chunk>> + Send,
+    {
         use rayon::iter::{ParallelBridge, ParallelIterator};
         let routing_error: std::sync::Mutex<Option<AutorouteRoutingError>> =
             std::sync::Mutex::new(None);
         let profile_runtime = keyhog_profile::current_runtime();
 
-        let findings: Vec<RawMatch> = TimedBatches {
-            batches: rx.into_iter(),
-        }
-        .par_bridge()
-        .flat_map_iter(|batch| {
-            let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
-            // A routing failure stops further work: in-flight batches finish
-            // and later ones do none. It no longer decides on its own whether
-            // the findings already gathered survive; `run` does that below,
-            // from the failure's kind.
-            if first_routing_error(&routing_error).is_some() {
-                return Vec::new();
-            }
-            if batch.is_empty() {
-                return Vec::new();
-            }
-            match self.scan_nonempty_batch(&batch) {
-                Ok(scanned) => {
-                    if let Some(error) = scanned.route_bookkeeping {
+        let findings: Vec<RawMatch> = TimedBatches { batches }
+            .par_bridge()
+            .flat_map_iter(|batch| {
+                let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
+                // A routing failure stops further work: in-flight batches finish
+                // and later ones do none. It no longer decides on its own whether
+                // the findings already gathered survive; `run` does that below,
+                // from the failure's kind.
+                if first_routing_error(&routing_error).is_some() {
+                    return Vec::new();
+                }
+                if batch.is_empty() {
+                    return Vec::new();
+                }
+                match self.scan_nonempty_batch(&batch) {
+                    Ok(scanned) => {
+                        if let Some(error) = scanned.route_bookkeeping {
+                            let mut slot = first_routing_error(&routing_error);
+                            if slot.is_none() {
+                                *slot = Some(error);
+                            }
+                        }
+                        scanned.findings
+                    }
+                    Err(error) => {
                         let mut slot = first_routing_error(&routing_error);
                         if slot.is_none() {
                             *slot = Some(error);
                         }
+                        Vec::new()
                     }
-                    scanned.findings
                 }
-                Err(error) => {
-                    let mut slot = first_routing_error(&routing_error);
-                    if slot.is_none() {
-                        *slot = Some(error);
-                    }
-                    Vec::new()
-                }
-            }
-        })
-        .collect();
+            })
+            .collect();
 
         // Routing errors are fail-closed at the affected batch boundary. A
         // batch with missing, stale, invalid, or quarantined autoroute evidence
@@ -1143,43 +1178,26 @@ fn join_coalesced_scanner_thread(
 }
 
 impl ScanOrchestrator {
-    fn coalesced_scanner_worker(&self, scanner: Arc<CompiledScanner>) -> CoalescedScannerWorker {
+    fn coalesced_scanner_worker_config(&self) -> CoalescedScannerWorkerConfig {
         if let Some(backend) = self.effective_config.backend_override {
-            return CoalescedScannerWorker::explicit(scanner, backend);
+            return CoalescedScannerWorkerConfig::Explicit(backend);
         }
 
-        // Auto-route every batch through the persisted calibration router when
-        // the user has not pinned `--backend`. Normal scans do not benchmark
-        // candidates and do not apply hardware-name thresholds: every selected
-        // backend must come from an installer/maintenance calibration record
-        // keyed by this binary, detector digest, resolved config, host profile,
-        // and workload bucket. A missing/stale/incomplete decision returns a
-        // routing error before scanning instead of substituting CPU/SIMD/GPU.
-        //
-        // COHERENCE HAZARD: backend selection can still change the execution
-        // path for the same input on different hosts, so SIMD/GPU/scalar parity
-        // remains a release-blocking invariant. Benchmarks that tune detector
-        // quality must pin an explicit backend; production `auto` is only as
-        // trustworthy as the persisted fastest-correct calibration evidence.
-        let hw_caps = keyhog_scanner::hw_probe::probe_hardware().clone();
-        let pattern_count = scanner.runtime_status().pattern_count;
-        let config_digest = autoroute_config_digest(&self.effective_config);
-        let rules_digest = self.detector_rules_digest.clone();
-        let autoroute_cache_path = Ok(self.effective_config.autoroute_cache_path.clone());
-        let router_config = CoalescedMeasuredRouterConfig {
-            hw_caps,
-            pattern_count,
-            rules_digest,
-            config_digest,
+        // Auto-route every non-empty batch through persisted calibration
+        // evidence. Building this value is deliberately side-effect free:
+        // hardware probing and router materialization occur only after the
+        // producer emits scanner work.
+        CoalescedScannerWorkerConfig::Measured(CoalescedMeasuredRouterConfig {
+            rules_digest: self.detector_rules_digest.clone(),
+            config_digest: autoroute_config_digest(&self.effective_config),
             gpu_runtime_participates: self.effective_config.gpu_runtime_policy
                 != keyhog_scanner::gpu::GpuRuntimePolicy::Disabled,
             gpu_runtime_policy: self.effective_config.gpu_runtime_policy,
             autoroute_gpu: self.effective_config.autoroute_gpu,
             autoroute_calibration: self.effective_config.autoroute_calibration,
-            autoroute_cache_path,
+            autoroute_cache_path: Ok(self.effective_config.autoroute_cache_path.clone()),
             measurement_observer: self.autoroute_measurement_observer.clone(),
-        };
-        CoalescedScannerWorker::measured(scanner, router_config)
+        })
     }
 
     pub(crate) fn scan_sources(
@@ -1251,6 +1269,7 @@ impl ScanOrchestrator {
         // batch_bytes_budget is itself capped at RAM/24 above, so even
         // depth=3 cannot push us past 1/8 of system RAM.
         let scanner = Arc::clone(&self.scanner);
+        let worker_config = self.coalesced_scanner_worker_config();
         let (tx, rx) =
             std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(pipeline_plan.pipeline_depth);
 
@@ -1262,11 +1281,19 @@ impl ScanOrchestrator {
             "scan dispatch pipeline sized"
         );
 
-        let scanner_worker = self.coalesced_scanner_worker(scanner);
         let profile_runtime = keyhog_profile::current_runtime();
+        #[cfg(test)]
+        let dispatch_starts = Arc::clone(&self.scanner_dispatch_starts);
         let scanner_thread = std::thread::spawn(move || {
             let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
-            scanner_worker.run(rx)
+            with_nonempty_batches(rx.into_iter(), |batches| {
+                #[cfg(test)]
+                let worker = worker_config.start(scanner, dispatch_starts);
+                #[cfg(not(test))]
+                let worker = worker_config.start(scanner);
+                worker.run(batches)
+            })
+            .unwrap_or_else(|| Ok(Vec::new()))
         });
 
         let producer_outcome = CoalescedBatchProducer::new(tx, pipeline_plan, merkle.clone())

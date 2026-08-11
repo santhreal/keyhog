@@ -653,7 +653,13 @@ impl CoverageCounts {
     fn current_with_scanned_bytes(source_bytes_scanned: u64) -> Self {
         use keyhog_scanner::telemetry;
         let skip = keyhog_sources::skip_counts();
-        let covered_nothing = source_bytes_scanned == 0;
+        // A trusted Merkle hit is completed incremental coverage, not an
+        // exclusion. Clean files are cached only after a complete scan, while
+        // finding-bearing files are forgotten before publication. Therefore a
+        // warm all-unchanged run examined its requested content through the
+        // persisted proof even though zero bytes reached the scanner.
+        let covered_nothing =
+            source_bytes_scanned == 0 && crate::orchestrator::merkle_skipped_unchanged() == 0;
         // "Policy hid everything" and "there was nothing there" are different
         // operator problems with different fixes, so they are different rows.
         // Any skip at all proves the walker found candidates and dropped them.

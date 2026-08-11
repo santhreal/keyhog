@@ -13,6 +13,7 @@ pub(crate) mod reporting;
 mod run;
 mod streaming;
 mod workflow_state;
+pub(crate) use workflow_state::merkle_skipped_unchanged;
 
 use crate::args::ScanArgs;
 use crate::orchestrator_config::{
@@ -1221,6 +1222,8 @@ pub(crate) struct ScanOrchestrator {
     /// Optional receipt sink for the calibration command's exact persisted
     /// workload keys. Normal scans never install one.
     autoroute_measurement_observer: Option<dispatch::AutorouteMeasurementObserver>,
+    #[cfg(test)]
+    scanner_dispatch_starts: Arc<std::sync::atomic::AtomicUsize>,
     /// Explicit CLI profiling starts before config resolution and scanner compilation.
     early_profile_session: Option<keyhog_profile::Session>,
     early_profile_build: Option<std::thread::JoinHandle<keyhog_profile::BuildIdentityV2>>,
@@ -1721,6 +1724,8 @@ impl ScanOrchestrator {
             detector_min_confidence,
             effective_config,
             autoroute_measurement_observer: None,
+            #[cfg(test)]
+            scanner_dispatch_starts: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             early_profile_session,
             early_profile_build,
         })
@@ -1864,6 +1869,8 @@ impl ScanOrchestrator {
             disabled_detectors: std::collections::HashSet::new(),
             detector_min_confidence: std::collections::HashMap::new(),
             autoroute_measurement_observer: None,
+            #[cfg(test)]
+            scanner_dispatch_starts: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             early_profile_session: None,
             early_profile_build: None,
             effective_config: ResolvedScanConfig {

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Warm incremental scans now skip backend routing and scanner dispatch startup when source acquisition emits no changed chunks. Trusted clean-file Merkle hits remain complete coverage, while changed workloads retain the same bounded fused and coalesced batch paths.
 
 - Daemon guard and bounded batch dispatch now propagate authenticated ordered GPU selections into the shared scanner boundary, restoring GPU-feature builds and preserving multi-device route ownership.
 - Autoroute help and operator documentation now describe deterministic dead-heat resolution and fail-closed invalid-state behavior instead of claiming overlapping timings always fail or that missing evidence silently recovers through scalar execution.

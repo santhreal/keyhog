@@ -307,22 +307,8 @@ impl ScanOrchestrator {
             None
         };
 
-        let scanner = Arc::clone(&self.scanner);
         let explicit_backend = self.effective_config.backend_override;
         let calibration_mode = self.effective_config.autoroute_calibration;
-        let recover_automatic_backend_faults = super::automatic_backend_recovery_allowed(
-            explicit_backend,
-            calibration_mode,
-            self.effective_config.gpu_runtime_policy,
-        );
-        let active_router = if let Some(backend) = explicit_backend {
-            ActiveBackendRouter::Explicit(backend)
-        } else if calibration_mode {
-            ActiveBackendRouter::Measured(Arc::new(Mutex::new(self.measured_backend_router())))
-        } else {
-            ActiveBackendRouter::Cached(self.cached_backend_router())
-        };
-        let routing_error = Arc::new(Mutex::new(None));
 
         let skipped_unchanged = Arc::new(AtomicUsize::new(0));
 
@@ -450,6 +436,54 @@ impl ScanOrchestrator {
             }
         });
 
+        let mut batches = rx.into_iter();
+        let Some(first_batch) = batches.next() else {
+            if drain.join().is_err() {
+                tracing::error!("fused source drain thread panicked before producing scanner work");
+                let _receipt = crate::record_scanner_panic();
+                anyhow::bail!(
+                    "fused source drain thread panicked before producing scanner work; results are incomplete"
+                );
+            }
+            self.scanner.dump_profile_reports("keyhog scan");
+            progress_done.store(true, Ordering::Relaxed);
+            if let Some(handle) = progress_handle {
+                let _ = handle.join();
+            }
+            let skipped_unchanged = skipped_unchanged.load(Ordering::Relaxed);
+            self.finalize_incremental(
+                merkle.as_ref(),
+                incremental_path.as_deref(),
+                skipped_unchanged,
+                &[],
+            );
+            tracing::debug!(
+                target: "keyhog::routing",
+                "scanner dispatch skipped because source acquisition produced no scan bytes"
+            );
+            return Ok(Vec::new());
+        };
+        let batches = std::iter::once(first_batch).chain(batches);
+
+        // Backend routing owns hardware identity and may allocate calibrated
+        // runtime state. Delay it until a changed chunk survives incremental
+        // acquisition so an all-unchanged run performs no scanner startup.
+        #[cfg(test)]
+        self.scanner_dispatch_starts.fetch_add(1, Ordering::Relaxed);
+        let scanner = Arc::clone(&self.scanner);
+        let recover_automatic_backend_faults = super::automatic_backend_recovery_allowed(
+            explicit_backend,
+            calibration_mode,
+            self.effective_config.gpu_runtime_policy,
+        );
+        let active_router = if let Some(backend) = explicit_backend {
+            ActiveBackendRouter::Explicit(backend)
+        } else if calibration_mode {
+            ActiveBackendRouter::Measured(Arc::new(Mutex::new(self.measured_backend_router())))
+        } else {
+            ActiveBackendRouter::Cached(self.cached_backend_router())
+        };
+        let routing_error = Arc::new(Mutex::new(None));
         let merkle_ref = merkle.as_ref();
         let skipped_ref = &skipped_unchanged;
         let scanner_ref = scanner.as_ref();
@@ -651,7 +685,7 @@ impl ScanOrchestrator {
         ) {
             let lane_width =
                 crate::orchestrator_config::fused_cpu_wave_width(rayon::current_num_threads());
-            let mut batches = rx.into_iter();
+            let mut batches = batches;
             let mut findings = Vec::new();
             let mut repeated_windows = merkle_ref.is_none().then(RepeatedWindowCache::new);
             loop {
@@ -733,7 +767,7 @@ impl ScanOrchestrator {
             }
             findings
         } else {
-            rx.into_iter().flat_map(scan_batch).collect()
+            batches.flat_map(scan_batch).collect()
         };
 
         // Drain thread owns source iteration for the fused path. A panic here

@@ -497,9 +497,9 @@ pub struct ScanArgs {
 
     /// Incremental scan: skip files whose content hash matches the cached
     /// `~/.cache/keyhog/merkle.idx`. After the scan completes, the index is
-    /// updated with the current file contents. On CI re-runs against a
-    /// monorepo where 99% of files are unchanged, this gives 10-100x
-    /// speedup. Pass `--incremental-cache <path>` to override the location.
+    /// updated with the current file contents. If acquisition yields only
+    /// unchanged files, backend routing and scanner dispatch do not start.
+    /// Pass `--incremental-cache <path>` to override the location.
     #[arg(long)]
     pub incremental: bool,
 
