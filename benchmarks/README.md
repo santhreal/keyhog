@@ -59,6 +59,12 @@ records the production syscall comparison and its
 [`JSON receipt`](reports/filesystem-discovery-metadata.json). Ordinary scans
 classify archive symlinks inside the required metadata walk instead of
 re-enumerating the complete tree.
+## Focused reader crew memory evidence
+
+[`reports/reader-crew-memory.md`](reports/reader-crew-memory.md) records the
+production maximum-RSS comparison and its
+[`JSON receipt`](reports/reader-crew-memory.json). The default one-reader path
+omits ordered reassembly while explicit wider crews retain exact output order.
 
 ## Bloom prefilter evidence
 

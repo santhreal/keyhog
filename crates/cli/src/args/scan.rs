@@ -875,7 +875,7 @@ pub struct ScanArgs {
     #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_thread_count)]
     pub threads: Option<usize>,
 
-    /// Dedicated filesystem reader threads. Default derives from the scan worker pool.
+    /// Dedicated filesystem reader threads. Default is one direct reader.
     #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_usize)]
     pub reader_threads: Option<usize>,
 
