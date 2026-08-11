@@ -286,13 +286,30 @@ async fn daemon_frame_rejects_oversized_length_prefix() {
     );
 }
 
-/// Locks the v13 bump: the guard commit transaction frames are an
-/// incompatible wire change, so the version constant must move and peers
-/// stay refused at the Hello handshake (client::connect_inner bails on
-/// any version mismatch).
+/// Locks the v14 bump: daemon-local incremental cache state changes the
+/// MassFilesystemBegin frame, so older peers must fail at Hello.
 #[test]
-fn daemon_wire_version_is_v13_with_guard_transaction() {
-    assert_eq!(WIRE_VERSION, 13);
+fn daemon_wire_version_is_v14_with_mass_incremental_state() {
+    assert_eq!(WIRE_VERSION, 14);
+}
+
+#[tokio::test]
+async fn daemon_wire_v14_mass_incremental_cache_roundtrips() {
+    let request = Request::MassFilesystemBegin {
+        root: "/workspace".into(),
+        max_file_size: 1024,
+        ignore_paths: vec!["target".into()],
+        respect_default_excludes: true,
+        reader_threads: Some(2),
+        incremental_cache: Some("/cache/keyhog/merkle.idx".into()),
+    };
+    let encoded = serde_json::to_string(&request).expect("serialize request");
+    let decoded: Request = serde_json::from_str(&encoded).expect("deserialize request");
+    let reencoded = serde_json::to_string(&decoded).expect("re-serialize request");
+    assert_eq!(
+        reencoded, encoded,
+        "the exact incremental cache identity must survive the wire boundary"
+    );
 }
 
 /// The v12 `profile` opt-in must survive the frame round-trip verbatim on

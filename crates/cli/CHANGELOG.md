@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Mass-daemon filesystem scans now persist spec-bound incremental state, skip unchanged clean files before read and dispatch, and rescan finding-producing files. Cache publication failures retain system-error exit `3`.
 - Daemon guard and bounded batch dispatch now propagate authenticated ordered GPU selections into the shared scanner boundary, restoring GPU-feature builds and preserving multi-device route ownership.
 - Autoroute help and operator documentation now describe deterministic dead-heat resolution and fail-closed invalid-state behavior instead of claiming overlapping timings always fail or that missing evidence silently recovers through scalar execution.
 - Autoroute cache schema v57 distinguishes runtime-compiled GPU programs from installed GPU sidecars. Standalone release binaries can persist authenticated GPU calibration without weakening manifest binding for installed artifacts.

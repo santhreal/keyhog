@@ -106,19 +106,32 @@ def daemon_client_command(
     ]
 
 
-
 def daemon_mass_client_command(
     executable: pathlib.Path,
     socket_path: pathlib.Path,
     root: pathlib.Path,
     output: pathlib.Path,
     detector_corpus: pathlib.Path | None = None,
+    incremental_cache: pathlib.Path | None = None,
 ) -> list[str]:
     return [
-        str(executable), "scan", "--format", "json-envelope", "--no-config",
+        str(executable),
+        "scan",
+        "--format",
+        "json-envelope",
+        "--no-config",
         *(["--detectors", str(detector_corpus)] if detector_corpus is not None else []),
-        "--daemon=mass", "--daemon-socket", str(socket_path), "--output",
-        str(output), str(root),
+        "--daemon=mass",
+        "--daemon-socket",
+        str(socket_path),
+        "--output",
+        str(output),
+        *(
+            ["--incremental", "--incremental-cache", str(incremental_cache)]
+            if incremental_cache is not None
+            else []
+        ),
+        str(root),
     ]
 
 
@@ -306,7 +319,11 @@ class OwnedKeyhogDaemon:
         return stats
 
     def run_mass_client(
-        self, root: pathlib.Path, output: pathlib.Path, timeout: int
+        self,
+        root: pathlib.Path,
+        output: pathlib.Path,
+        timeout: int,
+        incremental_cache: pathlib.Path | None = None,
     ) -> RunStats:
         self._assert_owned_peer()
         _stdout, stderr, stats = run_measured(
@@ -316,8 +333,10 @@ class OwnedKeyhogDaemon:
                 root,
                 output,
                 self.detector_corpus,
+                incremental_cache,
             ),
-            timeout=timeout, pass_fds=self.pass_fds,
+            timeout=timeout,
+            pass_fds=self.pass_fds,
         )
         if stats.timed_out:
             raise TimeoutError(f"mass daemon benchmark timed out after {timeout}s")

@@ -119,6 +119,139 @@ fn mass_daemon_directory_scan_reports_exact_finding_location() {
     );
 }
 
+/// WHY: daemon-local incremental scans must retain the warm scanner while
+/// skipping unchanged clean files, but must rescan every file that produced a
+/// finding so secrets remain visible on every invocation.
+#[test]
+fn mass_daemon_incremental_skips_clean_files_and_replays_secret_files() {
+    let guard = DaemonGuard::start_mass();
+    let work = TempDir::new().expect("work dir");
+    let cache = TempDir::new().expect("cache dir");
+    let cache_path = cache.path().join("merkle.idx");
+    let relative_cache_path = std::path::PathBuf::from("..")
+        .join(cache.path().file_name().expect("cache directory name"))
+        .join("merkle.idx");
+    std::fs::write(work.path().join("clean.txt"), "service=example\n").expect("clean fixture");
+    std::fs::write(work.path().join("secret.env"), aws_fixture()).expect("secret fixture");
+    let root = work.path().to_str().expect("utf-8 work path");
+    let cache_arg = relative_cache_path.to_str().expect("utf-8 cache path");
+
+    let first = scan_json(
+        &guard,
+        work.path(),
+        &[
+            "scan",
+            "--daemon=mass",
+            "--incremental",
+            "--incremental-cache",
+            cache_arg,
+            "--format",
+            "json-envelope",
+            root,
+        ],
+    );
+    assert_eq!(
+        first.status.code(),
+        Some(1),
+        "first scan must report the planted secret; stderr={}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert!(
+        cache_path.is_file(),
+        "first scan must publish the Merkle generation"
+    );
+
+    let second = scan_json(
+        &guard,
+        work.path(),
+        &[
+            "scan",
+            "--daemon=mass",
+            "--incremental",
+            "--incremental-cache",
+            cache_arg,
+            "--format",
+            "json-envelope",
+            root,
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&second.stderr);
+    assert_eq!(second.status.code(), Some(1), "stderr={stderr}");
+    assert!(
+        stderr.contains("mass daemon: 1 batches, 1 chunks, 103 bytes"),
+        "the unchanged clean file must bypass read and scan while the secret file is rescanned; stderr={stderr}"
+    );
+    let report: Value = serde_json::from_slice(&second.stdout).expect("valid JSON envelope");
+    let findings = report["findings"].as_array().expect("findings array");
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0]["detector_id"], "aws-access-key");
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    std::fs::write(work.path().join("clean.txt"), "service=changed\n")
+        .expect("change clean fixture without changing its size");
+    let third = scan_json(
+        &guard,
+        work.path(),
+        &[
+            "scan",
+            "--daemon=mass",
+            "--incremental",
+            "--incremental-cache",
+            cache_arg,
+            "--format",
+            "json-envelope",
+            root,
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&third.stderr);
+    assert_eq!(third.status.code(), Some(1), "stderr={stderr}");
+    assert!(
+        stderr.contains("mass daemon: 1 batches, 2 chunks, 119 bytes"),
+        "a same-size clean-file change must invalidate the metadata skip while the secret remains visible; stderr={stderr}"
+    );
+}
+
+/// WHY: a daemon-side cache write failure is a system failure, not an
+/// operator-input error or a clean scan.
+#[test]
+fn mass_daemon_incremental_cache_write_failure_exits_system_error() {
+    let guard = DaemonGuard::start_mass();
+    let work = TempDir::new().expect("work dir");
+    let cache = TempDir::new().expect("cache dir");
+    std::fs::write(work.path().join("clean.txt"), "service=example\n").expect("clean fixture");
+    let blocked_parent = cache.path().join("not-a-directory");
+    std::fs::write(&blocked_parent, "file").expect("blocked cache parent");
+    let cache_path = blocked_parent.join("merkle.idx");
+
+    let output = scan_json(
+        &guard,
+        work.path(),
+        &[
+            "scan",
+            "--daemon=mass",
+            "--incremental",
+            "--incremental-cache",
+            cache_path.to_str().expect("utf-8 cache path"),
+            "--format",
+            "json-envelope",
+            work.path().to_str().expect("utf-8 work path"),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "incremental cache I/O must retain the documented system-error exit; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("mass daemon incremental cache publication")
+            && stderr.contains("cannot persist mass incremental cache"),
+        "cache failure must retain actionable daemon and client context; stderr={stderr}"
+    );
+    assert!(!cache_path.exists());
+}
+
 /// A daemon-local directory larger than the chunk ceiling must stay bounded and account for every file.
 #[test]
 fn mass_daemon_local_directory_splits_at_chunk_ceiling() {

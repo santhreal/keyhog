@@ -436,8 +436,9 @@ def render_daemon(snapshot: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "The daemon is not a general directory or CI accelerator. It accepts only eligible "
-            "single-file and bounded-stdin requests on Unix, and it serializes execution.",
+            "These rows cover the warm single-file route. The mass route also accepts bounded "
+            "directory and remote-source batches; its incremental filesystem path is measured "
+            "separately.",
         ]
     )
     return "\n".join(lines)

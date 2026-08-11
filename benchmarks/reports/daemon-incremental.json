@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "binary": {
+    "version": "KeyHog v0.5.70",
+    "commit": "4b505ed6e0a9032c3c514253fdff7aef5fa2256f",
+    "sha256": "8f14da33f7494b5d24a5206d1c922dedce7167f44ae36ddad8d858c28285c62e",
+    "bytes": 31294320,
+    "detector_set": "926-4168e2c6c93a16ca"
+  },
+  "host": {
+    "os": "Linux 6.17.0-19-generic",
+    "architecture": "x86_64",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "logical_cpus": 32
+  },
+  "workload": {
+    "route": "mass daemon local filesystem",
+    "backend": "simd",
+    "files": 512,
+    "clean_files": 511,
+    "finding_files": 1,
+    "bytes_per_file": 2000000,
+    "logical_bytes": 1024000000,
+    "filesystem_shape": "511 hard-linked clean files plus one regular finding file",
+    "clean_payload_sha256": "f8943f1336c7204fe805963e5c37c17aeefad1dad3ea43a0702f1ee8f05e8b51",
+    "trials": 5
+  },
+  "uncached": {
+    "wall_ms": [
+      8782.171831990127,
+      6940.707293979358,
+      6404.085732996464,
+      6245.059207023587,
+      6588.507484993897
+    ],
+    "median_wall_ms": 6588.507484993897,
+    "min_wall_ms": 6245.059207023587,
+    "max_wall_ms": 8782.171831990127,
+    "source_bytes_scanned": 1158217728,
+    "source_chunks_scanned": 1536,
+    "findings": 1,
+    "exit_code": 1,
+    "scan_status": "success",
+    "coverage_gap_summary": []
+  },
+  "populate": {
+    "wall_ms": 6634.972497995477,
+    "source_bytes_scanned": 1158217728,
+    "source_chunks_scanned": 1536,
+    "findings": 1,
+    "exit_code": 1,
+    "scan_status": "success",
+    "coverage_gap_summary": []
+  },
+  "cached": {
+    "wall_ms": [
+      99.42232997855172,
+      99.71380000934005,
+      97.28128096321598,
+      101.37851996114478,
+      99.71005300758407
+    ],
+    "median_wall_ms": 99.71005300758407,
+    "min_wall_ms": 97.28128096321598,
+    "max_wall_ms": 101.37851996114478,
+    "source_bytes_scanned": 2262144,
+    "source_chunks_scanned": 3,
+    "findings": 1,
+    "exit_code": 1,
+    "scan_status": "success",
+    "coverage_gap_summary": []
+  },
+  "median_speedup": 66.07666214451584,
+  "peak_daemon_rss_kib": 138700,
+  "finding_parity": {
+    "exact_order": true,
+    "findings": 1,
+    "sha256": "60e39b0cc923123f7a4845c3db3499878a0a34201218a7155800a201a9985531"
+  }
+}

@@ -207,7 +207,7 @@ def test_capture_rejects_stale_scanner_versions(tmp_path) -> None:
 
 
 def test_render_explains_policy_and_daemon_boundaries(tmp_path) -> None:
-    """Generated prose must keep detection presets separate from routes and limit daemon claims to eligible inputs."""
+    """Generated prose must keep detection presets separate from daemon route scope."""
     config_results, daemon_results, daemon_corpus = _matrix_fixture(tmp_path)
     snapshot = readme_matrix.capture_snapshot(
         config_results,
@@ -229,7 +229,7 @@ def test_render_explains_policy_and_daemon_boundaries(tmp_path) -> None:
     assert "| Deep | 400 ms | 0.9677 | 0.9000 | 0.9326 | 93 |" in config
     assert "one warmup request" in daemon
     assert "| Pure-Rust CPU | 400 ms | 100 ms | 0.25× | 512 MiB | 512 MiB |" in daemon
-    assert "not a general directory or CI accelerator" in daemon
+    assert "mass route also accepts bounded directory and remote-source batches" in daemon
 
 
 def test_readme_check_detects_hand_edited_generated_bytes(tmp_path) -> None:

@@ -101,9 +101,10 @@ scan attempts, active scans, detector count, backend policy, and identity
 staleness. `scans served` includes attempts that returned a daemon error, so it
 is an activity counter rather than a success counter. Status never starts a
 daemon. It also prints whether the service accepts warm stdin and single-file
-requests or mass source batches. Warm requests return before baseline,
-Merkle-state, verification, lockdown, and per-request scanner-policy post-steps.
-Those steps run in process.
+requests or mass source batches. Warm stdin and single-file requests return
+before baseline, verification, lockdown, and per-request scanner-policy
+post-steps. The mass route additionally accepts Merkle state for daemon-local
+filesystem roots.
 `active scans` counts accepted scan attempts until their blocking task
 finishes, including attempts queued behind the scanner's fragment-state lock.
 Backend health reports the number of recovered authenticated-route requests and
@@ -131,9 +132,13 @@ stop the listener and can leave an unreachable daemon running.
 
 ### What the daemon actually buys
 
-The warm asset is the compiled scanner and its backend state. Nothing else is
-cached: there is no per-connection state, no per-path result cache, and a
-repeated scan of the same file costs the same as the first one.
+The warm single-file asset is the compiled scanner and its backend state. There
+is no per-connection or per-path result cache on that route, so a repeated
+single-file scan costs the same as the first request.
+Mass daemon filesystem scans can also persist a spec-bound Merkle generation.
+An unchanged clean file then bypasses its read and scanner dispatch. A file
+that produced a finding is excluded from the generation and remains visible on
+every transaction.
 
 Measured on one 16-core host, medians of five runs, machine load average 51-56
 on 32 logical cores, so read the ratios rather than the absolute seconds:
@@ -396,7 +401,9 @@ roots, Git modes, remote, cloud, container, binary, dynamic, or mixed sources.
 The mass route accepts those source classes, but it requires the daemon-owned
 standard scanner policy. Both routes reject these per-scan contracts:
 
-- baseline filtering, live verification, or Merkle/incremental source state
+- baseline filtering or live verification
+- Merkle/incremental source state on the warm route; the mass route accepts it
+  only for daemon-local filesystem roots
 - `--fast`, `--deep`, `--precision`, benchmark mode, or changes to decode,
   entropy, ML, Unicode normalization, comment scanning, scanner limits,
   detector vocabulary, or detector overlay composition

@@ -136,16 +136,18 @@ impl DaemonGuard {
         Self::start_impl_full(&[], false, false, Some("cpu"), true)
     }
 
+    /// Mass clients use the embedded corpus unless a test passes `--detectors`;
+    /// keep the fixture daemon on that same production-default identity.
     pub fn start_mass() -> Self {
-        Self::start_impl(&[], true, false, None)
+        Self::start_impl_full(&[], true, false, None, true)
     }
 
     pub fn start_mass_gpu_primary() -> Self {
-        Self::start_impl(&[], true, true, None)
+        Self::start_impl_full(&[], true, true, None, true)
     }
 
     pub fn start_mass_gpu_primary_with_backend(backend: &'static str) -> Self {
-        Self::start_impl(&[], true, true, Some(backend))
+        Self::start_impl_full(&[], true, true, Some(backend), true)
     }
 
     pub fn start_with_env(envs: &[(&str, &str)]) -> Self {
