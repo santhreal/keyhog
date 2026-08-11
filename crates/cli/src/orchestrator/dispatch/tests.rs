@@ -644,6 +644,89 @@ fn the_timed_bridge_charges_time_spent_waiting_for_a_batch() {
     );
 }
 
+/// Scanner setup is demand-driven at the production batch boundary. A clean
+/// file starts both the fused and coalesced scanner path on its cold scan, then
+/// its trusted Merkle metadata hit closes acquisition without starting either
+/// path on the warm scan. This covers cold and all-unchanged variants;
+/// backend-specific route parity remains covered by the scanner suites.
+#[test]
+fn incremental_scanner_dispatch_starts_only_for_nonempty_production_batches() {
+    let detector = DetectorSpec {
+        id: "deferred-dispatch-test".into(),
+        name: "Deferred Dispatch Test".into(),
+        service: "test".into(),
+        severity: Severity::Medium,
+        patterns: vec![PatternSpec {
+            regex: r"STATIC_SECRET_[0-9]+".into(),
+            ..Default::default()
+        }],
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
+    };
+    let scanner =
+        Arc::new(CompiledScanner::compile(vec![detector.clone()]).expect("compile test detector"));
+    let signatures = [Arc::<str>::from(r"STATIC_SECRET_[0-9]+")]
+        .into_iter()
+        .collect();
+    let args = crate::args::ScanArgs::try_parse_from(["scan"]).expect("parse scan args");
+    let mut orchestrator = ScanOrchestrator::from_parts_for_test(
+        args,
+        vec![detector],
+        scanner,
+        signatures,
+        crate::test_fixture_suppressions::TestFixtureSuppressions::bundled(),
+    );
+    orchestrator.effective_config.backend_override = Some(ScanBackend::CpuFallback);
+
+    for coalesced in [false, true] {
+        orchestrator.effective_config.batch_pipeline = coalesced;
+        let source = tempfile::tempdir().expect("source root");
+        std::fs::write(
+            source.path().join("clean.txt"),
+            "ordinary source without credentials\n",
+        )
+        .expect("write clean source");
+        let merkle = Arc::new(keyhog_core::MerkleIndex::default());
+
+        let cold_sources: Vec<Box<dyn Source>> = vec![Box::new(
+            keyhog_sources::FilesystemSource::new(source.path().to_path_buf())
+                .with_default_excludes(false)
+                .with_merkle_skip(Arc::clone(&merkle)),
+        )];
+        orchestrator
+            .scanner_dispatch_starts
+            .store(0, Ordering::Relaxed);
+        let cold_findings = orchestrator
+            .scan_sources(cold_sources, false, Some(Arc::clone(&merkle)), None)
+            .expect("cold source scan");
+        assert!(cold_findings.is_empty());
+        assert_eq!(
+            orchestrator.scanner_dispatch_starts.load(Ordering::Relaxed),
+            1,
+            "cold {} path did not start scanner dispatch exactly once",
+            if coalesced { "coalesced" } else { "fused" }
+        );
+
+        let warm_sources: Vec<Box<dyn Source>> = vec![Box::new(
+            keyhog_sources::FilesystemSource::new(source.path().to_path_buf())
+                .with_default_excludes(false)
+                .with_merkle_skip(Arc::clone(&merkle)),
+        )];
+        orchestrator
+            .scanner_dispatch_starts
+            .store(0, Ordering::Relaxed);
+        let warm_findings = orchestrator
+            .scan_sources(warm_sources, false, Some(Arc::clone(&merkle)), None)
+            .expect("warm all-unchanged source scan");
+        assert!(warm_findings.is_empty());
+        assert_eq!(
+            orchestrator.scanner_dispatch_starts.load(Ordering::Relaxed),
+            0,
+            "warm all-unchanged {} path started scanner dispatch",
+            if coalesced { "coalesced" } else { "fused" }
+        );
+    }
+}
+
 /// An explicit backend needs no lock, and the same batch must resolve to the
 /// same backend however many threads ask at once.
 ///

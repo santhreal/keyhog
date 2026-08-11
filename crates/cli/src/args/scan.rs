@@ -499,8 +499,9 @@ pub struct ScanArgs {
     /// Incremental scan: skip files whose metadata and content match the
     /// spec-bound Merkle index. The index is updated after successful scanning.
     /// This works in process and with `--daemon=mass` for daemon-local
-    /// filesystem roots. Pass `--incremental-cache <path>` to override the
-    /// default location.
+    /// filesystem roots. If acquisition yields only unchanged files, backend
+    /// routing and scanner dispatch do not start. Pass
+    /// `--incremental-cache <path>` to override the default location.
     #[arg(long)]
     pub incremental: bool,
 

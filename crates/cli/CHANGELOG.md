@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Warm incremental scans now skip backend routing and scanner dispatch startup when source acquisition emits no changed chunks. Trusted clean-file Merkle hits remain complete coverage, while changed workloads retain the same bounded fused and coalesced batch paths.
 
 - Mass-daemon filesystem scans now persist spec-bound incremental state, skip unchanged clean files before read and dispatch, and rescan finding-producing files. Cache publication failures retain system-error exit `3`.
 - Daemon-local mass filesystem scans now stream bounded batch responses after one drain request, eliminating per-batch client request round trips while preserving response bounds, ordering, coverage, and execution receipts. The incompatible request/response cardinality moves the daemon wire protocol to v14.

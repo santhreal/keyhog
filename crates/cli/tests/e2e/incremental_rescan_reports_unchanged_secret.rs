@@ -65,6 +65,38 @@ fn incremental_skips_unchanged_clean_file_for_speedup() {
     assert_eq!(scan_path(dir.path(), &args).status.code(), Some(0));
 }
 
+/// An external cache lets every source file become a Merkle hit. That is
+/// complete incremental coverage, not the same condition as an empty or fully
+/// excluded tree, so the warm run remains clean instead of failing with the
+/// zero-byte coverage guard. The existing same-directory case cannot prove
+/// this because the cache file itself becomes fresh scanner input.
+#[test]
+fn all_unchanged_clean_files_are_complete_incremental_coverage() {
+    let source = TempDir::new().expect("source tempdir");
+    let state = TempDir::new().expect("state tempdir");
+    std::fs::write(
+        source.path().join("ok.txt"),
+        "just ordinary source code, nothing sensitive here\n",
+    )
+    .expect("write clean file");
+    let cache = state.path().join("merkle.idx");
+    let cache = cache.to_str().expect("UTF-8 cache fixture");
+    let args = ["--incremental", "--incremental-cache", cache];
+
+    assert_eq!(scan_path(source.path(), &args).status.code(), Some(0));
+    let warm = scan_path(source.path(), &args);
+    assert_eq!(
+        warm.status.code(),
+        Some(0),
+        "warm all-unchanged scan failed: {}",
+        String::from_utf8_lossy(&warm.stderr)
+    );
+    assert!(
+        !String::from_utf8_lossy(&warm.stderr).contains("read ZERO bytes"),
+        "trusted Merkle coverage was misclassified as no input"
+    );
+}
+
 #[test]
 fn incremental_corrupt_explicit_cache_warns_and_rewrites() {
     let dir = TempDir::new().expect("tempdir");

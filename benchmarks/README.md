@@ -65,6 +65,10 @@ re-enumerating the complete tree.
 production maximum-RSS comparison and its
 [`JSON receipt`](reports/reader-crew-memory.json). The default one-reader path
 omits ordered reassembly while explicit wider crews retain exact output order.
+## Focused production-path evidence
+
+- [Warm incremental scanner-dispatch bypass](reports/incremental-startup.md):
+  trusted all-unchanged fused and coalesced scans start no backend dispatch.
 
 ## Bloom prefilter evidence
 
