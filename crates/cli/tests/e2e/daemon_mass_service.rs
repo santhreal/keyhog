@@ -210,6 +210,64 @@ fn mass_daemon_incremental_skips_clean_files_and_replays_secret_files() {
     );
 }
 
+/// WHY: a trusted all-clean Merkle hit is complete coverage even though no
+/// source bytes reach the scanner. The daemon must carry the skip count across
+/// the wire so reporting does not relabel a successful warm scan as partial.
+#[test]
+fn mass_daemon_all_unchanged_incremental_scan_is_complete_coverage() {
+    let guard = DaemonGuard::start_mass();
+    let work = TempDir::new().expect("work dir");
+    let cache = TempDir::new().expect("cache dir");
+    let cache_path = cache.path().join("merkle.idx");
+    std::fs::write(work.path().join("clean.txt"), "service=example\n").expect("clean fixture");
+    let root = work.path().to_str().expect("utf-8 work path");
+    let cache_arg = cache_path.to_str().expect("utf-8 cache path");
+    let args = [
+        "scan",
+        "--daemon=mass",
+        "--incremental",
+        "--incremental-cache",
+        cache_arg,
+        "--format",
+        "json-envelope",
+        root,
+    ];
+
+    let first = scan_json(&guard, work.path(), &args);
+    assert_eq!(
+        first.status.code(),
+        Some(0),
+        "cold clean scan must succeed; stderr={}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let assert_warm_complete = |output: &std::process::Output, path: &str| {
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{path} warm scan must retain complete coverage; stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: Value = serde_json::from_slice(&output.stdout).expect("valid JSON envelope");
+        assert_eq!(report["scan_status"], "success");
+        assert_eq!(report["metadata"]["source_bytes_scanned"], 0);
+        assert_eq!(
+            report["coverage_gap_summary"]
+                .as_array()
+                .expect("coverage gap array")
+                .len(),
+            0
+        );
+    };
+
+    let metadata_skip = scan_json(&guard, work.path(), &args);
+    assert_warm_complete(&metadata_skip, "metadata");
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    std::fs::write(work.path().join("clean.txt"), "service=example\n")
+        .expect("rewrite unchanged content");
+    let content_skip = scan_json(&guard, work.path(), &args);
+    assert_warm_complete(&content_skip, "content-confirmed");
+}
+
 /// WHY: a daemon-side cache write failure is a system failure, not an
 /// operator-input error or a clean scan.
 #[test]

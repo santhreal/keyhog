@@ -5,6 +5,7 @@
 - Daemon responses now serialize directly into the bounded transport frame. This removes the second full response-body allocation and copy while preserving exact JSON bytes, length prefixes, rollback on serialization failure, and the 64 MiB ceiling.
 
 - Mass-daemon filesystem scans now persist spec-bound incremental state, skip unchanged clean files before read and dispatch, and rescan finding-producing files. Cache publication failures retain system-error exit `3`.
+- Warm all-clean mass-daemon incremental scans now retain successful coverage by carrying metadata and content-confirmed Merkle skip counts in the terminal response.
 - Daemon-local mass filesystem scans now stream bounded batch responses after one drain request, eliminating per-batch client request round trips while preserving response bounds, ordering, coverage, and execution receipts. The incompatible request/response cardinality moves the daemon wire protocol to v14.
 - `--reader-threads` now defaults to one direct filesystem reader instead of a scan-pool-derived crew. Explicit values above one retain deterministic ordered reassembly.
 - Daemon guard and bounded batch dispatch now propagate authenticated ordered GPU selections into the shared scanner boundary, restoring GPU-feature builds and preserving multi-device route ownership.

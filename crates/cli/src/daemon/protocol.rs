@@ -77,7 +77,8 @@ use std::collections::BTreeMap;
 ///   client validates conservation of object count and bytes and
 ///   reacquires the index fingerprint before accepting the receipt.
 /// * v14 - lets daemon-local filesystem scans consume and publish spec-bound
-///   Merkle state, then stream bounded batch responses after one drain request.
+///   Merkle state, carry trusted skip evidence, and stream bounded batches
+///   after one drain request.
 pub(crate) const WIRE_VERSION: u32 = 14;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -364,9 +365,11 @@ pub(crate) enum Response {
     MassReady,
     /// Daemon-local filesystem acquisition is ready for bounded pulls.
     MassFilesystemReady,
-    /// One daemon-local filesystem root drained. Coverage gaps remain explicit.
+    /// One daemon-local filesystem root drained. Coverage gaps and trusted
+    /// unchanged-file skips remain explicit.
     MassFilesystemComplete {
         source_coverage_gaps: SourceCoverageGaps,
+        skipped_unchanged: usize,
     },
     /// The filesystem scan completed, but its incremental generation could not
     /// be published. Clients classify this as a system I/O failure.

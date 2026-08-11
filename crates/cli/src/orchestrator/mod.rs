@@ -13,7 +13,7 @@ pub(crate) mod reporting;
 mod run;
 mod streaming;
 mod workflow_state;
-pub(crate) use workflow_state::merkle_skipped_unchanged;
+pub(crate) use workflow_state::{merkle_skipped_unchanged, record_merkle_skipped_unchanged};
 
 use crate::args::ScanArgs;
 use crate::orchestrator_config::{

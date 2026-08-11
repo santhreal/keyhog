@@ -151,6 +151,8 @@ For warm unchanged-tree scans, add `--incremental --incremental-cache
 /absolute/path/merkle.idx`. The daemon loads and publishes that spec-bound
 generation without rebuilding its scanner. Files with findings are forgotten
 before publication and remain visible on every scan.
+Trusted metadata and content-confirmed Merkle skips remain complete coverage when
+no source bytes need scanner dispatch.
 
 `--daemon=mass` is required routing. A missing, warm-only, stale, or
 incompatible service is an error. KeyHog does not fall back to an in-process

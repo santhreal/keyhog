@@ -1136,7 +1136,9 @@ async fn scan_daemon_local_filesystems(
                 }
                 Response::MassFilesystemComplete {
                     source_coverage_gaps,
+                    skipped_unchanged,
                 } => {
+                    crate::orchestrator::record_merkle_skipped_unchanged(skipped_unchanged);
                     merge_source_coverage(&mut gaps, source_coverage_gaps);
                     break;
                 }

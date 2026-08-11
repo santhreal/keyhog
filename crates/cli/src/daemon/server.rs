@@ -1121,7 +1121,10 @@ pub(crate) fn is_transient_accept_error(e: &std::io::Error) -> bool {
 
 enum MassFilesystemMessage {
     Batch(Vec<Chunk>),
-    Complete(SourceCoverageGaps),
+    Complete {
+        source_coverage_gaps: SourceCoverageGaps,
+        skipped_unchanged: usize,
+    },
     Error(String),
 }
 
@@ -1161,6 +1164,7 @@ fn spawn_mass_filesystem_source(
         let mut batch = Vec::with_capacity(MASS_BATCH_CHUNKS);
         let mut batch_bytes = 0usize;
         let mut source_failed = 0usize;
+        let mut content_skipped_unchanged = 0usize;
         for chunk_result in source.chunks() {
             let chunk = match chunk_result {
                 Ok(chunk) => chunk,
@@ -1182,6 +1186,7 @@ fn spawn_mass_filesystem_source(
                     chunk.metadata.size_bytes.unwrap_or(0),
                     chunk.data.as_bytes(),
                 ) {
+                    content_skipped_unchanged = content_skipped_unchanged.saturating_add(1);
                     continue;
                 }
             }
@@ -1215,6 +1220,9 @@ fn spawn_mass_filesystem_source(
                 batch.push(chunk);
             }
         }
+        let skipped_unchanged = source
+            .skipped_unchanged_count()
+            .saturating_add(content_skipped_unchanged);
         if !batch.is_empty()
             && sender
                 .blocking_send(MassFilesystemMessage::Batch(batch))
@@ -1224,7 +1232,10 @@ fn spawn_mass_filesystem_source(
         }
         let mut gaps = source_coverage_gaps_since(before);
         gaps.source_failed = gaps.source_failed.saturating_add(source_failed);
-        let _ = sender.blocking_send(MassFilesystemMessage::Complete(gaps)); // LAW10: unused-binding marker; a dropped receiver leaves no consumer, so send status has no runtime effect and is not a fallback.
+        let _ = sender.blocking_send(MassFilesystemMessage::Complete {
+            source_coverage_gaps: gaps,
+            skipped_unchanged,
+        }); // LAW10: a dropped receiver leaves no consumer, so send status cannot change recall.
     });
     receiver
 }
@@ -1409,7 +1420,10 @@ async fn stream_mass_filesystem(
                 session.record(&batch);
                 batch.response
             }
-            Some(MassFilesystemMessage::Complete(source_coverage_gaps)) => {
+            Some(MassFilesystemMessage::Complete {
+                source_coverage_gaps,
+                skipped_unchanged,
+            }) => {
                 session.filesystem_batches = None;
                 if source_coverage_gaps.source_failed > 0 {
                     session.incremental_unpublishable = true;
@@ -1417,6 +1431,7 @@ async fn stream_mass_filesystem(
                 match session.persist_incremental() {
                     Ok(()) => Response::MassFilesystemComplete {
                         source_coverage_gaps,
+                        skipped_unchanged,
                     },
                     Err(error) => Response::MassFilesystemIncrementalError {
                         message: format!("daemon: cannot persist mass incremental cache: {error}"),
