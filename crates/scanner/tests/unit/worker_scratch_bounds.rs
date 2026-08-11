@@ -8,13 +8,29 @@ use super::{
 fn host_anchor_candidate_outlier_is_released_between_routes() {
     let element_bytes = std::mem::size_of::<(u32, u32)>();
     let retained_elements = MAX_RETAINED_WORKER_SCRATCH_BYTES / element_bytes;
-    let mut candidates = Vec::with_capacity(retained_elements + 1);
-    candidates.push((7, 11));
+    let mut scratch = super::CandidateScratch::default();
+    scratch.candidates = Vec::with_capacity(retained_elements + 1);
+    scratch.candidates.push((7, 11));
 
-    release_candidate_scratch(&mut candidates);
+    release_candidate_scratch(&mut scratch);
 
-    assert!(candidates.is_empty());
-    assert_eq!(candidates.capacity(), 0);
+    assert!(scratch.candidates.is_empty());
+    assert_eq!(scratch.candidates.capacity(), 0);
+}
+
+/// WHY: pooling the two confirmed-anchor helper vectors must not increase the
+/// existing aggregate per-worker retention ceiling.
+#[test]
+fn host_anchor_helper_vectors_share_one_retention_ceiling() {
+    let mut scratch = super::CandidateScratch::default();
+    scratch.active_eligible =
+        Vec::with_capacity(MAX_RETAINED_WORKER_SCRATCH_BYTES / std::mem::size_of::<usize>());
+    scratch.literal_ids = Vec::with_capacity(1);
+
+    release_candidate_scratch(&mut scratch);
+
+    assert_eq!(scratch.active_eligible.capacity(), 0);
+    assert_eq!(scratch.literal_ids.capacity(), 0);
 }
 
 /// WHY: a streamed scan may visit every Rayon worker, but idle candidate buffers
@@ -25,8 +41,8 @@ fn shared_anchor_candidate_pool_keeps_four_idle_buffers() {
     std::thread::scope(|scope| {
         for _ in 0..16 {
             scope.spawn(|| {
-                with_candidate_scratch(|candidates| {
-                    candidates.reserve_exact(16);
+                with_candidate_scratch(|scratch| {
+                    scratch.candidates.reserve_exact(16);
                     barrier.wait();
                 });
             });

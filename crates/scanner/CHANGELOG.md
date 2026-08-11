@@ -4,6 +4,9 @@
 ## Unreleased
 
 - Detector property gates now preserve fixture paths for source-admission checks, compare Caesar prefix admission at exact token boundaries, compile backend-specific CPU and SIMD scanners, and retain minimized parity cases. The WordPress token contract includes its required `wpcom` owner anchor.
+- Confirmed shared-anchor extraction now reuses bounded worker scratch for its
+  sparse active-pattern and literal-id lists instead of allocating both vectors
+  for every phase-two pass.
 
 ## 0.5.70 - 2026-08-10
 

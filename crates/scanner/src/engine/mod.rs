@@ -227,19 +227,40 @@ pub(crate) const BIGRAM_BLOOM_MIN_CHUNK_BYTES: usize = 64;
 /// the outlier allocation is released before the worker accepts another route.
 pub(crate) const MAX_RETAINED_WORKER_SCRATCH_BYTES: usize = crate::types::MAX_SCAN_CHUNK_BYTES;
 
-pub(crate) fn release_candidate_scratch(values: &mut Vec<(u32, u32)>) {
-    values.clear();
-    if values
+#[derive(Default)]
+pub(crate) struct CandidateScratch {
+    pub(crate) candidates: Vec<(u32, u32)>,
+    pub(crate) active_eligible: Vec<usize>,
+    pub(crate) literal_ids: Vec<u32>,
+}
+
+pub(crate) fn release_candidate_scratch(values: &mut CandidateScratch) {
+    values.candidates.clear();
+    values.active_eligible.clear();
+    values.literal_ids.clear();
+    let retained_bytes = values
+        .candidates
         .capacity()
         .saturating_mul(std::mem::size_of::<(u32, u32)>())
-        > MAX_RETAINED_WORKER_SCRATCH_BYTES
-    {
-        *values = Vec::new();
+        .saturating_add(
+            values
+                .active_eligible
+                .capacity()
+                .saturating_mul(std::mem::size_of::<usize>()),
+        )
+        .saturating_add(
+            values
+                .literal_ids
+                .capacity()
+                .saturating_mul(std::mem::size_of::<u32>()),
+        );
+    if retained_bytes > MAX_RETAINED_WORKER_SCRATCH_BYTES {
+        *values = CandidateScratch::default();
     }
 }
 
 const MAX_IDLE_CANDIDATE_SCRATCH_BUFFERS: usize = 4;
-static CANDIDATE_SCRATCH_POOL: std::sync::Mutex<Vec<Vec<(u32, u32)>>> =
+static CANDIDATE_SCRATCH_POOL: std::sync::Mutex<Vec<CandidateScratch>> =
     std::sync::Mutex::new(Vec::new());
 
 fn release_idle_candidate_scratch() {
@@ -250,17 +271,20 @@ fn release_idle_candidate_scratch() {
         .clear();
 }
 
-pub(crate) fn with_candidate_scratch<R>(f: impl FnOnce(&mut Vec<(u32, u32)>) -> R) -> R {
+pub(crate) fn with_candidate_scratch<R>(f: impl FnOnce(&mut CandidateScratch) -> R) -> R {
     let mut values = CANDIDATE_SCRATCH_POOL
         .lock()
-        // LAW10: poison recovery retains the complete scratch pool; an absent buffer allocates an empty scratch vector.
+        // LAW10: poison recovery retains the complete scratch pool; an absent buffer allocates empty bounded scratch.
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .pop()
-        // LAW10: no idle scratch buffer means a fresh empty vector, with identical scan semantics.
+        // LAW10: no idle scratch buffer means fresh empty vectors, with identical scan semantics.
         .unwrap_or_default();
     let result = f(&mut values);
     release_candidate_scratch(&mut values);
-    if values.capacity() != 0 {
+    if values.candidates.capacity() != 0
+        || values.active_eligible.capacity() != 0
+        || values.literal_ids.capacity() != 0
+    {
         let mut pool = CANDIDATE_SCRATCH_POOL
             .lock()
             // LAW10: poison recovery retains the complete scratch pool before bounded reinsertion.

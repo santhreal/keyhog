@@ -53,8 +53,8 @@ fn finish_partition_clears_every_cross_call_cache() {
     assert!(len_before > 0);
 
     with_candidate_scratch(|scratch| {
-        scratch.reserve_exact(1_024);
-        scratch.push((1, 2));
+        scratch.candidates.reserve_exact(1_024);
+        scratch.candidates.push((1, 2));
     });
     assert!(candidate_scratch_idle_count_for_test() > 0);
 
