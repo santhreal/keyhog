@@ -599,7 +599,7 @@ pub(crate) fn is_probably_text_object_key(key: &str) -> bool {
         return true;
     };
     !crate::filesystem::is_default_skip_extension(ext)
-        && !(&*BINARY_OBJECT_EXTS)
+        && !BINARY_OBJECT_EXTS
             .iter()
             .any(|candidate| ext.eq_ignore_ascii_case(candidate))
 }
