@@ -148,7 +148,9 @@ fn strip_line_ending(segment: &str) -> &str {
 /// escape (`=XX` where `XX` is two hex digits). Trailing-bare-`=`
 /// inputs and `key=value` text return false and skip the decode.
 fn has_qp_escape(s: &str) -> bool {
-    qp_escape_count(s) > 0
+    s.as_bytes()
+        .windows(3)
+        .any(|w| w[0] == b'=' && w[1].is_ascii_hexdigit() && w[2].is_ascii_hexdigit())
 }
 
 fn qp_escape_count(s: &str) -> usize {
@@ -308,7 +310,12 @@ fn url_decode(input: &str) -> Result<String, ()> {
 }
 
 fn contains_percent_escape(input: &str) -> bool {
-    percent_escape_count(input) > 0
+    input
+        .as_bytes()
+        .windows(3)
+        .any(|window| {
+            window[0] == b'%' && hex_val(window[1]).is_ok() && hex_val(window[2]).is_ok()
+        })
 }
 
 fn percent_escape_count(input: &str) -> usize {
