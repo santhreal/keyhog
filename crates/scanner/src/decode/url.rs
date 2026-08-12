@@ -65,7 +65,7 @@ impl Decoder for QuotedPrintableDecoder {
     }
 
     fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
-        let line_views = line_views_with_offsets(&chunk.data);
+        let line_views: Vec<LineView<'_>> = line_views_with_offsets(&chunk.data).collect();
         let lines = line_views.iter().map(|line| line.text).collect::<Vec<_>>();
         let replacements = line_views
             .iter()
@@ -100,19 +100,17 @@ struct LineView<'a> {
     end: usize,
 }
 
-fn line_views_with_offsets(text: &str) -> Vec<LineView<'_>> {
-    text.split_inclusive('\n')
-        .scan(0usize, |offset, segment| {
-            let start = *offset;
-            *offset += segment.len();
-            let line = strip_line_ending(segment);
-            Some(LineView {
-                text: line,
-                start,
-                end: start + line.len(),
-            })
+fn line_views_with_offsets(text: &str) -> impl Iterator<Item = LineView<'_>> + '_ {
+    text.split_inclusive('\n').scan(0usize, |offset, segment| {
+        let start = *offset;
+        *offset += segment.len();
+        let line = strip_line_ending(segment);
+        Some(LineView {
+            text: line,
+            start,
+            end: start + line.len(),
         })
-        .collect()
+    })
 }
 
 fn decode_filtered_lines_into<F, D>(
@@ -127,7 +125,6 @@ where
     D: FnMut(&str) -> Result<String, ()>,
 {
     let replacements = line_views_with_offsets(&chunk.data)
-        .into_iter()
         .filter_map(|line| {
             if !filter(line.text) {
                 return None;
