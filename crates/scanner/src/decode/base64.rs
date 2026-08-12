@@ -174,10 +174,12 @@ pub(crate) struct StandardBase64Shape {
 
 /// Whether a byte can appear in a standard or URL-safe base64 string: ASCII
 /// alphanumeric or one of `+ / = - _`.
+#[inline]
 pub fn is_base64_candidate_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=' | b'-' | b'_')
 }
 
+#[inline]
 pub(crate) fn is_standard_base64_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=')
 }
