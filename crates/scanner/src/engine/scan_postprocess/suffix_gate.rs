@@ -113,10 +113,7 @@ pub(crate) fn build_confirmed_suffix_gate_with_hints(
     let mut pattern_literal_pairs = Vec::new();
     let mut register = |pattern_index: usize, pattern_literals: &[String]| {
         for literal in pattern_literals {
-            let id = *literal_id.entry(literal.clone()).or_insert_with(|| {
-                literals.push(literal.clone());
-                literals.len() - 1
-            });
+            let id = super::scan_postprocess::register_literal(&mut literals, &mut literal_id, literal);
             pattern_literal_pairs.push((pattern_index, id));
         }
     };

@@ -98,10 +98,11 @@ fn build_literal_index(
         for conj in arms.iter() {
             let mut ids = Vec::with_capacity(conj.len());
             for lit in conj {
-                let id = *literal_ids.entry(lit.clone()).or_insert_with(|| {
-                    literals.push(lit.clone());
-                    literals.len() - 1
-                });
+                let id = super::scan_postprocess::register_literal(
+                    &mut literals,
+                    &mut literal_ids,
+                    lit,
+                );
                 ids.push(id);
             }
             id_arms.push(ids);
