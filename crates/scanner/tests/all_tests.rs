@@ -535,8 +535,6 @@ pub mod window_boundary;
 pub mod admission_recovery_receipt;
 #[path = "companion_name_interning.rs"]
 pub mod companion_name_interning;
-#[path = "decode_budget_streaming.rs"]
-pub mod decode_budget_streaming;
 #[path = "decode_coalesced_sparse_parity.rs"]
 pub mod decode_coalesced_sparse_parity;
 #[path = "decode_codec_vectors.rs"]

@@ -19,10 +19,23 @@ fn allowlisted_tempdir() -> tempfile::TempDir {
         .unwrap_or_else(|| "0".to_owned());
     let root = std::env::temp_dir().join(format!("keyhog-cache-{uid}"));
     std::fs::create_dir_all(&root).expect("allowlisted root");
-    tempfile::Builder::new()
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700))
+            .expect("tighten root permissions");
+    }
+    let dir = tempfile::Builder::new()
         .prefix("matcher-artifact-")
         .tempdir_in(&root)
-        .expect("tempdir")
+        .expect("tempdir");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700))
+            .expect("tighten tempdir permissions");
+    }
+    dir
 }
 
 fn sample_detectors() -> Vec<DetectorSpec> {

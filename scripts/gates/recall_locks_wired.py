@@ -35,6 +35,7 @@ WORKFLOWS = REPO / ".github/workflows"
 ALLOWED: set[str] = {
     "adversarial_suite",  # CI --test step (security-fast lane)
     "backend_and_detector_class_api",  # needs all backends
+    "decode_budget_streaming",  # process-global decoder registration
     "detector_corpus_backend_parity",  # needs all backends
     "detector_primary_regex_dedup_ratchet",  # has `mod support;` conflict
     "gpu_ac_recall_bug_56",  # GPU host
