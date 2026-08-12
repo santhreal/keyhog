@@ -402,11 +402,12 @@ impl Phase1AdmissionPlan {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn payload_evidence_row_for(&self, index: usize) -> Option<usize> {
         self.phase2_keyword_hint_rows.get(index).copied()
     }
-
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn payload_evidence_row_count(&self) -> usize {
         self.phase2_keyword_hints.len()
     }
@@ -519,8 +520,8 @@ impl Phase1AdmissionPlan {
     fn direct_scan_absence_at_row(&self, row: usize) -> Option<bool> {
         Some(self.phase2_tail_absence_at_row(row)? && self.cpu_trigger_hints.get(row)?.is_some())
     }
-
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn simd_phase2_tail_absence_for(
         &self,
         index: usize,

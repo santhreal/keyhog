@@ -261,6 +261,7 @@ pub fn create_source_with_http_config_limits_and_policy(
     }
 }
 
+#[allow(dead_code)]
 fn feature_unavailable(source: &str, feature: &str) -> keyhog_core::SourceError {
     keyhog_core::SourceError::FeatureUnavailable {
         source_name: source.to_owned(),

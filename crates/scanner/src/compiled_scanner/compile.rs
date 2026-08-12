@@ -561,7 +561,7 @@ impl CompiledScanner {
         gpu_policy: GpuInitPolicy,
         tuning_config: &ScannerTuningConfig,
         packed_state: Option<CompileState>,
-        mut packed_simd_program: Option<PackedSimdProgram>,
+        #[allow(unused_mut)] mut packed_simd_program: Option<PackedSimdProgram>,
         packed_vyre_program: Option<PackedVyreProgramSource<'_>>,
         packed_decoder_plan: Option<(Arc<crate::decode::CompiledDecoderPlan>, [u8; 32])>,
         mut packed_detector_plan: Option<PackedDetectorPlanPrelude<'_>>,
@@ -794,6 +794,7 @@ impl CompiledScanner {
             GpuInitPolicy::SelectedBackend(backend) => !backend.is_gpu(),
             GpuInitPolicy::ForceDisabled => true,
         };
+        #[allow(unused_variables)]
         let selected_backend = match gpu_policy {
             GpuInitPolicy::SelectedBackend(backend) => Some(backend),
             _ => None,

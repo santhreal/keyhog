@@ -15,7 +15,7 @@ use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::ScanBackend;
 use keyhog_scanner::telemetry::ScannerCoverageSnapshot;
 use keyhog_scanner::{CompiledScanner, Phase1AdmissionPlan};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::evidence::{
     canonical_match_differences, canonical_match_digest, canonical_matches,

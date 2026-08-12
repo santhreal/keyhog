@@ -150,6 +150,7 @@ impl CompiledScanner {
 
     /// Score all pending candidates from one coalesced scan as a single model
     /// batch, then return each finalized finding to its originating chunk state.
+    #[allow(dead_code)]
     pub(crate) fn apply_ml_batch_scores_across(
         &self,
         scan_states: &mut [ScanState],
