@@ -487,7 +487,8 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
             chars.next();
         }
 
-        let mut digits = String::new();
+        let mut digits = [0u8; MAX_NUMERIC_ENTITY_DIGITS];
+        let mut digits_len = 0usize;
         let mut preserved_malformed = false;
         let mut consumed_terminator = false;
         while let Some(&(_, next)) = chars.peek() {
@@ -498,8 +499,9 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
             }
             let is_digit =
                 (is_hex && next.is_ascii_hexdigit()) || (!is_hex && next.is_ascii_digit());
-            if is_digit && digits.len() < MAX_NUMERIC_ENTITY_DIGITS {
-                digits.push(next);
+            if is_digit && digits_len < MAX_NUMERIC_ENTITY_DIGITS {
+                digits[digits_len] = next as u8;
+                digits_len += 1;
                 chars.next();
             } else {
                 // Non-digit terminator OR the digit run exceeded the cap: this
@@ -514,7 +516,7 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
                 if is_hex {
                     out.push('x');
                 }
-                out.push_str(&digits);
+                out.push_str(std::str::from_utf8(&digits[..digits_len]).unwrap_or(""));
                 if !is_digit {
                     out.push(next);
                     chars.next();
@@ -538,13 +540,13 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
             if is_hex {
                 out.push('x');
             }
-            out.push_str(&digits);
+            out.push_str(std::str::from_utf8(&digits[..digits_len]).unwrap_or(""));
             if consumed_terminator {
                 out.push(';');
             }
         };
 
-        if digits.is_empty() {
+        if digits_len == 0 {
             emit_literal(&mut decoded);
             continue;
         }
@@ -553,7 +555,10 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
         // A numeric entity whose value overflows `u32` or is not a valid Unicode
         // scalar (surrogate / above U+10FFFF) is preserved literally rather than
         // dropping the whole candidate via `?`.
-        let replacement = match u32::from_str_radix(&digits, radix) {
+        let replacement = match u32::from_str_radix(
+            std::str::from_utf8(&digits[..digits_len]).unwrap_or(""),
+            radix,
+        ) {
             Ok(codepoint) => char::from_u32(codepoint),
             Err(_invalid_digits) => None,
         };
