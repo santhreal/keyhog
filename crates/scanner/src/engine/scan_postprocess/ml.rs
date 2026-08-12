@@ -86,6 +86,8 @@ impl CompiledScanner {
         }
         #[cfg(not(feature = "gpu"))]
         let _ = backend;
+        #[cfg(not(feature = "gpu"))]
+        let _ = deadline;
         let scores = crate::ml_scorer::score_input_batch(pending_matches, &self.config);
         crate::ml_scorer::complete_batch_scores_with_config(scores, pending_matches, &self.config)
     }

@@ -137,12 +137,14 @@ impl QuantizedScore {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct AcceleratedCandidateScore {
     pub(crate) candidate_id: u32,
     pub(crate) score: QuantizedScore,
 }
 
+#[allow(dead_code)]
 pub(crate) fn validate_accelerated_output(
     expected_candidates: usize,
     output: Result<Vec<AcceleratedCandidateScore>, QuantizedConfidenceError>,
@@ -285,6 +287,7 @@ impl QuantizedModel {
         self.payload_digest
     }
 
+    #[allow(dead_code)]
     pub(crate) fn parameters(&self) -> &[i16] {
         &self.params
     }

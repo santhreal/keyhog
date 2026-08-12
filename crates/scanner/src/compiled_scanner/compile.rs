@@ -8,6 +8,7 @@ use crate::compiler::compiler_build::CompileState;
 type PackedSimdProgram = crate::execution_pack::HyperscanSimdExecutionProgram;
 #[cfg(not(feature = "simd"))]
 type PackedSimdProgram = ();
+#[allow(dead_code)]
 struct PackedVyreProgramSource<'a> {
     bytes: &'a [u8],
     pack_identity: crate::execution_pack::ExecutionPackIdentity,
@@ -102,7 +103,10 @@ fn selected_gpu_peer(backend: crate::hw_probe::ScanBackend) -> SelectedGpuPeer {
         },
         _ => unreachable!("selected GPU peer requires a GPU backend"),
     }
-    peer
+    #[cfg(feature = "gpu")]
+    {
+        peer
+    }
 }
 
 impl CompiledScanner {
