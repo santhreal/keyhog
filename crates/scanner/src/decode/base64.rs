@@ -70,10 +70,7 @@ impl Decoder for Base64Decoder {
                         // scanned unchanged.
                         match crate::decode::inflate::try_inflate_to_text(&decoded) {
                             Some(inflated) => Some(inflated),
-                            None => match String::from_utf8(decoded) {
-                                Ok(text) => Some(text),
-                                Err(_) => None, // LAW10: recall-preserving: the original encoded bytes still take the whole-chunk scan path unchanged; non-text output is not source text.
-                            },
+                            None => String::from_utf8(decoded).ok(), // LAW10: recall-preserving: the original encoded bytes still take the whole-chunk scan path unchanged; non-text output is not source text.
                         }
                     }
                     Err(()) => {
