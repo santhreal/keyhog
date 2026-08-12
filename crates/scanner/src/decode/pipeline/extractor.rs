@@ -227,11 +227,7 @@ fn extract_encoded_value_spans_raw(
                 if index.saturating_sub(start) >= MIN_B64_BLOCK_LEN
                     && (start != container_start || index != container_end)
                 {
-                    values.push(ExtractedValue::new(
-                        &text[start..index],
-                        start,
-                        index,
-                    ));
+                    values.push(ExtractedValue::new(&text[start..index], start, index));
                 }
             }
         }

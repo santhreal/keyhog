@@ -82,9 +82,7 @@ pub(crate) fn companion_arms(src: &str) -> Arc<Vec<Vec<String>>> {
 /// Returns `(literals, armed)` where `armed` maps each `pat_idx` to its
 /// OR-of-AND literal-id conjunctions. Empty `armed` means no pattern had
 /// gateable companion literals (fail-open).
-fn build_literal_index(
-    patterns: &[(usize, &str)],
-) -> (Vec<String>, Vec<(usize, Vec<Vec<usize>>)>) {
+fn build_literal_index(patterns: &[(usize, &str)]) -> (Vec<String>, Vec<(usize, Vec<Vec<usize>>)>) {
     let mut literal_ids: HashMap<String, usize> = HashMap::new();
     let mut literals: Vec<String> = Vec::new();
     let mut armed: Vec<(usize, Vec<Vec<usize>>)> = Vec::with_capacity(patterns.len());
@@ -98,11 +96,8 @@ fn build_literal_index(
         for conj in arms.iter() {
             let mut ids = Vec::with_capacity(conj.len());
             for lit in conj {
-                let id = super::scan_postprocess::register_literal(
-                    &mut literals,
-                    &mut literal_ids,
-                    lit,
-                );
+                let id =
+                    super::scan_postprocess::register_literal(&mut literals, &mut literal_ids, lit);
                 ids.push(id);
             }
             id_arms.push(ids);

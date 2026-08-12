@@ -124,19 +124,18 @@ where
     F: Fn(&str) -> bool,
     D: FnMut(&str) -> Result<String, ()>,
 {
-    let replacements = line_views_with_offsets(&chunk.data)
-        .filter_map(|line| {
-            if !filter(line.text) {
-                return None;
-            }
-            let decoded = match decode(line.text) {
-                Ok(decoded) => decoded,
-                // LAW10: a failed optional wrapper decode leaves this exact
-                // source line in the root chunk's scan path unchanged.
-                Err(()) => return None,
-            };
-            Some((line.start, line.end, decoded))
-        });
+    let replacements = line_views_with_offsets(&chunk.data).filter_map(|line| {
+        if !filter(line.text) {
+            return None;
+        }
+        let decoded = match decode(line.text) {
+            Ok(decoded) => decoded,
+            // LAW10: a failed optional wrapper decode leaves this exact
+            // source line in the root chunk's scan path unchanged.
+            Err(()) => return None,
+        };
+        Some((line.start, line.end, decoded))
+    });
     stream_batched_decoded_replacements(sink, chunk, replacements, decoder_name)
 }
 fn strip_line_ending(segment: &str) -> &str {
@@ -313,9 +312,7 @@ fn contains_percent_escape(input: &str) -> bool {
     input
         .as_bytes()
         .windows(3)
-        .any(|window| {
-            window[0] == b'%' && hex_val(window[1]).is_ok() && hex_val(window[2]).is_ok()
-        })
+        .any(|window| window[0] == b'%' && hex_val(window[1]).is_ok() && hex_val(window[2]).is_ok())
 }
 
 fn percent_escape_count(input: &str) -> usize {
