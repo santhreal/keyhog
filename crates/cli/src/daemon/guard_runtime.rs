@@ -495,6 +495,7 @@ impl GuardRuntime {
     }
 
     /// Whether the guard runtime has any registered roots.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.roots.read().is_empty()
     }
