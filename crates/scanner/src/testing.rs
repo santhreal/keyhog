@@ -2480,7 +2480,7 @@ pub mod multiline {
     /// complete without exposing the loader internals.
     #[cfg(feature = "multiline")]
     pub fn filter_line_content_for_test(line: &str) -> String {
-        crate::multiline::filter_line_content(line)
+        crate::multiline::filter_line_content(line).to_string()
     }
 
     /// Test seam for the multiline preprocessor join pass, returning the joined
