@@ -6,7 +6,9 @@ use crate::capped_read::MAX_PREALLOCATED_READ_BYTES;
 #[cfg(feature = "azure")]
 pub(crate) mod azure_blob;
 
+#[cfg(feature = "gcs")]
 pub(crate) const DEFAULT_GCS_ENDPOINT: &str = "https://storage.googleapis.com";
+#[cfg(feature = "s3")]
 pub(crate) const DEFAULT_S3_HOST_SUFFIX: &str = "s3.amazonaws.com";
 pub(crate) const OBJECT_FETCH_THREADS: usize = crate::parallel_fetch::CLOUD_OBJECT_FETCH_THREADS;
 
@@ -94,6 +96,7 @@ pub(crate) fn parse_http_endpoint(
 /// GCS each hand-rolled as `validate_endpoint`; they diverged ONLY in whether the
 /// path had to be root (`require_root_path`), which is now an explicit parameter
 /// instead of a silent difference between two same-named copies.
+#[cfg(any(feature = "s3", feature = "gcs"))]
 pub(crate) fn validate_cloud_endpoint(
     endpoint: &str,
     source: &str,
@@ -110,6 +113,7 @@ pub(crate) fn validate_cloud_endpoint(
     ))
 }
 
+#[cfg(any(feature = "s3", feature = "gcs"))]
 pub(crate) fn credential_forward_allowed(allow_explicit: bool) -> bool {
     allow_explicit
 }
@@ -133,6 +137,7 @@ pub(crate) fn set_optional<T>(slot: &mut Option<T>, value: T) {
 /// (`googleapis.com`) credential-forwarding gates. Fail-closed (Law 10): a
 /// malformed endpoint or one with no host returns `false`, so a bad endpoint is
 /// never classified as provider-owned and never receives forwarded credentials.
+#[cfg(any(feature = "s3", feature = "gcs"))]
 pub(crate) fn endpoint_host_matches_domain(endpoint: &str, domain: &str) -> bool {
     let Ok(parsed) = reqwest::Url::parse(endpoint) else {
         return false;
@@ -143,6 +148,7 @@ pub(crate) fn endpoint_host_matches_domain(endpoint: &str, domain: &str) -> bool
     host_matches_domain_ascii_ci(host, domain)
 }
 
+#[cfg(any(feature = "s3", feature = "gcs"))]
 pub(crate) fn host_matches_domain_ascii_ci(host: &str, domain: &str) -> bool {
     if host.eq_ignore_ascii_case(domain) {
         return true;
@@ -646,6 +652,7 @@ pub(crate) fn encode_object_key_path(key: &str) -> String {
     encoded
 }
 
+#[cfg(any(feature = "azure", feature = "s3"))]
 pub(crate) fn contains_forbidden_xml_markup(body: &str) -> bool {
     let upper = body.to_ascii_uppercase();
     upper.contains("<!DOCTYPE") || upper.contains("<!ENTITY")
@@ -844,7 +851,7 @@ mod continuation_token_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(feature = "s3", feature = "gcs")))]
 mod endpoint_domain_gate_tests {
     use super::{endpoint_host_matches_domain, set_optional};
 

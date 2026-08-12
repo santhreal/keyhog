@@ -50,6 +50,7 @@ pub(super) fn probe_kind(path: &Path, ext: &str) -> Result<Option<ImageKind>, st
     Ok(recognized.then_some(candidate))
 }
 
+#[cfg(feature = "docker")]
 pub(super) fn probe_kind_from_bytes(ext: &str, prefix: &[u8]) -> Option<ImageKind> {
     let candidate = if ext.eq_ignore_ascii_case("png") {
         ImageKind::Png
@@ -116,6 +117,7 @@ pub(super) fn extract(
     })
 }
 
+#[cfg(feature = "docker")]
 pub(super) fn extract_from_bytes(
     display: &str,
     bytes: &[u8],
