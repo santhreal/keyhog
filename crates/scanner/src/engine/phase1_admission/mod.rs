@@ -186,10 +186,6 @@ impl ReusablePhase1EvidenceCache {
         self.entries.shrink_to_fit();
         self.resident_bytes = 0;
     }
-    #[allow(dead_code)]
-    pub(crate) fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
     fn get(
         &mut self,
         fingerprint: [u8; 32],

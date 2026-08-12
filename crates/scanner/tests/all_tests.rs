@@ -523,7 +523,7 @@ pub mod unit_engine_cases_live;
 pub mod vendorgen_harness_contract;
 #[path = "window_boundary.rs"]
 pub mod window_boundary;
-// ── Wired-orphan batch: 42 ci-lean-compatible tests that were top-level
+// ── Wired-orphan batch: 41 ci-lean-compatible tests that were top-level
 // `tests/*.rs` files not aggregated here and not named in any workflow `--test`
 // flag, so they never ran in CI. Aggregating them makes `--test all_tests`
 // actually execute them. GPU/SIMD-only, perf-timing, and backend-parity

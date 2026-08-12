@@ -18,7 +18,22 @@ fn allowlisted_tempdir() -> tempfile::TempDir {
         })
         .unwrap_or_else(|| "0".to_owned());
     let root = std::env::temp_dir().join(format!("keyhog-cache-{uid}"));
-    std::fs::create_dir_all(&root).expect("allowlisted root");
+    // Refuse a pre-existing symlink to prevent TOCTOU: a local attacker
+    // can pre-create keyhog-cache-<uid> as a symlink pointing elsewhere.
+    if let Ok(meta) = std::fs::symlink_metadata(&root) {
+        assert!(
+            !meta.file_type().is_symlink(),
+            "allowlisted root must not be a symlink"
+        );
+    }
+    // create_dir (not create_dir_all) only creates the final component,
+    // so it will not follow a symlink planted on a parent directory.
+    std::fs::create_dir(&root)
+        .or_else(|_| {
+            // Already exists: the symlink check above passed, so reuse it.
+            Ok::<(), std::io::Error>(())
+        })
+        .expect("create allowlisted root");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
