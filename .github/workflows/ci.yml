@@ -44,18 +44,7 @@ jobs:
     name: Format
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            # Stale hooksPath=/dev/null breaks `git lfs install --local`
-            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
+      - uses: ./.github/actions/repair-workspace
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # cargo fmt walks every .rs file under tests/, including
@@ -83,28 +72,13 @@ jobs:
     # blockers. Genuine bugs are caught by Format/Build/Verifier/focused tests.
     continue-on-error: true
     steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
+      - uses: ./.github/actions/repair-workspace
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Install Vectorscan
-        run: |
-          for i in 1 2 3 4 5; do
-            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-            sleep $((i * 2))
-            if [ "$i" -eq 5 ]; then exit 1; fi
-          done
+      - uses: ./.github/actions/setup-vectorscan
       # No `-D warnings`: lints are reported but do not fail the step.
       - run: cargo clippy -p keyhog-core -p keyhog-scanner -p keyhog
 
@@ -112,28 +86,11 @@ jobs:
     name: Build Release
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            # Stale hooksPath=/dev/null breaks `git lfs install --local`
-            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
+      - uses: ./.github/actions/repair-workspace
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Install Vectorscan
-        run: |
-          for i in 1 2 3 4 5; do
-            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-            sleep $((i * 2))
-            if [ "$i" -eq 5 ]; then exit 1; fi
-          done
+      - uses: ./.github/actions/setup-vectorscan
       # release-fast (thin LTO, codegen-units=16) is the profile built for
       # exactly this gate: -O3 validation + smoke without the multi-minute
       # fat-LTO link. The shipped fat-LTO `--release` build is still gated on
@@ -184,30 +141,13 @@ jobs:
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            # Stale hooksPath=/dev/null breaks `git lfs install --local`
-            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
+      - uses: ./.github/actions/repair-workspace
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Install Vectorscan
-        run: |
-          for i in 1 2 3 4 5; do
-            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-            sleep $((i * 2))
-            if [ "$i" -eq 5 ]; then exit 1; fi
-          done
+      - uses: ./.github/actions/setup-vectorscan
       - name: verifier all_tests
         run: cargo test -p keyhog-verifier --test all_tests --profile ci-test
       - name: verifier break_it (serial)
@@ -219,30 +159,13 @@ jobs:
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 120
     steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            # Stale hooksPath=/dev/null breaks `git lfs install --local`
-            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
+      - uses: ./.github/actions/repair-workspace
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Install Vectorscan
-        run: |
-          for i in 1 2 3 4 5; do
-            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-            sleep $((i * 2))
-            if [ "$i" -eq 5 ]; then exit 1; fi
-          done
+      - uses: ./.github/actions/setup-vectorscan
       - name: core all_tests
         run: cargo test -p keyhog-core --test all_tests --profile ci-test
       - name: scanner all_tests
@@ -265,28 +188,13 @@ jobs:
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
+      - uses: ./.github/actions/repair-workspace
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Install Vectorscan
-        run: |
-          for i in 1 2 3 4 5; do
-            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-            sleep $((i * 2))
-            if [ "$i" -eq 5 ]; then exit 1; fi
-          done
+      - uses: ./.github/actions/setup-vectorscan
       - name: E2E binary tests
         run: cargo test -p keyhog --test e2e_binary --profile ci-test
       - name: SARIF code-scanning compliance
@@ -311,18 +219,7 @@ jobs:
     name: Library surface
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            # Stale hooksPath=/dev/null breaks `git lfs install --local`
-            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
+      - uses: ./.github/actions/repair-workspace
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # crates/scanner/tests/contracts/*.toml and
@@ -336,13 +233,7 @@ jobs:
           lfs: true
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Install Vectorscan
-        run: |
-          for i in 1 2 3 4 5; do
-            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-            sleep $((i * 2))
-            if [ "$i" -eq 5 ]; then exit 1; fi
-          done
+      - uses: ./.github/actions/setup-vectorscan
       # Dedupe: focused-integration owns core/scanner all_tests; sources job owns
       # sources all_tests. library-surface keeps lean scanner feature boundary,
       # CLI/docs lib tests, verifier lib units, and profile contracts only.
@@ -359,30 +250,13 @@ jobs:
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 120
     steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            # Stale hooksPath=/dev/null breaks `git lfs install --local`
-            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
+      - uses: ./.github/actions/repair-workspace
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Install Vectorscan
-        run: |
-          for i in 1 2 3 4 5; do
-            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-            sleep $((i * 2))
-            if [ "$i" -eq 5 ]; then exit 1; fi
-          done
+      - uses: ./.github/actions/setup-vectorscan
       # One all-target run owns both always-on and opt-in sources coverage.
       # A separate `--test all_tests` step replayed that aggregator before this
       # command ran it again with the complete feature set.
@@ -394,30 +268,13 @@ jobs:
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            # Stale hooksPath=/dev/null breaks `git lfs install --local`
-            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
+      - uses: ./.github/actions/repair-workspace
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Install Vectorscan
-        run: |
-          for i in 1 2 3 4 5; do
-            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-            sleep $((i * 2))
-            if [ "$i" -eq 5 ]; then exit 1; fi
-          done
+      - uses: ./.github/actions/setup-vectorscan
       - name: cli all_tests
         run: cargo test -p keyhog --test all_tests --no-default-features --features ci-lean --profile ci-test
       - name: cli Vyre pin coherence
@@ -430,30 +287,13 @@ jobs:
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            # Stale hooksPath=/dev/null breaks `git lfs install --local`
-            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
+      - uses: ./.github/actions/repair-workspace
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Install Vectorscan
-        run: |
-          for i in 1 2 3 4 5; do
-            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-            sleep $((i * 2))
-            if [ "$i" -eq 5 ]; then exit 1; fi
-          done
+      - uses: ./.github/actions/setup-vectorscan
       - name: detector self-validation
         run: cargo test -p keyhog-scanner --test all_detectors_self_validate --profile ci-test
       # One cargo invocation for every ci-lean detector/recall contract target.
@@ -498,28 +338,11 @@ jobs:
     # composite Action depend on. Anything anyone might `cargo install`
     # has to compile cleanly with the documented feature set.
     steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            # Stale hooksPath=/dev/null breaks `git lfs install --local`
-            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
+      - uses: ./.github/actions/repair-workspace
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Install Vectorscan
-        run: |
-          for i in 1 2 3 4 5; do
-            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-            sleep $((i * 2))
-            if [ "$i" -eq 5 ]; then exit 1; fi
-          done
+      - uses: ./.github/actions/setup-vectorscan
       - name: portable (no Hyperscan or GPU build libraries)
         run: cargo check -p keyhog --no-default-features --features portable
       - name: portable coalesced windowing contract
@@ -606,18 +429,7 @@ jobs:
     name: Install scripts (install.sh edge cases)
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            # Stale hooksPath=/dev/null breaks `git lfs install --local`
-            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
+      - uses: ./.github/actions/repair-workspace
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install install-script linters
         run: |

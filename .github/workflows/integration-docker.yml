@@ -36,18 +36,7 @@ jobs:
       matrix:
         variant: [glibc, musl]
     steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            # Stale hooksPath=/dev/null breaks `git lfs install --local`
-            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
+      - uses: ./.github/actions/repair-workspace
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run ${{ matrix.variant }} Docker integration matrix
         run: bash tests/docker/run.sh ${{ matrix.variant }}
