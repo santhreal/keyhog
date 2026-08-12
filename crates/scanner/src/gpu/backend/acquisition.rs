@@ -224,10 +224,7 @@ impl GpuBackendPeers {
         }?;
         // LAW10: diagnostics retain the complete error in the slot; this status
         // accessor distinguishes initialized success without consuming it.
-        match result {
-            Ok(peer) => Some(peer),
-            Err(_) => None, // LAW10: status projection only; initialization_error retains the typed diagnostic and execution logs it before refusing this backend.
-        }
+        result.as_ref().ok() // LAW10: status projection only; initialization_error retains the typed diagnostic and execution logs it before refusing this backend.
     }
 
     #[cfg(feature = "gpu")]

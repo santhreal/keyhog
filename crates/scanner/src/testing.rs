@@ -306,10 +306,7 @@ pub fn reverse_str_for_test(s: &str) -> String {
 /// `None` when the decoded bytes are not valid UTF-8.
 #[cfg(feature = "decode")]
 pub fn quoted_printable_decode_for_test(input: &str) -> Option<String> {
-    match crate::decode::quoted_printable_decode(input) {
-        Ok(decoded) => Some(decoded),
-        Err(()) => None,
-    }
+    crate::decode::quoted_printable_decode(input).ok()
 }
 
 /// Test seam for the RFC2047 MIME encoded-word decoder (`=?charset?enc?text?=`,
