@@ -681,7 +681,7 @@ fn find_mime_encoded_word_spans(text: &str) -> Vec<ExtractedValue> {
             if let Some(end) = line.text[absolute_start + 2..].find("?=") {
                 let absolute_end = absolute_start + 2 + end + 2;
                 words.push(ExtractedValue::new(
-                    line.text[absolute_start..absolute_end].to_string(),
+                    &line.text[absolute_start..absolute_end],
                     line.start + absolute_start,
                     line.start + absolute_end,
                 ));
