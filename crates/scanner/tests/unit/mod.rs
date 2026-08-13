@@ -114,6 +114,7 @@ pub mod entropy_secrets_yaml_is_appropriate;
 pub mod entropy_shannon_cache_matches_uncached;
 pub mod entropy_symbolic_password_context_relaxation;
 pub mod entropy_uniqueness_entropy_checks;
+pub mod execution_pack_format;
 pub mod false_positive_integrity_disclaimer;
 #[cfg(all(feature = "ml", feature = "multiline"))]
 pub mod file_gate;
