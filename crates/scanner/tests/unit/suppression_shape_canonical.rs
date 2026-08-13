@@ -506,7 +506,7 @@ fn sha384_sri_suppressed_via_both_report_time_and_entropy_entry_points() {
 
     // The label owner really does carry sha384- (guards against a future
     // edit silently dropping it from the ONE owner again).
-    assert!(HASH_ALGO_INTEGRITY_LABELS.contains(&"sha384-"));
+    assert!(HASH_ALGO_INTEGRITY_LABELS.iter().any(|l| l == "sha384-"));
 }
 
 #[test]
