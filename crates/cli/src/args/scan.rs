@@ -1084,8 +1084,9 @@ pub struct ScanArgs {
     /// static-recovery expressions rejected as malformed
     /// (`kind: static_recovery_rejected`). Detail events are bounded; exact
     /// aggregate rejection counts and `detail_events_dropped` remain visible
-    /// after the bound is reached. Credentials are redacted (prefix only), and
-    /// recovery rejections contain no source bytes. Useful when keyhog reports
+    /// after the bound is reached. Credentials are redacted (prefix and suffix
+    /// shown, middle elided), and recovery rejections contain no source bytes.
+    /// Useful when keyhog reports
     /// zero findings and you want to know whether a match was made and
     /// silenced, recovery rejected an expression, or the candidate never
     /// reached the engine.
