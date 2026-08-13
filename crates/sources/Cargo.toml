@@ -190,6 +190,11 @@ tempfile = { workspace = true }
 sevenz-rust2 = { workspace = true, features = ["compress"] }
 
 [[test]]
+name = "perf_git_head_path_lookup"
+path = "tests/perf_git_head_path_lookup.rs"
+required-features = ["git"]
+
+[[test]]
 name = "profile_git"
 path = "tests/profile_git.rs"
 required-features = ["git"]
