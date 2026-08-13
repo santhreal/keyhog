@@ -163,6 +163,8 @@ jobs:
         run: cargo test -p keyhog-scanner --test all_tests --no-default-features --features ci-lean --profile ci-test
       - name: scanner decoder-registry contract
         run: cargo test -p keyhog-scanner --test decode_coalesced_sparse_parity --no-default-features --features ci-lean --profile ci-test
+      - name: scanner execution-pack mapping contract
+        run: cargo test -p keyhog-scanner --test execution_pack_lazy_mapping --no-default-features --features ci-lean --profile ci-test
       - name: scanner allocation contracts
         run: >
           cargo test -p keyhog-scanner --no-fail-fast

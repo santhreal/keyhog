@@ -526,8 +526,9 @@ pub mod window_boundary;
 // ── Wired-orphan batch: process-safe ci-lean-compatible tests that were
 // top-level `tests/*.rs` files not aggregated here and not named in any
 // workflow `--test` flag. Aggregating them makes `--test all_tests` actually
-// execute them. Process-global, GPU/SIMD-only, perf-timing, backend-parity, and
-// detector-recall-remediation targets remain isolated from this shared binary.
+// execute them. Process-global, RSS-sensitive execution-pack mapping,
+// GPU/SIMD-only, perf-timing, backend-parity, and detector-recall targets remain
+// isolated from this shared binary.
 // Two files with `mod support;` or multi-module `#[path]` declarations are
 // excluded to avoid module-name conflicts. Keep sorted.
 #[path = "admission_recovery_receipt.rs"]
@@ -588,8 +589,6 @@ pub mod entropy_placeholder_marker_truth_table;
 pub mod execution_pack_boundary;
 #[path = "execution_pack_generation.rs"]
 pub mod execution_pack_generation;
-#[path = "execution_pack_lazy_mapping.rs"]
-pub mod execution_pack_lazy_mapping;
 #[path = "execution_pack_matcher_graph.rs"]
 pub mod execution_pack_matcher_graph;
 #[path = "execution_pack_selection.rs"]
