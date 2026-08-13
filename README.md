@@ -741,26 +741,30 @@ backend/cache/daemon/OS/GPU matrix.
 ## GPU-backed mass daemon workers
 
 The optional Unix mass daemon keeps one compiled scanner and its calibrated
-backend state warm. Local filesystem scans send only root and source-policy
-metadata; the daemon reads and batches those bytes in its own process. Git,
-binary, remote, and cloud sources that require client-side credentials still
-use protected bounded chunk frames:
+backend state warm. Local filesystem scans send only canonical root and
+source-policy metadata; the daemon reads and batches the files in its own
+process. Git, binary, remote, and cloud sources that require client-side
+credentials use protected bounded chunk frames.
 
 ```sh
+# Terminal 1
 keyhog calibrate-autoroute --policy default
 keyhog daemon start --mass
+
+# Terminal 2, after the daemon prints its ready line
 keyhog scan --daemon=mass /srv/inventory/team-a \
   --format json-envelope --output team-a.json
+keyhog daemon status
 keyhog daemon stop
 ```
 
-`--daemon=mass` is an explicit required route that never falls back to an
-in-process scan. Batches are bounded (8 MiB, 1,024 chunks); input size does not
-determine resident memory. Incremental state, GPU-majority receipts, and
-forced-backend diagnostics are documented in the daemon guide.
+`--daemon=mass` is a required route. It never retries in process. Each batch is
+bounded to 8 MiB and 1,024 chunks, independent of total input size. Preserve
+the coverage envelope, exit status, and terminal execution receipt for every
+inventory partition.
 
-See [daemon and warm scans](https://santhreal.github.io/keyhog/workflows/daemon.html)
-and [mass scanning](https://santhreal.github.io/keyhog/guides/mass-scanning.html).
+See [daemon lifecycle, routing, and receipts](https://santhreal.github.io/keyhog/workflows/daemon.html)
+and [inventory partitioning](https://santhreal.github.io/keyhog/guides/mass-scanning.html).
 
 ## System-wide credential triage
 
