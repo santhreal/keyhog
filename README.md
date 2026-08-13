@@ -503,18 +503,23 @@ contracts.
 
 ## How KeyHog works
 
-KeyHog compiles its 926 detectors into a shared trigger/extraction plan,
+KeyHog compiles its 926 detectors into a shared trigger and extraction plan,
 decodes nested encodings before matching, and applies per-detector confidence
-and suppression. CPU, Hyperscan/SIMD, and GPU (CUDA, Metal, WGPU) are measured
-peers under a persisted, parity-proof autoroute selector, not a fallback chain.
-Every backend preserves the same detector ids and findings contract.
+and suppression. Pure-Rust CPU (`cpu-fallback`), Hyperscan/SIMD (`simd-regex`),
+CUDA (`gpu-cuda-region-presence`), Metal (`gpu-metal-region-presence`), and WGPU
+(`gpu-wgpu-region-presence`) are peers in a proof-backed autoroute selector, not
+a fallback chain. Calibration measures
+every eligible peer and persists the fastest route whose complete findings match
+the reference route for the exact binary, detector and configuration state,
+host, accelerator, and workload class. A missing, stale, invalid, or incomplete
+decision stops an automatic scan before execution and reports how to recalibrate.
+It never silently substitutes another backend.
 
-The [architecture guide](docs/src/architecture.md) covers the repository map,
-dependency direction, bytes-to-finding pipeline, and profiling entrypoints.
-The [backends guide](docs/src/backends.md) details CPU, SIMD, and GPU execution
-surfaces. The [autoroute reference](docs/src/reference/autoroute-calibration.md)
-owns the complete parity contract, workload identity, cache lifecycle, and
-troubleshooting matrix.
+See [Architecture](https://santhreal.github.io/keyhog/architecture.html) for the
+repository map, dependency direction, bytes-to-finding pipeline, and profiling
+entrypoints. See [Backends and routing](https://santhreal.github.io/keyhog/backends.html)
+for execution contracts and [Autoroute calibration](https://santhreal.github.io/keyhog/reference/autoroute-calibration.html)
+for parity, workload identity, cache lifecycle, and repair procedures.
 
 **Full documentation:** [santhreal.github.io/keyhog](https://santhreal.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, autoroute, exit codes, env vars, and contributing. Source under `docs/`.
 
@@ -741,26 +746,29 @@ backend/cache/daemon/OS/GPU matrix.
 ## GPU-backed mass daemon workers
 
 The optional Unix mass daemon keeps one compiled scanner and its calibrated
-backend state warm. Local filesystem scans send only root and source-policy
-metadata; the daemon reads and batches those bytes in its own process. Git,
-binary, remote, and cloud sources that require client-side credentials still
-use protected bounded chunk frames:
+backend state warm. Local filesystem scans send only canonical root and
+source-policy metadata; the daemon reads and batches the files in its own
+process. Git, binary, remote, and cloud sources that require client-side
+credentials use protected bounded chunk frames.
 
 ```sh
+# Terminal 1
 keyhog calibrate-autoroute --policy default
 keyhog daemon start --mass
+
+# Terminal 2, after the daemon prints its ready line
 keyhog scan --daemon=mass /srv/inventory/team-a \
   --format json-envelope --output team-a.json
 keyhog daemon stop
 ```
 
-`--daemon=mass` is an explicit required route that never falls back to an
-in-process scan. Batches are bounded (8 MiB, 1,024 chunks); input size does not
-determine resident memory. Incremental state, GPU-majority receipts, and
-forced-backend diagnostics are documented in the daemon guide.
+`--daemon=mass` is a required route. It never retries in process. Each batch is
+bounded to 8 MiB and 1,024 chunks, independent of total input size. Preserve
+the coverage envelope, exit status, and terminal execution receipt for every
+inventory partition.
 
-See [daemon and warm scans](https://santhreal.github.io/keyhog/workflows/daemon.html)
-and [mass scanning](https://santhreal.github.io/keyhog/guides/mass-scanning.html).
+See [daemon lifecycle, routing, and receipts](https://santhreal.github.io/keyhog/workflows/daemon.html)
+and [inventory partitioning](https://santhreal.github.io/keyhog/guides/mass-scanning.html).
 
 ## System-wide credential triage
 
