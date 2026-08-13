@@ -60,7 +60,7 @@ or coverage incomplete.
 | `--entropy-source-files` |  |  | Enable entropy scanning in source code files |
 | `--entropy-threshold` | `BITS` |  | Entropy threshold in bits per byte (default: 4.5) |
 | `--exclude-paths` | `PATH...` |  | Explicit paths or glob patterns to exclude from scanning |
-| `--fast` |  |  | Fast mode: pattern matching only. No decode, no entropy. Maximum speed. A preset is a BASE: it seeds defaults, then compatible explicit knobs override it (e.g. `--fast --decode-depth 2` re-enables shallow decode on top of the fast base). Entropy-only knobs conflict because fast mode disables entropy, so accepting them would create a no-op flag |
+| `--fast` |  |  | Fast mode: pattern matching only. No decode, no entropy, no ML scoring. Maximum speed. A preset is a BASE: it seeds defaults, then compatible explicit knobs override it (e.g. `--fast --decode-depth 2` re-enables shallow decode on top of the fast base). Entropy-only knobs conflict because fast mode disables entropy, so accepting them would create a no-op flag |
 | `--format` | `FORMAT` | `text` | Output format. `json` is a bare findings array for pipelines; prefer `json-envelope` for scan status, coverage gaps, and backend recoveries in one document (KH-1435 / KH-1474) Possible values: `text`, `json`, `json-envelope`, `jsonl`, `jsonl-envelope`, `sarif`, `csv`, `github-annotations`, `gitlab-sast`, `html`, `junit`. |
 | `--fused-batch` | `N` |  | Fused filesystem pipeline chunk batch size |
 | `--fused-depth` | `N` |  | Fused filesystem pipeline channel depth |
@@ -245,7 +245,7 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--entropy-source-files` |  |  | Enable entropy scanning in source code files |
 | `--entropy-threshold` | `BITS` |  | Entropy threshold in bits per byte (default: 4.5) |
 | `--exclude-paths` | `PATH...` |  | Explicit paths or glob patterns to exclude from scanning |
-| `--fast` |  |  | Fast mode: pattern matching only. No decode, no entropy. Maximum speed. A preset is a BASE: it seeds defaults, then compatible explicit knobs override it (e.g. `--fast --decode-depth 2` re-enables shallow decode on top of the fast base). Entropy-only knobs conflict because fast mode disables entropy, so accepting them would create a no-op flag |
+| `--fast` |  |  | Fast mode: pattern matching only. No decode, no entropy, no ML scoring. Maximum speed. A preset is a BASE: it seeds defaults, then compatible explicit knobs override it (e.g. `--fast --decode-depth 2` re-enables shallow decode on top of the fast base). Entropy-only knobs conflict because fast mode disables entropy, so accepting them would create a no-op flag |
 | `--format` | `FORMAT` | `text` | Output format. `json` is a bare findings array for pipelines; prefer `json-envelope` for scan status, coverage gaps, and backend recoveries in one document (KH-1435 / KH-1474) Possible values: `text`, `json`, `json-envelope`, `jsonl`, `jsonl-envelope`, `sarif`, `csv`, `github-annotations`, `gitlab-sast`, `html`, `junit`. |
 | `--fused-batch` | `N` |  | Fused filesystem pipeline chunk batch size |
 | `--fused-depth` | `N` |  | Fused filesystem pipeline channel depth |

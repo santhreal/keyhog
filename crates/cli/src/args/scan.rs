@@ -774,11 +774,12 @@ pub struct ScanArgs {
     #[arg(long, value_name = "NAME[:PARAMS]")]
     pub source: Option<Vec<String>>,
 
-    /// Fast mode: pattern matching only. No decode, no entropy. Maximum speed.
-    /// A preset is a BASE: it seeds defaults, then compatible explicit knobs
-    /// override it (e.g. `--fast --decode-depth 2` re-enables shallow decode on
-    /// top of the fast base). Entropy-only knobs conflict because fast mode
-    /// disables entropy, so accepting them would create a no-op flag.
+    /// Fast mode: pattern matching only. No decode, no entropy, no ML scoring.
+    /// Maximum speed. A preset is a BASE: it seeds defaults, then compatible
+    /// explicit knobs override it (e.g. `--fast --decode-depth 2` re-enables
+    /// shallow decode on top of the fast base). Entropy-only knobs conflict
+    /// because fast mode disables entropy, so accepting them would create a
+    /// no-op flag.
     #[arg(
         long,
         conflicts_with_all = [
