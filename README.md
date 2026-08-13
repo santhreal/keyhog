@@ -503,18 +503,23 @@ contracts.
 
 ## How KeyHog works
 
-KeyHog compiles its 926 detectors into a shared trigger/extraction plan,
+KeyHog compiles its 926 detectors into a shared trigger and extraction plan,
 decodes nested encodings before matching, and applies per-detector confidence
-and suppression. CPU, Hyperscan/SIMD, and GPU (CUDA, Metal, WGPU) are measured
-peers under a persisted, parity-proof autoroute selector, not a fallback chain.
-Every backend preserves the same detector ids and findings contract.
+and suppression. Pure-Rust CPU (`cpu-fallback`), Hyperscan/SIMD (`simd-regex`),
+CUDA (`gpu-cuda-region-presence`), Metal (`gpu-metal-region-presence`), and WGPU
+(`gpu-wgpu-region-presence`) are peers in a proof-backed autoroute selector, not
+a fallback chain. Calibration measures
+every eligible peer and persists the fastest route whose complete findings match
+the reference route for the exact binary, detector and configuration state,
+host, accelerator, and workload class. A missing, stale, invalid, or incomplete
+decision stops an automatic scan before execution and reports how to recalibrate.
+It never silently substitutes another backend.
 
-The [architecture guide](docs/src/architecture.md) covers the repository map,
-dependency direction, bytes-to-finding pipeline, and profiling entrypoints.
-The [backends guide](docs/src/backends.md) details CPU, SIMD, and GPU execution
-surfaces. The [autoroute reference](docs/src/reference/autoroute-calibration.md)
-owns the complete parity contract, workload identity, cache lifecycle, and
-troubleshooting matrix.
+See [Architecture](https://santhreal.github.io/keyhog/architecture.html) for the
+repository map, dependency direction, bytes-to-finding pipeline, and profiling
+entrypoints. See [Backends and routing](https://santhreal.github.io/keyhog/backends.html)
+for execution contracts and [Autoroute calibration](https://santhreal.github.io/keyhog/reference/autoroute-calibration.html)
+for parity, workload identity, cache lifecycle, and repair procedures.
 
 **Full documentation:** [santhreal.github.io/keyhog](https://santhreal.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, autoroute, exit codes, env vars, and contributing. Source under `docs/`.
 
