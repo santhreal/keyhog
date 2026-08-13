@@ -505,10 +505,11 @@ contracts.
 
 KeyHog compiles its 926 detectors into a shared trigger and extraction plan,
 decodes nested encodings before matching, and applies per-detector confidence
-and suppression. Pure-Rust CPU (`cpu-fallback`), Hyperscan/SIMD (`simd-regex`),
-CUDA (`gpu-cuda-region-presence`), Metal (`gpu-metal-region-presence`), and WGPU
-(`gpu-wgpu-region-presence`) are peers in a proof-backed autoroute selector, not
-a fallback chain. Calibration measures
+and suppression. Pure-Rust CPU (`cpu-fallback`) is always available. The
+Hyperscan route (`simd-regex`) uses Hyperscan when that feature is present;
+portable builds use the CPU route. CUDA (`gpu-cuda-region-presence`), Metal
+(`gpu-metal-region-presence`), and WGPU (`gpu-wgpu-region-presence`) are peers
+in a proof-backed autoroute selector, not a fallback chain. Calibration measures
 every eligible peer and persists the fastest route whose complete findings match
 the reference route for the exact binary, detector and configuration state,
 host, accelerator, and workload class. A missing, stale, invalid, or incomplete
