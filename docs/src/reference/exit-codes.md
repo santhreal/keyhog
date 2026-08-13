@@ -48,7 +48,7 @@ For a completed normal scan, `resolve_scan_exit` applies this order:
 1. scanner panic, `11`;
 2. at least one live credential, `10`;
 3. at least one reportable finding, `1`;
-4. incremental-cache failure, `3`;
+4. incremental-cache or autoroute-cache persist failure, `3`;
 5. incomplete source coverage, `13`;
 6. clean success, `0`.
 
@@ -113,9 +113,11 @@ that diagnostic run and keeps its own fail-closed execution contract.
 ## `3`: system or local environment failure
 
 This code covers a low-level I/O error not classified as operator-correctable,
-an incremental-cache failure, a fatal daemon listener or connection-handler
-spawn failure, or an explicitly selected SIMD/Hyperscan path that cannot
-execute. A selected or required GPU failure is `12`.
+an incremental-cache failure, an autoroute decision-cache persist failure
+(the scan produced findings but could not save its routing decision), a fatal
+daemon listener or connection-handler spawn failure, or an explicitly selected
+SIMD/Hyperscan path that cannot execute. A selected or required GPU failure is
+`12`.
 
 ## `4`: maintenance health failure
 
