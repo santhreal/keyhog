@@ -80,7 +80,7 @@ impl SelectedGpuPeer {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(feature = "gpu")]
     pub(crate) fn mark_available(
         &mut self,
         device_identity: String,

@@ -21,7 +21,7 @@ use vyre::scan::GpuLiteralSet;
 static INSTALL_COMPILED_INVOCATIONS: AtomicUsize = AtomicUsize::new(0);
 static RUNTIME_COMPILER_INVOCATIONS: AtomicUsize = AtomicUsize::new(0);
 
-#[allow(dead_code)]
+#[cfg(feature = "gpu")]
 pub(crate) struct InstalledGpuLiteralArtifact {
     pub(crate) matcher: GpuLiteralSet,
     pub(crate) cache_key: Arc<str>,
@@ -53,7 +53,7 @@ pub struct GpuLiteralArtifacts {
     /// because positioned evidence is compiled into `literal`.
     pub positioned_literal: Option<GpuLiteralArtifact>,
 }
-#[allow(dead_code)]
+#[cfg(feature = "gpu")]
 
 pub(crate) fn install_compiled_gpu_literal_artifact(
     cache_key: String,
