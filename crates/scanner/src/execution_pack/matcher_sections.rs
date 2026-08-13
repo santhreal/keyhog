@@ -248,7 +248,7 @@ impl CompiledRouteMatcherSections {
                     .collect()
             })
             .collect::<Result<Vec<Vec<_>>, ExecutionPackError>>()?;
-        let backend_name = backend_name(backend).to_owned();
+        let backend_name = backend.pascal_name().to_owned();
         let literal_index = canonical_json(&LiteralEnvelope {
             version: ROUTE_MATCHER_SECTION_VERSION,
             backend: backend_name.clone(),
@@ -731,7 +731,7 @@ where
         ExecutionPackError::InvalidPack(format!("compiled route {name} is invalid JSON: {error}"))
     })?;
     if decoded.version() != ROUTE_MATCHER_SECTION_VERSION
-        || decoded.backend() != backend_name(backend)
+        || decoded.backend() != backend.pascal_name()
     {
         return Err(ExecutionPackError::Incompatible(format!(
             "compiled route {name} version or backend is incompatible"
@@ -759,14 +759,4 @@ fn canonical_json(value: &impl Serialize) -> Result<Vec<u8>, ExecutionPackError>
             "cannot serialize route matcher section: {error}"
         ))
     })
-}
-
-fn backend_name(backend: ExecutionPackBackend) -> &'static str {
-    match backend {
-        ExecutionPackBackend::Cpu => "Cpu",
-        ExecutionPackBackend::Simd => "Simd",
-        ExecutionPackBackend::GpuCuda => "GpuCuda",
-        ExecutionPackBackend::GpuWgpu => "GpuWgpu",
-        ExecutionPackBackend::GpuMetal => "GpuMetal",
-    }
 }

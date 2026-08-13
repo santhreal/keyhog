@@ -484,9 +484,11 @@ pub struct ScanArgs {
     pub oob_server: String,
 
     /// Per-finding OOB wait timeout in seconds. Detector specs may set their
-    /// own `timeout_secs`; this value is the global default and the upper
-    /// bound. Lower = faster scans, higher = catches services with delayed
-    /// webhooks (e.g., queued mail delivery). Requires `--verify-oob`.
+    /// own `timeout_secs`; this value is the global default. The upper bound
+    /// is max(this value, 120s), so a detector can always wait at least 120s
+    /// for a delayed webhook even when this default is lower. Lower = faster
+    /// scans, higher = catches services with delayed webhooks (e.g., queued
+    /// mail delivery). Requires `--verify-oob`.
     #[cfg(feature = "verify")]
     #[arg(
         long,
@@ -778,11 +780,12 @@ pub struct ScanArgs {
     #[arg(long, value_name = "NAME[:PARAMS]")]
     pub source: Option<Vec<String>>,
 
-    /// Fast mode: pattern matching only. No decode, no entropy. Maximum speed.
-    /// A preset is a BASE: it seeds defaults, then compatible explicit knobs
-    /// override it (e.g. `--fast --decode-depth 2` re-enables shallow decode on
-    /// top of the fast base). Entropy-only knobs conflict because fast mode
-    /// disables entropy, so accepting them would create a no-op flag.
+    /// Fast mode: pattern matching only. No decode, no entropy, no ML scoring.
+    /// Maximum speed. A preset is a BASE: it seeds defaults, then compatible
+    /// explicit knobs override it (e.g. `--fast --decode-depth 2` re-enables
+    /// shallow decode on top of the fast base). Entropy-only knobs conflict
+    /// because fast mode disables entropy, so accepting them would create a
+    /// no-op flag.
     #[arg(
         long,
         conflicts_with_all = [
@@ -862,9 +865,13 @@ pub struct ScanArgs {
     #[arg(long)]
     pub no_keyword_low_entropy: bool,
 
-    /// Raise the resolved global confidence floor (0.0 to 1.0). A detector's
-    /// explicit `min_confidence` remains that detector's effective floor.
-    /// Absence leaves the canonical floor untouched.
+    /// Raise the global confidence floor (0.0 to 1.0). Takes effect as
+    /// `max(min_confidence, ml_threshold)`, so it tightens but never loosens
+    /// the floor set by `--min-confidence`. Despite the name, this raises the
+    /// floor for ALL findings, not only ML-scored ones, and still applies when
+    /// `--no-ml` disables ML scoring. A detector's explicit `min_confidence`
+    /// in its TOML remains that detector's effective floor. Absence leaves the
+    /// canonical floor untouched.
     #[arg(
         long,
         value_name = "THRESHOLD",
@@ -1081,8 +1088,9 @@ pub struct ScanArgs {
     /// static-recovery expressions rejected as malformed
     /// (`kind: static_recovery_rejected`). Detail events are bounded; exact
     /// aggregate rejection counts and `detail_events_dropped` remain visible
-    /// after the bound is reached. Credentials are redacted (prefix only), and
-    /// recovery rejections contain no source bytes. Useful when keyhog reports
+    /// after the bound is reached. Credentials are redacted (prefix and suffix
+    /// shown, middle elided), and recovery rejections contain no source bytes.
+    /// Useful when keyhog reports
     /// zero findings and you want to know whether a match was made and
     /// silenced, recovery rejected an expression, or the candidate never
     /// reached the engine.

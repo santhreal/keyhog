@@ -1369,26 +1369,13 @@ impl ScanOrchestrator {
                         .context("resolving the installed execution-pack directory")?;
                 let installed = match effective_config.backend_override {
                     Some(backend) => {
-                        let pack_backend = match backend {
-                            keyhog_scanner::hw_probe::ScanBackend::CpuFallback => {
-                                keyhog_scanner::execution_pack::ExecutionPackBackend::Cpu
-                            }
-                            keyhog_scanner::hw_probe::ScanBackend::SimdCpu => {
-                                keyhog_scanner::execution_pack::ExecutionPackBackend::Simd
-                            }
-                            keyhog_scanner::hw_probe::ScanBackend::GpuCuda => {
-                                keyhog_scanner::execution_pack::ExecutionPackBackend::GpuCuda
-                            }
-                            keyhog_scanner::hw_probe::ScanBackend::GpuWgpu => {
-                                keyhog_scanner::execution_pack::ExecutionPackBackend::GpuWgpu
-                            }
-                            keyhog_scanner::hw_probe::ScanBackend::GpuMetal => {
-                                keyhog_scanner::execution_pack::ExecutionPackBackend::GpuMetal
-                            }
-                            _ => anyhow::bail!(
-                                "the selected scan backend has no execution-pack identity"
-                            ),
-                        };
+                        let pack_backend =
+                            keyhog_scanner::execution_pack::ExecutionPackBackend::from_scan_backend(
+                                backend,
+                            )
+                            .context(
+                                "the selected scan backend has no execution-pack identity",
+                            )?;
                         crate::execution_pack_install::
                             load_installed_detector_execution_pack_for_backend(
                                 policy,

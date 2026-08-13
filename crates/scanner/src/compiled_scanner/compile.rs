@@ -217,7 +217,7 @@ impl CompiledScanner {
         let state = matchers
             .decode_compile_state(&detectors)
             .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
-        let backend = execution_backend(matchers.backend);
+        let backend = matchers.backend.scan_backend();
         Self::compile_shared_with_state_source(
             detectors,
             GpuInitPolicy::SelectedBackend(backend),
@@ -245,7 +245,7 @@ impl CompiledScanner {
     ) -> Result<Self> {
         Self::compile_from_execution_pack_with_gpu_policy_and_tuning(
             pack,
-            GpuInitPolicy::SelectedBackend(execution_backend(pack.identity().backend)),
+            GpuInitPolicy::SelectedBackend(pack.identity().backend.scan_backend()),
             tuning_config,
         )
     }
@@ -332,7 +332,7 @@ impl CompiledScanner {
             Self::compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning_inner(
                 Arc::clone(&detectors),
                 pack,
-                GpuInitPolicy::SelectedBackend(execution_backend(pack.identity().backend)),
+                GpuInitPolicy::SelectedBackend(pack.identity().backend.scan_backend()),
                 tuning_config,
                 Some((header.decoder_plan, header.compiled_plan_digest)),
                 None,
@@ -349,7 +349,7 @@ impl CompiledScanner {
         Self::compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning(
             detectors,
             pack,
-            GpuInitPolicy::SelectedBackend(execution_backend(pack.identity().backend)),
+            GpuInitPolicy::SelectedBackend(pack.identity().backend.scan_backend()),
             tuning_config,
         )
     }
@@ -959,7 +959,7 @@ impl CompiledScanner {
                             .into(),
                     )
                 })?;
-            let expected_backend = execution_backend(source.pack_identity.backend);
+            let expected_backend = source.pack_identity.backend.scan_backend();
             if selected != expected_backend {
                 return Err(crate::error::ScanError::Config(format!(
                     "packed VYRE backend {:?} does not match selected backend {:?}",
@@ -1479,26 +1479,6 @@ impl CompiledScanner {
             .apply_config(&config)
             .map_err(crate::error::ScanError::Config)?;
         Ok(self)
-    }
-}
-
-fn execution_backend(
-    backend: crate::execution_pack::ExecutionPackBackend,
-) -> crate::hw_probe::ScanBackend {
-    match backend {
-        crate::execution_pack::ExecutionPackBackend::Cpu => {
-            crate::hw_probe::ScanBackend::CpuFallback
-        }
-        crate::execution_pack::ExecutionPackBackend::Simd => crate::hw_probe::ScanBackend::SimdCpu,
-        crate::execution_pack::ExecutionPackBackend::GpuCuda => {
-            crate::hw_probe::ScanBackend::GpuCuda
-        }
-        crate::execution_pack::ExecutionPackBackend::GpuWgpu => {
-            crate::hw_probe::ScanBackend::GpuWgpu
-        }
-        crate::execution_pack::ExecutionPackBackend::GpuMetal => {
-            crate::hw_probe::ScanBackend::GpuMetal
-        }
     }
 }
 

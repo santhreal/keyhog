@@ -298,10 +298,20 @@ pub(crate) fn bind_autoroute_cache_to_execution_packs(
                     .map(|timing| timing.backend.as_str()),
             );
             for backend in backends {
-                let pack_backend = execution_pack_backend_name(backend).ok_or_else(|| {
-                    anyhow!("autoroute decision names unknown backend {backend:?}; refusing pack binding")
-                })?;
-                for policy in ["default", "fast", "deep", "precision"] {
+                let scan_backend = keyhog_scanner::hw_probe::parse_backend_str(backend)
+                    .ok_or_else(|| {
+                        anyhow!("autoroute decision names unknown backend {backend:?}; refusing pack binding")
+                    })?;
+                let pack_backend =
+                    keyhog_scanner::execution_pack::ExecutionPackBackend::from_scan_backend(
+                        scan_backend,
+                    )
+                    .ok_or_else(|| {
+                        anyhow!("autoroute decision names unknown backend {backend:?}; refusing pack binding")
+                    })?
+                    .lowercase_name();
+                for policy in keyhog_scanner::execution_pack::ExecutionPackPolicy::ALL {
+                    let policy = policy.lowercase_name();
                     if !pack_keys.contains(&(policy, pack_backend)) {
                         anyhow::bail!(
                             "autoroute backend {backend} has no exact {policy}/{pack_backend} execution pack; rebuild packs before calibration"
@@ -325,17 +335,6 @@ pub(crate) fn bind_autoroute_cache_to_execution_packs(
     }
     crate::atomic_file::write_bytes(path, &serialized)
         .with_context(|| format!("writing pack-bound autoroute cache {}", path.display()))
-}
-
-fn execution_pack_backend_name(route_backend: &str) -> Option<&'static str> {
-    match route_backend {
-        "cpu-fallback" => Some("cpu"),
-        "simd-regex" => Some("simd"),
-        "gpu-cuda-region-presence" => Some("gpu-cuda"),
-        "gpu-wgpu-region-presence" => Some("gpu-wgpu"),
-        "gpu-metal-region-presence" => Some("gpu-metal"),
-        _ => None,
-    }
 }
 
 pub(crate) fn save_autoroute_cache(

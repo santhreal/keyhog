@@ -208,7 +208,7 @@ impl MatcherArtifactIdentity {
             detector_corpus_digest: keyhog_core::hex_encode(&detector_corpus_digest),
             resolved_config_digest: keyhog_core::hex_encode(&resolved_config_digest),
             pack_generation: pack_generation.unwrap_or("none").to_owned(),
-            backend: backend_name(backend).to_owned(),
+            backend: backend.pascal_name().to_owned(),
             runtime_identity: runtime_identity.unwrap_or("none").to_owned(),
             route_matcher_section_version: crate::execution_pack::ROUTE_MATCHER_SECTION_VERSION,
         })
@@ -299,38 +299,11 @@ fn scanner_feature_identity() -> String {
     features.join(",")
 }
 
-fn backend_name(backend: ExecutionPackBackend) -> &'static str {
-    match backend {
-        ExecutionPackBackend::Cpu => "Cpu",
-        ExecutionPackBackend::Simd => "Simd",
-        ExecutionPackBackend::GpuCuda => "GpuCuda",
-        ExecutionPackBackend::GpuWgpu => "GpuWgpu",
-        ExecutionPackBackend::GpuMetal => "GpuMetal",
-    }
-}
-
-fn parse_backend_name(name: &str) -> Option<ExecutionPackBackend> {
-    match name {
-        "Cpu" => Some(ExecutionPackBackend::Cpu),
-        "Simd" => Some(ExecutionPackBackend::Simd),
-        "GpuCuda" => Some(ExecutionPackBackend::GpuCuda),
-        "GpuWgpu" => Some(ExecutionPackBackend::GpuWgpu),
-        "GpuMetal" => Some(ExecutionPackBackend::GpuMetal),
-        _ => None,
-    }
-}
-
 /// Map a selected scan backend onto the matcher-artifact backend tag.
 pub fn execution_pack_backend_for_scan_backend(
     backend: ScanBackend,
 ) -> Option<ExecutionPackBackend> {
-    match backend {
-        ScanBackend::CpuFallback => Some(ExecutionPackBackend::Cpu),
-        ScanBackend::SimdCpu => Some(ExecutionPackBackend::Simd),
-        ScanBackend::GpuCuda => Some(ExecutionPackBackend::GpuCuda),
-        ScanBackend::GpuWgpu => Some(ExecutionPackBackend::GpuWgpu),
-        ScanBackend::GpuMetal => Some(ExecutionPackBackend::GpuMetal),
-    }
+    ExecutionPackBackend::from_scan_backend(backend)
 }
 
 /// Resolve the matcher-artifact backend tag for a compile-time GPU policy.
@@ -504,13 +477,14 @@ fn parse_matcher_artifact_ranges(
         ));
     }
 
-    let backend = parse_backend_name(&decoded_identity.backend).ok_or_else(|| {
-        format!(
-            "matcher artifact {} has unknown backend {}",
-            path.display(),
-            decoded_identity.backend
-        )
-    })?;
+    let backend =
+        ExecutionPackBackend::from_pascal_name(&decoded_identity.backend).ok_or_else(|| {
+            format!(
+                "matcher artifact {} has unknown backend {}",
+                path.display(),
+                decoded_identity.backend
+            )
+        })?;
     let content = CompiledRouteMatcherSections::content_digest_for(
         &bytes[literal_index.clone()],
         &bytes[regex_programs.clone()],
@@ -696,7 +670,7 @@ pub fn store_matcher_artifact(
     identity: &MatcherArtifactIdentity,
     sections: &CompiledRouteMatcherSections,
 ) -> std::result::Result<(), String> {
-    let expected_backend = parse_backend_name(&identity.backend)
+    let expected_backend = ExecutionPackBackend::from_pascal_name(&identity.backend)
         .ok_or_else(|| "unknown identity backend".to_owned())?;
     if sections.backend != expected_backend {
         return Err("matcher artifact backend does not match identity".to_owned());
