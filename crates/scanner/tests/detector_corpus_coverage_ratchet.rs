@@ -40,11 +40,7 @@ fn scan_for_detector_with_path(
         .any(|m| m.detector_id.as_ref() == id)
 }
 
-fn scan_for_detector(
-    scanner: &CompiledScanner,
-    id: &str,
-    data: &str,
-) -> bool {
+fn scan_for_detector(scanner: &CompiledScanner, id: &str, data: &str) -> bool {
     scan_for_detector_with_path(scanner, id, data, "s.txt")
 }
 
@@ -121,19 +117,17 @@ fn most_regex_detectors_fire_on_a_generated_example() {
     }
 
     // The live corpus contains a large regex-backed majority. Every regex
-    // detector either (a) fires on a proptest-generated sample from its own
-    // regex, or (b) fires on its own test_positive example from the TOML.
-    // The floor sits at 920 to tolerate minor corpus churn (a few detectors
-    // added or removed) while catching any regression that breaks the
-    // regex→compile→scan wiring for a swath of detectors.
+    // detector must fire either on a generated sample from its own regex or on
+    // its detector-owned positive fixture. The corpus-size floor protects
+    // accidental deletion; exact equality protects recall for every member.
     assert!(
         total_regex >= 880,
         "expected a large regex-detector corpus, got {total_regex}"
     );
-    assert!(
-        fired >= 920,
+    assert_eq!(
+        fired, total_regex,
         "detection coverage regressed: only {fired}/{total_regex} regex detectors \
-         fired on a generated or test_positive example (floor 920)"
+         fired on a generated or test_positive example"
     );
     eprintln!(
         "corpus coverage: {fired}/{total_regex} regex detectors fired ({fallback_used} via test_positive fallback)"
