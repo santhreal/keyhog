@@ -150,6 +150,23 @@ impl UnreachableGitObjects {
 
 type GitBlobPathKey = (gix::ObjectId, Vec<u8>);
 
+#[derive(Default)]
+pub(crate) struct HeadBlobPaths {
+    by_oid: HashMap<gix::ObjectId, HashSet<Vec<u8>>>,
+}
+
+impl HeadBlobPaths {
+    pub(crate) fn insert(&mut self, oid: gix::ObjectId, path: Vec<u8>) {
+        self.by_oid.entry(oid).or_default().insert(path);
+    }
+
+    pub(crate) fn contains(&self, oid: &gix::ObjectId, path: &[u8]) -> bool {
+        self.by_oid
+            .get(oid)
+            .is_some_and(|paths| paths.contains(path))
+    }
+}
+
 #[derive(Debug)]
 enum GitBlobBatchItem {
     Candidate(GitBlobCandidate),
@@ -802,7 +819,7 @@ fn load_commit_blob_set(
 struct GitBlobChunkDecoder<'a> {
     repo: &'a gix::Repository,
     repo_path: &'a Path,
-    head_blob_paths: &'a HashSet<GitBlobPathKey>,
+    head_blob_paths: &'a HeadBlobPaths,
     limits: crate::SourceLimits,
 }
 
@@ -900,7 +917,7 @@ impl GitBlobChunkDecoder<'_> {
     ) -> Chunk {
         let in_head = self
             .head_blob_paths
-            .contains(&(decoded_blob.oid.to_owned(), decoded_blob.filepath.clone()));
+            .contains(&decoded_blob.oid, &decoded_blob.filepath);
         let path = String::from_utf8_lossy(&decoded_blob.filepath).to_string();
         let (source_type, commit, author) = match provenance {
             GitBlobProvenance::Commit { commit_id, author } => (
@@ -1738,9 +1755,7 @@ fn collect_ref_tip_oids(repo_arg: &str) -> Result<HashSet<gix::ObjectId>, Source
 /// Returns an empty set for an unborn/empty repository. Any failure after HEAD
 /// resolves is a source error: otherwise live HEAD blobs can be mislabeled as
 /// `git/history`, silently downgrading active leaks.
-fn collect_head_blob_path_set(
-    repo: &gix::Repository,
-) -> Result<HashSet<GitBlobPathKey>, SourceError> {
+fn collect_head_blob_path_set(repo: &gix::Repository) -> Result<HeadBlobPaths, SourceError> {
     let head = repo.head().map_err(|error| {
         SourceError::Git(format!(
             "failed to read git HEAD while collecting live blob set: {error}"
@@ -1752,7 +1767,7 @@ fn collect_head_blob_path_set(
         ))
     })?
     else {
-        return Ok(HashSet::new());
+        return Ok(HeadBlobPaths::default());
     };
     let commit = repo
         .find_object(head_id)
@@ -1772,7 +1787,7 @@ fn collect_head_blob_path_set(
             "failed to read git HEAD tree while collecting live blob set: {error}"
         ))
     })?;
-    let mut out = HashSet::new();
+    let mut out = HeadBlobPaths::default();
     let mut visitor = HeadBlobPathCollector { out: &mut out };
     super::walk_tree_recursive(repo, &tree, b"", &mut visitor)?;
     Ok(out)
@@ -1896,12 +1911,12 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
 }
 
 struct HeadBlobPathCollector<'a> {
-    out: &'a mut HashSet<GitBlobPathKey>,
+    out: &'a mut HeadBlobPaths,
 }
 
 impl super::GitTreeVisitor for HeadBlobPathCollector<'_> {
     fn visit_blob(&mut self, oid: gix::ObjectId, filepath: Vec<u8>) -> Result<(), SourceError> {
-        self.out.insert((oid, filepath));
+        self.out.insert(oid, filepath);
         Ok(())
     }
 

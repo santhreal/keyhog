@@ -4,6 +4,23 @@ pub mod testing {
     pub use crate::ScanCounterScope;
 
     pub struct TestApi;
+    #[cfg(feature = "git")]
+    pub struct GitHeadBlobPaths(crate::git::HeadBlobPaths);
+
+    #[cfg(feature = "git")]
+    impl GitHeadBlobPaths {
+        pub fn new(entries: impl IntoIterator<Item = (gix::ObjectId, Vec<u8>)>) -> Self {
+            let mut paths = crate::git::HeadBlobPaths::default();
+            for (oid, path) in entries {
+                paths.insert(oid, path);
+            }
+            Self(paths)
+        }
+
+        pub fn contains(&self, oid: &gix::ObjectId, path: &[u8]) -> bool {
+            self.0.contains(oid, path)
+        }
+    }
 
     // ── magic byte-signature classifiers (src/magic.rs) ──────────────────────
     // Free `for_test` wrappers over the `pub(crate)` binary-format detectors that
