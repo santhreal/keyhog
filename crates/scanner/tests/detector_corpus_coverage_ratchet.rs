@@ -17,6 +17,33 @@ use proptest::test_runner::TestRunner;
 /// samples clears that artifact and measures real regex→scan wiring.
 const SAMPLES_PER_DETECTOR: usize = 8;
 
+fn scan_for_detector_with_path(
+    scanner: &CompiledScanner,
+    id: &str,
+    data: &str,
+    path: &str,
+) -> bool {
+    let chunk = Chunk {
+        data: data.into(),
+        metadata: ChunkMetadata {
+            source_type: "corpus-ratchet".into(),
+            path: Some(path.into()),
+            base_offset: 0,
+            ..Default::default()
+        },
+    };
+    scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds")
+        .iter()
+        .flat_map(|per_chunk| per_chunk.iter())
+        .any(|m| m.detector_id.as_ref() == id)
+}
+
+fn scan_for_detector(scanner: &CompiledScanner, id: &str, data: &str) -> bool {
+    scan_for_detector_with_path(scanner, id, data, "s.txt")
+}
+
 fn detector_fires_on_own_regex(
     scanner: &CompiledScanner,
     runner: &mut TestRunner,
@@ -31,23 +58,34 @@ fn detector_fires_on_own_regex(
             continue;
         };
         let example = tree.current();
-        let chunk = Chunk {
-            data: example.into(),
-            metadata: ChunkMetadata {
-                source_type: "corpus-ratchet".into(),
-                path: Some("s.txt".into()),
-                base_offset: 0,
-                ..Default::default()
-            },
-        };
-        let hit = scanner
-            .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
-            .expect("selected backend scan succeeds")
-            .iter()
-            .flat_map(|per_chunk| per_chunk.iter())
-            .any(|m| m.detector_id.as_ref() == id);
-        if hit {
+        if scan_for_detector(scanner, id, &example) {
             return true;
+        }
+    }
+    false
+}
+
+/// When proptest cannot generate from a regex (87 of 922 detectors use
+/// features like `\b`, `(?-i)`, `(?:^|[^A-Za-z])` that proptest's
+/// `string_regex` does not support), fall back to the detector's own
+/// `test_positive` example. The author wrote that example into the TOML
+/// specifically to prove the detector fires on its canonical shape.
+/// If no `test_positive` exists, the detector is counted as ungeneratable
+/// and does not count against the floor.
+fn detector_fires_on_test_positive(
+    scanner: &CompiledScanner,
+    id: &str,
+    tests: &[keyhog_core::DetectorTestSpec],
+) -> bool {
+    for test in tests {
+        if let Some(positive) = &test.test_positive {
+            // Use the detector's own test_path when provided — path-restricted
+            // detectors (e.g. netrc-password, which only fires on .netrc) would
+            // be rejected by source_admission on the default s.txt path.
+            let path = test.test_path.as_deref().unwrap_or("s.txt");
+            if scan_for_detector_with_path(scanner, id, positive, path) {
+                return true;
+            }
         }
     }
     false
@@ -61,6 +99,7 @@ fn most_regex_detectors_fire_on_a_generated_example() {
 
     let mut total_regex = 0u32;
     let mut fired = 0u32;
+    let mut fallback_used = 0u32;
     for spec in specs.iter() {
         if format!("{:?}", spec.kind) != "Regex" {
             continue;
@@ -71,20 +110,26 @@ fn most_regex_detectors_fire_on_a_generated_example() {
         total_regex += 1;
         if detector_fires_on_own_regex(&scanner, &mut runner, &spec.id, &pat.regex) {
             fired += 1;
+        } else if detector_fires_on_test_positive(&scanner, &spec.id, &spec.tests) {
+            fired += 1;
+            fallback_used += 1;
         }
     }
 
-    // The live corpus contains a large regex-backed majority and hundreds of
-    // detectors that fire with multiple samples. Floors
-    // sit below that with margin so this is a regression ratchet, not brittle.
+    // The live corpus contains a large regex-backed majority. Every regex
+    // detector must fire either on a generated sample from its own regex or on
+    // its detector-owned positive fixture. The corpus-size floor protects
+    // accidental deletion; exact equality protects recall for every member.
     assert!(
         total_regex >= 880,
         "expected a large regex-detector corpus, got {total_regex}"
     );
-    assert!(
-        fired >= 830,
+    assert_eq!(
+        fired, total_regex,
         "detection coverage regressed: only {fired}/{total_regex} regex detectors \
-         fired on a generated example (floor 830)"
+         fired on a generated or test_positive example"
     );
-    eprintln!("corpus coverage: {fired}/{total_regex} regex detectors fired");
+    eprintln!(
+        "corpus coverage: {fired}/{total_regex} regex detectors fired ({fallback_used} via test_positive fallback)"
+    );
 }

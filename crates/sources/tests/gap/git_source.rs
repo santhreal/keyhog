@@ -1118,8 +1118,14 @@ fn renamed_blob_keeps_head_and_history_path_identity() {
     let (_t, repo) = init_repo();
     let content = b"RENAMED=ghp_renamePathIdentity00000001\n";
     commit_file(&repo, "old.env", content, "old path");
+    let old_oid = blob_oid_at_head(&repo, "old.env");
     git(&repo, &["mv", "old.env", "new.env"]);
     commit_only(&repo, "rename same blob");
+    let new_oid = blob_oid_at_head(&repo, "new.env");
+    assert_eq!(
+        new_oid, old_oid,
+        "rename fixture must preserve the blob OID so labels depend on raw path too"
+    );
 
     let chunks = collect_git_chunks_without_source_errors(&repo, 5);
     let paths = chunks

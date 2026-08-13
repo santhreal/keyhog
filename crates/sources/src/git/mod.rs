@@ -15,6 +15,7 @@ mod tag_messages;
 pub use manifest::{
     verify_staged_fingerprint, StagedEntryKind, StagedManifest, StagedManifestEntry,
 };
+pub(crate) use source::HeadBlobPaths;
 pub(crate) use staged::consume_oversized_staged_header_path;
 
 /// Resolve `git` to an absolute path inside a trusted system bin dir.
