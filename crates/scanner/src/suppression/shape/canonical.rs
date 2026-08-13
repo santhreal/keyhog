@@ -53,22 +53,46 @@ pub(crate) fn is_structured_dotted_token(value: &str) -> bool {
     is_jwt_like || is_discord_style
 }
 
-/// Canonical SRI/package-integrity hash-algo dash labels (`sha512-`, `sha384-`,
-/// `sha256-`). ONE owner for the integrity-body gates in this module and the
-/// decoded-labelled-hash gate in `decision.rs`, which previously pasted their own
-/// (diverging) subsets of this set (DEDUP). Distinct from `strip_hash_algo_prefix`'s
-/// broader label set, which also carries the colon forms and `sha1:`/`md5:`.
-pub(crate) const HASH_ALGO_INTEGRITY_LABELS: &[&str] = &["sha512-", "sha384-", "sha256-"];
+// Canonical SRI/package-integrity hash-algo dash labels (`sha512-`, `sha384-`,
+// `sha256-`). Loaded from `rules/hash-algo-labels.toml` (integrity_labels).
+// ONE owner for the integrity-body gates in this module and the decoded-
+// labelled-hash gate in `decision.rs`. Distinct from `strip_hash_algo_prefix`'s
+// broader label set, which also carries the colon forms and `sha1:`/`md5:`.
+crate::tier_b_list::tier_b_vec!(
+    pub(crate) HASH_ALGO_INTEGRITY_LABELS,
+    "hash-algo-labels.toml",
+    integrity_labels
+);
 
 /// Canonical COLON-form hash-algo labels (docker/python/git-LFS hex digests:
-/// `sha256:`/`sha512:`/`sha1:`/`md5:`). SINGLE OWNER of this shared vocabulary,
-/// consumed BOTH by `strip_hash_algo_prefix` (suppression digest-shape strip)
-/// here AND by the entropy assignment-value gate (`entropy::keywords`), which
-/// previously hand-rolled a byte-identical copy free to drift. The entropy gate
+/// `sha256:`/`sha512:`/`sha1:`/`md5:`). Loaded from `rules/hash-algo-labels.toml`
+/// (colon_labels). SINGLE OWNER of this shared vocabulary, consumed BOTH by
+/// `strip_hash_algo_prefix` (suppression digest-shape strip) here AND by the
+/// entropy assignment-value gate (`entropy::keywords`). The entropy gate
 /// additionally recognizes `git-sha:` (git commit refs), that stays a documented
 /// entropy-LOCAL extra, since colon-digest SUPPRESSION intentionally covers only
 /// the docker/python/git-LFS digest formats, not commit references.
-pub(crate) const HASH_ALGO_COLON_LABELS: &[&[u8]] = &[b"sha256:", b"sha512:", b"sha1:", b"md5:"];
+pub(crate) static HASH_ALGO_COLON_LABELS: std::sync::LazyLock<Vec<Vec<u8>>> = std::sync::LazyLock::new(|| {
+    #[derive(serde::Deserialize)]
+    struct HashAlgoLabels {
+        colon_labels: Vec<String>,
+    }
+    let raw = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/hash-algo-labels.toml"
+    ));
+    let parsed: HashAlgoLabels = toml::from_str(raw).unwrap_or_else(|error| {
+        panic!(
+            "rules/hash-algo-labels.toml is invalid: {error}. \
+             Fix the bundled Tier-B data file."
+        )
+    });
+    assert!(
+        !parsed.colon_labels.is_empty(),
+        "rules/hash-algo-labels.toml colon_labels is empty; refusing to run without the Tier-B list it owns."
+    );
+    parsed.colon_labels.into_iter().map(|s| s.into_bytes()).collect()
+});
 
 pub(super) fn is_five_by_five_dash_shape(value: &str, body_byte_ok: impl Fn(u8) -> bool) -> bool {
     let bytes = value.as_bytes();
@@ -127,10 +151,14 @@ pub(crate) fn looks_like_bare_hex_digest(credential: &str) -> bool {
     crate::hex_digest_policy::is_bare_digest_length(credential.len()) && is_uniform_hex(credential)
 }
 
-/// The AWS partitions whose IAM ARNs this suppression recognizes. Single owner
-/// for both the full (`arn:<p>:iam::`) and trimmed (`<p>:iam::`) gates, so adding
-/// a future partition happens in exactly ONE place instead of two parallel lists.
-const AWS_IAM_ARN_PARTITIONS: [&str; 3] = ["aws", "aws-cn", "aws-us-gov"];
+// The AWS partitions whose IAM ARNs this suppression recognizes. Loaded from
+// `rules/hash-algo-labels.toml` (aws_iam_arn_partitions). Single owner for
+// both the full (`arn:<p>:iam::`) and trimmed (`<p>:iam::`) gates.
+crate::tier_b_list::tier_b_vec!(
+    AWS_IAM_ARN_PARTITIONS,
+    "hash-algo-labels.toml",
+    aws_iam_arn_partitions
+);
 
 /// Strip a `<partition>:iam::` prefix (using the single partition list) and return
 /// the ARN body. `require_arn` selects whether a literal `arn:` must lead (the full
@@ -144,7 +172,7 @@ fn strip_aws_iam_arn_body(value: &str, require_arn: bool) -> Option<&str> {
     };
     AWS_IAM_ARN_PARTITIONS
         .iter()
-        .find_map(|&partition| rest.strip_prefix(partition)?.strip_prefix(":iam::"))
+        .find_map(|partition| rest.strip_prefix(partition.as_str())?.strip_prefix(":iam::"))
 }
 
 pub(crate) fn looks_like_aws_iam_arn(value: &str) -> bool {
@@ -155,16 +183,18 @@ pub(crate) fn looks_like_trimmed_aws_iam_arn(value: &str) -> bool {
     strip_aws_iam_arn_body(value, false).is_some_and(aws_iam_arn_body_has_resource_target)
 }
 
+// AWS IAM ARN resource targets that mark a value as an ARN, not a credential.
+// Loaded from `rules/hash-algo-labels.toml` (aws_iam_arn_resource_targets).
+crate::tier_b_list::tier_b_vec!(
+    AWS_IAM_ARN_RESOURCE_TARGETS,
+    "hash-algo-labels.toml",
+    aws_iam_arn_resource_targets
+);
+
 fn aws_iam_arn_body_has_resource_target(body: &str) -> bool {
-    [
-        ":role/",
-        ":user/",
-        ":group/",
-        ":policy/",
-        ":instance-profile/",
-    ]
-    .iter()
-    .any(|&target| body.contains(target))
+    AWS_IAM_ARN_RESOURCE_TARGETS
+        .iter()
+        .any(|target| body.contains(target.as_str()))
 }
 
 /// If `credential` begins with - OR contains - one of the well-known
@@ -204,7 +234,7 @@ fn strip_hash_algo_prefix(credential: &str) -> Option<&str> {
     let bytes = credential.as_bytes();
     HASH_ALGO_COLON_LABELS
         .iter()
-        .copied()
+        .map(|v| v.as_slice())
         .chain(
             HASH_ALGO_INTEGRITY_LABELS
                 .iter()

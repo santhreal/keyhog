@@ -2242,8 +2242,8 @@ pub mod context {
     /// The canonical `HASH_ALGO_INTEGRITY_LABELS` vocabulary, so an external test
     /// can prove the integrity gate recognises every label (sha384- regressed
     /// once when a diverging subset omitted it).
-    pub fn hash_algo_integrity_labels_for_test() -> Vec<&'static str> {
-        crate::suppression::shape::HASH_ALGO_INTEGRITY_LABELS.to_vec()
+    pub fn hash_algo_integrity_labels_for_test() -> Vec<String> {
+        crate::suppression::shape::HASH_ALGO_INTEGRITY_LABELS.clone()
     }
 
     /// `is_in_test_function`: look-back classifier, true when the match line
