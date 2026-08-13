@@ -466,6 +466,11 @@ pub(crate) fn has_three_or_more_consecutive_identical(s: &str) -> bool {
     byte_runs(s.as_bytes()).any(|(_, run)| run >= 3)
 }
 
+// Mask prefix and sequence run patterns loaded from `rules/mask-sequences.toml`.
+crate::tier_b_list::tier_b_vec!(MASK_PREFIXES, "mask-sequences.toml", mask_prefixes);
+crate::tier_b_list::tier_b_vec!(MASK_DIGIT_RUNS, "mask-sequences.toml", digit_runs);
+crate::tier_b_list::tier_b_vec!(MASK_ALPHA_RUNS, "mask-sequences.toml", alpha_runs);
+
 pub(crate) fn looks_like_prefixed_masked_sequence(body: &str) -> bool {
     // Trailing-ellipsis is an unambiguous placeholder signal: real secrets
     // never end in `...`. UI prompt strings like `ghp_1a2b3c4...` (vscode
@@ -475,21 +480,22 @@ pub(crate) fn looks_like_prefixed_masked_sequence(body: &str) -> bool {
         return true;
     }
     // Case-insensitive byte scans instead of allocating an uppercased copy of
-    // EVERY candidate, this runs per-match in the suppression hot path, where an
-    // avoidable allocation is a production bug at scale (Law 7). The same
-    // ci_find / starts_with_ignore_ascii_case primitives path_filter uses to
-    // dodge this exact `to_ascii_uppercase()` cost. `ci_find` needles MUST be
-    // pre-lowercased; "abcdefghij" is subsumed by "abcdefgh" so the redundant
-    // longer literal is dropped (the two digit runs stay distinct, different
-    // first byte). Semantics are identical to the prior upper-then-contains form.
+    // EVERY candidate (Law 7). Mask prefixes and sequence runs are loaded from
+    // `rules/mask-sequences.toml` so new mask shapes are a data edit.
     use crate::ascii_ci::{ci_find, starts_with_ignore_ascii_case};
     let bytes = body.as_bytes();
-    let starts_with_mask = starts_with_ignore_ascii_case(bytes, b"xxx")
-        || starts_with_ignore_ascii_case(bytes, b"***");
+    let starts_with_mask = MASK_PREFIXES
+        .iter()
+        .any(|p| starts_with_ignore_ascii_case(bytes, p.as_bytes()));
     if !starts_with_mask {
         return false;
     }
-    ci_find(bytes, b"1234567890") || ci_find(bytes, b"0123456789") || ci_find(bytes, b"abcdefgh")
+    MASK_DIGIT_RUNS
+        .iter()
+        .any(|run| ci_find(bytes, run.as_bytes()))
+    || MASK_ALPHA_RUNS
+        .iter()
+        .any(|run| ci_find(bytes, run.as_bytes()))
 }
 
 pub(crate) fn has_repeated_block_mask(s: &str) -> bool {

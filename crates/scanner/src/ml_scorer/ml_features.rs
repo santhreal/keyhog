@@ -214,6 +214,7 @@ struct MlFeatureMarkers {
     source_extensions: Vec<String>,
     config_markers: Vec<String>,
     service_prefixes: Vec<String>,
+    test_file_context_fragments: Vec<String>,
 }
 
 /// Parse the bundled Tier-B ML-feature marker lists. Returns an error rather
@@ -583,16 +584,16 @@ fn apply_service_context_feature(features: &mut [f32; NUM_FEATURES], context: Fe
     features[SERVICE_CONTEXT_FEATURE_INDEX] = binary_feature(names_service);
 }
 
-/// File-context fragments that imply this match is in test/fixture code.
-/// Hoisted to a `const` so we don't allocate four Strings on every ML call.
-const TEST_FILE_CONTEXT_FRAGMENTS: &[&[u8]] = &[b"test", b"mock", b"fixture", b"spec"];
+// File-context fragments that imply this match is in test/fixture code.
+// Loaded from `rules/ml-feature-markers.toml` (test_file_context_fragments).
 
 fn apply_extra_features(features: &mut [f32; NUM_FEATURES], context: FeatureContext<'_>) {
     let is_in_comment = context.starts_with_comment_prefix();
     let has_assignment = has_assignment_operator(context);
-    let is_test_file_context = TEST_FILE_CONTEXT_FRAGMENTS
+    let is_test_file_context = ML_FEATURE_MARKERS
+        .test_file_context_fragments
         .iter()
-        .any(|needle| context.contains_ascii_case_insensitive(needle));
+        .any(|needle| context.contains_ascii_case_insensitive(needle.as_bytes()));
 
     features[COMMENT_CONTEXT_FEATURE_INDEX] = binary_feature(is_in_comment);
     features[ASSIGNMENT_OPERATOR_FEATURE_INDEX] = binary_feature(has_assignment);

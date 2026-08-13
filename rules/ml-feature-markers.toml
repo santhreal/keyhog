@@ -90,3 +90,10 @@ service_prefixes = [
   "sk-",
   "AKIA",
 ]
+
+test_file_context_fragments = [
+  "test",
+  "mock",
+  "fixture",
+  "spec",
+]
