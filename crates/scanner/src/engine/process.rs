@@ -234,6 +234,10 @@ impl CompiledScanner {
             chunk.metadata.path.as_deref(),
             inferred_context,
             Some(chunk.metadata.source_type.as_ref()),
+            Some(
+                self.detector_plans
+                    .decoded_source_family(chunk.metadata.source_type.as_ref()),
+            ),
             suppression,
             !is_generic,
             weak_anchor,

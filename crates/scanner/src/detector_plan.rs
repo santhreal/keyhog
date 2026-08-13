@@ -921,6 +921,17 @@ impl CompiledDetectorPlans {
         None
     }
 
+    /// Strip only trailing decoder identities registered in this scanner's
+    /// immutable decoder plan. Unknown slash suffixes remain part of the source
+    /// type so detector source admission stays fail-closed.
+    pub(crate) fn decoded_source_family<'a>(&self, source: &'a str) -> &'a str {
+        let mut family = source;
+        while let Some(parent) = self.decoded_source_parent(family) {
+            family = parent;
+        }
+        family
+    }
+
     pub(crate) fn decoded_source_depth(&self, source: &str) -> usize {
         let mut depth = 0;
         let mut current = source;

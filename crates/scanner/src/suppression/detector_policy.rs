@@ -77,10 +77,10 @@ impl DetectorSuppressionPolicy {
     pub(crate) fn allowlist_stage(
         &self,
         path: Option<&str>,
-        source_type: Option<&str>,
+        source_family: Option<&str>,
         credential: &str,
     ) -> Option<crate::adjudicate::StageId> {
-        if let Some(reason) = self.source_admission_rejection(path, source_type) {
+        if let Some(reason) = self.source_admission_rejection(path, source_family) {
             crate::adjudicate::record_example_suppression("pipeline", path, credential, reason);
             return Some(crate::adjudicate::StageId::ShapeGate(reason));
         }
@@ -143,10 +143,10 @@ impl DetectorSuppressionPolicy {
     pub(crate) fn full_stage(
         &self,
         path: Option<&str>,
-        source_type: Option<&str>,
+        source_family: Option<&str>,
         credential: &str,
     ) -> Option<crate::adjudicate::StageId> {
-        self.allowlist_stage(path, source_type, credential)
+        self.allowlist_stage(path, source_family, credential)
             .or_else(|| {
                 let randomness = TokenRandomness::for_candidate(credential);
                 self.stopword_stage(path, credential, &randomness)
@@ -156,7 +156,7 @@ impl DetectorSuppressionPolicy {
     fn source_admission_rejection(
         &self,
         path: Option<&str>,
-        source_type: Option<&str>,
+        source_family: Option<&str>,
     ) -> Option<&'static str> {
         if !self.source_path_patterns.is_empty()
             && !path.is_some_and(|path| {
@@ -168,10 +168,10 @@ impl DetectorSuppressionPolicy {
             return Some("source_admission_path");
         }
         if !self.source_types.is_empty()
-            && !source_type.is_some_and(|source_type| {
+            && !source_family.is_some_and(|source_family| {
                 self.source_types
                     .iter()
-                    .any(|admitted| admitted == source_type)
+                    .any(|admitted| admitted == source_family)
             })
         {
             return Some("source_admission_type");

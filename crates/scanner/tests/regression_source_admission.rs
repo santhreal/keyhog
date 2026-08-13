@@ -85,6 +85,32 @@ fn missing_path_rejects_while_case_varied_extension_is_admitted() {
         0
     );
 }
+#[cfg(feature = "decode")]
+#[test]
+fn registered_decode_provenance_preserves_source_admission() {
+    use base64::Engine;
+
+    let scanner = scanner();
+    let encoded =
+        base64::engine::general_purpose::STANDARD.encode(format!("token={TOKEN}").as_bytes());
+    let matches = scanner
+        .scan(&Chunk {
+            data: format!("payload={encoded}").into(),
+            metadata: ChunkMetadata {
+                path: Some("config/secrets/live.json".into()),
+                source_type: "filesystem".into(),
+                ..Default::default()
+            },
+        })
+        .expect("decoded source-admission fixture scans");
+
+    assert!(
+        matches
+            .iter()
+            .any(|matched| matched.detector_id.as_ref() == "source-admitted-token"),
+        "a registered decoder suffix must not change source-admission truth"
+    );
+}
 
 fn netrc_scanner() -> CompiledScanner {
     let detector = keyhog_core::detector_spec_by_id("netrc-password")
