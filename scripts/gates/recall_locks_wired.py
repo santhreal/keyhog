@@ -38,6 +38,7 @@ ALLOWED: set[str] = {
     "decode_budget_streaming",  # process-global decoder registration
     "detector_corpus_backend_parity",  # needs all backends
     "detector_primary_regex_dedup_ratchet",  # has `mod support;` conflict
+    "detector_corpus_coverage_ratchet",  # dedicated detector-recall remediation lane
     "gpu_ac_recall_bug_56",  # GPU host
     "gpu_ac_smoke",  # GPU host
     "gpu_entropy_recall_parity",  # GPU host

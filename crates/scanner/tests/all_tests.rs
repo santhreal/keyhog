@@ -523,20 +523,17 @@ pub mod unit_engine_cases_live;
 pub mod vendorgen_harness_contract;
 #[path = "window_boundary.rs"]
 pub mod window_boundary;
-// ── Wired-orphan batch: 41 ci-lean-compatible tests that were top-level
-// `tests/*.rs` files not aggregated here and not named in any workflow `--test`
-// flag, so they never ran in CI. Aggregating them makes `--test all_tests`
-// actually execute them. GPU/SIMD-only, perf-timing, and backend-parity
-// orphans are deliberately excluded (they need GPU hosts, release timing, or
-// all-backend availability). Two files with `mod support;` or multi-module
-// `#[path]` declarations are excluded to avoid module-name conflicts.
-// Keep sorted.
+// ── Wired-orphan batch: process-safe ci-lean-compatible tests that were
+// top-level `tests/*.rs` files not aggregated here and not named in any
+// workflow `--test` flag. Aggregating them makes `--test all_tests` actually
+// execute them. Process-global, GPU/SIMD-only, perf-timing, backend-parity, and
+// detector-recall-remediation targets remain isolated from this shared binary.
+// Two files with `mod support;` or multi-module `#[path]` declarations are
+// excluded to avoid module-name conflicts. Keep sorted.
 #[path = "admission_recovery_receipt.rs"]
 pub mod admission_recovery_receipt;
 #[path = "companion_name_interning.rs"]
 pub mod companion_name_interning;
-#[path = "decode_coalesced_sparse_parity.rs"]
-pub mod decode_coalesced_sparse_parity;
 #[path = "decode_codec_vectors.rs"]
 pub mod decode_codec_vectors;
 #[path = "decode_discovery.rs"]
@@ -581,8 +578,6 @@ pub mod detection_truth_precision_negatives_2;
 pub mod detection_truth_suppression_context;
 #[path = "detection_truth_vendors_evasion.rs"]
 pub mod detection_truth_vendors_evasion;
-#[path = "detector_corpus_coverage_ratchet.rs"]
-pub mod detector_corpus_coverage_ratchet;
 #[path = "detector_corpus_finding_invariants.rs"]
 pub mod detector_corpus_finding_invariants;
 #[path = "discovery_routing_proptest.rs"]

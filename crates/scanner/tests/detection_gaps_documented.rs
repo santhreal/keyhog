@@ -31,14 +31,14 @@ fn chunk(text: &str) -> Chunk {
     }
 }
 
-/// Production auto path: `scan` selects SimdCpu/Hyperscan when usable, which is
-/// what real scans use. This is the correct path for detection-truth.
-fn fired_ids_auto(text: &str) -> Vec<String> {
+/// Default scalar-library path used by callers without persisted autoroute
+/// evidence.
+fn fired_ids_default(text: &str) -> Vec<String> {
     let scanner = CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
         .expect("scanner compile");
     scanner
         .scan(&chunk(text))
-        .expect("production auto-path scan should succeed")
+        .expect("default scalar-library scan should succeed")
         .iter()
         .map(|m| m.detector_id.to_string())
         .collect()
@@ -46,8 +46,11 @@ fn fired_ids_auto(text: &str) -> Vec<String> {
 
 /// Forced-backend path, for asserting backend-specific behavior explicitly.
 fn fired_ids_backend(text: &str, backend: ScanBackend) -> Vec<String> {
-    let scanner = CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
-        .expect("scanner compile");
+    let scanner = CompiledScanner::compile_for_backend(
+        keyhog_core::embedded_detector_specs().to_vec(),
+        backend,
+    )
+    .expect("scanner compile");
     scanner
         .scan_chunks_with_backend(std::slice::from_ref(&chunk(text)), backend)
         .expect("selected backend scan succeeds")
@@ -57,12 +60,12 @@ fn fired_ids_backend(text: &str, backend: ScanBackend) -> Vec<String> {
         .collect()
 }
 
-// ── GREEN guards: correct behavior (via the production auto path) ─────────────
+// ── GREEN guards: correct behavior through the default library path ──────────
 
 #[test]
 fn jwt_token_fires_on_a_real_jwt() {
     // A non-example JWT (fresh payload) must be detected.
-    let ids = fired_ids_auto(
+    let ids = fired_ids_default(
         "authorization = eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.\
          eyJ1c2VyIjoiYWxpY2UiLCJyb2xlIjoiYWRtaW4iLCJvcmciOiJhY21lY29ycCJ9.\
          k3nGq7pXwZ2vLm9RtY4bN8sD1fHcJ0aQ6eU5iO2xW3o",
@@ -78,7 +81,7 @@ fn jwt_token_suppresses_the_rfc7519_example() {
     // The canonical jwt.io / RFC-7519 example token is a documented non-secret
     // and MUST be suppressed (precision), even though it is a structurally valid
     // JWT. This pins that suppression.
-    let ids = fired_ids_auto(
+    let ids = fired_ids_default(
         "authorization = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.\
          eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.\
          SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
@@ -90,13 +93,12 @@ fn jwt_token_suppresses_the_rfc7519_example() {
 }
 
 #[test]
-fn mongodb_connection_string_fires_on_plain_uri_via_auto() {
-    // The production auto path catches the plain mongodb:// URI.
+fn mongodb_connection_string_fires_on_plain_uri_by_default() {
     let ids =
-        fired_ids_auto("MONGO_URI=mongodb://admin:Str0ngMongoPwd@cluster0.example.com:27017/db");
+        fired_ids_default("MONGO_URI=mongodb://admin:Str0ngMongoPwd@cluster0.example.com:27017/db");
     assert!(
         ids.iter().any(|id| id == "mongodb-connection-string"),
-        "mongodb-connection-string must fire on the plain URI via the auto path; got {ids:?}"
+        "mongodb-connection-string must fire on the plain URI through the default library path; got {ids:?}"
     );
 }
 
@@ -119,7 +121,7 @@ fn mongodb_connection_string_has_cpu_simd_parity() {
 
 #[test]
 fn sanity_api_token_fires_with_keyword_context() {
-    let ids = fired_ids_auto("sanity_token = \"skPNc6FX11CsV275924b377c3d0bc2b3c27e9\"");
+    let ids = fired_ids_default("sanity_token = \"skPNc6FX11CsV275924b377c3d0bc2b3c27e9\"");
     assert!(
         ids.iter().any(|id| id == "sanity-api-token"),
         "sanity-api-token should fire with keyword context; got {ids:?}"
@@ -128,13 +130,13 @@ fn sanity_api_token_fires_with_keyword_context() {
 
 #[test]
 fn twilio_api_key_candidate() {
-    let ids = fired_ids_auto(
+    let ids = fired_ids_default(
         "TWILIO_API_KEY=SKf77dea48db85fef690ffcbfc3fc3a4e6\n\
          TWILIO_API_SECRET=abcdefghijklmnopqrstuvwxyz012345",
     );
     assert!(
         ids.iter().any(|id| id == "twilio-api-key"),
-        "twilio-api-key silent even with companion+keyword on auto path; got {ids:?}"
+        "twilio-api-key silent even with companion+keyword on the default path; got {ids:?}"
     );
 }
 
@@ -142,11 +144,11 @@ fn twilio_api_key_candidate() {
 // This remains ignored and honestly labeled until its detector contract is
 // adjudicated; it is not counted as a confirmed product defect.
 #[test]
-#[ignore = "UNCONFIRMED, telegram-bot-token silent on auto path with keyword+shape-valid token; needs adjudication"]
+#[ignore = "UNCONFIRMED, telegram-bot-token silent on the default path with keyword+shape-valid token; needs adjudication"]
 fn telegram_bot_token_candidate() {
-    let ids = fired_ids_auto("TELEGRAM_BOT_TOKEN=36969501:Y3v_-X128qWyqrf_g__n_s-O--j-_m6-2GY");
+    let ids = fired_ids_default("TELEGRAM_BOT_TOKEN=36969501:Y3v_-X128qWyqrf_g__n_s-O--j-_m6-2GY");
     assert!(
         ids.iter().any(|id| id == "telegram-bot-token"),
-        "telegram-bot-token silent with keyword+shape-valid token on auto path; got {ids:?}"
+        "telegram-bot-token silent with keyword+shape-valid token on the default path; got {ids:?}"
     );
 }

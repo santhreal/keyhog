@@ -161,6 +161,14 @@ jobs:
         run: cargo test -p keyhog-core --test all_tests --profile ci-test
       - name: scanner all_tests
         run: cargo test -p keyhog-scanner --test all_tests --no-default-features --features ci-lean --profile ci-test
+      - name: scanner decoder-registry contract
+        run: cargo test -p keyhog-scanner --test decode_coalesced_sparse_parity --no-default-features --features ci-lean --profile ci-test
+      - name: scanner allocation contracts
+        run: >
+          cargo test -p keyhog-scanner --no-fail-fast
+          --no-default-features --features ci-lean --profile ci-test
+          --test perf_alloc_batch_topology
+          --test perf_alloc_trigger_scratch
       - name: scanner CI target wiring gates
         run: cargo test -p keyhog-scanner --test unit_gates_live ci_scanner --no-default-features --features ci-lean --profile ci-test -- --nocapture
       - name: scanner GPU literal artifact writer

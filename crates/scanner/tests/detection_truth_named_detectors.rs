@@ -12,7 +12,8 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 
 fn scan_credentials(text: &str, backend: ScanBackend) -> Vec<String> {
     let detectors = keyhog_core::embedded_detector_specs().to_vec();
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let scanner = CompiledScanner::compile_for_backend(detectors, backend)
+        .expect("selected backend scanner compile");
     let chunk = Chunk {
         data: text.into(),
         metadata: ChunkMetadata {

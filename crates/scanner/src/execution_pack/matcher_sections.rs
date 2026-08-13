@@ -11,8 +11,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 pub const ROUTE_MATCHER_SECTION_VERSION: u16 = 5;
-static RUNTIME_LOCALIZATION_HINT_FALLBACKS: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
+std::thread_local! {
+    static RUNTIME_LOCALIZATION_HINT_FALLBACKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 std::thread_local! {
     static RUNTIME_CANONICAL_REENCODES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
@@ -22,11 +23,12 @@ std::thread_local! {
 
 #[doc(hidden)]
 pub fn runtime_localization_hint_fallbacks() -> usize {
-    RUNTIME_LOCALIZATION_HINT_FALLBACKS.load(std::sync::atomic::Ordering::Relaxed)
+    RUNTIME_LOCALIZATION_HINT_FALLBACKS.get()
 }
 
 pub(crate) fn record_runtime_localization_hint_fallback() {
-    RUNTIME_LOCALIZATION_HINT_FALLBACKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    RUNTIME_LOCALIZATION_HINT_FALLBACKS
+        .set(RUNTIME_LOCALIZATION_HINT_FALLBACKS.get().saturating_add(1));
 }
 
 #[doc(hidden)]

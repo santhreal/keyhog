@@ -737,6 +737,20 @@ fn release_entire_mapping(
                 source: std::io::Error::last_os_error(),
             });
         }
+        let result = unsafe {
+            libc::madvise(
+                mapping.as_ptr() as *mut libc::c_void,
+                mapping.len(),
+                libc::MADV_RANDOM,
+            )
+        };
+        if result != 0 {
+            return Err(ExecutionPackError::Io {
+                operation: "configure lazy mapped-section faults",
+                path: path.to_path_buf(),
+                source: std::io::Error::last_os_error(),
+            });
+        }
     }
     Ok(())
 }

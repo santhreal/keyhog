@@ -64,19 +64,19 @@ fn detects_postman_api_key() {
 
 #[test]
 fn detects_github_oauth_token() {
-    let t = "gho_0123456789abcdef0123456789abcdef0123";
+    let t = "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";
     assert_detects(&format!("GH={t}"), t);
 }
 
 #[test]
 fn detects_github_refresh_token() {
-    let t = "ghr_0123456789abcdef0123456789abcdef0123";
+    let t = "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";
     assert_detects(&format!("GH={t}"), t);
 }
 
 #[test]
 fn detects_github_server_token() {
-    let t = "ghs_0123456789abcdef0123456789abcdef0123";
+    let t = "ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr38XESt";
     assert_detects(&format!("GH={t}"), t);
 }
 

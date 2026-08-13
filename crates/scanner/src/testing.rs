@@ -3784,6 +3784,25 @@ pub fn phase2_hyperscan_initialized(scanner: &crate::engine::CompiledScanner) ->
         .as_ref()
         .is_some_and(|prefilter| prefilter.hyperscan_initialized())
 }
+#[cfg(feature = "simd")]
+pub fn initialize_phase2_hyperscan_for_test(scanner: &crate::engine::CompiledScanner) {
+    use crate::engine::phase2::ActivePatternsScratch;
+
+    let prefilter = scanner
+        .phase2_always_active_prefilter
+        .as_ref()
+        .expect("test scanner must contain always-active phase-two patterns");
+    let mut scratch = ActivePatternsScratch::new();
+    prefilter.mark_matches(
+        &scanner.phase2_patterns,
+        "Qx7Rt9123456789012",
+        &mut scratch,
+        false,
+        false,
+        &scanner.tuning.resolve(),
+        true,
+    );
+}
 
 /// Score the production cl100k token-efficiency gate. Benchmarks use this
 /// instead of substituting Shannon entropy under a BPE label.
