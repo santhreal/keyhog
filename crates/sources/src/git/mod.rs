@@ -15,8 +15,8 @@ mod tag_messages;
 pub use manifest::{
     verify_staged_fingerprint, StagedEntryKind, StagedManifest, StagedManifestEntry,
 };
-pub(crate) use staged::consume_oversized_staged_header_path;
 pub(crate) use source::HeadBlobPaths;
+pub(crate) use staged::consume_oversized_staged_header_path;
 
 /// Resolve `git` to an absolute path inside a trusted system bin dir.
 /// SECURITY: kimi-wave1 audit finding 3.PATH-git. Refuses to fall back

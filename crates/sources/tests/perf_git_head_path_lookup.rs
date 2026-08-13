@@ -79,14 +79,12 @@ fn repeated_head_blob_membership_probes_allocate_zero_bytes_after_setup() {
     let (matched, allocations, allocated_bytes) = measure_allocations(|| {
         let mut matched = 0usize;
         for _ in 0..10_000 {
-            matched += usize::from(black_box(paths.contains(
-                black_box(&live_oid),
-                black_box(live_path.as_slice()),
-            )));
-            matched += usize::from(black_box(paths.contains(
-                black_box(&historical_oid),
-                black_box(live_path.as_slice()),
-            )));
+            matched += usize::from(black_box(
+                paths.contains(black_box(&live_oid), black_box(live_path.as_slice())),
+            ));
+            matched += usize::from(black_box(
+                paths.contains(black_box(&historical_oid), black_box(live_path.as_slice())),
+            ));
         }
         matched
     });
