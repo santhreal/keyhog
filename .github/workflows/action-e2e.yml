@@ -80,7 +80,6 @@ jobs:
           set -euo pipefail
           cargo test -p keyhog --test action_root_mirror_parity
           cargo test -p keyhog --test e2e_all -- action_
-          cargo test -p keyhog --test e2e_all -- composite_action_
 
   positive-lockdown:
     name: provisioned source-CPU / release-auto lockdown (root and nested)

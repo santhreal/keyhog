@@ -947,8 +947,18 @@ fn action_e2e_contract_pins_hyperscan_and_hides_unverified_reports() {
     }
     assert_eq!(
         contract.matches("cargo test -p keyhog --test").count(),
-        3,
+        2,
         "every Action contract test command must run with the production feature profile"
+    );
+    let inclusive_filter = "cargo test -p keyhog --test e2e_all -- action_";
+    assert_eq!(
+        contract.matches(inclusive_filter).count(),
+        1,
+        "the Action contract job must run every Action E2E through one inclusive filter"
+    );
+    assert!(
+        !contract.contains("cargo test -p keyhog --test e2e_all -- composite_action_"),
+        "the inclusive action_ filter already covers every composite Action test"
     );
 
     let tamper = workflow
