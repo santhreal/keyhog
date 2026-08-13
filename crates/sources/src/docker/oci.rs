@@ -304,7 +304,7 @@ pub(crate) fn verify_oci_blob_sha256(path: &Path, digest: &str) -> Result<(), So
         }
     }
     let actual_bytes: [u8; 32] = hasher.finalize().into();
-    let actual = keyhog_core::hex_encode(&actual_bytes);
+    let actual = keyhog_core::hex_encode(actual_bytes);
     if actual != expected {
         return Err(SourceError::Other(format!(
             "OCI blob '{}' digest mismatch: expected sha256:{expected}, got sha256:{actual}",

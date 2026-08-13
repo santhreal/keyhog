@@ -38,23 +38,54 @@ fn mixed_batch_topology_never_serializes_a_large_chunk_with_neighbors() {
 }
 
 #[test]
+fn small_lane_topology_uses_one_flat_index_buffer() {
+    const CHUNKS: usize = 4096;
+    const WORKERS: usize = 32;
+    let sizes = vec![1; CHUNKS];
+    let (small_lanes, stored_indices, index_buffers) =
+        keyhog_scanner::testing::chunk_lane_storage_shape_for_test(&sizes, 64 * 1024, WORKERS);
+
+    assert_eq!(small_lanes, WORKERS);
+    assert_eq!(stored_indices, CHUNKS);
+    assert_eq!(
+        index_buffers, 1,
+        "small-lane membership must use one flat index buffer, not one allocation per lane"
+    );
+}
+
+/// WHY: compact lanes are trusted by both CPU dispatch and SIMD trigger
+/// collection. This closes empty/worker-boundary/index coverage variants, but
+/// does not measure scheduler timing.
+#[test]
 fn production_topology_covers_every_boundary_variant_exactly_once() {
     const THRESHOLD: usize = 8;
     const WORKERS: usize = 4;
     let cases = [
-        ("empty", vec![]),
-        ("below-worker-count", vec![THRESHOLD, THRESHOLD + 1]),
-        ("all-small", vec![THRESHOLD; WORKERS + 3]),
-        ("all-large", vec![THRESHOLD + 1; WORKERS + 3]),
+        ("empty", vec![], 0),
+        ("zero-workers", vec![0, THRESHOLD, THRESHOLD + 1], 0),
+        (
+            "below-worker-count",
+            vec![THRESHOLD, THRESHOLD + 1],
+            WORKERS,
+        ),
+        ("equal-worker-count", vec![THRESHOLD; WORKERS], WORKERS),
+        ("all-small", vec![THRESHOLD; WORKERS + 3], WORKERS),
+        ("all-large", vec![THRESHOLD + 1; WORKERS + 3], WORKERS),
         (
             "mixed-boundary",
             vec![0, THRESHOLD, THRESHOLD + 1, 1, THRESHOLD + 2],
+            WORKERS,
+        ),
+        (
+            "large-worker-count",
+            vec![0, THRESHOLD, THRESHOLD + 1],
+            usize::MAX,
         ),
     ];
 
-    for (name, sizes) in cases {
+    for (name, sizes, workers) in cases {
         let lanes =
-            keyhog_scanner::testing::chunk_lane_topology_for_test(&sizes, THRESHOLD, WORKERS);
+            keyhog_scanner::testing::chunk_lane_topology_for_test(&sizes, THRESHOLD, workers);
         let mut scheduled = Vec::new();
         for (is_large, indices) in &lanes {
             assert!(!indices.is_empty(), "{name}: empty work lane");
@@ -75,6 +106,10 @@ fn production_topology_covers_every_boundary_variant_exactly_once() {
                 );
             }
             scheduled.extend(indices.iter().copied());
+            assert!(
+                indices.iter().all(|&index| index < sizes.len()),
+                "{name}: lane index escaped the chunk batch"
+            );
         }
         scheduled.sort_unstable();
         assert_eq!(

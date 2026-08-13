@@ -1,0 +1,36 @@
+# Tier-B: public evidence identifier needles used by the suppression shape
+# gate `looks_like_public_evidence_identifier` in `suppression/shape/public.rs`.
+#
+# These are substrings that, when found case-insensitively in a candidate
+# value, mark it as a public evidence/taxonomy identifier rather than a secret.
+#
+# `authority_needles` = single-substring matches that independently mark a
+#                       value as public (each is a standalone OR arm).
+# `issue_markers`     = substring markers for issue/tracking references.
+# `vx_markers`        = substring markers for vector-range references.
+#
+# Compound conditions (e.g. dead-pass AND capability AND transform) and the
+# `pw.` prefix + dash combo stay in code because they are multi-needle
+# predicates, not single-substring lookups.
+
+authority_needles = [
+  "cwe_",
+  "rfc_",
+  "owasp_",
+  "nist_",
+  "cisa_",
+  "gate-evidence-consumption",
+  "authority-attestation",
+  "authority-elimination",
+  "authority-map",
+]
+
+issue_markers = [
+  "-issue-",
+  "_issue_",
+]
+
+vx_markers = [
+  "row-range-vx-",
+  "through-vx-",
+]

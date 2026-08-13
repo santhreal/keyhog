@@ -30,7 +30,7 @@ pub(crate) use decode::decode_text_file;
 /// reinventing a weaker `String::from_utf8` decode (no-duplication).
 pub(in crate::filesystem) use decode::decode_text_file_owned_or_bytes;
 pub(in crate::filesystem) use decode::{has_utf16_bom_prefix, looks_binary, looks_binary_prefix};
-pub(crate) use raw::open_file_safe;
+pub(crate) use raw::{open_file_safe, open_file_safe_with_metadata};
 pub(super) use raw::{
     read_file_buffered, read_file_prefix_safe, read_file_safe, read_file_whole_capped,
     BufferedFileRead,
@@ -58,6 +58,14 @@ pub(crate) fn read_file_safe_capped_for_test(
     cap: u64,
 ) -> std::io::Result<Vec<u8>> {
     raw::read_file_safe(path, cap)
+}
+
+pub(crate) fn read_stat_sized_to_cap_for_test(
+    bytes: &[u8],
+    expected_size: u64,
+    hard_cap: u64,
+) -> std::io::Result<Vec<u8>> {
+    raw::read_stat_sized_to_cap(&mut std::io::Cursor::new(bytes), expected_size, hard_cap)
 }
 
 /// Exercise the bounded whole-file read path (formerly a whole-file `mmap`; see

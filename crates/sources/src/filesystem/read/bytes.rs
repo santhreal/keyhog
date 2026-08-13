@@ -8,7 +8,7 @@ use memmap2::MmapOptions;
 use std::fs::File;
 use std::path::Path;
 
-use super::raw::open_file_safe;
+use super::raw::open_file_safe_with_metadata;
 
 /// Buffered read bounded at `cap` bytes, routed through the same
 /// already-open descriptor the mmap attempt used. Replaces the bare whole-file
@@ -95,25 +95,13 @@ pub(in crate::filesystem) fn read_file_for_compressed_input(
     } else {
         size_cap
     };
-    let file = match open_file_safe(path) {
-        Ok(f) => f,
+    let (file, metadata) = match open_file_safe_with_metadata(path) {
+        Ok(opened) => opened,
         Err(error) => {
             tracing::warn!(
                 path = %path.display(),
                 %error,
                 "cannot open compressed file; skipping"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return None;
-        }
-    };
-    let metadata = match file.metadata() {
-        Ok(m) => m,
-        Err(error) => {
-            tracing::warn!(
-                path = %path.display(),
-                %error,
-                "cannot stat compressed file; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             return None;
@@ -130,13 +118,6 @@ pub(in crate::filesystem) fn read_file_for_compressed_input(
         return None;
     }
 
-    // Empty file: mmap of zero-length is rejected on some platforms,
-    // and there's nothing for ziftsieve to do anyway. Return an owned
-    // empty vec so the caller's slice is just &[].
-    if metadata.len() == 0 {
-        return Some(FileBytes::Owned(Vec::new()));
-    }
-
     // No re-flock: `open_file_safe` already holds the advisory LOCK_SH on this
     // fd (a shared lock we hold blocks any new LOCK_EX), so this was a redundant
     // syscall with a dead "locked by another process" branch. The lock persists
@@ -150,6 +131,16 @@ pub(in crate::filesystem) fn read_file_for_compressed_input(
     // valid until the `Mmap` is dropped.
     match unsafe { MmapOptions::new().map(&file) } {
         Ok(mmap) => {
+            if mmap.len() as u64 > effective_size_cap {
+                tracing::warn!(
+                    path = %path.display(),
+                    mapped_size = mmap.len(),
+                    cap = effective_size_cap,
+                    "compressed file grew beyond size cap before mapping; refusing to read"
+                );
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+                return None;
+            }
             #[cfg(unix)]
             {
                 // SAFETY: madvise on a valid mmap range; the hint is

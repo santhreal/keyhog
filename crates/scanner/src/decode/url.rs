@@ -65,7 +65,7 @@ impl Decoder for QuotedPrintableDecoder {
     }
 
     fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
-        let line_views = line_views_with_offsets(&chunk.data);
+        let line_views: Vec<LineView<'_>> = line_views_with_offsets(&chunk.data).collect();
         let lines = line_views.iter().map(|line| line.text).collect::<Vec<_>>();
         let replacements = line_views
             .iter()
@@ -100,19 +100,17 @@ struct LineView<'a> {
     end: usize,
 }
 
-fn line_views_with_offsets(text: &str) -> Vec<LineView<'_>> {
-    text.split_inclusive('\n')
-        .scan(0usize, |offset, segment| {
-            let start = *offset;
-            *offset += segment.len();
-            let line = strip_line_ending(segment);
-            Some(LineView {
-                text: line,
-                start,
-                end: start + line.len(),
-            })
+fn line_views_with_offsets(text: &str) -> impl Iterator<Item = LineView<'_>> + '_ {
+    text.split_inclusive('\n').scan(0usize, |offset, segment| {
+        let start = *offset;
+        *offset += segment.len();
+        let line = strip_line_ending(segment);
+        Some(LineView {
+            text: line,
+            start,
+            end: start + line.len(),
         })
-        .collect()
+    })
 }
 
 fn decode_filtered_lines_into<F, D>(
@@ -126,20 +124,18 @@ where
     F: Fn(&str) -> bool,
     D: FnMut(&str) -> Result<String, ()>,
 {
-    let replacements = line_views_with_offsets(&chunk.data)
-        .into_iter()
-        .filter_map(|line| {
-            if !filter(line.text) {
-                return None;
-            }
-            let decoded = match decode(line.text) {
-                Ok(decoded) => decoded,
-                // LAW10: a failed optional wrapper decode leaves this exact
-                // source line in the root chunk's scan path unchanged.
-                Err(()) => return None,
-            };
-            Some((line.start, line.end, decoded))
-        });
+    let replacements = line_views_with_offsets(&chunk.data).filter_map(|line| {
+        if !filter(line.text) {
+            return None;
+        }
+        let decoded = match decode(line.text) {
+            Ok(decoded) => decoded,
+            // LAW10: a failed optional wrapper decode leaves this exact
+            // source line in the root chunk's scan path unchanged.
+            Err(()) => return None,
+        };
+        Some((line.start, line.end, decoded))
+    });
     stream_batched_decoded_replacements(sink, chunk, replacements, decoder_name)
 }
 fn strip_line_ending(segment: &str) -> &str {
@@ -151,7 +147,9 @@ fn strip_line_ending(segment: &str) -> &str {
 /// escape (`=XX` where `XX` is two hex digits). Trailing-bare-`=`
 /// inputs and `key=value` text return false and skip the decode.
 fn has_qp_escape(s: &str) -> bool {
-    qp_escape_count(s) > 0
+    s.as_bytes()
+        .windows(3)
+        .any(|w| w[0] == b'=' && w[1].is_ascii_hexdigit() && w[2].is_ascii_hexdigit())
 }
 
 fn qp_escape_count(s: &str) -> usize {
@@ -311,7 +309,10 @@ fn url_decode(input: &str) -> Result<String, ()> {
 }
 
 fn contains_percent_escape(input: &str) -> bool {
-    percent_escape_count(input) > 0
+    input
+        .as_bytes()
+        .windows(3)
+        .any(|window| window[0] == b'%' && hex_val(window[1]).is_ok() && hex_val(window[2]).is_ok())
 }
 
 fn percent_escape_count(input: &str) -> usize {
@@ -490,7 +491,8 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
             chars.next();
         }
 
-        let mut digits = String::new();
+        let mut digits = [0u8; MAX_NUMERIC_ENTITY_DIGITS];
+        let mut digits_len = 0usize;
         let mut preserved_malformed = false;
         let mut consumed_terminator = false;
         while let Some(&(_, next)) = chars.peek() {
@@ -501,8 +503,9 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
             }
             let is_digit =
                 (is_hex && next.is_ascii_hexdigit()) || (!is_hex && next.is_ascii_digit());
-            if is_digit && digits.len() < MAX_NUMERIC_ENTITY_DIGITS {
-                digits.push(next);
+            if is_digit && digits_len < MAX_NUMERIC_ENTITY_DIGITS {
+                digits[digits_len] = next as u8;
+                digits_len += 1;
                 chars.next();
             } else {
                 // Non-digit terminator OR the digit run exceeded the cap: this
@@ -517,7 +520,7 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
                 if is_hex {
                     out.push('x');
                 }
-                out.push_str(&digits);
+                out.push_str(std::str::from_utf8(&digits[..digits_len]).unwrap_or(""));
                 if !is_digit {
                     out.push(next);
                     chars.next();
@@ -541,13 +544,13 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
             if is_hex {
                 out.push('x');
             }
-            out.push_str(&digits);
+            out.push_str(std::str::from_utf8(&digits[..digits_len]).unwrap_or(""));
             if consumed_terminator {
                 out.push(';');
             }
         };
 
-        if digits.is_empty() {
+        if digits_len == 0 {
             emit_literal(&mut decoded);
             continue;
         }
@@ -556,7 +559,10 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
         // A numeric entity whose value overflows `u32` or is not a valid Unicode
         // scalar (surrogate / above U+10FFFF) is preserved literally rather than
         // dropping the whole candidate via `?`.
-        let replacement = match u32::from_str_radix(&digits, radix) {
+        let replacement = match u32::from_str_radix(
+            std::str::from_utf8(&digits[..digits_len]).unwrap_or(""),
+            radix,
+        ) {
             Ok(codepoint) => char::from_u32(codepoint),
             Err(_invalid_digits) => None,
         };
@@ -684,7 +690,7 @@ fn find_mime_encoded_word_spans(text: &str) -> Vec<ExtractedValue> {
             if let Some(end) = line.text[absolute_start + 2..].find("?=") {
                 let absolute_end = absolute_start + 2 + end + 2;
                 words.push(ExtractedValue::new(
-                    line.text[absolute_start..absolute_end].to_string(),
+                    &line.text[absolute_start..absolute_end],
                     line.start + absolute_start,
                     line.start + absolute_end,
                 ));

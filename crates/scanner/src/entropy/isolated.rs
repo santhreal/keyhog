@@ -545,10 +545,11 @@ pub(super) fn collect_isolated_bare_candidates_inner(
         if seen.contains(candidate) {
             return;
         }
-        seen.insert(candidate.to_string());
+        let owned = candidate.to_string();
+        seen.insert(owned.clone());
         matches.push(ClassifiedEntropyMatch {
             matched: EntropyMatch {
-                value: candidate.to_string(),
+                value: owned,
                 entropy,
                 keyword: context.keyword.clone(),
                 line: line_idx + FIRST_SOURCE_LINE_NUMBER,

@@ -38,11 +38,10 @@ REQUIRED_TEXT = {
         "https://santhreal.github.io/keyhog/releasing.html",
         "### Scan every supported source boundary",
         "## GPU-backed mass daemon workers",
-        "--mass-gpu-primary",
-        "Local file payload bytes never cross the IPC socket",
+        "`--daemon=mass` is a required route. It never retries in process.",
+        "bounded to 8 MiB and 1,024 chunks, independent of total input size",
         "--github-collaboration",
         "--azure-container-url",
-        "gpu-metal-region-presence",
     ),
     "summary": (
         "[Choose a scanning workflow](./capabilities.md)",

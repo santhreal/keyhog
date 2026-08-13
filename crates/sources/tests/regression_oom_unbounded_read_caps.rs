@@ -74,16 +74,16 @@ fn whole_file_read_is_capped_and_never_maps() {
         .find("pub(in crate::filesystem) fn read_file_whole_capped")
         .expect("read_file_whole_capped function");
     let open_arm = raw[read_fn_start..]
-        .find("match open_file_safe(path)")
+        .find("match open_file_safe_with_metadata(path)")
         .map(|offset| read_fn_start + offset)
-        .expect("read_file_whole_capped must open through the shared open_file_safe helper");
+        .expect("read_file_whole_capped must reuse metadata from the shared safe-open helper");
     let read_start = raw[open_arm..]
         .find(".take(read_limit)")
         .map(|offset| open_arm + offset)
         .expect("bounded read after the open arm");
     // Everything between the open call and the bounded read is pre-read failure
-    // handling (open error incl. lock contention, stat error, oversize): each arm
-    // must be a visible skip that returns None, with no second/unlocked read.
+    // handling (open error incl. lock contention and oversize): each arm must be
+    // a visible skip that returns None, with no second/unlocked read.
     let pre_read_failure = &raw[open_arm..read_start];
     assert!(
         pre_read_failure.contains("SourceSkipEvent::Unreadable")
@@ -106,13 +106,13 @@ fn whole_file_read_is_capped_and_never_maps() {
     let extract = read_src("src/filesystem/extract.rs");
     assert!(
         extract.contains("refusing large-file buffered fallback: live size exceeds mmap sanity cap")
-            && extract.contains("cannot stat large file for buffered fallback sanity cap; skipping")
             && extract.contains("WindowedMmapOutcome::Fallback(mut file)")
+            && extract.contains("let meta = match file.metadata()")
             && !extract.contains("match read::open_file_safe(&path)")
             && extract.contains("read::MMAP_TOCTOU_SANITY_CAP_BYTES")
             && extract.contains("SourceSkipEvent::OverMaxSize")
             && extract.contains("SourceSkipEvent::Unreadable"),
-        "large-file buffered fallback after windowed-mmap refusal must reuse the existing descriptor, re-prove the hard mmap sanity cap, and fail closed when it cannot"
+        "large-file buffered fallback must keep the validated descriptor, refresh its metadata at fallback time, and fail closed when the hard sanity cap cannot be re-proved"
     );
 }
 

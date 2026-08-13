@@ -215,6 +215,7 @@ pub(crate) use pipeline::compute_line_offsets;
 /// Hard 128 MiB ceiling for one CPU scan-scratch allocation (KH-2036).
 pub(crate) const CPU_SCRATCH_CEILING_BYTES: usize = 128 * 1024 * 1024;
 /// Hard 128 MiB ceiling for one SIMD prefilter/scratch allocation (KH-2037).
+#[cfg(any(feature = "simd", test))]
 pub(crate) const SIMD_SCRATCH_CEILING_BYTES: usize = 128 * 1024 * 1024;
 
 /// Reject one CPU scratch allocation above the per-allocation ceiling.
@@ -230,6 +231,7 @@ pub(crate) fn enforce_cpu_scratch_ceiling(
     }
 }
 
+#[cfg(any(feature = "simd", test))]
 /// Reject one SIMD scratch allocation above the per-allocation ceiling.
 pub(crate) fn enforce_simd_scratch_ceiling(
     requested_bytes: usize,

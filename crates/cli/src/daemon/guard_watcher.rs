@@ -177,10 +177,12 @@ impl GuardWatcher {
     }
 
     /// Number of watched roots.
+    #[allow(dead_code)]
     pub fn root_count(&self) -> usize {
         self.roots.len()
     }
 
+    #[allow(dead_code)]
     /// Whether any roots are watched.
     pub fn is_empty(&self) -> bool {
         self.roots.is_empty()

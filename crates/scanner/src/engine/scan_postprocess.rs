@@ -11,6 +11,26 @@ use std::collections::HashSet;
 #[cfg(feature = "decode")]
 use std::sync::Arc;
 
+/// Deduplicate a literal into a shared `literals` Vec, returning its index.
+/// Avoids the `entry(lit.clone()).or_insert_with(|| push(lit.clone()))`
+/// double-clone by checking `get` first: zero clones when the literal is
+/// already known, two clones only on first insertion (one for the Vec, one
+/// for the HashMap key).
+pub(crate) fn register_literal(
+    literals: &mut Vec<String>,
+    ids: &mut std::collections::HashMap<String, usize>,
+    lit: &str,
+) -> usize {
+    if let Some(&id) = ids.get(lit) {
+        return id;
+    }
+    let id = literals.len();
+    let owned = lit.to_string();
+    literals.push(owned.clone());
+    ids.insert(owned, id);
+    id
+}
+
 // Re-export the post-processing satellites through their established engine paths.
 // Scanner tuning owns enablement; the suffix-gate satellite only builds the gate.
 #[cfg(feature = "decode")]

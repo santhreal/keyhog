@@ -517,6 +517,7 @@ fn emit_archive_member_with_tex_provenance(
     emit_archive_leaf_member(content, member_display, provenance, emit)
 }
 
+#[cfg(feature = "docker")]
 pub(crate) fn try_emit_image_metadata_member(
     entry_name: &str,
     bytes: &[u8],
@@ -557,10 +558,12 @@ pub(crate) fn try_emit_image_metadata_member(
     Ok(Some(keep_going))
 }
 
+#[cfg(feature = "docker")]
 pub(crate) fn is_openpack_archive_ext(ext: &str) -> bool {
     archive::is_openpack_archive_ext(ext)
 }
 
+#[cfg(feature = "docker")]
 pub(crate) fn emit_top_level_seven_zip_or_rar_member(
     ext: &str,
     content: Vec<u8>,
@@ -598,6 +601,7 @@ pub(crate) fn emit_top_level_seven_zip_or_rar_member(
     keep_going
 }
 
+#[cfg(feature = "docker")]
 pub(crate) fn try_emit_pdf_member(
     entry_name: &str,
     bytes: Vec<u8>,
@@ -625,6 +629,7 @@ pub(crate) fn try_emit_pdf_member(
     keep_going
 }
 
+#[cfg(feature = "docker")]
 /// In-memory dispatcher used by Docker layer streaming. Archive/compressed
 /// payloads take the shared Decode + derived-byte wrap that `process_entry`
 /// applies to top-level tar/zip/compressed files; plain leaf members stay
@@ -662,6 +667,7 @@ pub(crate) fn emit_in_memory_zip_member(
     keep_going
 }
 
+#[cfg(feature = "docker")]
 pub(crate) fn emit_in_memory_member(
     entry_name: &str,
     content: Vec<u8>,
@@ -1196,38 +1202,35 @@ pub(super) fn process_entry(
                 return;
             }
             read::WindowedMmapOutcome::Fallback(mut file) => {
-                match file.metadata() {
-                    Ok(meta) if meta.len() > read::MMAP_TOCTOU_SANITY_CAP_BYTES => {
-                        tracing::warn!(
-                            path = %path.display(),
-                            live_size = meta.len(),
-                            cap = read::MMAP_TOCTOU_SANITY_CAP_BYTES,
-                            "refusing large-file buffered fallback: live size exceeds mmap sanity cap"
-                        );
-                        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-                        if !emit(Err(SourceError::Other(format!(
-                            "failed to scan filesystem file '{}': live size {} exceeded the {}-byte large-file fallback sanity cap; file was not scanned",
-                            display_path(&path),
-                            meta.len(),
-                            read::MMAP_TOCTOU_SANITY_CAP_BYTES
-                        )))) {
-                            return;
-                        }
-                        return;
-                    }
-                    Ok(_) => {}
+                let meta = match file.metadata() {
+                    Ok(meta) => meta,
                     Err(error) => {
                         tracing::warn!(
                             path = %path.display(),
                             %error,
-                            "cannot stat large file for buffered fallback sanity cap; skipping"
+                            "cannot refresh large-file buffered fallback metadata; skipping"
                         );
-                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                        if !emit(Err(SourceError::Io(error))) {
-                            return;
-                        }
+                        let _event =
+                            crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                        emit(Err(SourceError::Io(error)));
                         return;
                     }
+                };
+                if meta.len() > read::MMAP_TOCTOU_SANITY_CAP_BYTES {
+                    tracing::warn!(
+                        path = %path.display(),
+                        live_size = meta.len(),
+                        cap = read::MMAP_TOCTOU_SANITY_CAP_BYTES,
+                        "refusing large-file buffered fallback: live size exceeds mmap sanity cap"
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+                    emit(Err(SourceError::Other(format!(
+                        "failed to scan filesystem file '{}': live size {} exceeded the {}-byte large-file fallback sanity cap; file was not scanned",
+                        display_path(&path),
+                        meta.len(),
+                        read::MMAP_TOCTOU_SANITY_CAP_BYTES
+                    ))));
+                    return;
                 }
                 #[cfg(unix)]
                 {

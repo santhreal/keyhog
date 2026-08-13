@@ -70,10 +70,7 @@ impl Decoder for Base64Decoder {
                         // scanned unchanged.
                         match crate::decode::inflate::try_inflate_to_text(&decoded) {
                             Some(inflated) => Some(inflated),
-                            None => match String::from_utf8(decoded) {
-                                Ok(text) => Some(text),
-                                Err(_) => None, // LAW10: recall-preserving: the original encoded bytes still take the whole-chunk scan path unchanged; non-text output is not source text.
-                            },
+                            None => String::from_utf8(decoded).ok(), // LAW10: recall-preserving: the original encoded bytes still take the whole-chunk scan path unchanged; non-text output is not source text.
                         }
                     }
                     Err(()) => {
@@ -174,10 +171,12 @@ pub(crate) struct StandardBase64Shape {
 
 /// Whether a byte can appear in a standard or URL-safe base64 string: ASCII
 /// alphanumeric or one of `+ / = - _`.
+#[inline]
 pub fn is_base64_candidate_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=' | b'-' | b'_')
 }
 
+#[inline]
 pub(crate) fn is_standard_base64_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=')
 }

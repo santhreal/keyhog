@@ -352,7 +352,7 @@ async fn verify_group_task(shared: Arc<VerifyTaskShared>, group: DedupedMatch) -
             match inflight.entry(key.clone()) {
                 dashmap::mapref::entry::Entry::Occupied(entry) => entry.get().clone(),
                 dashmap::mapref::entry::Entry::Vacant(entry) => {
-                    if !try_reserve_inflight_slot(&inflight_count, max_inflight_keys) {
+                    if !try_reserve_inflight_slot(inflight_count, max_inflight_keys) {
                         note_inflight_cap_bypass(max_inflight_keys);
                         break None;
                     }
@@ -376,7 +376,7 @@ async fn verify_group_task(shared: Arc<VerifyTaskShared>, group: DedupedMatch) -
         .and_then(|detector| detector.verify.as_ref())
     {
         verify_with_retry(
-            &client,
+            client,
             verify_spec,
             &group.credential,
             &group.companions,

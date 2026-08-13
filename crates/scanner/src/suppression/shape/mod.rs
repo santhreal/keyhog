@@ -505,19 +505,38 @@ pub(crate) fn looks_like_credential_colliding_punctuation(value: &str) -> bool {
     bytes[0] == b'!' || bytes[0] == b'/' || looks_like_ts_non_null_identifier(bytes)
 }
 
-/// Canonical credential-keyword needles (lowercased, for `ci_find`). ONE owner
-/// for the shape gates that scan a candidate for an embedded credential word;
-/// `looks_like_ts_non_null_identifier` here and `looks_like_dotted_source_identifier`
-/// in `source.rs` previously each pasted their own near-identical copy (DEDUP).
-pub(super) const CREDENTIAL_KEYWORD_NEEDLES: &[&[u8]] = &[
-    b"token",
-    b"secret",
-    b"key",
-    b"password",
-    b"passwd",
-    b"auth",
-    b"credential",
-];
+// Canonical credential-keyword needles (lowercased, for `ci_find`). Loaded
+// from `rules/credential-keywords.toml` (shape_needles). ONE owner for the
+// shape gates that scan a candidate for an embedded credential word;
+// `looks_like_ts_non_null_identifier` here and `looks_like_dotted_source_identifier`
+// in `source.rs` previously each pasted their own near-identical copy (DEDUP).
+static CREDENTIAL_KEYWORD_NEEDLES: std::sync::LazyLock<Vec<Vec<u8>>> = std::sync::LazyLock::new(
+    || {
+        #[derive(serde::Deserialize)]
+        struct CredentialKeywords {
+            shape_needles: Vec<String>,
+        }
+        let raw = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/credential-keywords.toml"
+        ));
+        let parsed: CredentialKeywords = toml::from_str(raw).unwrap_or_else(|error| {
+            panic!(
+                "rules/credential-keywords.toml is invalid: {error}. \
+                 Fix the bundled Tier-B data file."
+            )
+        });
+        assert!(
+            !parsed.shape_needles.is_empty(),
+            "rules/credential-keywords.toml shape_needles is empty; refusing to run without the Tier-B list it owns."
+        );
+        parsed
+            .shape_needles
+            .into_iter()
+            .map(|s| s.into_bytes())
+            .collect()
+    },
+);
 
 fn looks_like_ts_non_null_identifier(bytes: &[u8]) -> bool {
     if !bytes.ends_with(b"!") || bytes.len() < 9 {
@@ -538,7 +557,7 @@ fn looks_like_ts_non_null_identifier(bytes: &[u8]) -> bool {
     }
     CREDENTIAL_KEYWORD_NEEDLES
         .iter()
-        .any(|needle| crate::ascii_ci::ci_find(body, needle))
+        .any(|needle| crate::ascii_ci::ci_find(body, needle.as_slice()))
 }
 
 /// Combined Tier-A + body-collision punctuation filter. Retained for the

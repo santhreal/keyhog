@@ -78,7 +78,7 @@ pub(crate) struct ConfigFile {
 /// Canonical `[scan]` table. Scan-policy keys have one on-disk owner here.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct ScanSection {
+pub struct ScanSection {
     pub severity: Option<String>,
     pub min_confidence: Option<f64>,
     pub ml_threshold: Option<f64>,
@@ -105,7 +105,7 @@ pub(super) struct ScanSection {
 /// `[allowlist]` nested table.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct AllowlistSection {
+pub struct AllowlistSection {
     pub file: Option<String>,
     pub require_reason: Option<bool>,
     pub require_approved_by: Option<bool>,
@@ -115,7 +115,7 @@ pub(super) struct AllowlistSection {
 /// `[detector.<id>]` per-detector override.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct DetectorSection {
+pub struct DetectorSection {
     pub enabled: Option<bool>,
     pub min_confidence: Option<f64>,
 }
@@ -130,7 +130,7 @@ pub(crate) struct LockdownSection {
 /// `[limits]` source byte/count ceilings.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct LimitsSection {
+pub struct LimitsSection {
     pub stdin_bytes: Option<String>,
     pub web_response_bytes: Option<String>,
     pub s3_object_bytes: Option<String>,
@@ -152,7 +152,7 @@ pub(super) struct LimitsSection {
 /// `[http]` explicit outbound HTTP policy.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct HttpSection {
+pub struct HttpSection {
     /// Proxy URL or `off`.
     pub proxy: Option<String>,
     /// Disable TLS certificate verification for outbound HTTP.
@@ -167,7 +167,7 @@ pub(super) struct HttpSection {
 /// `[system]` host integration settings.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct SystemSection {
+pub struct SystemSection {
     /// Absolute directories allowed by `keyhog_core::safe_bin` in addition to
     /// the compiled system defaults.
     pub trusted_bin_dirs: Option<Vec<PathBuf>>,
@@ -190,7 +190,7 @@ pub(super) struct SystemSection {
 /// `[aws]` offline AWS safety metadata.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct AwsSection {
+pub struct AwsSection {
     /// Extra 12-digit AWS account IDs treated as canary-token issuers.
     pub canary_accounts: Option<Vec<String>>,
     /// Extra 12-digit AWS account IDs treated as off-brand canary issuers.
@@ -200,7 +200,7 @@ pub(super) struct AwsSection {
 /// `[tuning]` scanner performance-route overrides.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct TuningSection {
+pub struct TuningSection {
     pub fallback_hs: Option<bool>,
     pub hs_prefilter_max_len: Option<usize>,
     pub hs_shard_target: Option<usize>,

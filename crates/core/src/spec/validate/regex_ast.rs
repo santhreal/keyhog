@@ -161,10 +161,11 @@ fn ast_literal_runs(ast: &ast::Ast) -> LiteralRunStats {
             }
             LiteralFrame::FinishAlternation(child_count) => {
                 let children = results.split_off(results.len() - child_count);
-                let max = match children.into_iter().map(|child| child.max).max() {
-                    Some(max) => max,
-                    None => 0,
-                };
+                let max = children
+                    .into_iter()
+                    .map(|child| child.max)
+                    .max()
+                    .unwrap_or_default();
                 results.push(LiteralRunStats {
                     max,
                     prefix: 0,

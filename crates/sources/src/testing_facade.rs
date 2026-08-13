@@ -374,6 +374,15 @@ pub mod testing {
             crate::filesystem::read_file_buffered_text_for_test(path, size_hint)
         }
 
+        pub fn read_stat_sized_to_cap(
+            &self,
+            bytes: &[u8],
+            expected_size: u64,
+            hard_cap: u64,
+        ) -> std::io::Result<Vec<u8>> {
+            crate::filesystem::read_stat_sized_to_cap_for_test(bytes, expected_size, hard_cap)
+        }
+
         pub fn read_file_prefix_safe(
             &self,
             path: &std::path::Path,
@@ -384,6 +393,13 @@ pub mod testing {
 
         pub fn open_file_safe(&self, path: &std::path::Path) -> std::io::Result<std::fs::File> {
             crate::filesystem::open_file_safe(path)
+        }
+
+        pub fn open_file_safe_with_metadata(
+            &self,
+            path: &std::path::Path,
+        ) -> std::io::Result<(std::fs::File, std::fs::Metadata)> {
+            crate::filesystem::open_file_safe_with_metadata(path)
         }
 
         pub fn duplicate_zip_central_entries_error(

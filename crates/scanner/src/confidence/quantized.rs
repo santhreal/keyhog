@@ -137,12 +137,14 @@ impl QuantizedScore {
     }
 }
 
+#[cfg(any(all(feature = "gpu", feature = "ml"), test))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct AcceleratedCandidateScore {
     pub(crate) candidate_id: u32,
     pub(crate) score: QuantizedScore,
 }
 
+#[cfg(any(all(feature = "gpu", feature = "ml"), test))]
 pub(crate) fn validate_accelerated_output(
     expected_candidates: usize,
     output: Result<Vec<AcceleratedCandidateScore>, QuantizedConfidenceError>,
@@ -285,6 +287,7 @@ impl QuantizedModel {
         self.payload_digest
     }
 
+    #[cfg(all(feature = "gpu", feature = "ml"))]
     pub(crate) fn parameters(&self) -> &[i16] {
         &self.params
     }
@@ -366,7 +369,16 @@ pub fn score_batch(
             candidates: rows.len(),
             maximum: MAX_CANDIDATES_PER_BATCH,
         })?;
-    scores.extend(rows.iter().map(|row| model.score(row)));
+    if rows.len() < crate::ml_scorer::ML_PARALLEL_BATCH_THRESHOLD {
+        scores.extend(rows.iter().map(|row| model.score(row)));
+    } else {
+        scores.resize(rows.len(), QuantizedScore(0));
+        use rayon::prelude::*;
+        scores
+            .par_iter_mut()
+            .zip(rows.par_iter())
+            .for_each(|(score, row)| *score = model.score(row));
+    }
     Ok(scores)
 }
 

@@ -779,8 +779,10 @@ impl CompiledScanner {
                     .map(|(chunk_index, chunk)| compute_single_trigger(chunk_index, chunk))
                     .collect::<Result<Vec<_>, String>>()?
             } else {
-                let work_lanes = super::batch_topology::coalesced_work_lanes(chunks, threshold);
+                let work_lanes =
+                    super::batch_topology::coalesced_work_lanes(chunks, threshold);
                 let lane_triggers: Vec<Vec<(usize, Option<Vec<u64>>)>> = work_lanes
+                    .lanes()
                     .par_iter()
                     .map(|lane| match lane {
                         super::batch_topology::CoalescedLane::Large(index) => {
@@ -793,7 +795,8 @@ impl CompiledScanner {
                                 Ok(vec![(*index, None)])
                             }
                         }
-                        super::batch_topology::CoalescedLane::Small(indices) => {
+                        super::batch_topology::CoalescedLane::Small(_) => {
+                            let indices = work_lanes.indices(lane);
                             let _profile_context =
                                 profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
                             if admission_plan.is_some() {

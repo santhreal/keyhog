@@ -128,7 +128,7 @@ fn inflight_capacity_check_uses_atomic_counter_not_dashmap_len() {
         .find("match inflight.entry(key.clone())")
         .expect("inflight entry match must exist");
     let reserve = src
-        .find("try_reserve_inflight_slot(&inflight_count, max_inflight_keys)")
+        .find("try_reserve_inflight_slot(inflight_count, max_inflight_keys)")
         .expect("atomic reserve call must exist");
     assert!(
         entry_match < reserve,

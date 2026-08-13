@@ -37,6 +37,48 @@ fn generated_feature_union_matches_integer_golden() {
     );
 }
 
+/// WHY: the serial/parallel crossover, configured worker count, and nested
+/// Rayon entry must not change fixed-point scores or input ordering.
+#[test]
+fn batch_threshold_boundaries_match_scalar_scores_in_configured_pools() {
+    let model = model().expect("embedded model");
+    let threshold = crate::ml_scorer::ML_PARALLEL_BATCH_THRESHOLD;
+    let row_count = threshold * 4;
+    let rows: Vec<_> = (0..row_count)
+        .map(|row_index| {
+            let mut features = [0i16; crate::ml_scorer::model_arch::INPUT_DIM];
+            for (feature_index, value) in features.iter_mut().enumerate() {
+                *value = ((row_index * 17 + feature_index * 31) % (SCALE as usize + 1)) as i16;
+            }
+            QuantizedFeatureRow(features)
+        })
+        .collect();
+    let expected: Vec<_> = rows.iter().map(|row| model.score(row)).collect();
+
+    for workers in [1, 2, 4] {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(workers)
+            .build()
+            .expect("isolated quantized scoring pool");
+        pool.install(|| {
+            for len in [threshold - 1, threshold, threshold + 1, row_count] {
+                assert_eq!(
+                    score_batch(&rows[..len]).expect("bounded batch"),
+                    expected[..len],
+                    "{len} rows on {workers} workers"
+                );
+            }
+
+            let (left, right) = rayon::join(
+                || score_batch(&rows).expect("left nested batch"),
+                || score_batch(&rows).expect("right nested batch"),
+            );
+            assert_eq!(left, expected, "left nested batch on {workers} workers");
+            assert_eq!(right, expected, "right nested batch on {workers} workers");
+        });
+    }
+}
+
 #[test]
 fn corrupt_stale_or_noncanonical_artifacts_fail_closed() {
     for offset in [0usize, 8, 10, 12, 20, 22, 24, 28, 60, MODEL_BYTES.len() - 1] {
