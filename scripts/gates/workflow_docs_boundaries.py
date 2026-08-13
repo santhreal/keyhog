@@ -42,6 +42,7 @@ REQUIRED_TEXT = {
         "bounded to 8 MiB and 1,024 chunks, independent of total input size",
         "--github-collaboration",
         "--azure-container-url",
+        "gpu-metal-region-presence",
     ),
     "summary": (
         "[Choose a scanning workflow](./capabilities.md)",
