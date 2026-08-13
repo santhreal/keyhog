@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Corrected operator-visible help text and docs for five flags whose descriptions diverged from the implementation: --ml-threshold (applies to all findings, not just ML), --fast (also disables ML scoring), --oob-timeout (upper bound is max(value, 120s), not the value alone), --dogfood (credentials are redacted with prefix and suffix, not prefix only), and exit-code 3 (autoroute-cache persist failure applies when no findings are reported, not when findings exist). Updated the workspace authors contract test to match the binding identity."
-crates = ["cli"]

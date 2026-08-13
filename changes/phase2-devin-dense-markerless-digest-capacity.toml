@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Cache entropy configuration digests and use capacity-aware vocabulary absence marks so hot-path hashing and capped finding heaps stay correct."
-crates = ["scanner"]

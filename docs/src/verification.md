@@ -260,7 +260,7 @@ one file.
 
 `--verify-oob` requires `--verify` and starts one interactsh collector session.
 Only detectors with a validated `[detector.verify.oob]` block use that session.
-The v0.5.70 shipped detector corpus contains no OOB-enabled detector, so the
+The v0.5.71 shipped detector corpus contains no OOB-enabled detector, so the
 flag has no effect on shipped findings. It is for reviewed custom corpora.
 
 If the collector handshake fails, KeyHog prints a stderr warning naming the

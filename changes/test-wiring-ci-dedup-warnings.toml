@@ -1,3 +1,0 @@
-category = "Changed"
-summary = "39 process-safe scanner test files are wired into the all_tests aggregator. Process-global decoder-registry and allocation targets plus the RSS-sensitive execution-pack mapping contract run in isolated CI processes. The recall_locks_wired.py gate is widened from checking only regression_*.rs to checking all top-level test files. CI workflow duplication is eliminated by extracting composite actions for workspace repair and Vectorscan install. All workspace compile warnings are fixed (zero warnings from cargo check --workspace)."
-crates = ["scanner", "cli", "sources"]

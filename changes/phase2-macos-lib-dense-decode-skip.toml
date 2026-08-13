@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Extract vocabulary absence helpers under the scanner source-size cap and add a companion-gate test override so suffix-gate cold-regex differentials stay measurable."
-crates = ["scanner"]

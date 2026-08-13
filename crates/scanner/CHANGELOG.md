@@ -1,7 +1,7 @@
 # Changelog
 
 
-## Unreleased
+## 0.5.71 - 2026-08-13
 
 - CPU phase-one admission now reuses the bounded trigger bitmap scratch and stores clean trigger evidence as an allocation-free empty row. Hit rows retain their exact bitmap.
 - Large authenticated quantized-confidence CPU batches now score in parallel through the configured Rayon pool with bit-exact ordered output; batches below the established 64-row crossover remain serial.
@@ -21,6 +21,27 @@
 - Runtime tuning snapshots now resolve through `ScannerTuningConfig::effective`
   and use its complete resolved type instead of maintaining a duplicate field
   list and default mapping.
+
+- Expose confirmed_companion_gate on [tuning] and resolved/autoroute config identity (default on), so operators can disable the mid-literal confirmed-pass skip the same way as confirmed_suffix_gate.
+- Restore pure structural base64url parsing in jwt_segments, reserve structural payload/header decoding for analyze, replace runtime panic macro paths in BPE token count cache initialization with a compile-time safe TOKEN_CACHE_CAPACITY constant, support legacy var declarations in bounded CryptoJS recovery, and use one containment relation for miss-clustering TP, FP, and FN accounting.
+- Cold one-shot and incremental scans now reuse a persisted MatcherArtifact of the eager compiled matcher graph across process invocations (format v4), with CacheId hit/miss/invalidation in profile output, fail-closed identity checks, soft-fail when cache prep fails, and --lockdown disabling the cache.
+- Companion-gate derived AC/literal tables use a bounded per-thread LRU keyed by detector digest + active pattern set, and parsed-arm memo is capacity-capped, so heterogeneous trigger mixes do not rebuild from a single-slot thrash or grow unbounded.
+- Restore reusable phase-1 absence proofs for small rejected repeated payloads (≤128 KiB), and size-gate markerless bounded-window decode skips so short trailing slices still decode.
+- 39 process-safe scanner test files are wired into the all_tests aggregator. Process-global decoder-registry and allocation targets plus the RSS-sensitive execution-pack mapping contract run in isolated CI processes. The recall_locks_wired.py gate is widened from checking only regression_*.rs to checking all top-level test files. CI workflow duplication is eliminated by extracting composite actions for workspace repair and Vectorscan install. All workspace compile warnings are fixed (zero warnings from cargo check --workspace).
+
+- Base64 decode memo retains successful UTF-8 text only after a second sighting of the same candidate, so unique-blob corpora no longer keep a second full-size copy of every decode for the whole chunk. Failures stay memoized immediately.
+- Companion-literal presence scratch resizes to the active literal count and fill(false)s every chunk (not only the non-grow branch), with a regression test that seeds stale true bits then grows the literal set.
+- Preserve scanner-materialization context on installed execution-pack compile failures, and remove the unused record_matcher_artifact_pack_hit helper that contradicted CLI profile attribution policy.
+- Autoroute CpuFallback selections now fill deferred CPU trigger hints on the route-neutral phase-1 plan so production automatic scans reuse them.
+- Make filesystem/windowed phase-1 representative reuse symmetric: both chunks must agree on windowed-ness, and windowed pairs also require the same path, so vocab-clean proofs cannot jump across paths or source classes.
+- Move companion presence-scratch growth regression out of src into tests/unit/root_facade and expose companions_deny_absent via the testing facade so KH-GAP-004 no-inline-tests stays green.
+- Cache entropy configuration digests and use capacity-aware vocabulary absence marks so hot-path hashing and capped finding heaps stay correct.
+- Drop unused chunk_is_markerless_single_line helper and replace em dashes in scanner comments/SPEC with ASCII punctuation so the zero-warnings / prose gates stay green.
+- Re-cache entropy_evidence_config_digest on CompiledScanner (widened vocab key) and invalidate on with_config / clear_fragment_cache so hot windowed lookups avoid rehash without ignoring the known in-place config mutation path.
+- Extract vocabulary absence helpers under the scanner source-size cap and add a companion-gate test override so suffix-gate cold-regex differentials stay measurable.
+- Remove a redundant always_active_absence_proven self-assignment that tripped clippy::redundant_locals under -D warnings.
+- Vocab-stage absence memo keys include mutable scan settings (unicode_normalization, min_confidence, match/decode caps, penalize_test_paths) so clean proofs cannot survive in-place config edits.
+- Windowed absence memos bind to exact ordered content, only engage for parent filesystem/windowed slices, reuse the batch entropy configuration digest, and drop new keys at capacity instead of clearing unrelated proofs.
 
 ## 0.5.70 - 2026-08-10
 

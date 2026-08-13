@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Windowed absence memos bind to exact ordered content, only engage for parent filesystem/windowed slices, reuse the batch entropy configuration digest, and drop new keys at capacity instead of clearing unrelated proofs."
-crates = ["scanner"]

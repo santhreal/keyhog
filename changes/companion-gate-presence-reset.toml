@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Companion-literal presence scratch resizes to the active literal count and fill(false)s every chunk (not only the non-grow branch), with a regression test that seeds stale true bits then grows the literal set."
-crates = ["scanner"]

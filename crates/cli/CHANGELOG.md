@@ -1,6 +1,7 @@
 # Changelog
 
-## Unreleased
+## 0.5.71 - 2026-08-13
+
 - Warm incremental scans now skip backend routing and scanner dispatch startup when source acquisition emits no changed chunks. Trusted clean-file Merkle hits remain complete coverage, while changed workloads retain the same bounded fused and coalesced batch paths.
 - Daemon responses now serialize directly into the bounded transport frame. This removes the second full response-body allocation and copy while preserving exact JSON bytes, length prefixes, rollback on serialization failure, and the 64 MiB ceiling.
 
@@ -13,6 +14,15 @@
 - Autoroute cache schema v57 distinguishes runtime-compiled GPU programs from installed GPU sidecars. Standalone release binaries can persist authenticated GPU calibration without weakening manifest binding for installed artifacts.
 - `keyhog backend --autoroute --json` now exposes the active GPU artifact binding and complete authenticated ordered-device route bodies.
 - Windows keeps the `keyhog guard` command visible but returns an explicit unsupported-platform error without compiling the Unix-only daemon client.
+
+- Expose confirmed_companion_gate on [tuning] and resolved/autoroute config identity (default on), so operators can disable the mid-literal confirmed-pass skip the same way as confirmed_suffix_gate.
+- Cold one-shot and incremental scans now reuse a persisted MatcherArtifact of the eager compiled matcher graph across process invocations (format v4), with CacheId hit/miss/invalidation in profile output, fail-closed identity checks, soft-fail when cache prep fails, and --lockdown disabling the cache.
+- 39 process-safe scanner test files are wired into the all_tests aggregator. Process-global decoder-registry and allocation targets plus the RSS-sensitive execution-pack mapping contract run in isolated CI processes. The recall_locks_wired.py gate is widened from checking only regression_*.rs to checking all top-level test files. CI workflow duplication is eliminated by extracting composite actions for workspace repair and Vectorscan install. All workspace compile warnings are fixed (zero warnings from cargo check --workspace).
+
+- Corrected operator-visible help text and docs for five flags whose descriptions diverged from the implementation: --ml-threshold (applies to all findings, not just ML), --fast (also disables ML scoring), --oob-timeout (upper bound is max(value, 120s), not the value alone), --dogfood (credentials are redacted with prefix and suffix, not prefix only), and exit-code 3 (autoroute-cache persist failure applies when no findings are reported, not when findings exist). Updated the workspace authors contract test to match the binding identity.
+- Preserve scanner-materialization context on installed execution-pack compile failures, and remove the unused record_matcher_artifact_pack_hit helper that contradicted CLI profile attribution policy.
+- Autoroute calibration times candidates on the route-neutral phase-1 plan (no CPU trigger prefill on the clock); production still fills hints after CpuFallback selection so backend comparison stays fair.
+- Autoroute CpuFallback selections now fill deferred CPU trigger hints on the route-neutral phase-1 plan so production automatic scans reuse them.
 
 ## 0.5.70 - 2026-08-10
 

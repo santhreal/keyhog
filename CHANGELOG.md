@@ -2,7 +2,8 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.71] - 2026-08-13
+
 - Scanner tests: coverage ratchet falls back to each detector's `test_positive` example (with `test_path`) when proptest cannot generate from the regex, closing the 818/922 gap to 922/922. 87 detectors use regex features (`\b`, `(?-i)`, `(?:^|[^A-Za-z])`) outside proptest's generatable subset; 17 are path-restricted or suppressed on generic paths. The ratchet now validates every regex detector's regex→compile→scan wiring.
 
 - Scanner: a connection-string finding whose password sub-field is a placeholder is suppressed. A detector for a credentialled URL captures the whole `scheme://user:password@host` span, so `postgresql://app:<password>@localhost/db` in a `.env.example` reached the report as a critical finding; the password is now read out of the URL and tested on its own for the wrapped template (`<password>`, `{{db_pass}}`, `${DB_PASSWORD}`), the unbraced shell reference (`$DB_PASSWORD`), the single-byte mask (`xxxxxxxx`), and the placeholder vocabulary. A real password in the same position still reports.
@@ -203,6 +204,34 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - **The phase-2 prefilter's per-worker regex scratch is bounded.** `Phase2AlwaysActivePrefilter` passed one 64 MiB constant to both `size_limit` and `dfa_size_limit` on all four of its `RegexSet` builders. The first is a per-process compile budget; the second is a lazy-DFA cache allocated per worker thread per batch, so the nominal per-worker ceiling scaled with the batch count. The compile budget stays at 64 MiB and the cache ceiling is now a separate 4 MiB. Cache size only decides how much of the automaton is memoized, never which patterns the set reports, so this is match-equivalent; measured neutral on peak resident memory and wall time on both corpora at one and thirty-two threads.
 
   **Peak memory still grows with worker count on a real scan, and no size knob reduces it.** The remaining per-worker term is the `regex` crate's lazy-DFA cache, allocated per compiled regex per thread and retained in that regex's pool for the life of the process, dominated by the anchored phase-2 verifiers. Lowering the per-regex ceiling does not help: measured at 1 MiB, 256 KiB and 64 KiB on two binaries at one, eight and thirty-two threads, peak resident memory moves under one percent while wall time degrades about fivefold, because the meta engine abandons the lazy DFA for slower engines that allocate comparable per-thread state. What governs the term is how many distinct patterns a worker activates, not the size of any one automaton, so reducing it is detection-routing work rather than a tuning constant.
+
+### Changed
+
+- Expose confirmed_companion_gate on [tuning] and resolved/autoroute config identity (default on), so operators can disable the mid-literal confirmed-pass skip the same way as confirmed_suffix_gate.
+- Restore pure structural base64url parsing in jwt_segments, reserve structural payload/header decoding for analyze, replace runtime panic macro paths in BPE token count cache initialization with a compile-time safe TOKEN_CACHE_CAPACITY constant, support legacy var declarations in bounded CryptoJS recovery, and use one containment relation for miss-clustering TP, FP, and FN accounting.
+- Cold one-shot and incremental scans now reuse a persisted MatcherArtifact of the eager compiled matcher graph across process invocations (format v4), with CacheId hit/miss/invalidation in profile output, fail-closed identity checks, soft-fail when cache prep fails, and --lockdown disabling the cache.
+- Companion-gate derived AC/literal tables use a bounded per-thread LRU keyed by detector digest + active pattern set, and parsed-arm memo is capacity-capped, so heterogeneous trigger mixes do not rebuild from a single-slot thrash or grow unbounded.
+- Restore reusable phase-1 absence proofs for small rejected repeated payloads (≤128 KiB), and size-gate markerless bounded-window decode skips so short trailing slices still decode.
+- 39 process-safe scanner test files are wired into the all_tests aggregator. Process-global decoder-registry and allocation targets plus the RSS-sensitive execution-pack mapping contract run in isolated CI processes. The recall_locks_wired.py gate is widened from checking only regression_*.rs to checking all top-level test files. CI workflow duplication is eliminated by extracting composite actions for workspace repair and Vectorscan install. All workspace compile warnings are fixed (zero warnings from cargo check --workspace).
+- fix(release): consume legacy unreleased notes.
+
+### Fixed
+
+- Base64 decode memo retains successful UTF-8 text only after a second sighting of the same candidate, so unique-blob corpora no longer keep a second full-size copy of every decode for the whole chunk. Failures stay memoized immediately.
+- Companion-literal presence scratch resizes to the active literal count and fill(false)s every chunk (not only the non-grow branch), with a regression test that seeds stale true bits then grows the literal set.
+- Corrected operator-visible help text and docs for five flags whose descriptions diverged from the implementation: --ml-threshold (applies to all findings, not just ML), --fast (also disables ML scoring), --oob-timeout (upper bound is max(value, 120s), not the value alone), --dogfood (credentials are redacted with prefix and suffix, not prefix only), and exit-code 3 (autoroute-cache persist failure applies when no findings are reported, not when findings exist). Updated the workspace authors contract test to match the binding identity.
+- Preserve scanner-materialization context on installed execution-pack compile failures, and remove the unused record_matcher_artifact_pack_hit helper that contradicted CLI profile attribution policy.
+- Autoroute calibration times candidates on the route-neutral phase-1 plan (no CPU trigger prefill on the clock); production still fills hints after CpuFallback selection so backend comparison stays fair.
+- Autoroute CpuFallback selections now fill deferred CPU trigger hints on the route-neutral phase-1 plan so production automatic scans reuse them.
+- Make filesystem/windowed phase-1 representative reuse symmetric: both chunks must agree on windowed-ness, and windowed pairs also require the same path, so vocab-clean proofs cannot jump across paths or source classes.
+- Move companion presence-scratch growth regression out of src into tests/unit/root_facade and expose companions_deny_absent via the testing facade so KH-GAP-004 no-inline-tests stays green.
+- Cache entropy configuration digests and use capacity-aware vocabulary absence marks so hot-path hashing and capped finding heaps stay correct.
+- Drop unused chunk_is_markerless_single_line helper and replace em dashes in scanner comments/SPEC with ASCII punctuation so the zero-warnings / prose gates stay green.
+- Re-cache entropy_evidence_config_digest on CompiledScanner (widened vocab key) and invalidate on with_config / clear_fragment_cache so hot windowed lookups avoid rehash without ignoring the known in-place config mutation path.
+- Extract vocabulary absence helpers under the scanner source-size cap and add a companion-gate test override so suffix-gate cold-regex differentials stay measurable.
+- Remove a redundant always_active_absence_proven self-assignment that tripped clippy::redundant_locals under -D warnings.
+- Vocab-stage absence memo keys include mutable scan settings (unicode_normalization, min_confidence, match/decode caps, penalize_test_paths) so clean proofs cannot survive in-place config edits.
+- Windowed absence memos bind to exact ordered content, only engage for parent filesystem/windowed slices, reuse the batch entropy configuration digest, and drop new keys at capacity instead of clearing unrelated proofs.
 
 ## [0.5.70] - 2026-08-10
 

@@ -1,3 +1,0 @@
-category = "Changed"
-summary = "Restore pure structural base64url parsing in jwt_segments, reserve structural payload/header decoding for analyze, replace runtime panic macro paths in BPE token count cache initialization with a compile-time safe TOKEN_CACHE_CAPACITY constant, support legacy var declarations in bounded CryptoJS recovery, and use one containment relation for miss-clustering TP, FP, and FN accounting."
-crates = ["scanner"]

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.71 - 2026-08-13
+
+- fix(release): consume legacy unreleased notes.
+
 ## 0.5.70 - 2026-08-10
 
 - fix(profile): fail-closed overlapping allocation session peaks.

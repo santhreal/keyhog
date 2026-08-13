@@ -2,6 +2,10 @@
 
 All notable changes to `keyhog-profile` are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.5.71 - 2026-08-13
+
+- fix(release): consume legacy unreleased notes.
+
 ## 0.5.70 - 2026-08-10
 
 - Fail-closed overlapping allocation sessions instead of misattributing process-global peaks

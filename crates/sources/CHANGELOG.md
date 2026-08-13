@@ -1,12 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.5.71 - 2026-08-13
 
 - Safe-open now returns the regular-file descriptor metadata it already validates. Filesystem mmap admission, binary, Ghidra, and Docker callers reuse that snapshot instead of issuing a redundant descriptor metadata query; a later windowed buffered fallback refreshes metadata before re-proving its hard cap.
 - Whole-file reads up to 16 MiB now reuse the exact-size buffered-read primitive before probing for growth, avoiding generic buffer-growth probes while preserving truncation safety and the one-byte-past-cap refusal.
 - Ordinary unbounded filesystem scans now classify archive symlinks during the configured metadata walk instead of traversing every directory once for archive-symlink audit and again for file admission. Byte-budgeted scans retain their path-sorted audit, and long-path fallback retains descriptor-relative symlink classification.
 - The default filesystem reader is now one direct producer, so ordinary scans no longer retain a multi-reader crew or intermediate ordered-reassembly thread. Explicit reader counts above one retain deterministic ordered reassembly.
 - Git blob scans now index HEAD paths by object ID and borrow decoded raw paths for exact live-versus-historical classification, avoiding one path allocation per membership probe.
+
+- 39 process-safe scanner test files are wired into the all_tests aggregator. Process-global decoder-registry and allocation targets plus the RSS-sensitive execution-pack mapping contract run in isolated CI processes. The recall_locks_wired.py gate is widened from checking only regression_*.rs to checking all top-level test files. CI workflow duplication is eliminated by extracting composite actions for workspace repair and Vectorscan install. All workspace compile warnings are fixed (zero warnings from cargo check --workspace).
 
 ## 0.5.70 - 2026-08-10
 
