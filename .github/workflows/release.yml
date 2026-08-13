@@ -2,9 +2,13 @@ name: Automatic crates.io release
 
 # Two-phase release:
 # 1) workflow_run after green CI on main → bump versions, commit, tag, push.
-# 2) push of that v* tag (or workflow_dispatch of an existing tag) → OIDC
-#    crates.io publish. Trusted Publishing rejects `workflow_run` JWTs, so the
-#    publish job MUST run under `push` / `workflow_dispatch` only.
+# 2) the v* tag → OIDC crates.io publish plus the GitHub Release for that tag.
+#
+# A tag pushed with GITHUB_TOKEN never raises a `push` event, so phase 1 ends by
+# dispatching phase 2 for the tag it just created. `workflow_dispatch` and
+# `repository_dispatch` are the only GITHUB_TOKEN events that start a run, and
+# crates.io Trusted Publishing rejects `workflow_run` JWTs, so the publish job
+# MUST run under `push` / `workflow_dispatch` only.
 
 on:
   workflow_run:
@@ -39,6 +43,7 @@ jobs:
     timeout-minutes: 45
     env:
       CI_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Check out main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -69,9 +74,12 @@ jobs:
             git commit -m "release: v${version}"
             git tag "v${version}"
             git push --atomic origin HEAD:main "refs/tags/v${version}"
+            gh workflow run release.yml --ref main --field "tag=v${version}"
           elif [[ "$(git rev-parse HEAD^)" == "$CI_HEAD_SHA" && "$(git show -s --format=%s HEAD)" =~ ^release:\ v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release commit already exists for ${CI_HEAD_SHA}; tag push publishes."
-            exit 0
+            version="$(git show -s --format=%s HEAD)"
+            version="${version#release: v}"
+            echo "Release commit already exists for ${CI_HEAD_SHA}; publishing v${version}."
+            gh workflow run release.yml --ref main --field "tag=v${version}"
           else
             echo "A newer main push superseded ${CI_HEAD_SHA}; its successful CI run will release it."
             exit 0
@@ -108,13 +116,13 @@ jobs:
           ref: ${{ steps.tag.outputs.tag }}
           fetch-depth: 0
 
-      - name: Overlay current publish script from default branch
+      - name: Overlay current release automation from default branch
         shell: bash
         run: |
           set -euo pipefail
           default_branch="${{ github.event.repository.default_branch }}"
           git fetch --depth=1 origin "$default_branch"
-          git checkout "origin/${default_branch}" -- scripts/publish.sh
+          git checkout "origin/${default_branch}" -- scripts/publish.sh scripts/release_notes.py
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -145,3 +153,28 @@ jobs:
           path: release-integrity.json
           if-no-files-found: error
           retention-days: 90
+
+      - name: Publish the GitHub release for the tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          python3 -B scripts/release_notes.py \
+            --tag "$RELEASE_TAG" \
+            --changelog CHANGELOG.md \
+            --output "$RUNNER_TEMP/release-notes.md"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
+              --notes-file "$RUNNER_TEMP/release-notes.md" \
+              --draft=false \
+              --latest
+          else
+            gh release create "$RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
+              --notes-file "$RUNNER_TEMP/release-notes.md" \
+              --verify-tag \
+              --latest
+          fi

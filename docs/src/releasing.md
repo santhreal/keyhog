@@ -9,12 +9,16 @@ Push your change to `main`. The `CI` workflow must finish successfully. The auto
 1. increments the workspace patch version;
 2. generates the root and crate changelogs;
 3. updates `Cargo.toml`, `Cargo.lock`, all changelogs, and operator-facing version pins;
-4. commits the generated files and creates a lightweight version tag; and
-5. publishes all six crates to crates.io in dependency order.
+4. commits the generated files and creates a lightweight version tag;
+5. dispatches the publish job for that tag;
+6. publishes all six crates to crates.io in dependency order; and
+7. creates the GitHub Release for that tag from its changelog section.
 
 For example, a successful push at `1.2.3` produces `1.2.4`.
 
-The workflow does not run for pull requests, failed CI runs, cancelled CI runs, tags, or manual dispatches. It does not build GitHub release assets. It does not create signatures, attestations, SBOMs, or a GitHub Release.
+Step 5 exists because a tag pushed with the workflow token raises no `push` event. `workflow_dispatch` is one of the two events the workflow token can start, so the bump job dispatches the publish itself. A tag you push by hand publishes through the `push` trigger instead.
+
+The workflow does not run for pull requests, failed CI runs, or cancelled CI runs. It does not build release assets, signatures, attestations, or SBOMs. The GitHub Release carries changelog notes only.
 
 ## Write a changelog fragment
 
@@ -45,12 +49,12 @@ Valid crate names are `cli`, `core`, `profile`, `scanner`, `sources`, and `verif
 
 ## Configure crates.io trusted publishing
 
-Configure each published package on crates.io with a trusted publisher for this
-repository's `release.yml` workflow under a **`push` (tag) or `workflow_dispatch`**
-trigger — crates.io rejects `workflow_run` JWTs. The workflow requests
-`id-token: write` and uses `rust-lang/crates-io-auth-action` first. While those
-publisher configs are missing, publish falls back to the `CARGO_REGISTRY_TOKEN`
-repository secret.
+Each published package is configured on crates.io with a trusted publisher for
+this repository's `release.yml` workflow, with no environment. crates.io rejects
+`workflow_run` JWTs, so publishing runs under the `push` (tag) or
+`workflow_dispatch` trigger. The workflow requests `id-token: write` and uses
+`rust-lang/crates-io-auth-action` first; it falls back to the
+`CARGO_REGISTRY_TOKEN` repository secret only if that exchange fails.
 
 The trusted publisher must be authorized for all six packages, in publication
 order:

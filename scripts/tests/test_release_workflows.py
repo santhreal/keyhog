@@ -26,6 +26,16 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
         # the v* tag push (and workflow_dispatch for already-pushed tags).
         self.assertIn('tags: ["v*"]', RELEASE)
         self.assertIn("workflow_dispatch:", RELEASE)
+        # A tag pushed with GITHUB_TOKEN raises no push event, so the bump job
+        # must dispatch the publish for the tag it just created. Both bump
+        # branches that own an existing release tag dispatch it.
+        self.assertEqual(
+            RELEASE.count('gh workflow run release.yml --ref main --field "tag=v${version}"'),
+            2,
+        )
+        dispatch = RELEASE.index("gh workflow run release.yml")
+        self.assertLess(RELEASE.index("git push --atomic origin HEAD:main"), dispatch)
+        self.assertIn("GH_TOKEN: ${{ github.token }}", RELEASE)
         bump_idx = RELEASE.index("Bump, changelog, and tag")
         publish_idx = RELEASE.index("name: Publish crates.io packages")
         auth_idx = RELEASE.index("rust-lang/crates-io-auth-action@")
@@ -41,6 +51,23 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
         self.assertLess(prepare, commit)
         self.assertLess(commit, publish)
         self.assertEqual(RELEASE.count("bash scripts/publish.sh"), 1)
+
+    def test_every_release_tag_gets_its_changelog_backed_github_release(self) -> None:
+        """Publishing a tag must also publish that tag's GitHub release entry."""
+        notes = RELEASE.index("python3 -B scripts/release_notes.py")
+        create = RELEASE.index("gh release create")
+        self.assertLess(RELEASE.index("bash scripts/publish.sh"), notes)
+        self.assertLess(notes, create)
+        self.assertIn("--changelog CHANGELOG.md", RELEASE)
+        self.assertIn("gh release edit", RELEASE)
+        self.assertIn("--verify-tag", RELEASE)
+        self.assertEqual(RELEASE.count("--latest"), 2)
+        # Old tags predate the notes renderer, so publish overlays it like the
+        # publisher script instead of trusting the tagged tree to carry it.
+        self.assertIn(
+            'git checkout "origin/${default_branch}" -- scripts/publish.sh scripts/release_notes.py',
+            RELEASE,
+        )
 
     def test_generated_release_commit_cannot_start_another_release(self) -> None:
         """The bot's version commit must terminate the push-driven release loop."""

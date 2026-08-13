@@ -27,9 +27,13 @@ After CI succeeds, `.github/workflows/release.yml` performs this transaction:
 5. Update `Cargo.toml`, `Cargo.lock`, all changelogs, and operator-facing version pins.
 6. Commit the generated files as `release: vX.Y.Z` and create a lightweight `vX.Y.Z` tag.
 7. Push the commit and tag with the workflow token.
-8. Run `scripts/publish.sh`, which publishes the six crates in dependency order.
+8. Dispatch the publish job for `vX.Y.Z`. A tag pushed with the workflow token raises no `push` event, so the tag alone starts nothing.
+9. Run `scripts/publish.sh`, which publishes the six crates in dependency order.
+10. Create the `vX.Y.Z` GitHub Release from that version's `CHANGELOG.md` section and mark it latest.
 
-The workflow does not create signed tags, signatures, attestations, SBOMs, release assets, or a GitHub Release.
+A tag you push yourself also publishes: the `push` event on `v*` runs the same publish job.
+
+The workflow does not create signed tags, signatures, attestations, SBOMs, or release assets. The GitHub Release carries notes only.
 
 ## Add an optional change fragment
 
@@ -45,7 +49,7 @@ Save it as `changes/<short-name>.toml`. Valid categories are `Added`, `Changed`,
 
 ## Recover a failed publication
 
-Rerun the failed `Automatic crates.io release` workflow. If the generated release commit already exists, the workflow reuses its version and resumes `scripts/publish.sh`. The publisher skips package versions already visible on crates.io.
+Rerun the failed `Automatic crates.io release` workflow, or dispatch it with the release tag. If the generated release commit already exists, the workflow reuses its version and resumes `scripts/publish.sh`. The publisher skips package versions already visible on crates.io, and the release step edits an existing `vX.Y.Z` release instead of creating a second one.
 
 A newer successful `main` push supersedes an older CI result. The newer result creates the next release.
 
