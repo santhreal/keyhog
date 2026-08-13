@@ -759,7 +759,6 @@ keyhog daemon start --mass
 # Terminal 2, after the daemon prints its ready line
 keyhog scan --daemon=mass /srv/inventory/team-a \
   --format json-envelope --output team-a.json
-keyhog daemon status
 keyhog daemon stop
 ```
 

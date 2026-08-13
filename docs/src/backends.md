@@ -5,6 +5,9 @@ Changing a backend may change performance, startup cost, and hardware use; it
 must not change findings, locations, confidence, suppression, verification, or
 output ordering.
 
+For the repository map, dependency direction, and bytes-to-finding pipeline,
+see [Architecture](./architecture.md).
+
 ## The backend choices
 
 | Backend | What it does | Typical cost profile |
