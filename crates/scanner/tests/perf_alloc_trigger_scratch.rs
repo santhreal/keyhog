@@ -9,6 +9,7 @@ use keyhog_scanner::{hw_probe::ScanBackend, CompiledScanner};
 struct CountingAlloc;
 static COUNTING: AtomicBool = AtomicBool::new(false);
 static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
+static PROBE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 unsafe impl GlobalAlloc for CountingAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
@@ -70,6 +71,37 @@ fn clean_chunks() -> Vec<Chunk> {
         .collect()
 }
 
+fn trigger_chunks() -> Vec<Chunk> {
+    vec![
+        Chunk {
+            data: "TRIGGER_000_A1B2C3D4E5F6G7H8".into(),
+            metadata: ChunkMetadata::default(),
+        },
+        Chunk {
+            data: "plain admitted text without a detector prefix".into(),
+            metadata: ChunkMetadata::default(),
+        },
+    ]
+}
+
+fn finding_keys(findings: &[Vec<keyhog_core::RawMatch>]) -> Vec<(usize, String, usize)> {
+    let mut keys = findings
+        .iter()
+        .enumerate()
+        .flat_map(|(chunk_index, matches)| {
+            matches.iter().map(move |finding| {
+                (
+                    chunk_index,
+                    finding.detector_id.to_string(),
+                    finding.location.offset,
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    keys.sort_unstable();
+    keys
+}
+
 fn plan_allocations(scanner: &CompiledScanner, chunks: &[Chunk], backend: ScanBackend) -> usize {
     ALLOCATIONS.store(0, Ordering::Relaxed);
     COUNTING.store(true, Ordering::Relaxed);
@@ -96,6 +128,7 @@ fn plan_allocations(scanner: &CompiledScanner, chunks: &[Chunk], backend: ScanBa
 /// hit rows intentionally retain their exact bitmap for downstream extraction.
 #[test]
 fn clean_cpu_trigger_rows_add_no_per_chunk_allocations() {
+    let _guard = PROBE_LOCK.lock().expect("allocation probe lock");
     let scanner = scanner();
     let chunks = clean_chunks();
 
@@ -109,5 +142,46 @@ fn clean_cpu_trigger_rows_add_no_per_chunk_allocations() {
     assert!(
         with_cpu_hints <= without_cpu_hints + 1,
         "clean CPU hints allocated per row: cpu={with_cpu_hints}, non_cpu={without_cpu_hints}"
+    );
+}
+
+/// WHY: worker-local scratch must be cleared before every payload. A hit
+/// followed by a clean row catches stale bits, while scanning with and without
+/// the compact admission plan pins finding parity. The allocation test above
+/// separately owns the no-hit allocation bound.
+#[test]
+fn trigger_scratch_clears_between_rows_and_preserves_findings() {
+    let _guard = PROBE_LOCK.lock().expect("allocation probe lock");
+    let scanner = scanner();
+    let chunks = trigger_chunks();
+    let plan = scanner.phase1_admission_plan_for_backend(&chunks, ScanBackend::CpuFallback);
+
+    let hit_hints = plan
+        .cpu_trigger_hints_for_diagnostics(0)
+        .expect("triggered row must retain exact CPU evidence");
+    assert!(
+        hit_hints.iter().any(|&word| word != 0),
+        "hit row unexpectedly lost its trigger bit"
+    );
+    assert_eq!(
+        plan.cpu_trigger_hints_for_diagnostics(1),
+        Some([].as_slice()),
+        "clean row retained a stale trigger from the prior payload"
+    );
+
+    let planned = scanner
+        .scan_coalesced_with_backend_and_admission(
+            &chunks,
+            ScanBackend::CpuFallback,
+            Some(&plan),
+        )
+        .expect("planned CPU scan succeeds");
+    let recomputed = scanner
+        .scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback)
+        .expect("unplanned CPU scan succeeds");
+    assert_eq!(finding_keys(&planned), finding_keys(&recomputed));
+    assert_eq!(
+        finding_keys(&planned),
+        vec![(0, "trigger-scratch-fixture".to_string(), 0)]
     );
 }

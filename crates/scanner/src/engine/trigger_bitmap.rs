@@ -13,12 +13,16 @@
 //! to the same code the open-coded loops did, this is a deduplication, not an
 //! abstraction that costs cycles.
 
+use std::cell::RefCell;
+
+thread_local! {
+    static SCRATCH: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
+}
+
 /// Number of `u64` words a trigger bitmap needs for `n_patterns` bits.
 ///
-/// THE single source of the `div_ceil(64)` sizing the module doc promises lives
-/// "in exactly one place": both `new_trigger_bitmap` (fresh alloc) and the
-/// pooled scratch path (`scan_coalesced`) derive their length from here, so a
-/// future word-width change updates one expression, not several.
+/// Both fresh allocation and worker-local scratch derive their length here, so
+/// a future word-width change updates one expression.
 #[inline(always)]
 pub(crate) fn words_for(n_patterns: usize) -> usize {
     n_patterns.div_ceil(64)
@@ -28,6 +32,32 @@ pub(crate) fn words_for(n_patterns: usize) -> usize {
 #[inline]
 pub(crate) fn new_trigger_bitmap(n_patterns: usize) -> Vec<u64> {
     vec![0u64; words_for(n_patterns)]
+}
+
+/// Invoke `f` with a cleared worker-local bitmap sized for `n_patterns`.
+///
+/// The slice cannot escape the closure. Oversized detector sets are usable for
+/// the current scan but are not retained by the worker.
+#[inline]
+pub(crate) fn with_scratch<R>(n_patterns: usize, f: impl FnOnce(&mut [u64]) -> R) -> R {
+    SCRATCH.with(|cell| {
+        let mut words = cell.borrow_mut();
+        let words_needed = words_for(n_patterns);
+        if words.len() < words_needed {
+            words.resize(words_needed, 0);
+        }
+        let result = {
+            let scratch = &mut words[..words_needed];
+            scratch.fill(0);
+            f(scratch)
+        };
+        if words.capacity().saturating_mul(std::mem::size_of::<u64>())
+            > super::MAX_RETAINED_WORKER_SCRATCH_BYTES
+        {
+            *words = Vec::new();
+        }
+        result
+    })
 }
 
 /// Invoke `f` with the pattern index of every set bit, ascending.

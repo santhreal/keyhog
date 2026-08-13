@@ -1,6 +1,4 @@
-//! SIMD trigger caching for scan coalescing.
-
-use std::cell::RefCell;
+//! Reusable SIMD trigger evidence for scan coalescing.
 
 #[cfg(feature = "simd")]
 use std::sync::Arc;
@@ -128,31 +126,6 @@ impl ReusableSimdTriggerCache {
     pub(crate) fn hits(&self) -> u64 {
         self.hits
     }
-}
-
-thread_local! {
-    static TRIGGER_POOL: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
-}
-
-#[inline]
-pub(crate) fn with_trigger_buffer<R>(words_needed: usize, f: impl FnOnce(&mut [u64]) -> R) -> R {
-    TRIGGER_POOL.with(|cell| {
-        let mut words = cell.borrow_mut();
-        if words.len() < words_needed {
-            words.resize(words_needed, 0);
-        }
-        let result = {
-            let scratch = &mut words[..words_needed];
-            scratch.fill(0);
-            f(scratch)
-        };
-        if words.capacity().saturating_mul(std::mem::size_of::<u64>())
-            > super::MAX_RETAINED_WORKER_SCRATCH_BYTES
-        {
-            *words = Vec::new();
-        }
-        result
-    })
 }
 
 #[cfg(feature = "simd")]

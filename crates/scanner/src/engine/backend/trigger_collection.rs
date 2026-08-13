@@ -118,8 +118,7 @@ impl CompiledScanner {
     /// Admission plans treat an empty row as exact no-trigger evidence. Hit rows
     /// retain the full bitmap because downstream extraction consumes its indices.
     pub(crate) fn collect_triggered_patterns_cpu_compact(&self, text: &str) -> Vec<u64> {
-        let words = super::trigger_bitmap::words_for(self.ac_map.len());
-        super::scan_coalesced::with_trigger_buffer(words, |scratch| {
+        super::trigger_bitmap::with_scratch(self.ac_map.len(), |scratch| {
             self.mark_triggered_patterns_cpu_bytes(scratch, text.as_bytes());
             scratch
                 .iter()

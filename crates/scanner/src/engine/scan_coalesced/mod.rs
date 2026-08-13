@@ -9,7 +9,6 @@ use super::*;
 
 pub(crate) mod trigger_cache;
 
-pub(crate) use trigger_cache::with_trigger_buffer;
 #[cfg(feature = "simd")]
 pub(crate) use trigger_cache::{mark_hs_trigger, ReusableSimdTriggerCache};
 
@@ -659,7 +658,7 @@ impl CompiledScanner {
             u64::try_from(data.len()).unwrap_or(u64::MAX),
             std::sync::atomic::Ordering::Relaxed,
         );
-        with_trigger_buffer(super::trigger_bitmap::words_for(ac_len), |scratch| {
+        super::trigger_bitmap::with_scratch(ac_len, |scratch| {
             let scanner = prefilter.scanner();
             scanner.scan_each_result(data, |hs_id| {
                 mark_hs_trigger(scratch, prefilter, ac_len, hs_id);
