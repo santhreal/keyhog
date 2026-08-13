@@ -177,11 +177,33 @@ class ReleaseTransformationTests(unittest.TestCase):
 
         self.assertEqual(updated, "# Changelog\n\nPolicy.\n\n" + section + source[source.index("## [0.5.48]"):])
 
-    def test_hand_maintained_unreleased_section_is_rejected(self) -> None:
-        """Generated fragments and handwritten drafts must never merge by accidental precedence."""
-        source = "# Changelog\n\n## [Unreleased]\n\n- Draft.\n\n## [0.5.48]\n"
-        with self.assertRaisesRegex(release.PrepareError, "hand-maintained"):
-            release.insert_release(source, "## [0.5.49]\n")
+    def test_leading_unreleased_section_is_consumed_without_losing_notes(self) -> None:
+        """A stale draft is promoted once instead of blocking or dropping release notes."""
+        source = (
+            "# Changelog\n\n## [Unreleased]\n\n- Draft.\n\n"
+            "## [0.5.48] - 2026-07-27\n\n- Old.\n"
+        )
+        section = "## [0.5.49] - 2026-07-28\n\n### Fixed\n\n- Generated.\n\n"
+
+        updated = release.insert_release(source, section)
+
+        self.assertEqual(updated.count("## [0.5.49]"), 1)
+        self.assertNotIn("Unreleased", updated)
+        self.assertLess(updated.index("- Draft."), updated.index("- Generated."))
+        self.assertLess(updated.index("- Generated."), updated.index("## [0.5.48]"))
+
+    def test_duplicate_or_misplaced_unreleased_sections_are_rejected(self) -> None:
+        """Ambiguous drafts must still fail before release files are written."""
+        section = "## [0.5.49] - 2026-07-28\n\n- Generated.\n\n"
+        invalid = (
+            "# Changelog\n\n## Unreleased\n\n- A.\n\n## Unreleased\n\n- B.\n\n## [0.5.48]\n",
+            "# Changelog\n\n## [0.5.48]\n\n- Old.\n\n## Unreleased\n\n- Late.\n",
+        )
+        for source in invalid:
+            with self.subTest(source=source), self.assertRaisesRegex(
+                release.PrepareError, "exactly once"
+            ):
+                release.insert_release(source, section)
 
     def test_automatic_summary_fills_missing_crate_coverage(self) -> None:
         """Synchronized publishing must give every otherwise-unchanged crate a release note."""

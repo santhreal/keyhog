@@ -179,13 +179,36 @@ def render_section(
 
 
 def insert_release(changelog: str, section: str) -> str:
-    """Insert a release after the changelog preamble and reject stale drafts."""
-    if re.search(r"^## \[?Unreleased\]?\s*$", changelog, re.MULTILINE):
-        raise PrepareError("changelog contains a hand-maintained Unreleased section")
+    """Insert a release and consume one leading legacy Unreleased section."""
+    unreleased = list(
+        re.finditer(r"^## \[?Unreleased\]?\s*$", changelog, re.MULTILINE)
+    )
     first_release = re.search(r"^## ", changelog, re.MULTILINE)
     if first_release is None:
         raise PrepareError("changelog has no existing release heading")
-    return changelog[: first_release.start()] + section + changelog[first_release.start() :]
+    if not unreleased:
+        return changelog[: first_release.start()] + section + changelog[first_release.start() :]
+    if len(unreleased) != 1 or unreleased[0].start() != first_release.start():
+        raise PrepareError(
+            "changelog Unreleased section must appear exactly once before release history"
+        )
+
+    following_release = re.search(
+        r"^## ", changelog[unreleased[0].end() :], re.MULTILINE
+    )
+    if following_release is None:
+        raise PrepareError("changelog Unreleased section has no release history after it")
+    following_start = unreleased[0].end() + following_release.start()
+    legacy_body = changelog[unreleased[0].end() : following_start].strip()
+    if not legacy_body:
+        raise PrepareError("changelog Unreleased section is empty")
+    section_heading, generated_body = section.split("\n", 1)
+    merged = f"{section_heading}\n\n{legacy_body}\n\n{generated_body.lstrip()}"
+    return (
+        changelog[: unreleased[0].start()]
+        + merged
+        + changelog[following_start:]
+    )
 
 
 def bump_manifest(text: str, current: str, next_version: str) -> str:
