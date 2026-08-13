@@ -86,9 +86,9 @@ use model_arch::{EXPERT_COUNT, EXPERT_FC1_OUT, EXPERT_FC2_OUT};
 
 /// Batch-size crossover for ML scoring. Below this, one fused serial loop
 /// avoids Rayon split/join overhead. At or above it, feature extraction and
-/// scoring use the configured CPU worker pool.
-#[cfg(feature = "ml")]
-const ML_PARALLEL_BATCH_THRESHOLD: usize = 64;
+/// scoring use the configured CPU worker pool. This remains available without
+/// the `ml` feature because the always-built quantized scorer shares the bound.
+pub(crate) const ML_PARALLEL_BATCH_THRESHOLD: usize = 64;
 
 /// Bounded per-thread score-cache capacity: the map is cleared wholesale once it
 /// reaches this many entries (see `util_hash::memoize_by_hash`). 256 covers the
