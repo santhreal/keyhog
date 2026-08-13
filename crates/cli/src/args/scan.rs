@@ -858,9 +858,13 @@ pub struct ScanArgs {
     #[arg(long)]
     pub no_keyword_low_entropy: bool,
 
-    /// Raise the resolved global confidence floor (0.0 to 1.0). A detector's
-    /// explicit `min_confidence` remains that detector's effective floor.
-    /// Absence leaves the canonical floor untouched.
+    /// Raise the global confidence floor (0.0 to 1.0). Takes effect as
+    /// `max(min_confidence, ml_threshold)`, so it tightens but never loosens
+    /// the floor set by `--min-confidence`. Despite the name, this raises the
+    /// floor for ALL findings, not only ML-scored ones, and still applies when
+    /// `--no-ml` disables ML scoring. A detector's explicit `min_confidence`
+    /// in its TOML remains that detector's effective floor. Absence leaves the
+    /// canonical floor untouched.
     #[arg(
         long,
         value_name = "THRESHOLD",

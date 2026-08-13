@@ -114,7 +114,7 @@ or coverage incomplete.
 | `--max-file-size` | `SIZE` |  | Maximum file size to scan. Files larger than this are listed in the end-of-scan "files skipped: exceeded --max-file-size" summary. Default is 100 MiB, the `FilesystemSource` ceiling. Files above the 1 MiB window size are read in overlapping ~1 MiB windows (so memory stays bounded regardless of file size), up to this cap |
 | `--min-confidence` | `FLOAT` |  | Minimum confidence score (0.0 - 1.0) to report findings (default: 0.40) |
 | `--min-secret-len` | `N` |  | Minimum credential length for entropy-discovery candidates (default: 16). Named detectors keep their own shape-specific length gates |
-| `--ml-threshold` | `THRESHOLD` |  | Raise the resolved global confidence floor (0.0 to 1.0). A detector's explicit `min_confidence` remains that detector's effective floor. Absence leaves the canonical floor untouched |
+| `--ml-threshold` | `THRESHOLD` |  | Raise the global confidence floor (0.0 to 1.0). Takes effect as `max(min_confidence, ml_threshold)`, so it tightens but never loosens the floor set by `--min-confidence`. Despite the name, this raises the floor for ALL findings, not only ML-scored ones, and still applies when `--no-ml` disables ML scoring. A detector's explicit `min_confidence` in its TOML remains that detector's effective floor. Absence leaves the canonical floor untouched |
 | `--ml-weight` | `WEIGHT` |  | Override every detector's ML scoring weight for diagnostics/benchmarks |
 | `--no-autoroute-gpu` |  |  | Keep GPU candidates out of autoroute calibration even when TOML enables them |
 | `--no-batch-pipeline` |  |  | Keep the fused filesystem pipeline even when `[system].batch_pipeline` is true |
@@ -299,7 +299,7 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--max-file-size` | `SIZE` |  | Maximum file size to scan. Files larger than this are listed in the end-of-scan "files skipped: exceeded --max-file-size" summary. Default is 100 MiB, the `FilesystemSource` ceiling. Files above the 1 MiB window size are read in overlapping ~1 MiB windows (so memory stays bounded regardless of file size), up to this cap |
 | `--min-confidence` | `FLOAT` |  | Minimum confidence score (0.0 - 1.0) to report findings (default: 0.40) |
 | `--min-secret-len` | `N` |  | Minimum credential length for entropy-discovery candidates (default: 16). Named detectors keep their own shape-specific length gates |
-| `--ml-threshold` | `THRESHOLD` |  | Raise the resolved global confidence floor (0.0 to 1.0). A detector's explicit `min_confidence` remains that detector's effective floor. Absence leaves the canonical floor untouched |
+| `--ml-threshold` | `THRESHOLD` |  | Raise the global confidence floor (0.0 to 1.0). Takes effect as `max(min_confidence, ml_threshold)`, so it tightens but never loosens the floor set by `--min-confidence`. Despite the name, this raises the floor for ALL findings, not only ML-scored ones, and still applies when `--no-ml` disables ML scoring. A detector's explicit `min_confidence` in its TOML remains that detector's effective floor. Absence leaves the canonical floor untouched |
 | `--ml-weight` | `WEIGHT` |  | Override every detector's ML scoring weight for diagnostics/benchmarks |
 | `--no-autoroute-gpu` |  |  | Keep GPU candidates out of autoroute calibration even when TOML enables them |
 | `--no-batch-pipeline` |  |  | Keep the fused filesystem pipeline even when `[system].batch_pipeline` is true |
