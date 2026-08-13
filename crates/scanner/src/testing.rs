@@ -913,16 +913,21 @@ pub fn chunk_lane_topology_for_test(
             metadata: keyhog_core::ChunkMetadata::default(),
         })
         .collect();
-    let (small_indices, lanes) = crate::engine::batch_topology::coalesced_work_lanes_for_workers(
-        &chunks, threshold, workers,
-    );
-    lanes
+    let topology =
+        crate::engine::batch_topology::coalesced_work_lanes_for_workers(
+            &chunks, threshold, workers,
+        );
+    topology
+        .lanes()
         .iter()
-        .map(|lane| match lane {
-            crate::engine::batch_topology::CoalescedLane::Small(range) => {
-                (false, small_indices[range.clone()].to_vec())
-            }
-            crate::engine::batch_topology::CoalescedLane::Large(index) => (true, vec![*index]),
+        .map(|lane| {
+            (
+                matches!(
+                    lane,
+                    crate::engine::batch_topology::CoalescedLane::Large(_)
+                ),
+                topology.indices(lane).to_vec(),
+            )
         })
         .collect()
 }
@@ -948,17 +953,10 @@ pub fn chunk_lane_storage_shape_for_chunks_for_test(
     threshold: usize,
     workers: usize,
 ) -> (usize, usize, usize) {
-    let (small_indices, lanes) =
-        crate::engine::batch_topology::coalesced_work_lanes_for_workers(chunks, threshold, workers);
-    let small_lanes = lanes
-        .iter()
-        .filter(|lane| matches!(lane, crate::engine::batch_topology::CoalescedLane::Small(_)))
-        .count();
-    (
-        small_lanes,
-        small_indices.len(),
-        usize::from(!small_indices.is_empty()),
+    crate::engine::batch_topology::coalesced_work_lanes_for_workers(
+        chunks, threshold, workers,
     )
+    .storage_shape()
 }
 
 /// Returns the effective runtime threshold stored by a compiled scanner.
