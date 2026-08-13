@@ -748,6 +748,19 @@ fn action_e2e_triggers_for_every_source_build_input() {
     }
 }
 
+/// Scheduled coverage must not cancel a definitive push run for the same ref.
+/// Runs from the same event still supersede stale copies.
+#[test]
+fn action_e2e_concurrency_separates_event_classes() {
+    let workflow = fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
+    assert!(
+        workflow.contains(
+            "group: action-e2e-${{ github.ref }}-${{ github.event_name }}\n  cancel-in-progress: true"
+        ),
+        "Action E2E concurrency must cancel only older runs from the same event class"
+    );
+}
+
 /// Regression: hosted E2E once exercised only the root Action with forced CPU
 /// defaults, leaving the nested mirror and published-crate policy path unexecuted.
 #[test]

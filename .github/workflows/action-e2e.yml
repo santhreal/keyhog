@@ -35,7 +35,7 @@ on:
         type: string
 
 concurrency:
-  group: action-e2e-${{ github.ref }}
+  group: action-e2e-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 env:
