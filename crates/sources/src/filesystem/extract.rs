@@ -1195,7 +1195,21 @@ pub(super) fn process_entry(
                 }
                 return;
             }
-            read::WindowedMmapOutcome::Fallback(mut file, meta) => {
+            read::WindowedMmapOutcome::Fallback(mut file) => {
+                let meta = match file.metadata() {
+                    Ok(meta) => meta,
+                    Err(error) => {
+                        tracing::warn!(
+                            path = %path.display(),
+                            %error,
+                            "cannot refresh large-file buffered fallback metadata; skipping"
+                        );
+                        let _event =
+                            crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                        emit(Err(SourceError::Io(error)));
+                        return;
+                    }
+                };
                 if meta.len() > read::MMAP_TOCTOU_SANITY_CAP_BYTES {
                     tracing::warn!(
                         path = %path.display(),
@@ -1204,14 +1218,12 @@ pub(super) fn process_entry(
                         "refusing large-file buffered fallback: live size exceeds mmap sanity cap"
                     );
                     let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-                    if !emit(Err(SourceError::Other(format!(
+                    emit(Err(SourceError::Other(format!(
                         "failed to scan filesystem file '{}': live size {} exceeded the {}-byte large-file fallback sanity cap; file was not scanned",
                         display_path(&path),
                         meta.len(),
                         read::MMAP_TOCTOU_SANITY_CAP_BYTES
-                    )))) {
-                        return;
-                    }
+                    ))));
                     return;
                 }
                 #[cfg(unix)]

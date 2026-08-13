@@ -170,7 +170,7 @@ where
         )
     }) {
         window::WindowedMmapOutcome::Consumed => ForEachWindowedMmapTestOutcome::Consumed,
-        window::WindowedMmapOutcome::Fallback(_, _) => ForEachWindowedMmapTestOutcome::Fallback,
+        window::WindowedMmapOutcome::Fallback(_) => ForEachWindowedMmapTestOutcome::Fallback,
     }
 }
 

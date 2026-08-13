@@ -13,10 +13,10 @@ fn unix_open_no_follow_in_read() {
     );
     assert!(
         src.contains("#[cfg(windows)]")
-            && src.contains("let meta = std::fs::symlink_metadata(path)?;")
-            && src.contains("refusing to follow symlink (Windows safety guard)")
-            && !src.contains("cannot classify path before Windows no-follow open")
-            && !src.contains("if let Ok(meta) = std::fs::symlink_metadata(path)"),
-        "Windows open_file_safe must fail closed while preserving symlink_metadata's original io::Error before the normal open"
+            && src.contains("FILE_FLAG_OPEN_REPARSE_POINT")
+            && src.contains("metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0")
+            && src.contains("refusing to follow symlink or junction (Windows safety guard)")
+            && !src.contains("std::fs::symlink_metadata(path)"),
+        "Windows open_file_safe must inspect the opened reparse-point handle so path swaps and junctions cannot bypass no-follow"
     );
 }

@@ -149,13 +149,32 @@ pub(super) fn parse_decompiled_output(
     let mut literals = GhidraChunkBuilder::new("binary:ghidra:strings", path);
     let mut line_literals = Vec::new();
 
-    for line in std::io::BufReader::new(file).lines() {
-        let line = line.map_err(SourceError::Io)?;
-        decompiled.push_text(&line);
+    let read_limit = request.decompiled_bytes_limit.saturating_add(1);
+    let mut reader = std::io::BufReader::new(file).take(read_limit);
+    let mut total_read = 0_u64;
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let read = reader.read_line(&mut line).map_err(SourceError::Io)?;
+        if read == 0 {
+            break;
+        }
+        total_read = total_read.saturating_add(read as u64);
+        if total_read > request.decompiled_bytes_limit {
+            return Ok(BinaryAnalysisOutcome::Degraded(
+                BinaryAnalysisDegradation::OutputTooLarge {
+                    actual_bytes: total_read,
+                    limit_bytes: request.decompiled_bytes_limit,
+                },
+            ));
+        }
+        let line = line.strip_suffix('\n').unwrap_or(&line);
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        decompiled.push_text(line);
         decompiled.push_text("\n");
 
         line_literals.clear();
-        super::super::literals::extract_string_literals(&line, &mut line_literals);
+        super::super::literals::extract_string_literals(line, &mut line_literals);
         for literal in &line_literals {
             literals.push_separated(literal);
         }

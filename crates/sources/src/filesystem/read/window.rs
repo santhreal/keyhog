@@ -90,7 +90,7 @@ fn window_fingerprint(bytes: &[u8]) -> [u8; 32] {
 
 pub(in crate::filesystem) enum WindowedMmapOutcome {
     Consumed,
-    Fallback(File, std::fs::Metadata),
+    Fallback(File),
 }
 
 /// Host page size, queried once. `MADV_DONTNEED` only acts on whole pages, so
@@ -362,7 +362,6 @@ fn for_each_sparse_window(
 #[cfg(target_os = "linux")]
 fn sparse_buffered_fallback(
     file: File,
-    metadata: std::fs::Metadata,
     path: &Path,
     error: std::io::Error,
     stage: &'static str,
@@ -387,7 +386,7 @@ fn sparse_buffered_fallback(
         )));
         WindowedMmapOutcome::Consumed
     } else {
-        WindowedMmapOutcome::Fallback(file, metadata)
+        WindowedMmapOutcome::Fallback(file)
     }
 }
 
@@ -426,7 +425,7 @@ pub(in crate::filesystem) fn read_file_windowed_mmap(
         }
     }) {
         WindowedMmapOutcome::Consumed => {}
-        WindowedMmapOutcome::Fallback(_, _) => return None,
+        WindowedMmapOutcome::Fallback(_) => return None,
     }
     if terminal_error {
         return Some(Vec::new());
@@ -499,7 +498,6 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
                     Err(error) => {
                         return sparse_buffered_fallback(
                             file,
-                            meta,
                             path,
                             error,
                             "extent discovery",
@@ -523,7 +521,6 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
                     Err((error, false)) => {
                         return sparse_buffered_fallback(
                             file,
-                            meta,
                             path,
                             error,
                             "first extent read",
@@ -551,7 +548,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
             }
 
             #[cfg(not(target_os = "linux"))]
-            return WindowedMmapOutcome::Fallback(file, meta);
+            return WindowedMmapOutcome::Fallback(file);
         }
     }
     // No re-flock: `open_file_safe` already holds the advisory LOCK_SH on this
@@ -575,7 +572,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
                 %error,
                 "cannot windowed-mmap file; falling back to buffered read"
             );
-            return WindowedMmapOutcome::Fallback(file, meta);
+            return WindowedMmapOutcome::Fallback(file);
         }
     };
     let mapped_len = match u64::try_from(mmap.len()) {
@@ -868,11 +865,8 @@ mod sparse_tests {
             Some(17)
         );
         let mut emitted_error = false;
-        let metadata = file.metadata().expect("fallback metadata");
-        let metadata_len = metadata.len();
         let outcome = sparse_buffered_fallback(
             file,
-            metadata,
             Path::new("sparse-fallback-test"),
             error,
             "extent discovery",
@@ -881,11 +875,10 @@ mod sparse_tests {
                 true
             },
         );
-        let WindowedMmapOutcome::Fallback(file, returned_metadata) = outcome else {
+        let WindowedMmapOutcome::Fallback(file) = outcome else {
             panic!("extent-query failure did not select buffered fallback");
         };
         assert!(!emitted_error);
-        assert_eq!(returned_metadata.len(), metadata_len);
         assert_eq!(
             seek_extent(&file, 0, libc::SEEK_CUR).expect("query rewound cursor"),
             Some(0)

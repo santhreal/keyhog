@@ -1,6 +1,6 @@
 # Safe-open metadata reuse
 
-Safe-open now returns the descriptor metadata captured while validating that an opened path is a regular file. Filesystem whole-file and windowed reads, compressed-input reads, binary analysis, Ghidra output parsing, and Docker capped reads reuse that snapshot instead of querying the descriptor again.
+Safe-open now returns the descriptor metadata captured while validating that an opened path is a regular file. Filesystem whole-file and windowed mmap admission, compressed-input reads, binary analysis, Ghidra output parsing, and Docker capped reads reuse that snapshot instead of querying the descriptor again. A windowed read that abandons mmap refreshes descriptor metadata before its later buffered fallback so a file cannot grow past the hard cap between those phases.
 
 ## Result
 
@@ -14,7 +14,7 @@ Safe-open now returns the descriptor metadata captured while validating that an 
 | Findings | 1 | 1 | exact ordered parity |
 | Coverage gaps | 0 | 0 | exact parity |
 
-The unchanged open and advisory-lock counts confirm that the optimization does not bypass the no-follow opener or torn-write lock. The safe-open validation still performs one descriptor metadata query per regular file and refuses non-regular inputs before reading.
+The unchanged open and advisory-lock counts confirm that the optimization does not bypass the no-follow opener or torn-write lock. Safe-open validation still performs one descriptor metadata query per regular file and refuses non-regular inputs before reading. The measured workload does not enter the exceptional windowed buffered-fallback path, whose later descriptor refresh remains required for its TOCTOU cap.
 
 ## Method
 

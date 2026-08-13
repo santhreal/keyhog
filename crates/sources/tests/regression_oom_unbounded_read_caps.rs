@@ -106,12 +106,13 @@ fn whole_file_read_is_capped_and_never_maps() {
     let extract = read_src("src/filesystem/extract.rs");
     assert!(
         extract.contains("refusing large-file buffered fallback: live size exceeds mmap sanity cap")
-            && extract.contains("WindowedMmapOutcome::Fallback(mut file, meta)")
-            && !extract.contains("match file.metadata()")
+            && extract.contains("WindowedMmapOutcome::Fallback(mut file)")
+            && extract.contains("let meta = match file.metadata()")
             && !extract.contains("match read::open_file_safe(&path)")
             && extract.contains("read::MMAP_TOCTOU_SANITY_CAP_BYTES")
-            && extract.contains("SourceSkipEvent::OverMaxSize"),
-        "large-file buffered fallback after windowed-mmap refusal must reuse the existing descriptor and its validated metadata while re-proving the hard mmap sanity cap"
+            && extract.contains("SourceSkipEvent::OverMaxSize")
+            && extract.contains("SourceSkipEvent::Unreadable"),
+        "large-file buffered fallback must keep the validated descriptor, refresh its metadata at fallback time, and fail closed when the hard sanity cap cannot be re-proved"
     );
 }
 
