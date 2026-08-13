@@ -127,7 +127,7 @@ fn ordinary_assignment_corpus_skips_decode_generation() {
             .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
             .expect("ordinary assignment scans succeed");
         assert!(
-            findings.is_empty(),
+            findings.iter().all(Vec::is_empty),
             "ordinary assignment text produced findings: {findings:?}"
         );
     });
