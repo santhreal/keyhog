@@ -87,13 +87,13 @@ pub(in crate::filesystem) fn read_file_buffered(
 /// symlink). A content scanner must never read from a special file; failing
 /// closed here is surfaced loudly by the caller as a skip error, never silently.
 ///
-/// Windows has no `O_NOFOLLOW`/`O_NONBLOCK` on `OpenOptions`, so it classifies
-/// the path with `symlink_metadata` before open (small TOCTOU window, acceptable
-/// for a defensive scanner) and the post-open regular-file check below still
-/// applies. The shipped Windows contract is explicit refusal of symlink paths,
-/// refusal of non-regular files, and fail-closed refusal when the file type
-/// cannot be classified before the standard-library open.
-pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
+/// Windows opens the path itself with `FILE_FLAG_OPEN_REPARSE_POINT`, then
+/// classifies the opened handle below. This refuses symlinks and junctions
+/// without a path-classification race. The shipped Windows contract is
+/// explicit refusal of reparse-point paths and non-regular files.
+pub(crate) fn open_file_safe_with_metadata(
+    path: &Path,
+) -> std::io::Result<(File, std::fs::Metadata)> {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -104,24 +104,13 @@ pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
         // is never a followed symlink.
         options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
-    // Windows has no equivalent of O_NOFOLLOW on `OpenOptions`. Without an
-    // explicit symlink check, a scan could be tricked into following a
-    // junction/symlink out of the scan root and reading a sensitive file
-    // (e.g. `C:\Users\victim\.aws\credentials`). There is a small TOCTOU
-    // window between `symlink_metadata` and `open` - for our defensive-
-    // secret-scanning threat model that's an acceptable trade-off; the
-    // attacker would need to win a race they don't even see initiated.
-    // Keep this contract local and explicit: refuse a symlink path before
-    // opening it through the cross-platform standard-library path.
+    // Open the named reparse point rather than its target. This closes the
+    // symlink_metadata-then-open race and covers junctions as well as symlinks.
     #[cfg(windows)]
     {
-        let meta = std::fs::symlink_metadata(path)?;
-        if meta.file_type().is_symlink() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                "refusing to follow symlink (Windows safety guard)",
-            ));
-        }
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
     }
     #[cfg(target_os = "linux")]
     let file = match options.open(path) {
@@ -140,7 +129,19 @@ pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
     // also closes the regular-file→FIFO TOCTOU swap. `is_file()` is true ONLY for
     // a regular file on every platform, so this one check covers all special
     // types (and a directory, which never reaches a content read anyway).
-    if !file.metadata()?.is_file() {
+    let metadata = file.metadata()?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "refusing to follow symlink or junction (Windows safety guard)",
+            ));
+        }
+    }
+    if !metadata.is_file() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "refusing to read a non-regular file (FIFO, socket, or device)",
@@ -161,7 +162,12 @@ pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
             ));
         }
     }
-    Ok(file)
+    Ok((file, metadata))
+}
+
+/// Open a regular file through the shared safe-open boundary.
+pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
+    open_file_safe_with_metadata(path).map(|(file, _metadata)| file)
 }
 
 #[cfg(target_os = "linux")]
@@ -425,12 +431,12 @@ fn buffered_read_exceeded_cap_message(size_hint: u64, cap: u64) -> String {
 /// the decoded `String`, so it always copied).
 ///
 /// The safety properties of the old path are all kept: one symlink-resistant
-/// `open_file_safe` (which also holds the advisory `LOCK_SH`), a post-open
-/// re-stat that refuses a file grown past `MMAP_TOCTOU_SANITY_CAP_BYTES` between
-/// the walker's stat and here, and that same hard ceiling on the read itself.
+/// `open_file_safe_with_metadata` (which also holds the advisory `LOCK_SH`),
+/// descriptor metadata captured after open to enforce
+/// `MMAP_TOCTOU_SANITY_CAP_BYTES`, and that same hard ceiling on the read itself.
 pub(in crate::filesystem) fn read_file_whole_capped(path: &Path) -> Option<BufferedFileRead> {
-    let mut file = match open_file_safe(path) {
-        Ok(f) => f,
+    let (mut file, meta) = match open_file_safe_with_metadata(path) {
+        Ok(opened) => opened,
         Err(error) => {
             tracing::warn!(
                 path = %path.display(),
@@ -442,23 +448,6 @@ pub(in crate::filesystem) fn read_file_whole_capped(path: &Path) -> Option<Buffe
         }
     };
 
-    // Post-open re-stat: defeat the walker-stat-then-write race where
-    // an attacker grows the file to multi-GiB between the walker's
-    // size check and our read. The walker's max_file_size is the
-    // user-configurable budget; this constant is a HARD ceiling on
-    // any whole-file read regardless of user config.
-    let meta = match file.metadata() {
-        Ok(meta) => meta,
-        Err(error) => {
-            tracing::warn!(
-                path = %path.display(),
-                %error,
-                "cannot stat opened file for mmap sanity cap; skipping"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return None;
-        }
-    };
     let live_size = meta.len();
     if live_size > MMAP_TOCTOU_SANITY_CAP_BYTES {
         tracing::warn!(

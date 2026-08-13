@@ -7,14 +7,11 @@ pub(super) fn read_capped_file(path: &Path, kind: &str, cap: u64) -> Result<Vec<
     // symlink (`blobs/sha256/<digest> -> /etc/shadow`); a raw `File::open` would
     // follow it and scan the off-target file. O_NOFOLLOW refuses it; the read is
     // never redirected off the layout.
-    let file = crate::filesystem::open_file_safe(path).map_err(|error| {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        SourceError::Io(error)
-    })?;
-    let metadata = file.metadata().map_err(|error| {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        SourceError::Io(error)
-    })?;
+    let (file, metadata) =
+        crate::filesystem::open_file_safe_with_metadata(path).map_err(|error| {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            SourceError::Io(error)
+        })?;
     if metadata.len() > cap {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return Err(SourceError::Other(format!(
