@@ -170,11 +170,7 @@ fn trigger_scratch_clears_between_rows_and_preserves_findings() {
     );
 
     let planned = scanner
-        .scan_coalesced_with_backend_and_admission(
-            &chunks,
-            ScanBackend::CpuFallback,
-            Some(&plan),
-        )
+        .scan_coalesced_with_backend_and_admission(&chunks, ScanBackend::CpuFallback, Some(&plan))
         .expect("planned CPU scan succeeds");
     let recomputed = scanner
         .scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback)

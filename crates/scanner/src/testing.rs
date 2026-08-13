@@ -910,19 +910,15 @@ pub fn chunk_lane_topology_for_test(
             metadata: keyhog_core::ChunkMetadata::default(),
         })
         .collect();
-    let topology =
-        crate::engine::batch_topology::coalesced_work_lanes_for_workers(
-            &chunks, threshold, workers,
-        );
+    let topology = crate::engine::batch_topology::coalesced_work_lanes_for_workers(
+        &chunks, threshold, workers,
+    );
     topology
         .lanes()
         .iter()
         .map(|lane| {
             (
-                matches!(
-                    lane,
-                    crate::engine::batch_topology::CoalescedLane::Large(_)
-                ),
+                matches!(lane, crate::engine::batch_topology::CoalescedLane::Large(_)),
                 topology.indices(lane).to_vec(),
             )
         })
@@ -950,10 +946,8 @@ pub fn chunk_lane_storage_shape_for_chunks_for_test(
     threshold: usize,
     workers: usize,
 ) -> (usize, usize, usize) {
-    crate::engine::batch_topology::coalesced_work_lanes_for_workers(
-        chunks, threshold, workers,
-    )
-    .storage_shape()
+    crate::engine::batch_topology::coalesced_work_lanes_for_workers(chunks, threshold, workers)
+        .storage_shape()
 }
 
 /// Returns the effective runtime threshold stored by a compiled scanner.

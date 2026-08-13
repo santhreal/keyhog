@@ -335,9 +335,7 @@ pub(super) fn read_stat_sized_to_cap(
     let initial_size = usize::try_from(initial_size).map_err(|error| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!(
-                "filesystem buffered read cap is not addressable on this platform: {error}"
-            ),
+            format!("filesystem buffered read cap is not addressable on this platform: {error}"),
         )
     })?;
     let mut bytes = vec![0u8; initial_size];

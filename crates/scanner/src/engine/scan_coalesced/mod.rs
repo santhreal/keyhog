@@ -779,8 +779,7 @@ impl CompiledScanner {
                     .map(|(chunk_index, chunk)| compute_single_trigger(chunk_index, chunk))
                     .collect::<Result<Vec<_>, String>>()?
             } else {
-                let work_lanes =
-                    super::batch_topology::coalesced_work_lanes(chunks, threshold);
+                let work_lanes = super::batch_topology::coalesced_work_lanes(chunks, threshold);
                 let lane_triggers: Vec<Vec<(usize, Option<Vec<u64>>)>> = work_lanes
                     .lanes()
                     .par_iter()

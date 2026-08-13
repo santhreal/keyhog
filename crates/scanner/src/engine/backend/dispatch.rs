@@ -191,8 +191,7 @@ impl CompiledScanner {
                     .map(|(index, chunk)| scan_one(index, chunk))
                     .collect::<crate::error::Result<Vec<_>>>()?
             } else {
-                let work_lanes =
-                    super::batch_topology::coalesced_work_lanes(chunks, threshold);
+                let work_lanes = super::batch_topology::coalesced_work_lanes(chunks, threshold);
                 let lane_results: Vec<Vec<(usize, Vec<RawMatch>)>> = work_lanes
                     .lanes()
                     .par_iter()

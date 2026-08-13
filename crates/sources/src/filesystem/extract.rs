@@ -1210,8 +1210,7 @@ pub(super) fn process_entry(
                             %error,
                             "cannot refresh large-file buffered fallback metadata; skipping"
                         );
-                        let _event =
-                            crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                         emit(Err(SourceError::Io(error)));
                         return;
                     }
