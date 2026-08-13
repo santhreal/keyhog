@@ -2,6 +2,10 @@
 
 All notable changes to `keyhog-profile` are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.5.72 - 2026-08-13
+
+- release: publish the tag the bump job creates.
+
 ## 0.5.71 - 2026-08-13
 
 - fix(release): consume legacy unreleased notes.

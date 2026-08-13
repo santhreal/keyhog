@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.72 - 2026-08-13
+
+- release: publish the tag the bump job creates.
+
 ## 0.5.71 - 2026-08-13
 
 - Safe-open now returns the regular-file descriptor metadata it already validates. Filesystem mmap admission, binary, Ghidra, and Docker callers reuse that snapshot instead of issuing a redundant descriptor metadata query; a later windowed buffered fallback refreshes metadata before re-proving its hard cap.

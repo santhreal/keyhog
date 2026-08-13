@@ -2,6 +2,16 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.72] - 2026-08-13
+
+### Changed
+
+- release: publish the tag the bump job creates.
+
+### Fixed
+
+- Release tags now publish: the bump job dispatches the crates.io publish for the tag it created, and that job creates the tag's GitHub Release from its changelog section. A tag pushed with the workflow token raises no push event, so tags v0.5.51 through v0.5.71 were never published.
+
 ## [0.5.71] - 2026-08-13
 
 - Scanner tests: coverage ratchet falls back to each detector's `test_positive` example (with `test_path`) when proptest cannot generate from the regex, closing the 818/922 gap to 922/922. 87 detectors use regex features (`\b`, `(?-i)`, `(?:^|[^A-Za-z])`) outside proptest's generatable subset; 17 are path-restricted or suppressed on generic paths. The ratchet now validates every regex detector's regex→compile→scan wiring.

@@ -117,7 +117,7 @@ BELOW the 1 MiB window the reader hands to the scanner. A window larger than
 `--decode-size-limit` is not decoded at all, so nothing Base64, hex, or
 URL-encoded inside it is recovered.
 
-Measured on release-fast v0.5.71, one Base64-wrapped AWS key pair at the end of
+Measured on release-fast v0.5.72, one Base64-wrapped AWS key pair at the end of
 an otherwise plain text file, default preset:
 
 | File size | Last window | Default | `--deep` |

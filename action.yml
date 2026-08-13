@@ -19,7 +19,7 @@ inputs:
     default: 'false'
   version:
     description: |
-      Published final KeyHog version v0.5.71 or newer to install from crates.io.
+      Published final KeyHog version v0.5.72 or newer to install from crates.io.
       Prereleases and build metadata are rejected. Leave unset to use the Action ref; branch and commit refs build from source.
     default: ''
   upload-sarif:

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.72 - 2026-08-13
+
+- release: publish the tag the bump job creates.
+
 ## 0.5.71 - 2026-08-13
 
 - Cold one-shot and incremental scans now reuse a persisted MatcherArtifact of the eager compiled matcher graph across process invocations (format v4), with CacheId hit/miss/invalidation in profile output, fail-closed identity checks, soft-fail when cache prep fails, and --lockdown disabling the cache.

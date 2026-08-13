@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.72 - 2026-08-13
+
+- Release tags now publish: the bump job dispatches the crates.io publish for the tag it created, and that job creates the tag's GitHub Release from its changelog section. A tag pushed with the workflow token raises no push event, so tags v0.5.51 through v0.5.71 were never published.
+
 ## 0.5.71 - 2026-08-13
 
 - Warm incremental scans now skip backend routing and scanner dispatch startup when source acquisition emits no changed chunks. Trusted clean-file Merkle hits remain complete coverage, while changed workloads retain the same bounded fused and coalesced batch paths.

@@ -1,6 +1,10 @@
 # Changelog
 
 
+## 0.5.72 - 2026-08-13
+
+- release: publish the tag the bump job creates.
+
 ## 0.5.71 - 2026-08-13
 
 - CPU phase-one admission now reuses the bounded trigger bitmap scratch and stores clean trigger evidence as an allocation-free empty row. Hit rows retain their exact bitmap.
