@@ -85,3 +85,8 @@ config_markers = [
   ".cfg",
   ".ini",
 ]
+
+service_prefixes = [
+  "sk-",
+  "AKIA",
+]
