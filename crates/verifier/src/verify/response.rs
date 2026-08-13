@@ -211,9 +211,10 @@ pub(crate) fn evaluate_success(
             .map_err(|error| ResponseContractError::invalid_selector("success selector", error))?
         {
             return Ok(!val.is_null()
-                && spec.equals.as_ref().map_or(true, |expected| {
-                    json_value_to_contract_string(val) == *expected
-                }));
+                && spec
+                    .equals
+                    .as_ref()
+                    .is_none_or(|expected| json_value_to_contract_string(val) == *expected));
         }
         return Ok(false);
     }
@@ -318,7 +319,7 @@ fn json_value_is_truthy_error(value: &serde_json::Value) -> bool {
     match value {
         serde_json::Value::Null => false,
         serde_json::Value::Bool(b) => *b,
-        serde_json::Value::Number(n) => n.as_f64().map_or(true, |f| f != 0.0), // LAW10: non-f64-representable number => treated as a present error (true), conservative; never misses a real error signal
+        serde_json::Value::Number(n) => n.as_f64().is_none_or(|f| f != 0.0), // LAW10: non-f64-representable number => treated as a present error (true), conservative; never misses a real error signal
         serde_json::Value::String(s) => !s.is_empty(),
         serde_json::Value::Array(a) => !a.is_empty(),
         serde_json::Value::Object(o) => !o.is_empty(),

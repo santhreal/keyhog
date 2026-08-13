@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Safe-open now returns the regular-file descriptor metadata it already validates. Filesystem mmap admission, binary, Ghidra, and Docker callers reuse that snapshot instead of issuing a redundant descriptor metadata query; a later windowed buffered fallback refreshes metadata before re-proving its hard cap.
+- Whole-file reads up to 16 MiB now reuse the exact-size buffered-read primitive before probing for growth, avoiding generic buffer-growth probes while preserving truncation safety and the one-byte-past-cap refusal.
 - Ordinary unbounded filesystem scans now classify archive symlinks during the configured metadata walk instead of traversing every directory once for archive-symlink audit and again for file admission. Byte-budgeted scans retain their path-sorted audit, and long-path fallback retains descriptor-relative symlink classification.
 - The default filesystem reader is now one direct producer, so ordinary scans no longer retain a multi-reader crew or intermediate ordered-reassembly thread. Explicit reader counts above one retain deterministic ordered reassembly.
 

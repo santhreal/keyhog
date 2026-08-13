@@ -5,8 +5,7 @@ pub(crate) mod persistence;
 pub(crate) mod routing;
 pub(crate) mod schema;
 
-pub(crate) use super::evidence::*;
-pub(crate) use super::host::*;
+use super::evidence::*;
 pub(crate) use super::store::*;
 pub(crate) use super::workload::*;
 pub(crate) use super::*;

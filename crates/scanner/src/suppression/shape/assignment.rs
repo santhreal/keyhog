@@ -35,8 +35,8 @@ pub(crate) fn looks_like_entropy_canonical_hex_digest(value: &str) -> bool {
 }
 
 fn looks_like_entropy_integrity_digest(value: &str) -> bool {
-    HASH_ALGO_INTEGRITY_LABELS.iter().any(|&prefix| {
-        value.strip_prefix(prefix).is_some_and(|body| {
+    HASH_ALGO_INTEGRITY_LABELS.iter().any(|prefix| {
+        value.strip_prefix(prefix.as_str()).is_some_and(|body| {
             !body.is_empty() && crate::decode::standard_base64_shape(body).is_some()
         })
     })

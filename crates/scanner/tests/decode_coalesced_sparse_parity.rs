@@ -77,7 +77,7 @@ fn assert_scalar_coalesced_parity_with(
     fixture: Chunk,
     cpu: &CompiledScanner,
     simd: &CompiledScanner,
-    check_gpu: bool,
+    _check_gpu: bool,
 ) {
     let scalar = cpu
         .scan_chunks_with_backend(std::slice::from_ref(&fixture), ScanBackend::CpuFallback)
@@ -98,7 +98,7 @@ fn assert_scalar_coalesced_parity_with(
     );
 
     #[cfg(feature = "gpu")]
-    if check_gpu && keyhog_scanner::gpu::gpu_available() {
+    if _check_gpu && keyhog_scanner::gpu::gpu_available() {
         let gpu = scanner(ScanBackend::GpuWgpu)
             .scan_chunks_with_backend(std::slice::from_ref(&fixture), ScanBackend::GpuWgpu)
             .expect("selected backend scan succeeds");

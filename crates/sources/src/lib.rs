@@ -16,7 +16,6 @@ mod decode;
     feature = "azure",
     feature = "s3",
     feature = "gcs",
-    feature = "web",
     feature = "github",
     feature = "gitlab",
     feature = "bitbucket"

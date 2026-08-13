@@ -8,11 +8,14 @@ use crate::compiler::compiler_build::CompileState;
 type PackedSimdProgram = crate::execution_pack::HyperscanSimdExecutionProgram;
 #[cfg(not(feature = "simd"))]
 type PackedSimdProgram = ();
+#[cfg(feature = "gpu")]
 struct PackedVyreProgramSource<'a> {
     bytes: &'a [u8],
     pack_identity: crate::execution_pack::ExecutionPackIdentity,
     signature_authenticated: bool,
 }
+#[cfg(not(feature = "gpu"))]
+struct PackedVyreProgramSource<'a>(std::marker::PhantomData<&'a [u8]>);
 
 struct PackedDetectorPlanPrelude<'a> {
     detector_ids: Vec<Arc<str>>,
@@ -102,7 +105,10 @@ fn selected_gpu_peer(backend: crate::hw_probe::ScanBackend) -> SelectedGpuPeer {
         },
         _ => unreachable!("selected GPU peer requires a GPU backend"),
     }
-    peer
+    #[cfg(feature = "gpu")]
+    {
+        peer
+    }
 }
 
 impl CompiledScanner {
@@ -478,11 +484,17 @@ impl CompiledScanner {
             | crate::execution_pack::ExecutionPackBackend::GpuWgpu
             | crate::execution_pack::ExecutionPackBackend::GpuMetal => None,
         };
+        #[cfg(feature = "gpu")]
         let packed_vyre_program = identity.backend.is_gpu().then(|| PackedVyreProgramSource {
             bytes: backend_program,
             pack_identity: identity,
             signature_authenticated: pack.signature_authenticated(),
         });
+        #[cfg(not(feature = "gpu"))]
+        let packed_vyre_program = identity
+            .backend
+            .is_gpu()
+            .then_some(PackedVyreProgramSource(std::marker::PhantomData));
         let state =
             if let Some(prelude) = packed_detector_plan.as_ref() {
                 let detector_ids = prelude
@@ -593,9 +605,10 @@ impl CompiledScanner {
                 },
             )?),
         };
-        // LAW10: cfg-only Hyperscan tuning marker; no runtime effect.
+        #[cfg(not(feature = "gpu"))]
+        let packed_vyre_program_present = packed_vyre_program.is_some();
         #[cfg(not(feature = "simd"))]
-        let (_tuning_config, _packed_simd_program) = (tuning_config, packed_simd_program);
+        let (tuning_config, packed_simd_program) = (tuning_config, packed_simd_program);
         let mut state = match packed_state {
             Some(state) => state,
             None => build_compile_state(&detectors)?,
@@ -790,6 +803,7 @@ impl CompiledScanner {
             GpuInitPolicy::SelectedBackend(backend) => !backend.is_gpu(),
             GpuInitPolicy::ForceDisabled => true,
         };
+        #[cfg(any(feature = "gpu", feature = "simd"))]
         let selected_backend = match gpu_policy {
             GpuInitPolicy::SelectedBackend(backend) => Some(backend),
             _ => None,
@@ -1018,7 +1032,7 @@ impl CompiledScanner {
             None
         };
         #[cfg(not(feature = "gpu"))]
-        if packed_vyre_program.is_some() {
+        if packed_vyre_program_present {
             return Err(crate::error::ScanError::Config(
                 "execution pack selects VYRE GPU but this scanner was built without GPU support"
                     .into(),

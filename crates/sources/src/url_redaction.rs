@@ -146,16 +146,7 @@ pub(crate) fn redact_url(url: &str) -> Cow<'_, str> {
 /// redacted URL, so the diagnostic keeps naming its target. An error with no
 /// recorded URL, and a URL with nothing sensitive in it, both format exactly as
 /// reqwest would.
-#[cfg(any(
-    feature = "azure",
-    feature = "s3",
-    feature = "gcs",
-    feature = "slack",
-    feature = "web",
-    feature = "github",
-    feature = "gitlab",
-    feature = "bitbucket"
-))]
+#[cfg(any(feature = "web", feature = "azure"))]
 pub(crate) fn redact_http_error(error: reqwest::Error) -> String {
     let Some(url) = error.url().cloned() else {
         return error.to_string();

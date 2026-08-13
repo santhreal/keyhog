@@ -76,17 +76,15 @@ pub(crate) fn companion_arms(src: &str) -> Arc<Vec<Vec<String>>> {
     })
 }
 
-/// Evaluate companion gates for every active confirmed pattern in one haystack
-/// pass. `out[pat_idx]` is true when the pattern may still match.
-pub(crate) fn companions_allow_batch(patterns: &[(usize, &str)], text: &str, out: &mut [bool]) {
-    out.fill(true);
-    if patterns.is_empty() {
-        return;
-    }
-
+/// Build the deduplicated literal index and per-pattern armed conjunctions
+/// shared by `companions_allow_batch` and `companions_deny_absent`.
+///
+/// Returns `(literals, armed)` where `armed` maps each `pat_idx` to its
+/// OR-of-AND literal-id conjunctions. Empty `armed` means no pattern had
+/// gateable companion literals (fail-open).
+fn build_literal_index(patterns: &[(usize, &str)]) -> (Vec<String>, Vec<(usize, Vec<Vec<usize>>)>) {
     let mut literal_ids: HashMap<String, usize> = HashMap::new();
     let mut literals: Vec<String> = Vec::new();
-    // pat_idx -> arms as literal-id conjunctions
     let mut armed: Vec<(usize, Vec<Vec<usize>>)> = Vec::with_capacity(patterns.len());
 
     for &(pat_idx, src) in patterns {
@@ -98,10 +96,8 @@ pub(crate) fn companions_allow_batch(patterns: &[(usize, &str)], text: &str, out
         for conj in arms.iter() {
             let mut ids = Vec::with_capacity(conj.len());
             for lit in conj {
-                let id = *literal_ids.entry(lit.clone()).or_insert_with(|| {
-                    literals.push(lit.clone());
-                    literals.len() - 1
-                });
+                let id =
+                    super::scan_postprocess::register_literal(&mut literals, &mut literal_ids, lit);
                 ids.push(id);
             }
             id_arms.push(ids);
@@ -109,6 +105,18 @@ pub(crate) fn companions_allow_batch(patterns: &[(usize, &str)], text: &str, out
         armed.push((pat_idx, id_arms));
     }
 
+    (literals, armed)
+}
+
+/// Evaluate companion gates for every active confirmed pattern in one haystack
+/// pass. `out[pat_idx]` is true when the pattern may still match.
+pub(crate) fn companions_allow_batch(patterns: &[(usize, &str)], text: &str, out: &mut [bool]) {
+    out.fill(true);
+    if patterns.is_empty() {
+        return;
+    }
+
+    let (literals, armed) = build_literal_index(patterns);
     if literals.is_empty() || armed.is_empty() {
         return;
     }
@@ -156,30 +164,7 @@ pub(crate) fn companions_deny_absent(
     COMPANION_DERIVED_CACHE.with(|cell| {
         let mut cache = cell.borrow_mut();
         if !cache.contains(&cache_key) {
-            let mut literal_ids: HashMap<String, usize> = HashMap::new();
-            let mut literals: Vec<String> = Vec::new();
-            let mut armed: Vec<(usize, Vec<Vec<usize>>)> = Vec::with_capacity(patterns.len());
-
-            for &(pat_idx, src) in patterns {
-                let arms = companion_arms(src);
-                if arms.is_empty() {
-                    continue;
-                }
-                let mut id_arms: Vec<Vec<usize>> = Vec::with_capacity(arms.len());
-                for conj in arms.iter() {
-                    let mut ids = Vec::with_capacity(conj.len());
-                    for lit in conj {
-                        let id = *literal_ids.entry(lit.clone()).or_insert_with(|| {
-                            literals.push(lit.clone());
-                            literals.len() - 1
-                        });
-                        ids.push(id);
-                    }
-                    id_arms.push(ids);
-                }
-                armed.push((pat_idx, id_arms));
-            }
-
+            let (literals, armed) = build_literal_index(patterns);
             if literals.is_empty() || armed.is_empty() {
                 return;
             }

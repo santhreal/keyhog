@@ -5,6 +5,31 @@ use keyhog_sources::testing::{
     for_each_file_windowed_mmap_for_test, ForEachWindowedMmapOutcome, TestApi,
 };
 
+/// WHY: a stat is only a size hint. Every shrink/growth variant must return
+/// initialized input bytes and retain at most the one-byte cap-crossing probe.
+#[test]
+fn stat_sized_read_preserves_content_and_growth_boundaries() {
+    for (bytes, expected_size, hard_cap, expected) in [
+        (&b""[..], 0, 0, &b""[..]),
+        (&b"x"[..], 0, 0, &b"x"[..]),
+        (&b"exact"[..], 5, 8, &b"exact"[..]),
+        (&b"short"[..], 8, 8, &b"short"[..]),
+        (&b"01234567"[..], 4, 8, &b"01234567"[..]),
+        (&b"012345678"[..], 4, 8, &b"012345678"[..]),
+        (&b"0123456789"[..], 4, 8, &b"012345678"[..]),
+        (&b"growth"[..], 0, 3, &b"grow"[..]),
+        (&b"oversized-stat"[..], u64::MAX, 3, &b"over"[..]),
+    ] {
+        assert_eq!(
+            TestApi
+                .read_stat_sized_to_cap(bytes, expected_size, hard_cap)
+                .expect("bounded stat-sized read"),
+            expected,
+            "expected_size={expected_size}, hard_cap={hard_cap}"
+        );
+    }
+}
+
 /// Regression: preserves the externally observable `read_file_windowed_mmap_roundtrip_matches_pure_helper` behavior after the inline suite split.
 #[test]
 fn read_file_windowed_mmap_roundtrip_matches_pure_helper() {

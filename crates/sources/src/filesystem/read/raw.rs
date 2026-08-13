@@ -42,9 +42,9 @@ pub(in crate::filesystem) fn read_file_buffered(
     // backing store is borrowed), but the buffered path can and must.
     //
     // `size_hint` is the walker's already-known `entry.size`: `read_file_safe`
-    // uses it to read the whole file in a single sized `read(2)` (no empty-Vec
-    // capacity-doubling and no trailing EOF probe), instead of the many small
-    // reads `read_to_end` does on a tiny file. See PERF-io_path-2.
+    // uses it to fill the stat-sized buffer directly and probe once for growth,
+    // instead of the many small reads `read_to_end` does on a tiny file. See
+    // PERF-io_path-2.
     let bytes = match read_file_safe(path, size_hint) {
         Ok(b) => b,
         Err(error) => {
@@ -314,38 +314,89 @@ pub(in crate::filesystem) fn read_file_safe(
 }
 
 fn read_exact_stat_sized_with_growth_probe(mut file: File, cap: u64) -> std::io::Result<Vec<u8>> {
-    let cap_usize = usize::try_from(cap).map_err(|error| {
+    let bytes = read_stat_sized_to_cap(&mut file, cap, cap)?;
+    if bytes.len() as u64 > cap {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            buffered_read_exceeded_cap_message(cap, cap),
+        ));
+    }
+    Ok(bytes)
+}
+pub(super) fn read_stat_sized_to_cap(
+    reader: &mut impl Read,
+    expected_size: u64,
+    hard_cap: u64,
+) -> std::io::Result<Vec<u8>> {
+    // The stat is only a reservation hint. Clamp it before converting or
+    // allocating so an oversized/stale stat can never bypass the read cap,
+    // including on platforms where u64 is wider than usize.
+    let initial_size = expected_size.min(hard_cap);
+    let initial_size = usize::try_from(initial_size).map_err(|error| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!("filesystem buffered read cap is not addressable on this platform: {error}"),
+            format!(
+                "filesystem buffered read cap is not addressable on this platform: {error}"
+            ),
         )
     })?;
-    let mut bytes = vec![0u8; cap_usize];
+    let mut bytes = vec![0u8; initial_size];
     let mut filled = 0;
-    while filled < cap_usize {
-        match file.read(&mut bytes[filled..]) {
+    while filled < initial_size {
+        match reader.read(&mut bytes[filled..]) {
             Ok(0) => break,
             Ok(n) => filled += n,
-            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(e) => return Err(e),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => {
+                return Err(std::io::Error::new(
+                    error.kind(),
+                    format!(
+                        "failed to fill stat-sized filesystem buffer after {filled} of {initial_size} bytes: {error}"
+                    ),
+                ));
+            }
         }
     }
     bytes.truncate(filled);
-    if filled == cap_usize {
-        let mut sentinel = [0u8; 1];
-        loop {
-            match file.read(&mut sentinel) {
-                Ok(0) => break,
-                Ok(_) => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        buffered_read_exceeded_cap_message(cap, cap),
-                    ));
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(e) => return Err(e),
+    if filled < initial_size {
+        return Ok(bytes);
+    }
+
+    let mut sentinel = [0u8; 1];
+    loop {
+        match reader.read(&mut sentinel) {
+            Ok(0) => return Ok(bytes),
+            Ok(_) => {
+                bytes.push(sentinel[0]);
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => {
+                return Err(std::io::Error::new(
+                    error.kind(),
+                    format!("failed to probe filesystem file growth: {error}"),
+                ));
             }
         }
+    }
+
+    if bytes.len() as u64 > hard_cap {
+        return Ok(bytes);
+    }
+
+    let remaining_with_probe = hard_cap
+        .saturating_sub(bytes.len() as u64)
+        .saturating_add(1);
+    if remaining_with_probe > 0 {
+        reader
+            .take(remaining_with_probe)
+            .read_to_end(&mut bytes)
+            .map_err(|error| {
+                std::io::Error::new(
+                    error.kind(),
+                    format!("failed to read filesystem file growth to the hard cap: {error}"),
+                )
+            })?;
     }
     Ok(bytes)
 }
@@ -427,25 +478,34 @@ pub(in crate::filesystem) fn read_file_whole_capped(path: &Path) -> Option<Buffe
         unsafe { libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_SEQUENTIAL) };
     }
 
-    // Reserve the post-open size so the common case is one allocation, then read
-    // to EOF with the hard cap as the ceiling. A file that SHRANK under us simply
-    // ends the read early; a file that GREW contributes its extra bytes up to the
-    // cap. Neither outcome can fault, which is the whole point of not mapping it.
-    let capacity =
-        usize::try_from(live_size.min(MMAP_TOCTOU_SANITY_CAP_BYTES)).unwrap_or(usize::MAX); // LAW10: unreachable on real platforms; a Vec length cannot exceed usize::MAX.
-    let mut bytes = Vec::with_capacity(capacity);
-    // Read one byte past the cap so crossing it is detectable rather than
-    // silently indistinguishable from a file that is exactly cap bytes long.
-    let read_limit = MMAP_TOCTOU_SANITY_CAP_BYTES.saturating_add(1);
-    if let Err(error) = (&mut file).take(read_limit).read_to_end(&mut bytes) {
-        tracing::warn!(
-            path = %path.display(),
-            %error,
-            "cannot read file; skipping"
-        );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        return None;
-    }
+    // Fill the post-open size directly for files up to the bounded exact-read
+    // threshold. The common unchanged-file path uses one sized data read and
+    // one EOF probe without generic buffer-growth probes. Shrink still ends
+    // early; growth continues through the same one-byte-past-hard-cap bound.
+    let read_result = if live_size <= MAX_EXACT_SIZED_READ_PREALLOC_BYTES {
+        read_stat_sized_to_cap(&mut file, live_size, MMAP_TOCTOU_SANITY_CAP_BYTES)
+    } else {
+        let capacity =
+            usize::try_from(live_size.min(MMAP_TOCTOU_SANITY_CAP_BYTES)).unwrap_or(usize::MAX); // LAW10: unreachable on real platforms; a Vec length cannot exceed usize::MAX.
+        let mut bytes = Vec::with_capacity(capacity);
+        let read_limit = MMAP_TOCTOU_SANITY_CAP_BYTES.saturating_add(1);
+        (&mut file)
+            .take(read_limit)
+            .read_to_end(&mut bytes)
+            .map(|_| bytes)
+    };
+    let bytes = match read_result {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::warn!(
+                path = %path.display(),
+                %error,
+                "cannot read file; skipping"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return None;
+        }
+    };
     if bytes.len() as u64 > MMAP_TOCTOU_SANITY_CAP_BYTES {
         tracing::warn!(
             path = %path.display(),

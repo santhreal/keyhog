@@ -6,6 +6,11 @@ regular file. Starting it with `--mass` also accepts bounded streams acquired
 from directories, repositories, archives, binaries, remote endpoints, and
 cloud inventories. Watch and system-wide scans remain in process.
 
+For the repository map and bytes-to-finding pipeline, see
+[Architecture](../architecture.md). For backend selection and autoroute, see
+[Backends and routing](../backends.md) and
+[Autoroute calibration](../reference/autoroute-calibration.md).
+
 Starting the daemon is an explicit operational step. KeyHog never starts one
 for you. Run the server in one terminal or under a service manager:
 

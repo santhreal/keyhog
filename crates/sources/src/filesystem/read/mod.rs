@@ -60,6 +60,14 @@ pub(crate) fn read_file_safe_capped_for_test(
     raw::read_file_safe(path, cap)
 }
 
+pub(crate) fn read_stat_sized_to_cap_for_test(
+    bytes: &[u8],
+    expected_size: u64,
+    hard_cap: u64,
+) -> std::io::Result<Vec<u8>> {
+    raw::read_stat_sized_to_cap(&mut std::io::Cursor::new(bytes), expected_size, hard_cap)
+}
+
 /// Exercise the bounded whole-file read path (formerly a whole-file `mmap`; see
 /// `raw::read_file_whole_capped` for why the mapping is gone) and return its
 /// decoded text, or `None` when the path was refused or is not text.

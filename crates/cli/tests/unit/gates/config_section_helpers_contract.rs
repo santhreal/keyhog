@@ -4,10 +4,12 @@ fn config_schema_structs_reject_unknown_toml_fields() {
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/config/schema.rs"))
             .expect("config schema source readable");
 
-    // Count every on-disk schema struct (pub(super) and pub(crate)), not only
-    // pub(super): GuardSection/LockdownSection/ConfigFile are pub(crate).
-    let schema_structs =
-        schema.matches("pub(super) struct ").count() + schema.matches("pub(crate) struct ").count();
+    // Count every on-disk schema struct (pub, pub(super), and pub(crate)).
+    // GuardSection/LockdownSection/ConfigFile are pub(crate), the section
+    // helpers exposed via ConfigFile fields are pub.
+    let schema_structs = schema.matches("pub struct ").count()
+        + schema.matches("pub(super) struct ").count()
+        + schema.matches("pub(crate) struct ").count();
     let strict_deserializers = schema
         .matches("#[serde(default, deny_unknown_fields)]")
         .count();

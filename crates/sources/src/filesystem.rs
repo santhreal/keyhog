@@ -29,6 +29,7 @@ pub(crate) use path::display_path;
 pub(crate) use read::decode_text_file;
 pub(crate) use read::{open_file_safe, open_file_safe_with_metadata};
 
+#[cfg(feature = "docker")]
 /// Emit image-metadata chunks for an in-memory layer member whose extension is a
 /// recognised image type. Returns `Ok(Some(true))` when the member was an image and
 /// emission completed, `Ok(Some(false))` when the consumer stopped, and `Ok(None)`
@@ -43,6 +44,7 @@ pub(crate) fn try_emit_image_metadata_member(
     extract::try_emit_image_metadata_member(entry_name, bytes, ext, emit)
 }
 
+#[cfg(feature = "docker")]
 pub(crate) fn try_emit_pdf_member(
     entry_name: &str,
     bytes: Vec<u8>,
@@ -51,17 +53,20 @@ pub(crate) fn try_emit_pdf_member(
     extract::try_emit_pdf_member(entry_name, bytes, emit)
 }
 
+#[cfg(feature = "docker")]
 /// Shared container-magic probe used by Docker layer streaming and the
 /// filesystem extensionless-container router.
 pub(crate) fn container_extension_from_prefix(bytes: &[u8]) -> Option<&'static str> {
     extract::container_extension_from_prefix(bytes)
 }
 
+#[cfg(feature = "docker")]
 /// True when `ext` is an openpack-handled archive extension (zip/jar/apk/ipa/crx/…).
 pub(crate) fn is_openpack_archive_ext(ext: &str) -> bool {
     extract::is_openpack_archive_ext(ext)
 }
 
+#[cfg(feature = "docker")]
 /// Scan one already-buffered archive/layer member through the shared in-memory
 /// dispatcher (nested tar/zip/compressed descent + leaf text/strings). Used by
 /// Docker layer streaming so a layer never has to hit the filesystem first.
@@ -85,6 +90,7 @@ pub(crate) fn emit_top_level_seven_zip_or_rar_member(
     )
 }
 
+#[cfg(feature = "docker")]
 pub(crate) fn emit_in_memory_zip_member(
     member_display: &str,
     content: Vec<u8>,
@@ -101,6 +107,7 @@ pub(crate) fn emit_in_memory_zip_member(
     )
 }
 
+#[cfg(feature = "docker")]
 pub(crate) fn emit_in_memory_member(
     entry_name: &str,
     content: Vec<u8>,
@@ -141,14 +148,17 @@ pub(crate) fn default_exclude_dirs() -> &'static [String] {
     filter::default_exclude_dirs()
 }
 
+#[cfg(any(feature = "docker", feature = "git"))]
 pub(crate) fn is_default_excluded_path(path: &str) -> bool {
     filter::is_default_excluded(path)
 }
 
+#[cfg(feature = "git")]
 pub(crate) fn is_default_excluded_path_bytes(path: &[u8]) -> bool {
     filter::is_default_excluded_bytes(path)
 }
 
+#[cfg(any(feature = "docker", feature = "azure", feature = "s3", feature = "gcs"))]
 pub(crate) fn is_default_skip_extension(ext: &str) -> bool {
     filter::is_skip_extension(ext)
 }
@@ -589,6 +599,14 @@ pub(crate) fn read_file_safe_capped_for_test(
     read::read_file_safe_capped_for_test(path, cap)
 }
 
+pub(crate) fn read_stat_sized_to_cap_for_test(
+    bytes: &[u8],
+    expected_size: u64,
+    hard_cap: u64,
+) -> std::io::Result<Vec<u8>> {
+    read::read_stat_sized_to_cap_for_test(bytes, expected_size, hard_cap)
+}
+
 pub(crate) fn read_file_mmap_for_test(path: &std::path::Path) -> Option<String> {
     read::read_file_mmap_for_test(path)
 }
@@ -635,14 +653,17 @@ pub(crate) fn looks_binary_prefix_for_test(bytes: &[u8]) -> bool {
     read::looks_binary_prefix_for_test(bytes)
 }
 
+#[cfg(feature = "docker")]
 pub(crate) fn has_utf16_bom_prefix(bytes: &[u8]) -> bool {
     read::has_utf16_bom_prefix(bytes)
 }
 
+#[cfg(feature = "docker")]
 pub(crate) fn looks_binary_prefix(bytes: &[u8]) -> bool {
     read::looks_binary_prefix_for_test(bytes)
 }
 
+#[cfg(feature = "docker")]
 pub(crate) fn looks_binary(bytes: &[u8]) -> bool {
     read::looks_binary_for_test(bytes)
 }

@@ -26,8 +26,5 @@ pub(crate) fn try_decode_b64_to_utf8(credential: &str) -> Option<String> {
         Ok(bytes) => bytes,
         Err(_) => return None, // LAW10: decode peek miss keeps original candidate unsuppressed, recall-preserving.
     };
-    match String::from_utf8(bytes) {
-        Ok(text) => Some(text),
-        Err(_) => None, // LAW10: non-UTF-8 decoded payload cannot carry plaintext fixture markers; no suppression fires, recall-preserving.
-    }
+    String::from_utf8(bytes).ok() // LAW10: non-UTF-8 decoded payload cannot carry plaintext fixture markers; no suppression fires, recall-preserving.
 }

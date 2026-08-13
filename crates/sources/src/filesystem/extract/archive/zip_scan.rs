@@ -119,7 +119,7 @@ pub(super) fn extract_zip_archive(
     };
 
     let mut total_uncompressed = 0u64;
-    if !extract_zip_archive_entries(
+    let _ = extract_zip_archive_entries(
         archive,
         archive_display,
         per_entry_cap,
@@ -128,9 +128,7 @@ pub(super) fn extract_zip_archive(
         0,
         respect_default_excludes,
         emit,
-    ) {
-        return;
-    }
+    );
 }
 
 pub(super) fn extract_embedded_zip_archive(

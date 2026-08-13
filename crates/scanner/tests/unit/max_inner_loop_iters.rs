@@ -62,6 +62,6 @@ fn finish_partition_clears_every_cross_call_cache() {
 
     let (len_after, _, _) = scanner.fragment_cache.storage_for_test();
     assert_eq!(len_after, 0);
-    assert!(scanner.reusable_phase1_evidence.lock().is_empty());
+    assert_eq!(scanner.reusable_phase1_evidence.lock().len(), 0);
     assert_eq!(candidate_scratch_idle_count_for_test(), 0);
 }

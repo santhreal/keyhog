@@ -220,7 +220,7 @@ fn path_is_default_excluded(root: &Path, path: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStrExt;
-        return super::filter::is_default_excluded_bytes(relative.as_os_str().as_bytes());
+        super::filter::is_default_excluded_bytes(relative.as_os_str().as_bytes())
     }
     #[cfg(not(unix))]
     {
@@ -488,7 +488,7 @@ pub(super) fn collect_unbounded_sorted(
 
     #[cfg(unix)]
     {
-        return finish_compact(root, builder, errors, count, bytes);
+        finish_compact(root, builder, errors, count, bytes)
     }
     #[cfg(not(unix))]
     {
