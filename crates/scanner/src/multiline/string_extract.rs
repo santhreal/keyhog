@@ -254,7 +254,7 @@ fn extract_string_content(line: &str) -> String {
             return content;
         }
     }
-    filter_line_content(trimmed)
+    filter_line_content(trimmed).to_string()
 }
 
 #[cfg(feature = "multiline")]
@@ -388,7 +388,7 @@ static VAR_DECL_KEYWORD_PREFIXES: std::sync::LazyLock<Vec<String>> =
     });
 
 #[cfg(feature = "multiline")]
-pub(crate) fn filter_line_content(line: &str) -> String {
+pub(crate) fn filter_line_content(line: &str) -> &str {
     // Strip every leading declaration keyword prefix, in list order, mirroring
     // the old chained `trim_start_matches` (which also stripped stacked keywords
     // like `static final `). Each `trim_start_matches` removes ALL leading
@@ -399,16 +399,16 @@ pub(crate) fn filter_line_content(line: &str) -> String {
     }
 
     if let Some(pos) = line.find(" = ") {
-        return line[pos + 3..].trim().to_string();
+        return line[pos + 3..].trim();
     }
     if let Some(pos) = line.find("= ") {
-        return line[pos + 2..].trim().to_string();
+        return line[pos + 2..].trim();
     }
     if let Some(pos) = line.find('=') {
-        return line[pos + 1..].trim().to_string();
+        return line[pos + 1..].trim();
     }
 
-    line.to_string()
+    line
 }
 
 /// Iterate the literal segments of a string-concatenation expression, splitting

@@ -1,0 +1,13 @@
+# Static prefix shapes that mark an entropy candidate as a shell expansion
+# or template literal, not a credential. Workflow files generate these in
+# volume. The dynamic "$" + uppercase-letter rule (e.g. $VAR, $HOME) stays
+# in code because it is a character-class predicate, not a fixed string.
+prefixes = [
+  "$(",
+  "${",
+  "\\\"${",
+  "[{ \"",
+  "{ \"a",
+  "$ECR",
+  "$RUN",
+]

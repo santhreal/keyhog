@@ -38,6 +38,7 @@ pub(crate) struct ExpectedCloneOrigin {
 }
 
 impl ExpectedCloneOrigin {
+    #[cfg(any(feature = "github", feature = "bitbucket"))]
     pub(crate) fn host(host: &str) -> Self {
         Self {
             host: host.to_ascii_lowercase(),
@@ -45,6 +46,7 @@ impl ExpectedCloneOrigin {
         }
     }
 
+    #[cfg(feature = "github")]
     pub(crate) fn from_endpoint(platform: &str, endpoint: &str) -> Result<Self, SourceError> {
         let url = reqwest::Url::parse(endpoint).map_err(|error| {
             SourceError::Other(format!(
@@ -77,6 +79,7 @@ impl ExpectedCloneOrigin {
     }
 
     /// Host[:port] suitable for an `https://` clone URL authority.
+    #[cfg(feature = "github")]
     pub(crate) fn https_authority(&self) -> String {
         if self.port == 443 {
             self.host.clone()
@@ -551,7 +554,7 @@ fn api_endpoint_for_error(endpoint: &str) -> String {
     redacted[..cutoff].to_string()
 }
 
-#[cfg(any(feature = "gitlab", feature = "bitbucket"))]
+#[cfg(feature = "bitbucket")]
 pub(crate) fn require_same_api_origin(
     platform: &str,
     base: &reqwest::Url,
@@ -569,6 +572,7 @@ pub(crate) fn require_same_api_origin(
     )))
 }
 
+#[cfg(feature = "github")]
 pub(crate) fn scan_repo_chunks<I>(
     input_chunks: I,
     platform: &str,
@@ -681,6 +685,7 @@ fn clone_repo(
     )
 }
 
+#[cfg(feature = "github")]
 pub(crate) fn clone_authenticated_history(
     platform: &str,
     repo_display_path: &str,

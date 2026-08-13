@@ -637,7 +637,7 @@ pub(crate) async fn run_with_backend_override(
 
     announce_daemon_ready(&socket_path, detector_count, &state.warm_backend_status());
     let accept_task = spawn_accept_loop(listener, state.clone());
-    let watcher_task = spawn_guard_watcher_loop(state.clone());
+    let _watcher_task = spawn_guard_watcher_loop(state.clone());
 
     finish_daemon_service(&socket_path, accept_task).await
 }
@@ -848,7 +848,6 @@ fn process_guard_events(
     root: &Path,
     events: Vec<keyhog_sources::guard::GuardEvent>,
 ) {
-    use keyhog_core::guard_state::{GuardRootState, GuardTransition};
     use keyhog_sources::guard::GuardEvent;
 
     let root_bytes = std::os::unix::ffi::OsStrExt::as_bytes(root.as_os_str());
@@ -2173,7 +2172,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
         Request::GuardCommitFinish {
             transaction_id,
             client_objects_streamed,
-            client_bytes_streamed,
+            client_bytes_streamed: _,
         } => {
             // Validate before removing the transaction so a failed
             // check does not discard the scanning work. The client

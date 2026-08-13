@@ -573,4 +573,8 @@ table.
 | Change output formatting | `crates/cli/src/format.rs`, `crates/cli/src/orchestrator/reporting.rs` |
 | Change process exit codes or precedence | `crates/cli/src/exit_codes.rs`, `crates/cli/src/lib.rs::cli_error_exit_code`, `crates/cli/src/orchestrator/run.rs::resolve_scan_exit`, and `crates/cli/src/main.rs` for Unix SIGINT |
 | Add a benchmark / change the gate | `benchmarks/bench/` |
-| Verify a perf or detection claim | `benchmarks/` (the README numbers regenerate from here) |
+| Verify a performance or detection claim | `benchmarks/` (the README numbers regenerate from here) |
+| Change backend selection or autoroute | [Backends and routing](./backends.md), [Autoroute calibration](./reference/autoroute-calibration.md) |
+| Operate the daemon or plan a mass scan | [Daemon and warm scans](./workflows/daemon.md), [Mass repository and cloud scanning](./guides/mass-scanning.md) |
+| Understand detection, suppression, or verification | [Detection](./detection.md), [Suppressions](./suppressions.md), [Verification](./verification.md) |
+| Configure scanning or findings output | [Configuration](./reference/configuration.md), [Output formats](./output-formats.md) |

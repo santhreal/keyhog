@@ -221,13 +221,13 @@ pub fn is_private_url(url_str: &str) -> bool {
 /// [`Ipv4Addr`]. Handles the 1-, 2-, and 3-part short forms a permissive
 /// resolver accepts:
 ///
-///   - 1-part  → handled earlier as a bare integer (`http://2130706433`).
-///   - 2-part  `a.b`     → `a` is octet 0, `b` packs into the low 3 bytes
-///                          (`127.1`     → `127.0.0.1`).
-///   - 3-part  `a.b.c`   → `a`, `b` are octets 0/1, `c` packs into the low
-///                          2 bytes (`172.16.1` → `172.16.0.1`).
-///   - 4-part  `a.b.c.d` → standard dotted-quad (already covered by
-///                          `Ipv4Addr::parse`, so not re-handled here).
+/// - 1-part  → handled earlier as a bare integer (`http://2130706433`).
+/// - 2-part  `a.b`     → `a` is octet 0, `b` packs into the low 3 bytes
+///   (`127.1`     → `127.0.0.1`).
+/// - 3-part  `a.b.c`   → `a`, `b` are octets 0/1, `c` packs into the low
+///   2 bytes (`172.16.1` → `172.16.0.1`).
+/// - 4-part  `a.b.c.d` → standard dotted-quad (already covered by
+///   `Ipv4Addr::parse`, so not re-handled here).
 ///
 /// Each part is parsed per `inet_aton` radix rules: `0x`/`0X` prefix → hex,
 /// a leading `0` → octal, otherwise decimal. Any out-of-range field or parse

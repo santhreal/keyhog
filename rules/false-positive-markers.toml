@@ -8,3 +8,11 @@ cors_headers = [
   "access-control-request-method",
   "access-control-request-headers",
 ]
+
+http_cache_headers = [
+  "etag",
+]
+
+binary_data_headers = [
+  "binarydata",
+]

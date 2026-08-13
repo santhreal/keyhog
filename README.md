@@ -503,62 +503,23 @@ contracts.
 
 ## How KeyHog works
 
-KeyHog compiles its 926 detectors into a shared trigger/extraction plan,
-uses Hyperscan when that feature is present, decodes nested encodings before
-matching, and can apply explicit per-detector Bayesian Beta(α,β) confidence
-calibration. Hardware acceleration is an explicit backend selection layer;
-every selected backend must preserve the same detector ids and findings
-contract:
+KeyHog compiles its 926 detectors into a shared trigger and extraction plan,
+decodes nested encodings before matching, and applies per-detector confidence
+and suppression. Pure-Rust CPU (`cpu-fallback`), Hyperscan/SIMD (`simd-regex`),
+CUDA (`gpu-cuda-region-presence`), Metal (`gpu-metal-region-presence`), and WGPU
+(`gpu-wgpu-region-presence`) are peers in a proof-backed autoroute selector, not
+a fallback chain. Calibration measures
+every eligible peer and persists the fastest route whose complete findings match
+the reference route for the exact binary, detector and configuration state,
+host, accelerator, and workload class. A missing, stale, invalid, or incomplete
+decision stops an automatic scan before execution and reports how to recalibrate.
+It never silently substitutes another backend.
 
-| Layer / Backend | When | How |
-|---|---|---|
-| `simdsieve` prefilter | AVX-512 / AVX2 / NEON | Layer 1: skims every file for 12 high-value literal prefixes in one SIMD pass: AWS `AKIA`/`ASIA`, GitHub `ghp_`, OpenAI `sk-proj-`, Slack `xoxb-`/`xoxp-`, SendGrid `SG.`, Square `sq0csp-`, and Stripe `sk_live_`/`sk_test_`/`rk_live_`/`rk_test_` |
-| `gpu-cuda-region-presence` | executable CUDA peer + persisted calibration proof | VYRE literal-set region-presence through CUDA, followed by the shared CPU validation tail |
-| `gpu-metal-region-presence` | executable native Metal peer + persisted calibration proof | VYRE literal-set region-presence through Metal, followed by the shared CPU validation tail |
-| `gpu-wgpu-region-presence` | executable WGPU peer + persisted calibration proof | VYRE literal-set region-presence through WGPU, followed by the shared CPU validation tail |
-| `simd-regex` | Hyperscan compiled and live | parallel Hyperscan trigger scan plus full-regex extraction; portable builds do not expose this backend and report `cpu-fallback` instead |
-| `cpu-fallback` | portable build or explicit CPU selection | Aho-Corasick prefix + Rust `regex` extraction |
-
-An authenticated GPU route may name an ordered physical-device set rather than
-one adapter. Calibration proves every member and the complete set against the
-scalar reference, records per-device budgets and integer throughput weights,
-then normal scans shard one contiguous source range per device and retire the
-results in source order. Acquisition and dispatch are all-or-nothing.
-
-ML-enabled routes use one authenticated quantized confidence model across CPU,
-SIMD, and GPU execution. GPU candidates run through a separately retired,
-bounded VYRE score program after literal matching; it is not fused into the
-resident literal kernel. Invalid UTF-8 and unquantizable rows remain explicitly
-CPU-owned under the established confidence policy.
-
-### Autoroute
-
-KeyHog autoroute measures every eligible backend with phase-two localization on
-and off, then persists the fastest parity-checked route for the exact binary,
-host, resolved policy, and workload class. It is not a hardware heuristic or
-fallback hierarchy. A missing, stale, invalid, incomplete, or quarantined
-decision selects no backend: affected batches remain unscanned, the report
-records incomplete coverage, and the process returns a non-success exit with
-the recalibration command.
-
-Install performs the visible calibration. To recalibrate an installed binary,
-run `keyhog calibrate-autoroute`; inspect evidence with
-`keyhog backend --autoroute`. Explicit `--backend` values are diagnostic and
-benchmark overrides, not autoroute proof. Single-backend portable builds do
-not need a routing cache.
-
-If an automatically selected accelerated backend faults, KeyHog warns and
-replays the same stable input through the fastest remaining measured-correct
-peer. GPU recovery retains completed shards and scans only exact unprocessed
-ranges. KeyHog reports `complete_after_recovery`. The affected workload route is
-quarantined in a bounded runtime-health artifact separate from calibration
-timings, so a restart cannot retry it. Successful recalibration clears only the
-repaired workload identities. Explicit or required backends remain hard
-contracts and are never substituted.
-
-The complete parity contract, workload identity, GPU/Hyperscan behavior, daemon
-semantics, cache lifecycle, and troubleshooting matrix live in the
-[autoroute reference](docs/src/reference/autoroute-calibration.md).
+See [Architecture](https://santhreal.github.io/keyhog/architecture.html) for the
+repository map, dependency direction, bytes-to-finding pipeline, and profiling
+entrypoints. See [Backends and routing](https://santhreal.github.io/keyhog/backends.html)
+for execution contracts and [Autoroute calibration](https://santhreal.github.io/keyhog/reference/autoroute-calibration.html)
+for parity, workload identity, cache lifecycle, and repair procedures.
 
 **Full documentation:** [santhreal.github.io/keyhog](https://santhreal.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, autoroute, exit codes, env vars, and contributing. Source under `docs/`.
 
@@ -785,67 +746,29 @@ backend/cache/daemon/OS/GPU matrix.
 ## GPU-backed mass daemon workers
 
 The optional Unix mass daemon keeps one compiled scanner and its calibrated
-CPU, Hyperscan, CUDA, Metal, or WGPU backend state warm. Local filesystem scans send
-only canonical root and source-policy metadata; the daemon reads and batches
-those bytes in its own process. Git, binary, remote, and cloud sources that
-require client-side credentials still use protected bounded chunk frames:
+backend state warm. Local filesystem scans send only canonical root and
+source-policy metadata; the daemon reads and batches the files in its own
+process. Git, binary, remote, and cloud sources that require client-side
+credentials use protected bounded chunk frames.
 
 ```sh
-# Calibrate on this worker class, then run the service in the foreground
-# or under a service manager.
+# Terminal 1
 keyhog calibrate-autoroute --policy default
 keyhog daemon start --mass
 
-# Stream one independently retryable inventory partition.
+# Terminal 2, after the daemon prints its ready line
 keyhog scan --daemon=mass /srv/inventory/team-a \
   --format json-envelope --output team-a.json
-keyhog daemon status
 keyhog daemon stop
 ```
 
-Daemon-local filesystem batches and protected wire batches each carry at most
-8 MiB of raw payload and 1,024 chunks. Input size does not determine resident
-batch memory, so the same route can process a TB-scale tree without collecting
-it in RAM. Local file payload bytes never cross the IPC socket. The daemon holds
-an exclusive fragment-state lease for the transaction and clears that state
-when the client finishes, disconnects, or fails.
-Daemon-local acquisition starts with one drain request. The daemon then emits
-one bounded response per batch and a terminal completion response, so filesystem
-reading, scanning, and client retirement continue under socket backpressure
-without a request round trip between batches.
+`--daemon=mass` is a required route. It never retries in process. Each batch is
+bounded to 8 MiB and 1,024 chunks, independent of total input size. Preserve
+the coverage envelope, exit status, and terminal execution receipt for every
+inventory partition.
 
-Add `--incremental --incremental-cache <PATH>` to a daemon-local filesystem
-scan to persist the spec-bound Merkle generation in the daemon. Unchanged clean
-files bypass file reads and scanner dispatch on later transactions while files
-that produced findings remain uncached and are rescanned.
-
-For protected wire batches, the client validates the completion receipt against
-the exact chunks and bytes it sent. For daemon-local paths, the daemon receipt
-is the source-byte authority. Stderr reports the transport, total and GPU
-batches, chunks, bytes, GPU byte share, whether GPU processed more than half of
-all bytes, and daemon-side throughput. Invalid receipt invariants fail instead
-of emitting a scan report. Acquisition gaps remain visible in the envelope and
-use exit `13`.
-
-Routine workers use persisted autoroute evidence. Add `--mass-gpu-primary` at
-daemon startup when a TB-scale worker must prove that GPU processed more than
-half of all non-empty payload bytes. The client fails before reporting when the
-terminal receipt is CPU-majority. To diagnose a GPU-only worker, force
-`--backend gpu-cuda-region-presence` or `--backend
-gpu-wgpu-region-presence`. A forced GPU service exits `12` when GPU startup
-fails and returns an error instead of substituting CPU after a runtime fault.
-An explicit backend remains a diagnostic override, not autoroute proof.
-
-`--daemon=mass` is an explicit required route. It never falls back to an
-in-process scan. Baseline state, live verification, lockdown, presets, detector
-overlays, custom allowlists, and scanner-policy overrides remain in-process
-contracts and are rejected before source acquisition. Incremental state is
-supported for daemon-local filesystem roots. Warm one-file and stdin requests
-remain available on the same socket through `--daemon=on`.
-
-See
-[daemon and warm scans](https://santhreal.github.io/keyhog/workflows/daemon.html)
-and [mass scanning](https://santhreal.github.io/keyhog/guides/mass-scanning.html).
+See [daemon lifecycle, routing, and receipts](https://santhreal.github.io/keyhog/workflows/daemon.html)
+and [inventory partitioning](https://santhreal.github.io/keyhog/guides/mass-scanning.html).
 
 ## System-wide credential triage
 

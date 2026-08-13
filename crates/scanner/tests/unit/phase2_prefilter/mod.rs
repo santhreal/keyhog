@@ -48,7 +48,9 @@ fn run_matcher(matcher: BatchMatcher<'_>, text: &str) -> Vec<usize> {
 
 fn config() -> DispatchConfig {
     DispatchConfig {
+        #[cfg(feature = "simd")]
         fallback_hs: true,
+        #[cfg(feature = "simd")]
         hs_prefilter_max_len: 16,
         homoglyph_gate: true,
         homoglyph_ascii_skip: true,
@@ -69,7 +71,7 @@ fn exact_trigger_evidence_preserves_bytes_and_unknown_state() {
     let evidence = ChunkTriggerEvidence::inspect(text);
 
     assert_eq!(evidence.text().as_ptr(), text.as_ptr());
-    assert_eq!(evidence.len(), text.len());
+    assert_eq!(evidence.text().len(), text.len());
     assert!(evidence.is_ascii());
     assert_eq!(evidence.observe_ac(Some(&ac)), TriggerEvidence::Present);
     assert_eq!(
@@ -215,6 +217,7 @@ fn dispatch_plan_selects_the_exact_ownership_scope() {
     );
 }
 
+#[cfg(feature = "simd")]
 /// Regression for KH-043: marking and admission share one HS predicate—large
 /// ASCII remains eligible, large non-ASCII does not, and disabled HS never is.
 #[test]
@@ -245,7 +248,7 @@ fn dispatch_plan_storage_is_constant_scale_and_borrows_input() {
         std::mem::size_of_val(&dense_plan)
     );
     assert_eq!(dense_plan.chunk().text().as_ptr(), dense.as_ptr());
-    assert_eq!(dense_plan.chunk().len(), dense.len());
+    assert_eq!(dense_plan.chunk().text().len(), dense.len());
 }
 
 /// Regression for KH-043: every portable matcher plan reports identical set

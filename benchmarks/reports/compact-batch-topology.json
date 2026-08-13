@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "subject": "coalesced CPU/SIMD small-lane topology allocation ownership",
+  "source_commit": "4494d0caf37d78bcc3dcb904ddc25e9c12437dff",
+  "measurement": {
+    "method": "counting global allocator around the production topology builder and its legacy per-lane ownership reference",
+    "command": "cargo test -p keyhog-scanner --all-features --profile release-fast --test perf_alloc_batch_topology -- --nocapture",
+    "compiler": "rustc 1.98.0-nightly (23a3312d9 2026-05-23)"
+  },
+  "workload": {
+    "chunks": 1024,
+    "bytes_per_chunk": 1,
+    "small_chunk_threshold_bytes": 65536,
+    "workers": 32,
+    "small_lanes": 32,
+    "stored_small_indices": 1024
+  },
+  "legacy": {
+    "heap_allocations": 42,
+    "allocated_bytes": 17152,
+    "ownership": "one small-index staging vector, one lane descriptor vector, and one vector per small lane"
+  },
+  "candidate": {
+    "heap_allocations": 2,
+    "allocated_bytes": 8960,
+    "ownership": "one flat small-index vector and one lane descriptor vector"
+  },
+  "result": {
+    "allocation_count_reduction_percent": 95.23809523809523,
+    "allocation_count_speedup": 21.0,
+    "allocated_byte_reduction_percent": 47.76119402985074
+  },
+  "parity": {
+    "small_chunk_order_changed": false,
+    "large_chunk_isolation_changed": false,
+    "worker_partitioning_changed": false,
+    "lane_byte_ceiling_bytes": 524288
+  },
+  "limit": "The receipt measures topology-construction allocations at the production builder choke point. It does not claim a 21x whole-scan wall-time improvement or allocator-internal retained-memory behavior."
+}

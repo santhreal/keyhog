@@ -542,7 +542,7 @@ fn parse_type_chunk(
     }
 
     for (entry_index, relative) in entry_offsets {
-        let entry_start = entries_base.checked_add(relative as usize).ok_or_else(|| {
+        let entry_start = entries_base.checked_add(relative).ok_or_else(|| {
             AndroidCompiledError::malformed(entries_base, "resource entry offset overflow")
         })?;
         if entry_start.saturating_add(8) > chunk.end {

@@ -19,21 +19,25 @@ pub(crate) use tokio::net::UnixStream as DaemonStream;
 pub(crate) use tokio::net::UnixListener as DaemonListener;
 
 #[cfg(unix)]
+#[allow(dead_code)]
 pub(crate) fn bind_transport(path: &Path) -> io::Result<DaemonListener> {
     DaemonListener::bind(path)
 }
 
 #[cfg(unix)]
+#[allow(dead_code)]
 pub(crate) async fn connect_transport(path: &Path) -> io::Result<DaemonStream> {
     DaemonStream::connect(path).await
 }
 
 #[cfg(unix)]
+#[allow(dead_code)]
 pub(crate) fn transport_path_display(path: &Path) -> String {
     path.display().to_string()
 }
 
 #[cfg(unix)]
+#[allow(dead_code)]
 pub(crate) fn remove_transport_endpoint(path: &Path) -> io::Result<()> {
     std::fs::remove_file(path)
 }

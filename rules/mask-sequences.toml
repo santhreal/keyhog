@@ -1,0 +1,23 @@
+# Tier-B: mask/placeholder sequence patterns used by the suppression shape
+# gate `looks_like_prefixed_masked_sequence`.
+#
+# `mask_prefixes` = leading byte runs that mark a value as a masked placeholder
+#                   (matched case-insensitively via `starts_with_ignore_ascii_case`).
+# `digit_runs`    = digit-sequence substrings that confirm a mask body
+#                   (matched case-insensitively via `ci_find`).
+# `alpha_runs`    = alphabetic-sequence substrings that confirm a mask body
+#                   (matched case-insensitively via `ci_find`).
+
+mask_prefixes = [
+  "xxx",
+  "***",
+]
+
+digit_runs = [
+  "1234567890",
+  "0123456789",
+]
+
+alpha_runs = [
+  "abcdefgh",
+]

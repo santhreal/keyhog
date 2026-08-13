@@ -296,6 +296,7 @@ impl RouteTimingEvidence {
         }
     }
 
+    #[allow(dead_code)]
     pub(super) fn bind_ordered_device_route(
         mut self,
         device_route: keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute,
@@ -1152,6 +1153,7 @@ impl AutorouteDecision {
         })
     }
 
+    #[allow(dead_code)]
     pub(super) fn peer_identity_for_route(&self, route: MeasuredRoute) -> Option<&str> {
         let first = self
             .calibration_points
@@ -1174,6 +1176,7 @@ impl AutorouteDecision {
             .then_some(first)
             .flatten()
     }
+    #[allow(dead_code)]
     pub(super) fn ordered_device_route_for_route(
         &self,
         route: MeasuredRoute,
