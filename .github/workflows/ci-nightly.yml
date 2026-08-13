@@ -16,9 +16,8 @@ concurrency:
 permissions:
   contents: read
 
-# Every job here is schedule- or dispatch-triggered, so there is no pull
-# request to route onto the self-hosted Linux runner and no self-hosted
-# workspace to repair. Both are ci.yml's concern.
+# Every job here is schedule- or dispatch-triggered, so there is no
+# pull request routing or workspace repair to consider.
 
 env:
   CARGO_TERM_COLOR: always

@@ -11,10 +11,6 @@ on:
 permissions:
   contents: read
 
-# Linux self-hosted (axiomexec) is ONLY for same-repo PRs authored by
-# `santhreal`. Everyone else (forks, other authors, push/main, tags) stays on
-# GitHub-hosted `ubuntu-24.04`. macOS/Windows stay GitHub-hosted for all events.
-#
 # Two lanes in one workflow.
 #
 # Merge lane (every pull request): Format, Clippy (advisory), Build + smoke +
@@ -42,19 +38,8 @@ env:
 jobs:
   fmt:
     name: Format
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     steps:
-      - name: Repair self-hosted workspace
-        if: runner.environment == 'self-hosted'
-        shell: bash
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # cargo fmt walks every .rs file under tests/, including
@@ -76,23 +61,12 @@ jobs:
 
   clippy:
     name: Clippy (advisory)
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     # Runs on every required CI push so the lints stay visible, but stays
     # non-blocking: `-D warnings` previously turned style noise into release
     # blockers. Genuine bugs are caught by Format/Build/Verifier/focused tests.
     continue-on-error: true
     steps:
-      - name: Repair self-hosted workspace
-        if: runner.environment == 'self-hosted'
-        shell: bash
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
@@ -104,19 +78,8 @@ jobs:
 
   build:
     name: Build Release
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     steps:
-      - name: Repair self-hosted workspace
-        if: runner.environment == 'self-hosted'
-        shell: bash
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -168,20 +131,9 @@ jobs:
 
   integration-verifier:
     name: Integration (verifier)
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - name: Repair self-hosted workspace
-        if: runner.environment == 'self-hosted'
-        shell: bash
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
@@ -196,20 +148,9 @@ jobs:
 
   focused-integration:
     name: Focused integration (core + scanner)
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - name: Repair self-hosted workspace
-        if: runner.environment == 'self-hosted'
-        shell: bash
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
@@ -235,20 +176,9 @@ jobs:
 
   security-fast:
     name: Security + e2e (focused)
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - name: Repair self-hosted workspace
-        if: runner.environment == 'self-hosted'
-        shell: bash
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
@@ -277,19 +207,8 @@ jobs:
 
   library-surface:
     name: Library surface
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     steps:
-      - name: Repair self-hosted workspace
-        if: runner.environment == 'self-hosted'
-        shell: bash
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # crates/scanner/tests/contracts/*.toml and
@@ -317,20 +236,9 @@ jobs:
 
   integration-sources:
     name: Integration (sources)
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - name: Repair self-hosted workspace
-        if: runner.environment == 'self-hosted'
-        shell: bash
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
@@ -345,20 +253,9 @@ jobs:
 
   integration-cli:
     name: Integration (CLI)
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - name: Repair self-hosted workspace
-        if: runner.environment == 'self-hosted'
-        shell: bash
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
@@ -374,20 +271,9 @@ jobs:
 
   integration-detector-contracts:
     name: Integration (detector + recall contracts)
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - name: Repair self-hosted workspace
-        if: runner.environment == 'self-hosted'
-        shell: bash
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
@@ -433,22 +319,11 @@ jobs:
     # and those are exactly the refs release.yml turns into a published crate,
     # so nothing is published without it.
     if: github.event_name != 'pull_request'
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     # Cross-package feature combinations the release workflows and the
     # composite Action depend on. Anything anyone might `cargo install`
     # has to compile cleanly with the documented feature set.
     steps:
-      - name: Repair self-hosted workspace
-        if: runner.environment == 'self-hosted'
-        shell: bash
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -537,19 +412,8 @@ jobs:
 
   install-scripts:
     name: Install scripts (install.sh edge cases)
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     steps:
-      - name: Repair self-hosted workspace
-        if: runner.environment == 'self-hosted'
-        shell: bash
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install install-script linters
         run: |
@@ -614,7 +478,7 @@ jobs:
       - security-fast
       - feature-matrix
       - install-scripts
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     permissions: {}
     env:
       KEYHOG_BLOCKING_RESULTS: ${{ toJSON(needs) }}
