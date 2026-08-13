@@ -3,6 +3,7 @@
 
 ## Unreleased
 
+- CPU phase-one admission now reuses the bounded trigger bitmap scratch and stores clean trigger evidence as an allocation-free empty row. Hit rows retain their exact bitmap.
 - Large authenticated quantized-confidence CPU batches now score in parallel through the configured Rayon pool with bit-exact ordered output; batches below the established 64-row crossover remain serial.
 - Coalesced CPU and SIMD batch topology now stores all small-lane indices in one flat buffer with range descriptors, eliminating one heap allocation per small lane while retaining exact scheduling and byte bounds.
 - Sensitive-path keyword-free confidence ownership regression pins that ordinary entropy_very_high cannot demote admitted secrets.env hits.

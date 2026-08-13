@@ -1,7 +1,5 @@
-//! Trigger buffer pool and SIMD trigger caching for scan coalescing.
+//! Reusable SIMD trigger evidence for scan coalescing.
 
-#[cfg(feature = "simd")]
-use std::cell::RefCell;
 #[cfg(feature = "simd")]
 use std::sync::Arc;
 
@@ -128,27 +126,6 @@ impl ReusableSimdTriggerCache {
     pub(crate) fn hits(&self) -> u64 {
         self.hits
     }
-}
-
-// The trigger-buffer pool is only used in the Hyperscan-prefilter scratch path
-// of `scan_coalesced`.
-#[cfg(feature = "simd")]
-thread_local! {
-    static TRIGGER_POOL: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
-}
-
-#[cfg(feature = "simd")]
-#[inline]
-pub(crate) fn with_trigger_buffer<R>(words_needed: usize, f: impl FnOnce(&mut [u64]) -> R) -> R {
-    TRIGGER_POOL.with(|cell| {
-        let mut buf = cell.borrow_mut();
-        if buf.len() < words_needed {
-            buf.resize(words_needed, 0);
-        }
-        let slice = &mut buf[..words_needed];
-        slice.fill(0);
-        f(slice)
-    })
 }
 
 #[cfg(feature = "simd")]

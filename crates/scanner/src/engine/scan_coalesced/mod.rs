@@ -7,11 +7,10 @@ use super::phase2::Phase2AlwaysActiveGpuEvidence;
 use super::scan_filters::*;
 use super::*;
 
-#[cfg(feature = "simd")]
 pub(crate) mod trigger_cache;
 
 #[cfg(feature = "simd")]
-pub(crate) use trigger_cache::{mark_hs_trigger, with_trigger_buffer, ReusableSimdTriggerCache};
+pub(crate) use trigger_cache::{mark_hs_trigger, ReusableSimdTriggerCache};
 
 impl CompiledScanner {
     // The coalesced phase-2 tail is only reachable from the SIMD producer
@@ -652,7 +651,6 @@ impl CompiledScanner {
         data: &[u8],
         prefilter: &super::SimdPhase1Prefilter,
         ac_len: usize,
-        words_needed: usize,
     ) -> Result<Option<Vec<u64>>, String> {
         #[cfg(debug_assertions)]
         self.phase1_trigger_scanned_bytes.fetch_add(
@@ -660,7 +658,7 @@ impl CompiledScanner {
             u64::try_from(data.len()).unwrap_or(u64::MAX),
             std::sync::atomic::Ordering::Relaxed,
         );
-        with_trigger_buffer(words_needed, |scratch| {
+        super::trigger_bitmap::with_scratch(ac_len, |scratch| {
             let scanner = prefilter.scanner();
             scanner.scan_each_result(data, |hs_id| {
                 mark_hs_trigger(scratch, prefilter, ac_len, hs_id);
@@ -760,19 +758,14 @@ impl CompiledScanner {
                         self.reusable_simd_triggers
                             .lock()
                             .get_or_compute(&chunk.data, || {
-                                self.compute_one_coalesced_simd_trigger(
-                                    data,
-                                    prefilter,
-                                    ac_len,
-                                    words_needed,
-                                )
+                                self.compute_one_coalesced_simd_trigger(data, prefilter, ac_len)
                             })
                     })
                     .as_ref()
                     .map(|triggers| triggers.as_ref().map(|row| row.as_ref().to_vec()))
                     .map_err(Clone::clone);
             }
-            self.compute_one_coalesced_simd_trigger(data, prefilter, ac_len, words_needed)
+            self.compute_one_coalesced_simd_trigger(data, prefilter, ac_len)
         };
 
         let threshold = self.tuning.chunk_lane_threshold();

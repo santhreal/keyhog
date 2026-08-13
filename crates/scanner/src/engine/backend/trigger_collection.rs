@@ -108,19 +108,38 @@ impl CompiledScanner {
     }
 
     pub(crate) fn collect_triggered_patterns_cpu_bytes(&self, bytes: &[u8]) -> Vec<u64> {
+        let mut triggered_patterns = super::trigger_bitmap::new_trigger_bitmap(self.ac_map.len());
+        self.mark_triggered_patterns_cpu_bytes(&mut triggered_patterns, bytes);
+        triggered_patterns
+    }
+
+    /// Return an empty allocation-free row when CPU phase 1 found no trigger.
+    ///
+    /// Admission plans treat an empty row as exact no-trigger evidence. Hit rows
+    /// retain the full bitmap because downstream extraction consumes its indices.
+    pub(crate) fn collect_triggered_patterns_cpu_compact(&self, text: &str) -> Vec<u64> {
+        super::trigger_bitmap::with_scratch(self.ac_map.len(), |scratch| {
+            self.mark_triggered_patterns_cpu_bytes(scratch, text.as_bytes());
+            scratch
+                .iter()
+                .any(|&word| word != 0)
+                .then(|| scratch.to_vec())
+                .unwrap_or_default()
+        })
+    }
+
+    fn mark_triggered_patterns_cpu_bytes(&self, triggered_patterns: &mut [u64], bytes: &[u8]) {
         #[cfg(debug_assertions)]
         self.phase1_trigger_scanned_bytes.fetch_add(
             // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; scan behavior is unchanged.
             u64::try_from(bytes.len()).unwrap_or(u64::MAX),
             std::sync::atomic::Ordering::Relaxed,
         );
-        let mut triggered_patterns = super::trigger_bitmap::new_trigger_bitmap(self.ac_map.len());
         if let Some(ac) = &self.ac {
             for ac_match in ac.find_overlapping_iter(bytes) {
-                self.mark_triggered_pattern(&mut triggered_patterns, ac_match.pattern().as_usize());
+                self.mark_triggered_pattern(triggered_patterns, ac_match.pattern().as_usize());
             }
         }
-        triggered_patterns
     }
 
     #[doc(hidden)]
