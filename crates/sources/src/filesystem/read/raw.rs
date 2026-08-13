@@ -322,24 +322,37 @@ pub(super) fn read_stat_sized_to_cap(
     expected_size: u64,
     hard_cap: u64,
 ) -> std::io::Result<Vec<u8>> {
-    let expected_size = usize::try_from(expected_size).map_err(|error| {
+    // The stat is only a reservation hint. Clamp it before converting or
+    // allocating so an oversized/stale stat can never bypass the read cap,
+    // including on platforms where u64 is wider than usize.
+    let initial_size = expected_size.min(hard_cap);
+    let initial_size = usize::try_from(initial_size).map_err(|error| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!("filesystem buffered read size is not addressable on this platform: {error}"),
+            format!(
+                "filesystem buffered read cap is not addressable on this platform: {error}"
+            ),
         )
     })?;
-    let mut bytes = vec![0u8; expected_size];
+    let mut bytes = vec![0u8; initial_size];
     let mut filled = 0;
-    while filled < expected_size {
+    while filled < initial_size {
         match reader.read(&mut bytes[filled..]) {
             Ok(0) => break,
             Ok(n) => filled += n,
-            Err(ref error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(error) => return Err(error),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => {
+                return Err(std::io::Error::new(
+                    error.kind(),
+                    format!(
+                        "failed to fill stat-sized filesystem buffer after {filled} of {initial_size} bytes: {error}"
+                    ),
+                ));
+            }
         }
     }
     bytes.truncate(filled);
-    if filled < expected_size {
+    if filled < initial_size {
         return Ok(bytes);
     }
 
@@ -351,8 +364,13 @@ pub(super) fn read_stat_sized_to_cap(
                 bytes.push(sentinel[0]);
                 break;
             }
-            Err(ref error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(error) => return Err(error),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => {
+                return Err(std::io::Error::new(
+                    error.kind(),
+                    format!("failed to probe filesystem file growth: {error}"),
+                ));
+            }
         }
     }
 
@@ -364,7 +382,15 @@ pub(super) fn read_stat_sized_to_cap(
         .saturating_sub(bytes.len() as u64)
         .saturating_add(1);
     if remaining_with_probe > 0 {
-        reader.take(remaining_with_probe).read_to_end(&mut bytes)?;
+        reader
+            .take(remaining_with_probe)
+            .read_to_end(&mut bytes)
+            .map_err(|error| {
+                std::io::Error::new(
+                    error.kind(),
+                    format!("failed to read filesystem file growth to the hard cap: {error}"),
+                )
+            })?;
     }
     Ok(bytes)
 }
