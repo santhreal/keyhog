@@ -480,9 +480,11 @@ pub struct ScanArgs {
     pub oob_server: String,
 
     /// Per-finding OOB wait timeout in seconds. Detector specs may set their
-    /// own `timeout_secs`; this value is the global default and the upper
-    /// bound. Lower = faster scans, higher = catches services with delayed
-    /// webhooks (e.g., queued mail delivery). Requires `--verify-oob`.
+    /// own `timeout_secs`; this value is the global default. The upper bound
+    /// is max(this value, 120s), so a detector can always wait at least 120s
+    /// for a delayed webhook even when this default is lower. Lower = faster
+    /// scans, higher = catches services with delayed webhooks (e.g., queued
+    /// mail delivery). Requires `--verify-oob`.
     #[cfg(feature = "verify")]
     #[arg(
         long,

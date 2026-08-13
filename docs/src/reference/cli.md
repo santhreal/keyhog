@@ -131,7 +131,7 @@ or coverage incomplete.
 | `--no-unicode-norm` |  |  | Disable Unicode normalization (not recommended) |
 | `--no-verify` |  |  | Disable credential verification, overriding `verify = true` in `.keyhog.toml` |
 | `--oob-server` | `HOST` | `oast.fun` | Interactsh server for OOB verification. Defaults to projectdiscovery's public collector at `oast.fun`. Use a self-hosted server for sensitive scans; the collector sees correlation IDs and the IPs of services that call back, never the credential itself. Only meaningful with `--verify-oob`; clap rejects the flag without it instead of silently ignoring it (the prior behavior gave false confidence that an override had been applied) |
-| `--oob-timeout` | `SECS` | `30` | Per-finding OOB wait timeout in seconds. Detector specs may set their own `timeout_secs`; this value is the global default and the upper bound. Lower = faster scans, higher = catches services with delayed webhooks (e.g., queued mail delivery). Requires `--verify-oob` |
+| `--oob-timeout` | `SECS` | `30` | Per-finding OOB wait timeout in seconds. Detector specs may set their own `timeout_secs`; this value is the global default. The upper bound is max(this value, 120s), so a detector can always wait at least 120s for a delayed webhook even when this default is lower. Lower = faster scans, higher = catches services with delayed webhooks (e.g., queued mail delivery). Requires `--verify-oob` |
 | `-o`, `--output` | `OUTPUT` |  | Write findings to file |
 | `-p`, `--path` | `PATH` |  | Scan a directory or file |
 | `--per-chunk-timeout-ms` | `MS` |  | Hard deadline per chunk scan in milliseconds. Default unset = no operator deadline; decode still has its internal bomb guard |
@@ -316,7 +316,7 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--no-unicode-norm` |  |  | Disable Unicode normalization (not recommended) |
 | `--no-verify` |  |  | Disable credential verification, overriding `verify = true` in `.keyhog.toml` |
 | `--oob-server` | `HOST` | `oast.fun` | Interactsh server for OOB verification. Defaults to projectdiscovery's public collector at `oast.fun`. Use a self-hosted server for sensitive scans; the collector sees correlation IDs and the IPs of services that call back, never the credential itself. Only meaningful with `--verify-oob`; clap rejects the flag without it instead of silently ignoring it (the prior behavior gave false confidence that an override had been applied) |
-| `--oob-timeout` | `SECS` | `30` | Per-finding OOB wait timeout in seconds. Detector specs may set their own `timeout_secs`; this value is the global default and the upper bound. Lower = faster scans, higher = catches services with delayed webhooks (e.g., queued mail delivery). Requires `--verify-oob` |
+| `--oob-timeout` | `SECS` | `30` | Per-finding OOB wait timeout in seconds. Detector specs may set their own `timeout_secs`; this value is the global default. The upper bound is max(this value, 120s), so a detector can always wait at least 120s for a delayed webhook even when this default is lower. Lower = faster scans, higher = catches services with delayed webhooks (e.g., queued mail delivery). Requires `--verify-oob` |
 | `-o`, `--output` | `OUTPUT` |  | Write findings to file |
 | `-p`, `--path` | `PATH` |  | Scan a directory or file |
 | `--per-chunk-timeout-ms` | `MS` |  | Hard deadline per chunk scan in milliseconds. Default unset = no operator deadline; decode still has its internal bomb guard |
