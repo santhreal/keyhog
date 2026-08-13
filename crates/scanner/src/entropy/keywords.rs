@@ -143,7 +143,7 @@ pub(crate) fn is_likely_innocuous_line(line: &str) -> bool {
     // not a secret. (Byte-identical to the former 5-way `||` chain.)
     if crate::suppression::shape::HASH_ALGO_COLON_LABELS
         .iter()
-        .copied()
+        .map(|v| v.as_slice())
         .chain(std::iter::once(b"git-sha:".as_slice()))
         .any(|label| crate::ascii_ci::starts_with_ignore_ascii_case(wq, label))
     {

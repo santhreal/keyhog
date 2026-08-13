@@ -344,7 +344,7 @@ fn percentile_upper_bound(
     percentile: u64,
     maximum_ns: u64,
 ) -> u64 {
-    let rank = ((u128::from(call_count) * u128::from(percentile)) + 99) / 100;
+    let rank = (u128::from(call_count) * u128::from(percentile)).div_ceil(100);
     let mut cumulative = 0_u128;
     for bucket in buckets {
         cumulative += u128::from(bucket.count);
@@ -1100,10 +1100,11 @@ impl Runtime {
             .map(|(index, record)| SpanRecordV2 {
                 version: 3,
                 span_id: record.span_id,
-                parent_span_id: positions
-                    .contains_key(&record.parent_span_id)
-                    .then(|| Evidence::recorded(record.parent_span_id))
-                    .unwrap_or_else(|| Evidence::unavailable(EvidenceGap::Unavailable)),
+                parent_span_id: if positions.contains_key(&record.parent_span_id) {
+                    Evidence::recorded(record.parent_span_id)
+                } else {
+                    Evidence::unavailable(EvidenceGap::Unavailable)
+                },
                 metric_id: record.metric_id,
                 start_ns: record.start_ns,
                 inclusive_ns: record.inclusive_ns,
@@ -1625,7 +1626,7 @@ impl Runtime {
                     self.inner.queue_depth_high_water[index].swap(current, Ordering::Relaxed);
                 let enqueues = self.inner.queue_depth_enqueues[index].swap(0, Ordering::Relaxed);
                 let dequeues = self.inner.queue_depth_dequeues[index].swap(0, Ordering::Relaxed);
-                (current != 0 || high_water != 0 || enqueues != 0 || dequeues != 0).then(|| {
+                (current != 0 || high_water != 0 || enqueues != 0 || dequeues != 0).then_some(
                     QueueDepthV2 {
                         version: 1,
                         queue,
@@ -1633,8 +1634,8 @@ impl Runtime {
                         high_water,
                         enqueues,
                         dequeues,
-                    }
-                })
+                    },
+                )
             })
             .collect()
     }

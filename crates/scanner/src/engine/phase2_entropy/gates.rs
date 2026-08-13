@@ -8,6 +8,33 @@ use crate::engine::*;
 use crate::suppression::path_filter::{
     looks_like_entropy_raw_base64_file_path, path_is_ci_workflow_file, path_is_i18n_file,
 };
+/// Static prefix shapes that mark an entropy candidate as a shell expansion
+/// or template literal. Loaded once from the bundled Tier-B TOML at
+/// `rules/shell-expansion-prefixes.toml`. Fail-closed: invalid bundled data
+/// panics loudly at first use.
+static SHELL_EXPANSION_PREFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(
+    || {
+        #[derive(serde::Deserialize)]
+        struct ShellExpansionPrefixes {
+            prefixes: Vec<String>,
+        }
+        let raw = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/shell-expansion-prefixes.toml"
+        ));
+        let parsed: ShellExpansionPrefixes = toml::from_str(raw).unwrap_or_else(|error| {
+            panic!(
+                "rules/shell-expansion-prefixes.toml is invalid: {error}. \
+             Fix the bundled Tier-B data file."
+            )
+        });
+        assert!(
+        !parsed.prefixes.is_empty(),
+        "rules/shell-expansion-prefixes.toml is empty; refusing to run without the Tier-B list it owns."
+    );
+        parsed.prefixes
+    },
+);
 
 pub(crate) fn entropy_match_suppression_stage(
     entropy_match: &crate::entropy::EntropyMatch,
@@ -314,18 +341,15 @@ pub(crate) fn entropy_match_suppression_stage(
         return Some(EntropyShapeStage::I18nFile);
     }
 
-    // Shell-expansion / template-literal shapes: values starting
-    // with `$(`, `${`, `$ECR`, `$RUN`, `$VAR`, `\"${`, or `[{ \"`
-    // are shell command substitutions, env-var refs, or JSON
-    // matrix bodies - not credentials. Workflow files generate
-    // these in volume.
-    if entropy_match.value.starts_with("$(")
-        || entropy_match.value.starts_with("${")
-        || entropy_match.value.starts_with("\\\"${")
-        || entropy_match.value.starts_with("[{ \"")
-        || entropy_match.value.starts_with("{ \"a")
-        || entropy_match.value.starts_with("$ECR")
-        || entropy_match.value.starts_with("$RUN")
+    // Shell-expansion / template-literal shapes: values starting with a
+    // prefix in the bundled Tier-B list (`rules/shell-expansion-prefixes.toml`)
+    // are shell command substitutions, env-var refs, or JSON matrix bodies,
+    // not credentials. Workflow files generate these in volume. The dynamic
+    // `$` + uppercase-letter rule (e.g. `$VAR`, `$HOME`) is a character-class
+    // predicate, not a fixed string, so it stays in code.
+    if SHELL_EXPANSION_PREFIXES
+        .iter()
+        .any(|prefix| entropy_match.value.starts_with(prefix.as_str()))
         || (entropy_match.value.starts_with('$')
             && entropy_match
                 .value

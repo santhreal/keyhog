@@ -1,3 +1,11 @@
+// Bare hash-algorithm scheme names recognized in URI-shaped values.
+// Loaded from `rules/hash-algo-labels.toml` (scheme_names).
+crate::tier_b_list::tier_b_vec!(
+    HASH_ALGO_SCHEME_NAMES,
+    "hash-algo-labels.toml",
+    scheme_names
+);
+
 /// True if `value` looks like a URI / URN / scheme-prefixed string.
 pub(crate) fn looks_like_scheme_prefixed_uri(value: &str) -> bool {
     let bytes = value.as_bytes();
@@ -21,10 +29,10 @@ pub(crate) fn looks_like_scheme_prefixed_uri(value: &str) -> bool {
     if after.starts_with(b"//") || after.contains(&b':') || scheme.contains(&b'-') {
         return true;
     }
-    if matches!(
-        scheme,
-        b"sha256" | b"sha512" | b"sha1" | b"md5" | b"blake3" | b"blake2"
-    ) {
+    if HASH_ALGO_SCHEME_NAMES
+        .iter()
+        .any(|name| scheme.eq_ignore_ascii_case(name.as_bytes()))
+    {
         return true;
     }
     bytes.len() <= 20

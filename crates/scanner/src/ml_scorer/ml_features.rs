@@ -156,8 +156,10 @@ const MAX_NORMALIZED_ENTROPY: f32 = 8.0;
 pub(crate) const ML_LOW_ENTROPY_FEATURE_THRESHOLD: f64 = 3.5;
 
 const MAX_PREFIX_LENGTH: f32 = 10.0;
-const OPENAI_PREFIX: &str = "sk-";
-const AWS_ACCESS_KEY_PREFIX: &str = "AKIA";
+// Service-specific prefixes (formerly OPENAI_PREFIX = "sk-" and
+// AWS_ACCESS_KEY_PREFIX = "AKIA") moved to `rules/ml-feature-markers.toml`
+// (service_prefixes). The constants were the last hardcoded service
+// knowledge in the ML feature extractor.
 const LOW_VARIETY_BYTE_THRESHOLD: usize = 3;
 const MIN_LOW_VARIETY_LENGTH: usize = 5;
 const MIN_HEX_PLACEHOLDER_LENGTH: usize = 10;
@@ -211,6 +213,8 @@ struct MlFeatureMarkers {
     source_markers: Vec<String>,
     source_extensions: Vec<String>,
     config_markers: Vec<String>,
+    service_prefixes: Vec<String>,
+    test_file_context_fragments: Vec<String>,
 }
 
 /// Parse the bundled Tier-B ML-feature marker lists. Returns an error rather
@@ -580,16 +584,16 @@ fn apply_service_context_feature(features: &mut [f32; NUM_FEATURES], context: Fe
     features[SERVICE_CONTEXT_FEATURE_INDEX] = binary_feature(names_service);
 }
 
-/// File-context fragments that imply this match is in test/fixture code.
-/// Hoisted to a `const` so we don't allocate four Strings on every ML call.
-const TEST_FILE_CONTEXT_FRAGMENTS: &[&[u8]] = &[b"test", b"mock", b"fixture", b"spec"];
+// File-context fragments that imply this match is in test/fixture code.
+// Loaded from `rules/ml-feature-markers.toml` (test_file_context_fragments).
 
 fn apply_extra_features(features: &mut [f32; NUM_FEATURES], context: FeatureContext<'_>) {
     let is_in_comment = context.starts_with_comment_prefix();
     let has_assignment = has_assignment_operator(context);
-    let is_test_file_context = TEST_FILE_CONTEXT_FRAGMENTS
+    let is_test_file_context = ML_FEATURE_MARKERS
+        .test_file_context_fragments
         .iter()
-        .any(|needle| context.contains_ascii_case_insensitive(needle));
+        .any(|needle| context.contains_ascii_case_insensitive(needle.as_bytes()));
 
     features[COMMENT_CONTEXT_FEATURE_INDEX] = binary_feature(is_in_comment);
     features[ASSIGNMENT_OPERATOR_FEATURE_INDEX] = binary_feature(has_assignment);
@@ -633,8 +637,20 @@ fn apply_prefix_features(
     let prefix_len = longest_known_prefix(text, known_prefixes);
     features[12] = binary_feature(prefix_len > 0);
     features[13] = (prefix_len as f32 / MAX_PREFIX_LENGTH).min(1.0);
-    features[14] = binary_feature(text.starts_with(OPENAI_PREFIX));
-    features[15] = binary_feature(text.starts_with(AWS_ACCESS_KEY_PREFIX));
+    // Service-specific prefix features (formerly hardcoded OPENAI_PREFIX / AWS_ACCESS_KEY_PREFIX).
+    // The first two entries in service_prefixes map to features[14] and [15] for model backward
+    // compatibility. Additional entries beyond the first two are ignored at the feature level.
+    let service_prefixes: &[String] = &ML_FEATURE_MARKERS.service_prefixes;
+    features[14] = binary_feature(
+        service_prefixes
+            .first()
+            .is_some_and(|p| text.starts_with(p.as_str())),
+    );
+    features[15] = binary_feature(
+        service_prefixes
+            .get(1)
+            .is_some_and(|p| text.starts_with(p.as_str())),
+    );
 }
 
 fn apply_context_features(

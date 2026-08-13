@@ -186,9 +186,6 @@ impl ReusablePhase1EvidenceCache {
         self.entries.shrink_to_fit();
         self.resident_bytes = 0;
     }
-    pub(crate) fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
     fn get(
         &mut self,
         fingerprint: [u8; 32],
@@ -400,11 +397,12 @@ impl Phase1AdmissionPlan {
         self.admissions.get(index).copied()
     }
 
+    #[cfg(feature = "simd")]
     #[inline]
     pub(crate) fn payload_evidence_row_for(&self, index: usize) -> Option<usize> {
         self.phase2_keyword_hint_rows.get(index).copied()
     }
-
+    #[cfg(feature = "simd")]
     #[inline]
     pub(crate) fn payload_evidence_row_count(&self) -> usize {
         self.phase2_keyword_hints.len()
@@ -518,7 +516,7 @@ impl Phase1AdmissionPlan {
     fn direct_scan_absence_at_row(&self, row: usize) -> Option<bool> {
         Some(self.phase2_tail_absence_at_row(row)? && self.cpu_trigger_hints.get(row)?.is_some())
     }
-
+    #[cfg(any(feature = "simd", test))]
     #[inline]
     pub(crate) fn simd_phase2_tail_absence_for(
         &self,

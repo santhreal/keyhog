@@ -1,0 +1,14 @@
+name: Install Vectorscan
+description: Install libhyperscan-dev (Vectorscan) and pkg-config with retry logic.
+
+runs:
+  using: composite
+  steps:
+    - name: Install Vectorscan
+      shell: bash
+      run: |
+        for i in 1 2 3 4 5; do
+          sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+          sleep $((i * 2))
+          if [ "$i" -eq 5 ]; then exit 1; fi
+        done

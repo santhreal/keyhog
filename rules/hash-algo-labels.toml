@@ -1,0 +1,49 @@
+# Tier-B: hash-algorithm labels, AWS IAM ARN vocabulary, and related
+# suppression shape constants. SINGLE OWNER: suppression::shape::canonical,
+# suppression::shape::path, and context::false_positive all read these lists
+# instead of pasting their own (diverging) subsets.
+
+# Dash-separated SRI/package-integrity prefixes (`sha256-`).
+integrity_labels = [
+  "sha512-",
+  "sha384-",
+  "sha256-",
+]
+
+# Colon-separated digest prefixes (`sha256:`) used by docker, python, and
+# git-LFS digest formats.
+colon_labels = [
+  "sha256:",
+  "sha512:",
+  "sha1:",
+  "md5:",
+]
+
+# Bare hash-algorithm scheme names recognized in URI-shaped values
+# (`sha256:abc123...`). Used by the scheme-prefixed-URI shape gate in
+# suppression::shape::path.
+scheme_names = [
+  "sha256",
+  "sha512",
+  "sha1",
+  "md5",
+  "blake3",
+  "blake2",
+]
+
+# AWS partitions whose IAM ARNs this suppression recognizes. Single owner
+# for both the full (`arn:<p>:iam::`) and trimmed (`<p>:iam::`) gates.
+aws_iam_arn_partitions = [
+  "aws",
+  "aws-cn",
+  "aws-us-gov",
+]
+
+# AWS IAM ARN resource targets that mark a value as an ARN, not a credential.
+aws_iam_arn_resource_targets = [
+  ":role/",
+  ":user/",
+  ":group/",
+  ":policy/",
+  ":instance-profile/",
+]

@@ -104,10 +104,11 @@ pub(super) fn collect_structural_fragments(
             if array_joined.len() >= MIN_INLINE_ARRAY_FRAGMENT_LEN
                 && (target_is_credential || known_prefix_static_join)
             {
-                structural_joined.push(array_joined.clone());
+                let joined_len = array_joined.len();
+                structural_joined.push(array_joined);
                 structural_mappings.push(LineMapping {
                     start_offset: current_struct_offset,
-                    end_offset: current_struct_offset + array_joined.len(),
+                    end_offset: current_struct_offset + joined_len,
                     line_number: index + 1,
                     original_start_offset: source_line_offset_or_record_gap(
                         source_line_offsets,
@@ -115,7 +116,7 @@ pub(super) fn collect_structural_fragments(
                     ),
                     transport_decoded: false,
                 });
-                current_struct_offset += array_joined.len() + 1;
+                current_struct_offset += joined_len + 1;
             }
         }
 
@@ -169,10 +170,11 @@ pub(super) fn collect_structural_fragments(
         .into_iter()
         .filter(|(_, joined)| joined.len() >= MIN_STRUCTURAL_FRAGMENT_LEN)
     {
-        structural_joined.push(joined.clone());
+        let joined_len = joined.len();
+        structural_joined.push(joined);
         structural_mappings.push(LineMapping {
             start_offset: current_struct_offset,
-            end_offset: current_struct_offset + joined.len(),
+            end_offset: current_struct_offset + joined_len,
             line_number: start_line,
             original_start_offset: source_line_offset_or_record_gap(
                 source_line_offsets,
@@ -180,7 +182,7 @@ pub(super) fn collect_structural_fragments(
             ),
             transport_decoded: false,
         });
-        current_struct_offset += joined.len() + 1;
+        current_struct_offset += joined_len + 1;
     }
 
     // Second pass: reassemble explicit `+`-concatenation expressions like
@@ -209,15 +211,16 @@ pub(super) fn collect_structural_fragments(
         .filter(|(_, j)| j.len() >= MIN_STRUCTURAL_FRAGMENT_LEN)
         .enumerate()
     {
-        structural_joined.push(joined.clone());
+        let joined_len = joined.len();
+        structural_joined.push(joined);
         structural_mappings.push(LineMapping {
             start_offset: current_struct_offset,
-            end_offset: current_struct_offset + joined.len(),
+            end_offset: current_struct_offset + joined_len,
             line_number: SYNTHETIC_BASE_LINE + offset_idx,
             original_start_offset: source_line_offset_or_record_gap(source_line_offsets, index),
             transport_decoded: false,
         });
-        current_struct_offset += joined.len() + 1;
+        current_struct_offset += joined_len + 1;
     }
 
     // Third pass: template-literal variable interpolation.
@@ -239,15 +242,16 @@ pub(super) fn collect_structural_fragments(
             .filter(|(_, joined)| joined.len() >= MIN_STRUCTURAL_FRAGMENT_LEN)
             .enumerate()
         {
-            structural_joined.push(joined.clone());
+            let joined_len = joined.len();
+            structural_joined.push(joined);
             structural_mappings.push(LineMapping {
                 start_offset: current_struct_offset,
-                end_offset: current_struct_offset + joined.len(),
+                end_offset: current_struct_offset + joined_len,
                 line_number: SYNTHETIC_TEMPLATE_BASE_LINE + offset_idx,
                 original_start_offset: source_line_offset_or_record_gap(source_line_offsets, index),
                 transport_decoded: false,
             });
-            current_struct_offset += joined.len() + 1;
+            current_struct_offset += joined_len + 1;
         }
     }
 
@@ -256,10 +260,11 @@ pub(super) fn collect_structural_fragments(
             let joined: String = cluster.iter().map(|(_, _, value)| value.as_str()).collect();
             if joined.len() >= MIN_STRUCTURAL_FRAGMENT_LEN {
                 let start_line = cluster[0].0 + 1;
-                structural_joined.push(joined.clone());
+                let joined_len = joined.len();
+                structural_joined.push(joined);
                 structural_mappings.push(LineMapping {
                     start_offset: current_struct_offset,
-                    end_offset: current_struct_offset + joined.len(),
+                    end_offset: current_struct_offset + joined_len,
                     line_number: start_line,
                     original_start_offset: source_line_offset_or_record_gap(
                         source_line_offsets,
@@ -267,7 +272,7 @@ pub(super) fn collect_structural_fragments(
                     ),
                     transport_decoded: false,
                 });
-                current_struct_offset += joined.len() + 1;
+                current_struct_offset += joined_len + 1;
             }
         }
 

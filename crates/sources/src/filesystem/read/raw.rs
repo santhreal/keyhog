@@ -42,9 +42,9 @@ pub(in crate::filesystem) fn read_file_buffered(
     // backing store is borrowed), but the buffered path can and must.
     //
     // `size_hint` is the walker's already-known `entry.size`: `read_file_safe`
-    // uses it to read the whole file in a single sized `read(2)` (no empty-Vec
-    // capacity-doubling and no trailing EOF probe), instead of the many small
-    // reads `read_to_end` does on a tiny file. See PERF-io_path-2.
+    // uses it to fill the stat-sized buffer directly and probe once for growth,
+    // instead of the many small reads `read_to_end` does on a tiny file. See
+    // PERF-io_path-2.
     let bytes = match read_file_safe(path, size_hint) {
         Ok(b) => b,
         Err(error) => {
@@ -87,13 +87,13 @@ pub(in crate::filesystem) fn read_file_buffered(
 /// symlink). A content scanner must never read from a special file; failing
 /// closed here is surfaced loudly by the caller as a skip error, never silently.
 ///
-/// Windows has no `O_NOFOLLOW`/`O_NONBLOCK` on `OpenOptions`, so it classifies
-/// the path with `symlink_metadata` before open (small TOCTOU window, acceptable
-/// for a defensive scanner) and the post-open regular-file check below still
-/// applies. The shipped Windows contract is explicit refusal of symlink paths,
-/// refusal of non-regular files, and fail-closed refusal when the file type
-/// cannot be classified before the standard-library open.
-pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
+/// Windows opens the path itself with `FILE_FLAG_OPEN_REPARSE_POINT`, then
+/// classifies the opened handle below. This refuses symlinks and junctions
+/// without a path-classification race. The shipped Windows contract is
+/// explicit refusal of reparse-point paths and non-regular files.
+pub(crate) fn open_file_safe_with_metadata(
+    path: &Path,
+) -> std::io::Result<(File, std::fs::Metadata)> {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -104,24 +104,13 @@ pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
         // is never a followed symlink.
         options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
-    // Windows has no equivalent of O_NOFOLLOW on `OpenOptions`. Without an
-    // explicit symlink check, a scan could be tricked into following a
-    // junction/symlink out of the scan root and reading a sensitive file
-    // (e.g. `C:\Users\victim\.aws\credentials`). There is a small TOCTOU
-    // window between `symlink_metadata` and `open` - for our defensive-
-    // secret-scanning threat model that's an acceptable trade-off; the
-    // attacker would need to win a race they don't even see initiated.
-    // Keep this contract local and explicit: refuse a symlink path before
-    // opening it through the cross-platform standard-library path.
+    // Open the named reparse point rather than its target. This closes the
+    // symlink_metadata-then-open race and covers junctions as well as symlinks.
     #[cfg(windows)]
     {
-        let meta = std::fs::symlink_metadata(path)?;
-        if meta.file_type().is_symlink() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                "refusing to follow symlink (Windows safety guard)",
-            ));
-        }
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
     }
     #[cfg(target_os = "linux")]
     let file = match options.open(path) {
@@ -140,7 +129,19 @@ pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
     // also closes the regular-file→FIFO TOCTOU swap. `is_file()` is true ONLY for
     // a regular file on every platform, so this one check covers all special
     // types (and a directory, which never reaches a content read anyway).
-    if !file.metadata()?.is_file() {
+    let metadata = file.metadata()?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "refusing to follow symlink or junction (Windows safety guard)",
+            ));
+        }
+    }
+    if !metadata.is_file() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "refusing to read a non-regular file (FIFO, socket, or device)",
@@ -161,7 +162,12 @@ pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
             ));
         }
     }
-    Ok(file)
+    Ok((file, metadata))
+}
+
+/// Open a regular file through the shared safe-open boundary.
+pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
+    open_file_safe_with_metadata(path).map(|(file, _metadata)| file)
 }
 
 #[cfg(target_os = "linux")]
@@ -308,38 +314,89 @@ pub(in crate::filesystem) fn read_file_safe(
 }
 
 fn read_exact_stat_sized_with_growth_probe(mut file: File, cap: u64) -> std::io::Result<Vec<u8>> {
-    let cap_usize = usize::try_from(cap).map_err(|error| {
+    let bytes = read_stat_sized_to_cap(&mut file, cap, cap)?;
+    if bytes.len() as u64 > cap {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            buffered_read_exceeded_cap_message(cap, cap),
+        ));
+    }
+    Ok(bytes)
+}
+pub(super) fn read_stat_sized_to_cap(
+    reader: &mut impl Read,
+    expected_size: u64,
+    hard_cap: u64,
+) -> std::io::Result<Vec<u8>> {
+    // The stat is only a reservation hint. Clamp it before converting or
+    // allocating so an oversized/stale stat can never bypass the read cap,
+    // including on platforms where u64 is wider than usize.
+    let initial_size = expected_size.min(hard_cap);
+    let initial_size = usize::try_from(initial_size).map_err(|error| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!("filesystem buffered read cap is not addressable on this platform: {error}"),
+            format!(
+                "filesystem buffered read cap is not addressable on this platform: {error}"
+            ),
         )
     })?;
-    let mut bytes = vec![0u8; cap_usize];
+    let mut bytes = vec![0u8; initial_size];
     let mut filled = 0;
-    while filled < cap_usize {
-        match file.read(&mut bytes[filled..]) {
+    while filled < initial_size {
+        match reader.read(&mut bytes[filled..]) {
             Ok(0) => break,
             Ok(n) => filled += n,
-            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(e) => return Err(e),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => {
+                return Err(std::io::Error::new(
+                    error.kind(),
+                    format!(
+                        "failed to fill stat-sized filesystem buffer after {filled} of {initial_size} bytes: {error}"
+                    ),
+                ));
+            }
         }
     }
     bytes.truncate(filled);
-    if filled == cap_usize {
-        let mut sentinel = [0u8; 1];
-        loop {
-            match file.read(&mut sentinel) {
-                Ok(0) => break,
-                Ok(_) => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        buffered_read_exceeded_cap_message(cap, cap),
-                    ));
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(e) => return Err(e),
+    if filled < initial_size {
+        return Ok(bytes);
+    }
+
+    let mut sentinel = [0u8; 1];
+    loop {
+        match reader.read(&mut sentinel) {
+            Ok(0) => return Ok(bytes),
+            Ok(_) => {
+                bytes.push(sentinel[0]);
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => {
+                return Err(std::io::Error::new(
+                    error.kind(),
+                    format!("failed to probe filesystem file growth: {error}"),
+                ));
             }
         }
+    }
+
+    if bytes.len() as u64 > hard_cap {
+        return Ok(bytes);
+    }
+
+    let remaining_with_probe = hard_cap
+        .saturating_sub(bytes.len() as u64)
+        .saturating_add(1);
+    if remaining_with_probe > 0 {
+        reader
+            .take(remaining_with_probe)
+            .read_to_end(&mut bytes)
+            .map_err(|error| {
+                std::io::Error::new(
+                    error.kind(),
+                    format!("failed to read filesystem file growth to the hard cap: {error}"),
+                )
+            })?;
     }
     Ok(bytes)
 }
@@ -374,12 +431,12 @@ fn buffered_read_exceeded_cap_message(size_hint: u64, cap: u64) -> String {
 /// the decoded `String`, so it always copied).
 ///
 /// The safety properties of the old path are all kept: one symlink-resistant
-/// `open_file_safe` (which also holds the advisory `LOCK_SH`), a post-open
-/// re-stat that refuses a file grown past `MMAP_TOCTOU_SANITY_CAP_BYTES` between
-/// the walker's stat and here, and that same hard ceiling on the read itself.
+/// `open_file_safe_with_metadata` (which also holds the advisory `LOCK_SH`),
+/// descriptor metadata captured after open to enforce
+/// `MMAP_TOCTOU_SANITY_CAP_BYTES`, and that same hard ceiling on the read itself.
 pub(in crate::filesystem) fn read_file_whole_capped(path: &Path) -> Option<BufferedFileRead> {
-    let mut file = match open_file_safe(path) {
-        Ok(f) => f,
+    let (mut file, meta) = match open_file_safe_with_metadata(path) {
+        Ok(opened) => opened,
         Err(error) => {
             tracing::warn!(
                 path = %path.display(),
@@ -391,23 +448,6 @@ pub(in crate::filesystem) fn read_file_whole_capped(path: &Path) -> Option<Buffe
         }
     };
 
-    // Post-open re-stat: defeat the walker-stat-then-write race where
-    // an attacker grows the file to multi-GiB between the walker's
-    // size check and our read. The walker's max_file_size is the
-    // user-configurable budget; this constant is a HARD ceiling on
-    // any whole-file read regardless of user config.
-    let meta = match file.metadata() {
-        Ok(meta) => meta,
-        Err(error) => {
-            tracing::warn!(
-                path = %path.display(),
-                %error,
-                "cannot stat opened file for mmap sanity cap; skipping"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return None;
-        }
-    };
     let live_size = meta.len();
     if live_size > MMAP_TOCTOU_SANITY_CAP_BYTES {
         tracing::warn!(
@@ -438,25 +478,34 @@ pub(in crate::filesystem) fn read_file_whole_capped(path: &Path) -> Option<Buffe
         unsafe { libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_SEQUENTIAL) };
     }
 
-    // Reserve the post-open size so the common case is one allocation, then read
-    // to EOF with the hard cap as the ceiling. A file that SHRANK under us simply
-    // ends the read early; a file that GREW contributes its extra bytes up to the
-    // cap. Neither outcome can fault, which is the whole point of not mapping it.
-    let capacity =
-        usize::try_from(live_size.min(MMAP_TOCTOU_SANITY_CAP_BYTES)).unwrap_or(usize::MAX); // LAW10: unreachable on real platforms; a Vec length cannot exceed usize::MAX.
-    let mut bytes = Vec::with_capacity(capacity);
-    // Read one byte past the cap so crossing it is detectable rather than
-    // silently indistinguishable from a file that is exactly cap bytes long.
-    let read_limit = MMAP_TOCTOU_SANITY_CAP_BYTES.saturating_add(1);
-    if let Err(error) = (&mut file).take(read_limit).read_to_end(&mut bytes) {
-        tracing::warn!(
-            path = %path.display(),
-            %error,
-            "cannot read file; skipping"
-        );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        return None;
-    }
+    // Fill the post-open size directly for files up to the bounded exact-read
+    // threshold. The common unchanged-file path uses one sized data read and
+    // one EOF probe without generic buffer-growth probes. Shrink still ends
+    // early; growth continues through the same one-byte-past-hard-cap bound.
+    let read_result = if live_size <= MAX_EXACT_SIZED_READ_PREALLOC_BYTES {
+        read_stat_sized_to_cap(&mut file, live_size, MMAP_TOCTOU_SANITY_CAP_BYTES)
+    } else {
+        let capacity =
+            usize::try_from(live_size.min(MMAP_TOCTOU_SANITY_CAP_BYTES)).unwrap_or(usize::MAX); // LAW10: unreachable on real platforms; a Vec length cannot exceed usize::MAX.
+        let mut bytes = Vec::with_capacity(capacity);
+        let read_limit = MMAP_TOCTOU_SANITY_CAP_BYTES.saturating_add(1);
+        (&mut file)
+            .take(read_limit)
+            .read_to_end(&mut bytes)
+            .map(|_| bytes)
+    };
+    let bytes = match read_result {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::warn!(
+                path = %path.display(),
+                %error,
+                "cannot read file; skipping"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return None;
+        }
+    };
     if bytes.len() as u64 > MMAP_TOCTOU_SANITY_CAP_BYTES {
         tracing::warn!(
             path = %path.display(),

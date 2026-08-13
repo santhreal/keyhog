@@ -13,7 +13,7 @@
 //! daemon names as required (cache misses) are streamed.
 
 use crate::daemon::client::{self, Client};
-use crate::daemon::protocol::{self, GuardWireManifestEntry, Request, Response, WIRE_VERSION};
+use crate::daemon::protocol::{self, GuardWireManifestEntry, Request, Response};
 use anyhow::{bail, Context, Result};
 use keyhog_core::guard_state::GuardReceipt;
 use keyhog_sources::{StagedEntryKind, StagedManifest, StagedManifestEntry};
@@ -30,6 +30,7 @@ pub(crate) struct GuardCommitResult {
     /// Number of coverage gaps.
     pub coverage_gaps: u64,
     /// Terminal state label from the daemon.
+    #[allow(dead_code)]
     pub terminal_state: String,
     /// Whether the index fingerprint changed during the transaction
     /// (concurrent index mutation).
@@ -125,13 +126,13 @@ async fn run_guard_commit_on_connection(
     };
     let plan_response = conn.round_trip(&begin_request).await?;
 
-    let (transaction_id, clean_hits, required_blob_oids) = match plan_response {
+    let (transaction_id, required_blob_oids) = match plan_response {
         Response::GuardCommitPlan {
             transaction_id,
-            clean_hits,
+            clean_hits: _,
             required_blob_oids,
             ..
-        } => (transaction_id, clean_hits, required_blob_oids),
+        } => (transaction_id, required_blob_oids),
         Response::Error { message } => {
             bail!("guard commit: daemon rejected begin: {message}");
         }

@@ -486,7 +486,7 @@ fn encode_entries(entries: &HashMap<CacheKey, CacheEntry>) -> Vec<EntryV4> {
             mtime_ns: entry.mtime_ns,
             size: entry.size,
             last_seen_order: entry.last_seen_order,
-            hash: hex_encode(&entry.hash),
+            hash: hex_encode(entry.hash),
         })
         .collect()
 }

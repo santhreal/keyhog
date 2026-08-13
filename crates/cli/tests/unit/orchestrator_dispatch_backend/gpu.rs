@@ -1,4 +1,3 @@
-use super::super::workload::workload_key as workload_key_with_plan;
 use super::*;
 
 #[test]
@@ -215,7 +214,7 @@ fn cached_router_replays_cpu_identity_when_runtime_policy_disables_gpu() {
     )];
     let pattern_count = scanner.runtime_status().pattern_count;
     let admission_plan = scanner.phase1_admission_plan(&batch);
-    let key = workload_key_with_plan(
+    let key = workload_key(
         &batch,
         pattern_count,
         admission_plan.summary(),

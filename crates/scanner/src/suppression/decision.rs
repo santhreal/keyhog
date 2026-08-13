@@ -597,7 +597,8 @@ fn decoded_looks_like_labelled_hash(decoded: &str) -> bool {
     if looks_like_prefixed_hash_digest(decoded) {
         return true;
     }
-    for &label in HASH_ALGO_INTEGRITY_LABELS {
+    for label in HASH_ALGO_INTEGRITY_LABELS.iter() {
+        let label = label.as_str();
         let Some(idx) = decoded.find(label) else {
             continue;
         };

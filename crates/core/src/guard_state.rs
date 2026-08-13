@@ -64,6 +64,7 @@ impl GuardRootMode {
 /// 1. A transition decision in [`GuardRootState::transition`].
 /// 2. An exit-code mapping in the CLI exit module.
 /// 3. A status/documentation table entry.
+///
 /// The state-matrix test fails until all three are recorded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

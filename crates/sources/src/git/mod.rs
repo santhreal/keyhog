@@ -1151,7 +1151,7 @@ pub(crate) fn staged_manifest_acquire(
             ))
         })?;
 
-        let path_bytes = match read_capped_record(&mut reader, &mut raw_path, 1024 * 1024, 0) {
+        let _path_bytes = match read_capped_record(&mut reader, &mut raw_path, 1024 * 1024, 0) {
             Ok(record) if record.consumed == 0 => {
                 return Err(SourceError::Git(
                     "git raw staged diff ended before the path for an index entry".into(),

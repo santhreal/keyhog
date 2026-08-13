@@ -59,6 +59,13 @@ records the production syscall comparison and its
 [`JSON receipt`](reports/filesystem-discovery-metadata.json). Ordinary scans
 classify archive symlinks inside the required metadata walk instead of
 re-enumerating the complete tree.
+
+## Focused safe-open metadata evidence
+
+[`reports/safe-open-metadata.md`](reports/safe-open-metadata.md) records the
+production syscall comparison and its
+[`JSON receipt`](reports/safe-open-metadata.json). Safe-open metadata is reused
+by callers without changing regular-file validation or advisory locking.
 ## Focused reader crew memory evidence
 
 [`reports/reader-crew-memory.md`](reports/reader-crew-memory.md) records the
@@ -87,6 +94,14 @@ records the section-copy elimination and its
 [`reports/phase2-scratch-reuse.md`](reports/phase2-scratch-reuse.md) records the
 helper-vector allocation-site elimination, aggregate retention ceiling, and
 [`JSON receipt`](reports/phase2-scratch-reuse.json).
+
+## Compact coalesced batch topology evidence
+
+[`reports/compact-batch-topology.md`](reports/compact-batch-topology.md) records
+the production topology-builder allocation comparison and its
+[`JSON receipt`](reports/compact-batch-topology.json). Small CPU/SIMD lanes share
+one flat membership buffer while preserving scheduling and byte bounds.
+
 ## Performance configuration ownership evidence
 
 [`reports/performance-config-ownership.md`](reports/performance-config-ownership.md)

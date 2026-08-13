@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "42 orphaned scanner test files are now wired into the all_tests aggregator and run in CI. The recall_locks_wired.py gate is widened from checking only regression_*.rs to checking all top-level test files. CI workflow duplication is eliminated by extracting composite actions for workspace repair and Vectorscan install. All workspace compile warnings are fixed (zero warnings from cargo check --workspace)."
+crates = ["scanner", "cli", "sources"]

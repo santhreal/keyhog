@@ -8,7 +8,7 @@ use memmap2::MmapOptions;
 use std::fs::File;
 use std::path::Path;
 
-use super::raw::open_file_safe;
+use super::raw::open_file_safe_with_metadata;
 use super::MMAP_TOCTOU_SANITY_CAP_BYTES;
 
 /// One scanning window over a large file: an absolute byte offset into
@@ -446,8 +446,8 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
     mut emit: impl FnMut(Result<FileWindow, SourceError>) -> bool,
 ) -> WindowedMmapOutcome {
     debug_assert!(window_size > overlap, "window must exceed overlap");
-    let file = match open_file_safe(path) {
-        Ok(file) => file,
+    let (file, meta) = match open_file_safe_with_metadata(path) {
+        Ok(opened) => opened,
         Err(error) => {
             tracing::warn!(
                 path = %path.display(),
@@ -469,22 +469,6 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
     // windowed-mmap path. The walker decides which files reach this
     // function based on its own size budget; this cap is a defense
     // against the file growing AFTER the walker's stat completed.
-    let meta = match file.metadata() {
-        Ok(meta) => meta,
-        Err(error) => {
-            tracing::warn!(
-                path = %path.display(),
-                %error,
-                "cannot stat opened large file for windowed mmap sanity cap; skipping"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            let _continue_scan = emit(Err(windowed_mmap_error(
-                path,
-                format!("cannot stat opened large file for windowed mmap ({error})"),
-            )));
-            return WindowedMmapOutcome::Consumed;
-        }
-    };
     if meta.len() > MMAP_TOCTOU_SANITY_CAP_BYTES {
         tracing::warn!(
             path = %path.display(),

@@ -10,6 +10,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Required CI runs the complete sources target matrix once, removing the earlier default `all_tests` replay before the all-feature run.
 - Sources: align filesystem profiling coverage with the default direct reader's bounded batch handoff, retaining exact acquire, walk, read, and input-total assertions.
 - CPU confidence scoring now evaluates large authenticated quantized batches across the configured Rayon worker pool while preserving bit-exact row order; batches below 64 candidates remain serial.
+- Sources: filesystem mmap admission, binary, Ghidra, and Docker reads now reuse descriptor metadata captured by the shared safe-open validation instead of querying the opened file again. Windowed buffered fallback refreshes descriptor metadata before its later cap check. No-follow, regular-file, advisory-lock, and size-cap behavior remains fail-closed.
+- Sources: whole-file reads up to 16 MiB now fill the post-open stat-sized buffer directly before the bounded growth probe. Concurrent shrink, growth through the hard cap, no-follow opening, and advisory locking retain their existing behavior.
+- Scanner: coalesced CPU and SIMD scheduling now stores small-lane membership in one flat index buffer instead of one heap allocation per lane. Chunk order, large-chunk isolation, worker partitioning, and the 512 KiB lane ceiling are unchanged.
 - Core: raise dedup additional-locations subquadratic tripwire ceiling to 3.25x to absorb CI thread-CPU jitter (observed 3.03x flake).
 - Scanner: sensitive-path keyword-free confidence ownership test pins ordinary entropy_very_high cannot demote admitted hits.
 - Scanner: sensitive-path keyword-free entropy keeps ML as lift and scores against the sensitive very-high band so assignment RHS like `VALUE=<token>` in secrets.env is not soft-dropped.
