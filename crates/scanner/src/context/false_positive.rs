@@ -442,7 +442,12 @@ fn is_inside_configmap_binary_data_block(
         if indent >= current_indent {
             continue;
         }
-        return trimmed.eq_ignore_ascii_case(b"binarydata:");
+        return BINARY_DATA_HEADERS.iter().any(|header| {
+            let header_bytes = header.as_bytes();
+            trimmed.len() >= header_bytes.len() + 1
+                && trimmed[..header_bytes.len()].eq_ignore_ascii_case(header_bytes)
+                && trimmed[header_bytes.len()] == b':'
+        });
     }
     false
 }
@@ -598,6 +603,8 @@ fn line_at_offset(text: &str, offset: usize) -> (&str, usize) {
 }
 
 crate::tier_b_list::tier_b_vec!(CORS_HEADERS, "false-positive-markers.toml", cors_headers);
+crate::tier_b_list::tier_b_vec!(HTTP_CACHE_HEADERS, "false-positive-markers.toml", http_cache_headers);
+crate::tier_b_list::tier_b_vec!(BINARY_DATA_HEADERS, "false-positive-markers.toml", binary_data_headers);
 
 fn is_cors_header_bytes(bytes: &[u8]) -> bool {
     let allowed: &[String] = &CORS_HEADERS;
@@ -605,7 +612,7 @@ fn is_cors_header_bytes(bytes: &[u8]) -> bool {
 }
 
 fn is_http_cache_header_bytes(bytes: &[u8]) -> bool {
-    let allowed: &[&[u8]] = &[b"etag"];
+    let allowed: &[String] = &HTTP_CACHE_HEADERS;
     header_name_matches(bytes, allowed)
 }
 
