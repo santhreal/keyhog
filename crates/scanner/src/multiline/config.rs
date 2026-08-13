@@ -183,53 +183,69 @@ pub(crate) fn has_function_concat_marker(s: &str) -> bool {
 }
 
 #[cfg(feature = "multiline")]
-crate::tier_b_list::tier_b_vec!(FUNCTION_CONCAT_MARKERS, "multiline-concat-markers.toml", function_concat_markers);
+crate::tier_b_list::tier_b_vec!(
+    FUNCTION_CONCAT_MARKERS,
+    "multiline-concat-markers.toml",
+    function_concat_markers
+);
 
 #[cfg(feature = "multiline")]
-static IMPLICIT_CONCAT_MARKERS: std::sync::LazyLock<Vec<Vec<u8>>> = std::sync::LazyLock::new(|| {
-    #[derive(serde::Deserialize)]
-    struct MultilineConcatMarkers {
-        implicit_concat_markers: Vec<String>,
-    }
-    let raw = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/multiline-concat-markers.toml"
-    ));
-    let parsed: MultilineConcatMarkers = toml::from_str(raw).unwrap_or_else(|error| {
-        panic!(
-            "rules/multiline-concat-markers.toml is invalid: {error}. \
+static IMPLICIT_CONCAT_MARKERS: std::sync::LazyLock<Vec<Vec<u8>>> = std::sync::LazyLock::new(
+    || {
+        #[derive(serde::Deserialize)]
+        struct MultilineConcatMarkers {
+            implicit_concat_markers: Vec<String>,
+        }
+        let raw = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/multiline-concat-markers.toml"
+        ));
+        let parsed: MultilineConcatMarkers = toml::from_str(raw).unwrap_or_else(|error| {
+            panic!(
+                "rules/multiline-concat-markers.toml is invalid: {error}. \
              Fix the bundled Tier-B data file."
-        )
-    });
-    assert!(
+            )
+        });
+        assert!(
         !parsed.implicit_concat_markers.is_empty(),
         "rules/multiline-concat-markers.toml implicit_concat_markers is empty; refusing to run without the Tier-B list it owns."
     );
-    parsed.implicit_concat_markers.into_iter().map(|s| s.into_bytes()).collect()
-});
+        parsed
+            .implicit_concat_markers
+            .into_iter()
+            .map(|s| s.into_bytes())
+            .collect()
+    },
+);
 
 #[cfg(feature = "multiline")]
-static CONCAT_OPERATOR_MARKERS: std::sync::LazyLock<Vec<Vec<u8>>> = std::sync::LazyLock::new(|| {
-    #[derive(serde::Deserialize)]
-    struct MultilineConcatMarkers {
-        concat_operator_markers: Vec<String>,
-    }
-    let raw = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/multiline-concat-markers.toml"
-    ));
-    let parsed: MultilineConcatMarkers = toml::from_str(raw).unwrap_or_else(|error| {
-        panic!(
-            "rules/multiline-concat-markers.toml is invalid: {error}. \
+static CONCAT_OPERATOR_MARKERS: std::sync::LazyLock<Vec<Vec<u8>>> = std::sync::LazyLock::new(
+    || {
+        #[derive(serde::Deserialize)]
+        struct MultilineConcatMarkers {
+            concat_operator_markers: Vec<String>,
+        }
+        let raw = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/multiline-concat-markers.toml"
+        ));
+        let parsed: MultilineConcatMarkers = toml::from_str(raw).unwrap_or_else(|error| {
+            panic!(
+                "rules/multiline-concat-markers.toml is invalid: {error}. \
              Fix the bundled Tier-B data file."
-        )
-    });
-    assert!(
+            )
+        });
+        assert!(
         !parsed.concat_operator_markers.is_empty(),
         "rules/multiline-concat-markers.toml concat_operator_markers is empty; refusing to run without the Tier-B list it owns."
     );
-    parsed.concat_operator_markers.into_iter().map(|s| s.into_bytes()).collect()
-});
+        parsed
+            .concat_operator_markers
+            .into_iter()
+            .map(|s| s.into_bytes())
+            .collect()
+    },
+);
 
 /// One-pass admission for every byte shape that can reach the precise
 /// multiline grammar below. It replaces the no-hit path's repeated full-text

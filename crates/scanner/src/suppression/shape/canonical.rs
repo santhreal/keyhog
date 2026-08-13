@@ -72,27 +72,32 @@ crate::tier_b_list::tier_b_vec!(
 /// additionally recognizes `git-sha:` (git commit refs), that stays a documented
 /// entropy-LOCAL extra, since colon-digest SUPPRESSION intentionally covers only
 /// the docker/python/git-LFS digest formats, not commit references.
-pub(crate) static HASH_ALGO_COLON_LABELS: std::sync::LazyLock<Vec<Vec<u8>>> = std::sync::LazyLock::new(|| {
-    #[derive(serde::Deserialize)]
-    struct HashAlgoLabels {
-        colon_labels: Vec<String>,
-    }
-    let raw = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/hash-algo-labels.toml"
-    ));
-    let parsed: HashAlgoLabels = toml::from_str(raw).unwrap_or_else(|error| {
-        panic!(
-            "rules/hash-algo-labels.toml is invalid: {error}. \
+pub(crate) static HASH_ALGO_COLON_LABELS: std::sync::LazyLock<Vec<Vec<u8>>> =
+    std::sync::LazyLock::new(|| {
+        #[derive(serde::Deserialize)]
+        struct HashAlgoLabels {
+            colon_labels: Vec<String>,
+        }
+        let raw = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/hash-algo-labels.toml"
+        ));
+        let parsed: HashAlgoLabels = toml::from_str(raw).unwrap_or_else(|error| {
+            panic!(
+                "rules/hash-algo-labels.toml is invalid: {error}. \
              Fix the bundled Tier-B data file."
-        )
-    });
-    assert!(
+            )
+        });
+        assert!(
         !parsed.colon_labels.is_empty(),
         "rules/hash-algo-labels.toml colon_labels is empty; refusing to run without the Tier-B list it owns."
     );
-    parsed.colon_labels.into_iter().map(|s| s.into_bytes()).collect()
-});
+        parsed
+            .colon_labels
+            .into_iter()
+            .map(|s| s.into_bytes())
+            .collect()
+    });
 
 pub(super) fn is_five_by_five_dash_shape(value: &str, body_byte_ok: impl Fn(u8) -> bool) -> bool {
     let bytes = value.as_bytes();
@@ -170,9 +175,10 @@ fn strip_aws_iam_arn_body(value: &str, require_arn: bool) -> Option<&str> {
         None if !require_arn => value,
         _ => return None,
     };
-    AWS_IAM_ARN_PARTITIONS
-        .iter()
-        .find_map(|partition| rest.strip_prefix(partition.as_str())?.strip_prefix(":iam::"))
+    AWS_IAM_ARN_PARTITIONS.iter().find_map(|partition| {
+        rest.strip_prefix(partition.as_str())?
+            .strip_prefix(":iam::")
+    })
 }
 
 pub(crate) fn looks_like_aws_iam_arn(value: &str) -> bool {
@@ -493,9 +499,9 @@ pub(crate) fn looks_like_prefixed_masked_sequence(body: &str) -> bool {
     MASK_DIGIT_RUNS
         .iter()
         .any(|run| ci_find(bytes, run.as_bytes()))
-    || MASK_ALPHA_RUNS
-        .iter()
-        .any(|run| ci_find(bytes, run.as_bytes()))
+        || MASK_ALPHA_RUNS
+            .iter()
+            .any(|run| ci_find(bytes, run.as_bytes()))
 }
 
 pub(crate) fn has_repeated_block_mask(s: &str) -> bool {

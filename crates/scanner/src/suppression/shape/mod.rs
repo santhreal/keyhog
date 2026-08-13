@@ -510,8 +510,8 @@ pub(crate) fn looks_like_credential_colliding_punctuation(value: &str) -> bool {
 // shape gates that scan a candidate for an embedded credential word;
 // `looks_like_ts_non_null_identifier` here and `looks_like_dotted_source_identifier`
 // in `source.rs` previously each pasted their own near-identical copy (DEDUP).
-static CREDENTIAL_KEYWORD_NEEDLES: std::sync::LazyLock<Vec<Vec<u8>>> =
-    std::sync::LazyLock::new(|| {
+static CREDENTIAL_KEYWORD_NEEDLES: std::sync::LazyLock<Vec<Vec<u8>>> = std::sync::LazyLock::new(
+    || {
         #[derive(serde::Deserialize)]
         struct CredentialKeywords {
             shape_needles: Vec<String>,
@@ -530,8 +530,13 @@ static CREDENTIAL_KEYWORD_NEEDLES: std::sync::LazyLock<Vec<Vec<u8>>> =
             !parsed.shape_needles.is_empty(),
             "rules/credential-keywords.toml shape_needles is empty; refusing to run without the Tier-B list it owns."
         );
-        parsed.shape_needles.into_iter().map(|s| s.into_bytes()).collect()
-    });
+        parsed
+            .shape_needles
+            .into_iter()
+            .map(|s| s.into_bytes())
+            .collect()
+    },
+);
 
 fn looks_like_ts_non_null_identifier(bytes: &[u8]) -> bool {
     if !bytes.ends_with(b"!") || bytes.len() < 9 {

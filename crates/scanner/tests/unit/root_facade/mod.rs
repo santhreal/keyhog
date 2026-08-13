@@ -19,6 +19,7 @@ mod confirmed_gate_parity;
 mod confirmed_pattern_profile;
 mod csr;
 mod decode_focus_parity;
+#[cfg(feature = "decode")]
 mod decode_recursion_profile;
 mod decode_test;
 mod detector_plan;

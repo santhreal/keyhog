@@ -603,8 +603,16 @@ fn line_at_offset(text: &str, offset: usize) -> (&str, usize) {
 }
 
 crate::tier_b_list::tier_b_vec!(CORS_HEADERS, "false-positive-markers.toml", cors_headers);
-crate::tier_b_list::tier_b_vec!(HTTP_CACHE_HEADERS, "false-positive-markers.toml", http_cache_headers);
-crate::tier_b_list::tier_b_vec!(BINARY_DATA_HEADERS, "false-positive-markers.toml", binary_data_headers);
+crate::tier_b_list::tier_b_vec!(
+    HTTP_CACHE_HEADERS,
+    "false-positive-markers.toml",
+    http_cache_headers
+);
+crate::tier_b_list::tier_b_vec!(
+    BINARY_DATA_HEADERS,
+    "false-positive-markers.toml",
+    binary_data_headers
+);
 
 fn is_cors_header_bytes(bytes: &[u8]) -> bool {
     let allowed: &[String] = &CORS_HEADERS;

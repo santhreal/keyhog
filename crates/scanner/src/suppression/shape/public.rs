@@ -1,8 +1,20 @@
 // Public evidence identifier needles loaded from
 // `rules/public-evidence-identifiers.toml`.
-crate::tier_b_list::tier_b_vec!(PUBLIC_AUTHORITY_NEEDLES, "public-evidence-identifiers.toml", authority_needles);
-crate::tier_b_list::tier_b_vec!(PUBLIC_ISSUE_MARKERS, "public-evidence-identifiers.toml", issue_markers);
-crate::tier_b_list::tier_b_vec!(PUBLIC_VX_MARKERS, "public-evidence-identifiers.toml", vx_markers);
+crate::tier_b_list::tier_b_vec!(
+    PUBLIC_AUTHORITY_NEEDLES,
+    "public-evidence-identifiers.toml",
+    authority_needles
+);
+crate::tier_b_list::tier_b_vec!(
+    PUBLIC_ISSUE_MARKERS,
+    "public-evidence-identifiers.toml",
+    issue_markers
+);
+crate::tier_b_list::tier_b_vec!(
+    PUBLIC_VX_MARKERS,
+    "public-evidence-identifiers.toml",
+    vx_markers
+);
 
 use crate::suppression::token_randomness::TokenRandomness;
 
@@ -195,9 +207,7 @@ pub(crate) fn looks_like_public_evidence_identifier(value: &str) -> bool {
 
     // Compound condition: dead-pass AND capability AND transform is a
     // multi-needle predicate, not a single-substring lookup. Stays in code.
-    if ci_find(bytes, b"dead-pass")
-        && ci_find(bytes, b"capability")
-        && ci_find(bytes, b"transform")
+    if ci_find(bytes, b"dead-pass") && ci_find(bytes, b"capability") && ci_find(bytes, b"transform")
     {
         return true;
     }

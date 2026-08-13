@@ -12,27 +12,29 @@ use crate::suppression::path_filter::{
 /// or template literal. Loaded once from the bundled Tier-B TOML at
 /// `rules/shell-expansion-prefixes.toml`. Fail-closed: invalid bundled data
 /// panics loudly at first use.
-static SHELL_EXPANSION_PREFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    #[derive(serde::Deserialize)]
-    struct ShellExpansionPrefixes {
-        prefixes: Vec<String>,
-    }
-    let raw = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/shell-expansion-prefixes.toml"
-    ));
-    let parsed: ShellExpansionPrefixes = toml::from_str(raw).unwrap_or_else(|error| {
-        panic!(
-            "rules/shell-expansion-prefixes.toml is invalid: {error}. \
+static SHELL_EXPANSION_PREFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(
+    || {
+        #[derive(serde::Deserialize)]
+        struct ShellExpansionPrefixes {
+            prefixes: Vec<String>,
+        }
+        let raw = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/shell-expansion-prefixes.toml"
+        ));
+        let parsed: ShellExpansionPrefixes = toml::from_str(raw).unwrap_or_else(|error| {
+            panic!(
+                "rules/shell-expansion-prefixes.toml is invalid: {error}. \
              Fix the bundled Tier-B data file."
-        )
-    });
-    assert!(
+            )
+        });
+        assert!(
         !parsed.prefixes.is_empty(),
         "rules/shell-expansion-prefixes.toml is empty; refusing to run without the Tier-B list it owns."
     );
-    parsed.prefixes
-});
+        parsed.prefixes
+    },
+);
 
 pub(crate) fn entropy_match_suppression_stage(
     entropy_match: &crate::entropy::EntropyMatch,
