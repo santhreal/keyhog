@@ -405,7 +405,10 @@ impl CompiledScanner {
                     .and_then(|policy| {
                         policy.full_stage(
                             chunk.metadata.path.as_deref(),
-                            Some(&chunk.metadata.source_type),
+                            Some(
+                                self.detector_plans
+                                    .decoded_source_family(&chunk.metadata.source_type),
+                            ),
                             value,
                         )
                     })

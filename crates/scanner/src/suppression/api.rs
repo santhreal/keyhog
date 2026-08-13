@@ -157,6 +157,7 @@ pub(crate) struct NamedDetectorSuppressionCtx<'a> {
     path: Option<&'a str>,
     context: context::CodeContext,
     source_type: Option<&'a str>,
+    source_family: Option<&'a str>,
     detector_rules: Option<&'a DetectorSuppressionPolicy>,
     service_anchored: bool,
     weak_anchor: bool,
@@ -179,6 +180,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
             path,
             context,
             source_type,
+            source_type,
             test_detector_suppression_rules(detector_id),
             service_anchored,
             weak_anchor,
@@ -192,6 +194,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
         path: Option<&'a str>,
         context: context::CodeContext,
         source_type: Option<&'a str>,
+        source_family: Option<&'a str>,
         detector_rules: Option<&'a DetectorSuppressionPolicy>,
         service_anchored: bool,
         weak_anchor: bool,
@@ -203,6 +206,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
             path,
             context,
             source_type,
+            source_family,
             detector_rules,
             service_anchored,
             weak_anchor,
@@ -261,7 +265,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // the least-specific reason and runs LAST (just before `suppression_stage_inner`)
     // so a precise structural gate claims the drop with its own reason.
     if let Some(stage_id) =
-        detector_rules.and_then(|rules| rules.allowlist_stage(path, source_type, credential))
+        detector_rules.and_then(|rules| rules.allowlist_stage(path, ctx.source_family, credential))
     {
         return Some(stage_id);
     }
