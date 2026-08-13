@@ -37,12 +37,13 @@ fn generated_feature_union_matches_integer_golden() {
     );
 }
 
-/// WHY: parallel CPU batches retain the scalar model's exact row order and
-/// fixed-point scores across every generated feature dimension.
+/// WHY: the serial/parallel crossover, configured worker count, and nested
+/// Rayon entry must not change fixed-point scores or input ordering.
 #[test]
-fn parallel_batch_matches_scalar_scores_in_input_order() {
+fn batch_threshold_boundaries_match_scalar_scores_in_configured_pools() {
     let model = model().expect("embedded model");
-    let row_count = crate::ml_scorer::ML_PARALLEL_BATCH_THRESHOLD * 4;
+    let threshold = crate::ml_scorer::ML_PARALLEL_BATCH_THRESHOLD;
+    let row_count = threshold * 4;
     let rows: Vec<_> = (0..row_count)
         .map(|row_index| {
             let mut features = [0i16; crate::ml_scorer::model_arch::INPUT_DIM];
@@ -53,7 +54,29 @@ fn parallel_batch_matches_scalar_scores_in_input_order() {
         })
         .collect();
     let expected: Vec<_> = rows.iter().map(|row| model.score(row)).collect();
-    assert_eq!(score_batch(&rows).expect("parallel batch"), expected);
+
+    for workers in [1, 2, 4] {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(workers)
+            .build()
+            .expect("isolated quantized scoring pool");
+        pool.install(|| {
+            for len in [threshold - 1, threshold, threshold + 1, row_count] {
+                assert_eq!(
+                    score_batch(&rows[..len]).expect("bounded batch"),
+                    expected[..len],
+                    "{len} rows on {workers} workers"
+                );
+            }
+
+            let (left, right) = rayon::join(
+                || score_batch(&rows).expect("left nested batch"),
+                || score_batch(&rows).expect("right nested batch"),
+            );
+            assert_eq!(left, expected, "left nested batch on {workers} workers");
+            assert_eq!(right, expected, "right nested batch on {workers} workers");
+        });
+    }
 }
 
 #[test]
