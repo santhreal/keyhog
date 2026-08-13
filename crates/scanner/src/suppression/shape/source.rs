@@ -330,7 +330,7 @@ pub(crate) fn looks_like_dotted_source_identifier(value: &str) -> bool {
         // credential-keyword needle set (`super::CREDENTIAL_KEYWORD_NEEDLES`).
         if super::CREDENTIAL_KEYWORD_NEEDLES
             .iter()
-            .any(|needle| crate::ascii_ci::ci_find(seg, needle))
+            .any(|needle| crate::ascii_ci::ci_find(seg, needle.as_slice()))
         {
             has_credential_word = true;
         }

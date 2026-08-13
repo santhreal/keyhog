@@ -377,7 +377,7 @@ impl BuildIdentityV2 {
     pub fn capture(input: BuildIdentityInput<'_>) -> Self {
         #[cfg(feature = "build-identity")]
         {
-            let mut features = input.enabled_features.iter().copied().collect::<Vec<_>>();
+            let mut features = input.enabled_features.to_vec();
             features.sort_unstable();
             features.dedup();
             let feature_digest = if features.is_empty() {

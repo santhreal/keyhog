@@ -35,13 +35,7 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: runners-nightly
-      - name: Install Vectorscan
-        run: |
-          for i in 1 2 3 4 5; do
-            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-            sleep $((i * 2))
-            if [ "$i" -eq 5 ]; then exit 1; fi
-          done
+      - uses: ./.github/actions/setup-vectorscan
       - name: Full strict runner gate
         env:
           KEYHOG_ADVERSARIAL_STRICT: "1"

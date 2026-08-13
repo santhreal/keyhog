@@ -93,6 +93,7 @@ where
     char::from_u32(code).ok_or(())
 }
 
+#[inline]
 pub(super) fn lazy_decoded_prefix<'a>(
     decoded: &'a mut Option<String>,
     input: &str,
@@ -120,6 +121,7 @@ pub(crate) fn surrogate_pair_to_char(high: u32, low: u32) -> Option<char> {
     char::from_u32(scalar)
 }
 
+#[inline]
 #[allow(clippy::result_unit_err)]
 pub(crate) fn hex_val(byte: u8) -> Result<u8, ()> {
     match byte {

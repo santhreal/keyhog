@@ -1,3 +1,21 @@
+// Public evidence identifier needles loaded from
+// `rules/public-evidence-identifiers.toml`.
+crate::tier_b_list::tier_b_vec!(
+    PUBLIC_AUTHORITY_NEEDLES,
+    "public-evidence-identifiers.toml",
+    authority_needles
+);
+crate::tier_b_list::tier_b_vec!(
+    PUBLIC_ISSUE_MARKERS,
+    "public-evidence-identifiers.toml",
+    issue_markers
+);
+crate::tier_b_list::tier_b_vec!(
+    PUBLIC_VX_MARKERS,
+    "public-evidence-identifiers.toml",
+    vx_markers
+);
+
 use crate::suppression::token_randomness::TokenRandomness;
 
 /// Public schema/policy identifiers often look like
@@ -171,33 +189,31 @@ pub(crate) fn looks_like_public_evidence_identifier(value: &str) -> bool {
     // all short-circuit to `true`, so reordering the upper/lower checks into one
     // pass does not change the boolean result.
     use crate::ascii_ci::{ci_find, starts_with_ignore_ascii_case};
-    if ci_find(bytes, b"cwe_")
-        || ci_find(bytes, b"rfc_")
-        || ci_find(bytes, b"owasp_")
-        || ci_find(bytes, b"nist_")
-        || ci_find(bytes, b"cisa_")
+    if PUBLIC_AUTHORITY_NEEDLES
+        .iter()
+        .any(|needle| ci_find(bytes, needle.as_bytes()))
     {
         return true;
     }
-    if ci_find(bytes, b"-issue-") || ci_find(bytes, b"_issue_") {
+    if PUBLIC_ISSUE_MARKERS
+        .iter()
+        .any(|needle| ci_find(bytes, needle.as_bytes()))
+    {
         return true;
     }
     if looks_like_caesar_shifted_public_issue_reference(value) {
         return true;
     }
 
-    if ci_find(bytes, b"gate-evidence-consumption")
-        || ci_find(bytes, b"authority-attestation")
-        || ci_find(bytes, b"authority-elimination")
-        || ci_find(bytes, b"authority-map")
-        || (ci_find(bytes, b"dead-pass")
-            && ci_find(bytes, b"capability")
-            && ci_find(bytes, b"transform"))
+    // Compound condition: dead-pass AND capability AND transform is a
+    // multi-needle predicate, not a single-substring lookup. Stays in code.
+    if ci_find(bytes, b"dead-pass") && ci_find(bytes, b"capability") && ci_find(bytes, b"transform")
     {
         return true;
     }
-    ci_find(bytes, b"row-range-vx-")
-        || ci_find(bytes, b"through-vx-")
+    PUBLIC_VX_MARKERS
+        .iter()
+        .any(|needle| ci_find(bytes, needle.as_bytes()))
         || (starts_with_ignore_ascii_case(bytes, b"pw.") && bytes.contains(&b'-'))
 }
 

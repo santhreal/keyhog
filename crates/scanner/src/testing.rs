@@ -306,10 +306,7 @@ pub fn reverse_str_for_test(s: &str) -> String {
 /// `None` when the decoded bytes are not valid UTF-8.
 #[cfg(feature = "decode")]
 pub fn quoted_printable_decode_for_test(input: &str) -> Option<String> {
-    match crate::decode::quoted_printable_decode(input) {
-        Ok(decoded) => Some(decoded),
-        Err(()) => None,
-    }
+    crate::decode::quoted_printable_decode(input).ok()
 }
 
 /// Test seam for the RFC2047 MIME encoded-word decoder (`=?charset?enc?text?=`,
@@ -2245,8 +2242,8 @@ pub mod context {
     /// The canonical `HASH_ALGO_INTEGRITY_LABELS` vocabulary, so an external test
     /// can prove the integrity gate recognises every label (sha384- regressed
     /// once when a diverging subset omitted it).
-    pub fn hash_algo_integrity_labels_for_test() -> Vec<&'static str> {
-        crate::suppression::shape::HASH_ALGO_INTEGRITY_LABELS.to_vec()
+    pub fn hash_algo_integrity_labels_for_test() -> Vec<String> {
+        crate::suppression::shape::HASH_ALGO_INTEGRITY_LABELS.clone()
     }
 
     /// `is_in_test_function`: look-back classifier, true when the match line
@@ -2480,7 +2477,7 @@ pub mod multiline {
     /// complete without exposing the loader internals.
     #[cfg(feature = "multiline")]
     pub fn filter_line_content_for_test(line: &str) -> String {
-        crate::multiline::filter_line_content(line)
+        crate::multiline::filter_line_content(line).to_string()
     }
 
     /// Test seam for the multiline preprocessor join pass, returning the joined

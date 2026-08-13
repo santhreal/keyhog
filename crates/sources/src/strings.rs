@@ -7,6 +7,7 @@ use keyhog_core::SensitiveString;
 /// caller, binary sections/literals, web WASM extraction, and filesystem
 /// archive/PDF strings. Tune the strings-scan recall floor here and nowhere else.
 pub(crate) const MIN_PRINTABLE_STRING_LEN: usize = 8;
+#[cfg(any(feature = "web", feature = "binary"))]
 pub(crate) const BOUNDED_DERIVED_TEXT_CHUNK_BYTES: usize = 256 * 1024;
 
 /// Separator placed between two independent printable runs recovered from the
@@ -68,6 +69,7 @@ pub(crate) fn extract_printable_strings(bytes: &[u8], min_len: usize) -> Vec<Sen
 
 /// Extract the same ordered run stream as [`extract_printable_strings`] into
 /// bounded, gapless scan bodies without retaining one allocation per run.
+#[cfg(any(feature = "web", feature = "binary"))]
 pub(crate) fn extract_printable_string_chunks(
     bytes: &[u8],
     min_len: usize,
@@ -169,6 +171,7 @@ fn append_run(out: &mut String, bytes: &[u8], run: PrintableRun) {
     }
 }
 
+#[cfg(any(feature = "web", feature = "binary"))]
 fn append_run_bounded(
     bytes: &[u8],
     run: PrintableRun,
@@ -192,6 +195,7 @@ fn append_run_bounded(
     }
 }
 
+#[cfg(any(feature = "web", feature = "binary"))]
 fn append_ascii_bounded(
     mut bytes: &[u8],
     chunk_bytes: usize,
@@ -208,6 +212,7 @@ fn append_ascii_bounded(
     }
 }
 
+#[cfg(any(feature = "web", feature = "binary"))]
 fn flush_printable_chunk(
     buffer: &mut String,
     chunk_bytes: usize,

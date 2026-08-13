@@ -1,8 +1,10 @@
 //! Unit tests for backend chunk preparation and SIMD compile plans.
 
 use crate::engine::backend::prepared::*;
-use crate::engine::*;
-use crate::types::*;
+#[cfg(feature = "simd")]
+use crate::engine::build_simd_compile_plan;
+#[cfg(feature = "simd")]
+use crate::types::{CompiledPattern, LazyRegex};
 use keyhog_core::Chunk;
 use std::sync::{Arc, OnceLock};
 

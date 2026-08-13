@@ -101,10 +101,7 @@ impl ConfirmedAnchorIndex {
             };
             let ci = pattern.regex.is_case_insensitive();
             for lit in &pattern_literals {
-                let id = *literal_ids.entry(lit.clone()).or_insert_with(|| {
-                    literals.push(lit.clone());
-                    literals.len() - 1
-                });
+                let id = super::register_literal(&mut literals, &mut literal_ids, lit);
                 literal_pattern_pairs.push((id, idx));
                 pattern_literal_pairs.push((idx, id));
             }

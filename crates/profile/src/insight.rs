@@ -384,7 +384,7 @@ impl RunInsightV2 {
         let identity = &profile.identity;
         let input_bytes = identity.workload.raw_source_bytes;
         let input_units = identity.workload.source_units;
-        let logical_cpus = u64::try_from(identity.host.logical_cpus).unwrap_or(0);
+        let logical_cpus = u64::from(identity.host.logical_cpus);
         let scanner_threads = u64::try_from(identity.scanner_threads_requested).unwrap_or(0);
 
         let process_cpu_ns = process_cpu_ns(profile);

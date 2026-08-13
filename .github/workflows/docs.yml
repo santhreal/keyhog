@@ -78,25 +78,13 @@ concurrency:
 jobs:
   build:
     name: Build mdBook
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     # Per-job permissions: this repo rejects dispatch of any workflow that
     # declares a TOP-LEVEL `permissions:` block (1-3s exit, 0 jobs -- see
     # health-check.yml / keyhog.yml). Per-job is equivalent and dispatch-safe.
     permissions:
       contents: read
     steps:
-      - name: Repair self-hosted workspace ownership
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            # Stale hooksPath=/dev/null breaks `git lfs install --local`
-            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
-            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
-            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
-                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Verify documentation truth
@@ -161,7 +149,7 @@ jobs:
     name: Deploy to GitHub Pages
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     # Pages deploy needs write + OIDC; scoped to this job only (top-level
     # permissions is rejected at dispatch on this repo, which is why the
     # docs site stopped publishing).
