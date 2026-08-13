@@ -3,6 +3,7 @@
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+- Scanner tests: coverage ratchet falls back to each detector's `test_positive` example (with `test_path`) when proptest cannot generate from the regex, closing the 818/922 gap to 922/922. 87 detectors use regex features (`\b`, `(?-i)`, `(?:^|[^A-Za-z])`) outside proptest's generatable subset; 17 are path-restricted or suppressed on generic paths. The ratchet now validates every regex detector's regex→compile→scan wiring.
 
 - Scanner: a connection-string finding whose password sub-field is a placeholder is suppressed. A detector for a credentialled URL captures the whole `scheme://user:password@host` span, so `postgresql://app:<password>@localhost/db` in a `.env.example` reached the report as a critical finding; the password is now read out of the URL and tested on its own for the wrapped template (`<password>`, `{{db_pass}}`, `${DB_PASSWORD}`), the unbraced shell reference (`$DB_PASSWORD`), the single-byte mask (`xxxxxxxx`), and the placeholder vocabulary. A real password in the same position still reports.
 - CI: pull requests run the merge lane and skip `feature-matrix`, which stays required on pushes to `main` and on tags. The twelve detector-contract steps that shared one command line collapse into a single invocation.
