@@ -117,14 +117,8 @@ pub(crate) fn backend_override_label(backend: Option<keyhog_scanner::ScanBackend
 /// backend. The engine's diagnostic label for the scalar CPU implementation is
 /// `cpu-fallback`, while the stable operator spelling is `cpu`.
 pub(crate) fn backend_override_cli_value(backend: keyhog_scanner::ScanBackend) -> &'static str {
-    match backend {
-        keyhog_scanner::ScanBackend::GpuCuda => "gpu-cuda",
-        keyhog_scanner::ScanBackend::GpuMetal => "gpu-metal",
-        keyhog_scanner::ScanBackend::GpuWgpu => "gpu-wgpu",
-        keyhog_scanner::ScanBackend::SimdCpu => "simd",
-        keyhog_scanner::ScanBackend::CpuFallback => "cpu",
-        _ => backend.label(),
-    }
+    keyhog_scanner::execution_pack::ExecutionPackBackend::from_scan_backend(backend)
+        .map_or_else(|| backend.label(), |backend| backend.lowercase_name())
 }
 
 pub(crate) fn gpu_runtime_policy_from_args(

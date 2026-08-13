@@ -167,11 +167,10 @@ fn compile_generation(
     let mut backend_inputs = Vec::new();
     for artifact in native.artifacts() {
         let backend = artifact.backend();
-        let scan_backend = match backend {
-            ExecutionPackBackend::Cpu => ScanBackend::CpuFallback,
-            ExecutionPackBackend::Simd => ScanBackend::SimdCpu,
-            _ => continue,
-        };
+        let scan_backend = backend.scan_backend();
+        if scan_backend.is_gpu() {
+            continue;
+        }
         let candidate_findings = if backend == ExecutionPackBackend::Cpu {
             cpu_findings.to_vec()
         } else {
@@ -194,14 +193,9 @@ fn compile_generation(
     }
 
     let mut manifest_entries = Vec::new();
-    for policy in [
-        ExecutionPackPolicy::Default,
-        ExecutionPackPolicy::Fast,
-        ExecutionPackPolicy::Deep,
-        ExecutionPackPolicy::Precision,
-    ] {
+    for policy in ExecutionPackPolicy::ALL {
         let mut generation = base_generation;
-        generation.config_digest = digest_parts(&[policy_name(policy).as_bytes()]);
+        generation.config_digest = digest_parts(&[policy.lowercase_name().as_bytes()]);
         let mut routes = Vec::with_capacity(backend_inputs.len());
         for input in &backend_inputs {
             let program = input.program.artifact();
@@ -236,8 +230,8 @@ fn compile_generation(
         for candidate in packs.packs {
             let stem = format!(
                 "{}-{}",
-                policy_name(policy),
-                backend_name(candidate.backend)
+                policy.lowercase_name(),
+                candidate.backend.lowercase_name()
             );
             let pack_file = format!("{stem}.khpack");
             let signature_file = format!("{stem}.sig");
@@ -250,8 +244,8 @@ fn compile_generation(
                     .map_err(anyhow::Error::msg)?,
             )?;
             manifest_entries.push(InstallPackManifestEntry {
-                policy: policy_name(policy).to_owned(),
-                backend: backend_name(candidate.backend).to_owned(),
+                policy: policy.lowercase_name().to_owned(),
+                backend: candidate.backend.lowercase_name().to_owned(),
                 file: pack_file,
                 signature_file,
                 identity_digest: keyhog_core::hex_encode(&candidate.pack.identity().digest()),
@@ -294,11 +288,11 @@ fn compile_gpu_inputs<'a>(
     fixture: &Chunk,
     generation: PackGenerationIdentity,
 ) -> Result<()> {
-    for (scan_backend, pack_backend) in [
-        (ScanBackend::GpuCuda, ExecutionPackBackend::GpuCuda),
-        (ScanBackend::GpuWgpu, ExecutionPackBackend::GpuWgpu),
-        (ScanBackend::GpuMetal, ExecutionPackBackend::GpuMetal),
-    ] {
+    for pack_backend in ExecutionPackBackend::ALL
+        .into_iter()
+        .filter(|backend| backend.is_gpu())
+    {
+        let scan_backend = pack_backend.scan_backend();
         let scanner = CompiledScanner::compile_for_backend(detectors.to_vec(), scan_backend)
             .with_context(|| format!("censusing {scan_backend:?} for install pack compilation"))?;
         let status = scanner
@@ -610,25 +604,6 @@ fn unique_sibling(output: &Path, suffix: &str) -> PathBuf {
         .and_then(|name| name.to_str())
         .unwrap_or("execution-packs"); // LAW10: non-Unicode or absent output basename affects only rollback-path naming, not the target path or compile result.
     output.with_file_name(format!(".{name}.{suffix}.{}", std::process::id()))
-}
-
-fn policy_name(policy: ExecutionPackPolicy) -> &'static str {
-    match policy {
-        ExecutionPackPolicy::Default => "default",
-        ExecutionPackPolicy::Fast => "fast",
-        ExecutionPackPolicy::Deep => "deep",
-        ExecutionPackPolicy::Precision => "precision",
-    }
-}
-
-fn backend_name(backend: ExecutionPackBackend) -> &'static str {
-    match backend {
-        ExecutionPackBackend::Cpu => "cpu",
-        ExecutionPackBackend::Simd => "simd",
-        ExecutionPackBackend::GpuCuda => "gpu-cuda",
-        ExecutionPackBackend::GpuWgpu => "gpu-wgpu",
-        ExecutionPackBackend::GpuMetal => "gpu-metal",
-    }
 }
 
 #[cfg(test)]

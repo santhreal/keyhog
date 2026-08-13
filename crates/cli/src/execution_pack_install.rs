@@ -145,12 +145,14 @@ pub(crate) fn load_installed_execution_pack(
     let row = manifest
         .packs
         .iter()
-        .find(|row| row.policy == policy_name(policy) && row.backend == backend_name(backend))
+        .find(|row| {
+            row.policy == policy.lowercase_name() && row.backend == backend.lowercase_name()
+        })
         .with_context(|| {
             format!(
                 "installed generation has no {} {} execution pack",
-                policy_name(policy),
-                backend_name(backend),
+                policy.lowercase_name(),
+                backend.lowercase_name(),
             )
         })?;
     authenticate_manifest_pack(&directory, &manifest, row, &signing_key)
@@ -160,7 +162,7 @@ pub(crate) fn load_installed_preferred_matcher_pack(
 ) -> Result<ExecutionPack> {
     let directory = installed_execution_pack_directory()?;
     let (_, manifest, signing_key) = load_manifest(&directory)?;
-    let policy = policy_name(policy);
+    let policy = policy.lowercase_name();
     let row = manifest
         .packs
         .iter()
@@ -357,7 +359,9 @@ fn authenticate_manifest_pack(
             );
         }
     }
-    if policy_name(identity.policy) != row.policy || backend_name(identity.backend) != row.backend {
+    if identity.policy.lowercase_name() != row.policy
+        || identity.backend.lowercase_name() != row.backend
+    {
         bail!(
             "execution pack {} policy/backend identity does not match its manifest",
             pack_path.display()
@@ -377,25 +381,6 @@ fn authenticate_manifest_pack(
         );
     }
     Ok(pack)
-}
-
-fn policy_name(policy: ExecutionPackPolicy) -> &'static str {
-    match policy {
-        ExecutionPackPolicy::Default => "default",
-        ExecutionPackPolicy::Fast => "fast",
-        ExecutionPackPolicy::Deep => "deep",
-        ExecutionPackPolicy::Precision => "precision",
-    }
-}
-
-fn backend_name(backend: ExecutionPackBackend) -> &'static str {
-    match backend {
-        ExecutionPackBackend::Cpu => "cpu",
-        ExecutionPackBackend::Simd => "simd",
-        ExecutionPackBackend::GpuCuda => "gpu-cuda",
-        ExecutionPackBackend::GpuWgpu => "gpu-wgpu",
-        ExecutionPackBackend::GpuMetal => "gpu-metal",
-    }
 }
 
 fn validate_filename(name: &str) -> Result<()> {
