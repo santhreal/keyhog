@@ -114,7 +114,7 @@ that diagnostic run and keeps its own fail-closed execution contract.
 
 This code covers a low-level I/O error not classified as operator-correctable,
 an incremental-cache failure, an autoroute decision-cache persist failure
-(the scan produced findings but could not save its routing decision), a fatal
+(the scan reported no findings but could not save its routing decision), a fatal
 daemon listener or connection-handler spawn failure, or an explicitly selected
 SIMD/Hyperscan path that cannot execute. A selected or required GPU failure is
 `12`.
