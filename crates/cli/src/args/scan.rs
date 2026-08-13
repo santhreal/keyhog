@@ -19,7 +19,7 @@ fn fmt_value_enum<T: ValueEnum>(
     }
 }
 
-#[derive(Clone, Debug, ValueEnum)]
+#[derive(Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum SeverityFilter {
     Info,
     ClientSafe,
@@ -52,12 +52,16 @@ impl std::fmt::Display for SeverityFilter {
 pub enum OutputFormat {
     Text,
     Json,
+    #[value(alias = "json_envelope")]
     JsonEnvelope,
     Jsonl,
+    #[value(alias = "jsonl_envelope")]
     JsonlEnvelope,
     Sarif,
     Csv,
+    #[value(alias = "github_annotations")]
     GithubAnnotations,
+    #[value(alias = "gitlab_sast")]
     GitlabSast,
     Html,
     Junit,
@@ -69,7 +73,7 @@ impl std::fmt::Display for OutputFormat {
     }
 }
 
-#[derive(Clone, Debug, ValueEnum, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum CliDedupScope {
     Credential,
     File,

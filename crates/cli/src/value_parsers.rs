@@ -1,5 +1,7 @@
 //! CLI value parsers for typed command-line options.
 
+use clap::ValueEnum;
+
 /// Build a uniform "unparseable typed value" rejection. clap already prefixes
 /// the offending input and the flag name (`invalid value '<got>' for
 /// '<--flag>'`), so this states only what was *expected*: the accepted
@@ -336,63 +338,77 @@ pub(crate) fn parse_byte_size(s: &str) -> Result<usize, String> {
     }
 }
 
-/// Accepted-spelling description for [`parse_severity_filter`], surfaced in
-/// config rejection messages. One owner so the accepted list cannot drift from
-/// the match arms below or get re-pasted per call site.
-pub(crate) const SEVERITY_ACCEPTED: &str =
-    "expected one of info, client-safe, low, medium, high, critical";
+/// Parse a clap value enum, including aliases, without allocating a normalized
+/// copy of already canonical input.
+fn parse_value_enum<T: ValueEnum>(value: &str) -> Option<T> {
+    T::from_str(value, true).ok()
+}
+
+/// Build the config diagnostic from the canonical names owned by the enum.
+pub(crate) fn value_enum_expected<T: ValueEnum>() -> String {
+    let mut expected = String::from("expected one of ");
+    for (index, variant) in T::value_variants().iter().enumerate() {
+        let Some(possible) = variant.to_possible_value() else {
+            panic!("ValueEnum variants used by config must have possible values");
+        };
+        if index != 0 {
+            expected.push_str(", ");
+        }
+        expected.push_str(possible.get_name());
+    }
+    expected
+}
 
 /// Parse a severity string into the CLI filter enum. Shared by the flat
 /// top-level `severity` field and the `[scan]` nested table in `.keyhog.toml`
-/// so both surfaces accept identical spellings (one source of truth).
+/// so both surfaces accept identical spellings.
 pub(crate) fn parse_severity_filter(s: &str) -> Option<crate::args::SeverityFilter> {
-    use crate::args::SeverityFilter as S;
-    match s.to_lowercase().as_str() {
-        "info" => Some(S::Info),
-        "client-safe" => Some(S::ClientSafe),
-        "low" => Some(S::Low),
-        "medium" => Some(S::Medium),
-        "high" => Some(S::High),
-        "critical" => Some(S::Critical),
-        _ => None,
-    }
+    parse_value_enum(s)
 }
-
-/// Accepted-spelling description for [`parse_output_format`]. One owner (see
-/// [`SEVERITY_ACCEPTED`]).
-pub(crate) const OUTPUT_FORMAT_ACCEPTED: &str =
-    "expected one of text, json, json-envelope, jsonl, jsonl-envelope, sarif, csv, github-annotations, gitlab-sast, html, junit";
 
 /// Parse an output-format string. Shared by the flat `format` field and `[scan]`.
 pub(crate) fn parse_output_format(s: &str) -> Option<crate::args::OutputFormat> {
-    use crate::args::OutputFormat as F;
-    match s.to_lowercase().as_str() {
-        "text" => Some(F::Text),
-        "json" => Some(F::Json),
-        "json-envelope" | "json_envelope" => Some(F::JsonEnvelope),
-        "jsonl" => Some(F::Jsonl),
-        "jsonl-envelope" | "jsonl_envelope" => Some(F::JsonlEnvelope),
-        "sarif" => Some(F::Sarif),
-        "csv" => Some(F::Csv),
-        "github-annotations" | "github_annotations" => Some(F::GithubAnnotations),
-        "gitlab-sast" | "gitlab_sast" => Some(F::GitlabSast),
-        "html" => Some(F::Html),
-        "junit" => Some(F::Junit),
-        _ => None,
-    }
+    parse_value_enum(s)
 }
-
-/// Accepted-spelling description for [`parse_dedup_scope`]. One owner (see
-/// [`SEVERITY_ACCEPTED`]).
-pub(crate) const DEDUP_SCOPE_ACCEPTED: &str = "expected one of credential, file, none";
 
 /// Parse a dedup-scope string. Shared by the flat `dedup` field and `[scan]`.
 pub(crate) fn parse_dedup_scope(s: &str) -> Option<crate::args::CliDedupScope> {
-    use crate::args::CliDedupScope as D;
-    match s.to_lowercase().as_str() {
-        "credential" => Some(D::Credential),
-        "file" => Some(D::File),
-        "none" => Some(D::None),
-        _ => None,
+    parse_value_enum(s)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::value_enum_expected;
+    use clap::ValueEnum;
+    use std::collections::HashSet;
+
+    fn assert_expected_lists_every_canonical_value_once<T: ValueEnum>() {
+        let diagnostic = value_enum_expected::<T>();
+        let listed: Vec<_> = match diagnostic.strip_prefix("expected one of ") {
+            Some(values) => values.split(", ").collect(),
+            None => panic!("config enum diagnostic prefix is missing"),
+        };
+        let canonical: Vec<_> = T::value_variants()
+            .iter()
+            .map(|variant| match variant.to_possible_value() {
+                Some(possible) => possible.get_name().to_owned(),
+                None => panic!("config enum variant must have a clap spelling"),
+            })
+            .collect();
+        let unique: HashSet<_> = listed.iter().copied().collect();
+
+        assert_eq!(listed, canonical);
+        assert_eq!(
+            unique.len(),
+            listed.len(),
+            "accepted-value diagnostic contains duplicates: {diagnostic}"
+        );
+    }
+
+    #[test]
+    fn config_enum_diagnostics_cover_every_canonical_value_uniquely() {
+        assert_expected_lists_every_canonical_value_once::<crate::args::SeverityFilter>();
+        assert_expected_lists_every_canonical_value_once::<crate::args::OutputFormat>();
+        assert_expected_lists_every_canonical_value_once::<crate::args::CliDedupScope>();
     }
 }

@@ -5,8 +5,7 @@ use crate::args::{DetectorMode, ScanArgs};
 use crate::value_parsers::{
     parse_byte_size, parse_dedup_scope, parse_entropy_bpe_max_bytes_per_token,
     parse_entropy_threshold, parse_min_confidence, parse_ml_threshold, parse_ml_weight,
-    parse_output_format, parse_severity_filter, DEDUP_SCOPE_ACCEPTED, OUTPUT_FORMAT_ACCEPTED,
-    SEVERITY_ACCEPTED,
+    parse_output_format, parse_severity_filter, value_enum_expected,
 };
 use std::path::{Path, PathBuf};
 const DETECTOR_MODE_ACCEPTED: &str = "expected one of replace, overlay";
@@ -261,7 +260,7 @@ pub(super) fn apply_scan_section(
                 None => config_errors.push(super::invalid_config_value(
                     "[scan].severity",
                     s,
-                    SEVERITY_ACCEPTED,
+                    &value_enum_expected::<crate::args::SeverityFilter>(),
                 )),
             }
         }
@@ -326,7 +325,7 @@ pub(super) fn apply_scan_section(
                 None => config_errors.push(super::invalid_config_value(
                     "[scan].format",
                     f,
-                    OUTPUT_FORMAT_ACCEPTED,
+                    &value_enum_expected::<crate::args::OutputFormat>(),
                 )),
             }
         }
@@ -380,7 +379,7 @@ pub(super) fn apply_scan_section(
                 None => config_errors.push(super::invalid_config_value(
                     "[scan].dedup",
                     d,
-                    DEDUP_SCOPE_ACCEPTED,
+                    &value_enum_expected::<crate::args::CliDedupScope>(),
                 )),
             }
         }
