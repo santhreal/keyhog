@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.73 - 2026-08-14
+
+- fix(release): preflight registry dependencies.
+
 ## 0.5.72 - 2026-08-13
 
 - Release tags now publish: the bump job dispatches the crates.io publish for the tag it created, and that job creates the tag's GitHub Release from its changelog section. A tag pushed with the workflow token raises no push event, so tags v0.5.51 through v0.5.71 were never published.

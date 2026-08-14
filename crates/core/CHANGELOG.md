@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.73 - 2026-08-14
+
+- fix(release): preflight registry dependencies.
+
 ## 0.5.72 - 2026-08-13
 
 - release: publish the tag the bump job creates.

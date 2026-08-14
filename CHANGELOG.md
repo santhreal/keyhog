@@ -2,6 +2,12 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.73] - 2026-08-14
+
+### Changed
+
+- fix(release): preflight registry dependencies.
+
 ## [0.5.72] - 2026-08-13
 
 ### Changed
