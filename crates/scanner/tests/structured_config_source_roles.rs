@@ -5,9 +5,9 @@ use keyhog_core::{
     SemanticSourceRole, Severity,
 };
 use keyhog_scanner::testing::{
-    candidate_source_roles_for_test, classify_structured_source_candidate_for_test,
-    named_detector_fixture_defaults, structured_max_traversal_depth_for_test,
-    structured_source_semantic_window_bytes_for_test,
+    candidate_source_roles_and_cache_for_test, candidate_source_roles_for_test,
+    classify_structured_source_candidate_for_test, named_detector_fixture_defaults,
+    structured_max_traversal_depth_for_test, structured_source_semantic_window_bytes_for_test,
 };
 use support::contracts::{make_chunk, scanner};
 
@@ -352,4 +352,25 @@ fn production_candidates_retain_roles_without_changing_recall() {
         assert_eq!(roles[0].role, "unknown");
         assert_eq!(roles[0].confidence, "abstained");
     }
+}
+
+/// WHY: structured parsing is evidence enrichment, not an admission gate. A
+/// candidate rejected synchronously by test-path policy must not build an index.
+#[test]
+fn synchronously_suppressed_candidates_do_not_parse_structured_sources() {
+    let chunk = candidate_chunk(
+        "{\"primary\":\"AB12CFGPROVQ7W8E9R0T1Y2U3I4\"}",
+        "tests/config.json",
+    );
+    let (roles, cache_built) =
+        candidate_source_roles_and_cache_for_test(vec![semantic_detector()], &chunk)
+            .expect("test-path candidate scan");
+    assert!(
+        roles.is_empty(),
+        "suppressed candidate must not emit: {roles:?}"
+    );
+    assert!(
+        !cache_built,
+        "synchronous suppression must run before structured parsing"
+    );
 }

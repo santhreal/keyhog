@@ -47,7 +47,7 @@ use keyhog_scanner::context::CodeContext;
 use keyhog_scanner::testing::{
     credential_url_userinfo_password_for_test, named_detector_suppressed,
 };
-use regex::Regex;
+use regex::RegexBuilder;
 
 /// One credentialled-URL detector and a URL of its own to exercise it with.
 struct UrlCase {
@@ -121,9 +121,13 @@ fn url_cases() -> Vec<UrlCase> {
                     {
                         return None;
                     }
-                    let regex = Regex::new(&pattern.regex).unwrap_or_else(|error| {
-                        panic!("{} pattern[{index}] must compile: {error}", spec.id)
-                    });
+                    let regex = RegexBuilder::new(&pattern.regex)
+                        .case_insensitive(true)
+                        .crlf(true)
+                        .build()
+                        .unwrap_or_else(|error| {
+                            panic!("{} pattern[{index}] must compile: {error}", spec.id)
+                        });
                     let captures = regex.captures(positive)?;
                     let capture = captures.get(pattern.group.unwrap_or(0))?.as_str();
                     let (url, password) = url_span(capture)?;

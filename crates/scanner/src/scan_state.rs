@@ -683,6 +683,10 @@ impl ScanState {
             })
     }
 
+    pub(crate) fn has_structured_source_cache(&self) -> bool {
+        self.structured_source_cache.is_some()
+    }
+
     /// Intern a credential string, returning a shared zeroizing allocation.
     pub(crate) fn intern_credential(&mut self, s: &str) -> SensitiveString {
         if let Some(existing) = self.credential_interner.get(s) {
