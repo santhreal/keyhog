@@ -95,7 +95,7 @@ The two commands above install the latest crates.io release and scan the current
 tree with the portable pure-Rust route.
 
 Pin a CI environment to one exact release with
-`cargo install --locked --version '=0.5.73' keyhog`. KeyHog requires Rust 1.89
+`cargo install --locked --version '=0.5.74' keyhog`. KeyHog requires Rust 1.89
 or newer. See the [installation guide](https://santhreal.github.io/keyhog/install.html)
 for GPU, Hyperscan, CI, portable, and source-build profiles.
 

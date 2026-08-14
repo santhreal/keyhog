@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.74 - 2026-08-14
+
+- fix(release): ignore Marketplace-only tags.
+
 ## 0.5.73 - 2026-08-14
 
 - fix(release): preflight registry dependencies.

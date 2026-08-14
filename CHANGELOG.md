@@ -2,6 +2,12 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.74] - 2026-08-14
+
+### Changed
+
+- fix(release): ignore Marketplace-only tags.
+
 ## [0.5.73] - 2026-08-14
 
 ### Changed
