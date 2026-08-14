@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::collections::{BinaryHeap, HashSet};
 use std::sync::Arc;
 
+use crate::candidate_provenance::CandidateProvenance;
 use keyhog_core::SensitiveString;
 
 #[cfg(feature = "ml")]
@@ -73,27 +74,31 @@ pub(crate) struct PendingRawMatch {
     pub(crate) companions: keyhog_core::CompanionMap,
     pub(crate) location: keyhog_core::MatchLocation,
     pub(crate) entropy: Option<f64>,
+    pub(crate) provenance: CandidateProvenance,
 }
 
 #[cfg(feature = "ml")]
 impl PendingRawMatch {
-    pub(crate) fn materialize(self, confidence: f64) -> keyhog_core::RawMatch {
+    pub(crate) fn materialize(self, confidence: f64) -> AttributedRawMatch {
         #[cfg(test)]
         RAW_MATCH_MATERIALIZATIONS.with(|count| count.set(count.get() + 1));
 
         let credential_hash = crate::sha256_hash(self.credential.as_ref());
-        keyhog_core::RawMatch {
-            detector_id: self.detector_id,
-            detector_name: self.detector_name,
-            service: self.service,
-            severity: self.severity,
-            credential: self.credential,
-            credential_hash,
-            companions: self.companions,
-            location: self.location,
-            entropy: self.entropy,
-            confidence: Some(confidence),
-        }
+        AttributedRawMatch::new(
+            keyhog_core::RawMatch {
+                detector_id: self.detector_id,
+                detector_name: self.detector_name,
+                service: self.service,
+                severity: self.severity,
+                credential: self.credential,
+                credential_hash,
+                companions: self.companions,
+                location: self.location,
+                entropy: self.entropy,
+                confidence: Some(confidence),
+            },
+            self.provenance,
+        )
     }
 
     fn same_identity(&self, other: &Self) -> bool {
@@ -510,6 +515,64 @@ impl OwnedMatchIdentity {
     }
 }
 
+/// A finalized public finding paired with scanner-internal producer provenance.
+///
+/// Ordering deliberately delegates to `RawMatch`, preserving the exact heap,
+/// cap, deduplication, and output behavior that predates provenance retention.
+#[derive(Clone)]
+pub(crate) struct AttributedRawMatch {
+    raw: keyhog_core::RawMatch,
+    pub(crate) provenance: CandidateProvenance,
+}
+
+impl AttributedRawMatch {
+    pub(crate) fn new(raw: keyhog_core::RawMatch, provenance: CandidateProvenance) -> Self {
+        debug_assert!(provenance.is_well_formed());
+        Self { raw, provenance }
+    }
+
+    pub(crate) fn into_raw(self) -> keyhog_core::RawMatch {
+        let Self { raw, provenance } = self;
+        debug_assert!(provenance.is_well_formed());
+        debug_assert_eq!(
+            provenance.pattern().is_some(),
+            matches!(
+                provenance.channel,
+                crate::candidate_provenance::CandidateChannel::NamedPattern
+            )
+        );
+        raw
+    }
+}
+
+impl std::ops::Deref for AttributedRawMatch {
+    type Target = keyhog_core::RawMatch;
+
+    fn deref(&self) -> &Self::Target {
+        &self.raw
+    }
+}
+
+impl PartialEq for AttributedRawMatch {
+    fn eq(&self, other: &Self) -> bool {
+        self.raw == other.raw
+    }
+}
+
+impl Eq for AttributedRawMatch {}
+
+impl PartialOrd for AttributedRawMatch {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for AttributedRawMatch {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.raw.cmp(&other.raw)
+    }
+}
+
 /// Internal state for a single scan operation.
 #[derive(Default)]
 pub(crate) struct ScanState {
@@ -517,7 +580,7 @@ pub(crate) struct ScanState {
     /// `RawMatch::Ord` sorts best findings first (`best < worst`), so the
     /// BinaryHeap root is the worst retained finding and can be replaced when a
     /// better candidate arrives after the cap is full.
-    pub(crate) matches: BinaryHeap<keyhog_core::RawMatch>,
+    pub(crate) matches: BinaryHeap<AttributedRawMatch>,
     /// Interner for credentials found in this chunk to save memory on duplicates.
     pub(crate) credential_interner: HashSet<SensitiveString>,
     /// Static string cache for detector metadata. Uses
@@ -757,10 +820,28 @@ impl ScanState {
 
     /// Push a match to the state, maintaining priority and capacity.
     /// High-confidence secrets will displace lower-confidence findings.
-    pub(crate) fn push_match(&mut self, m: keyhog_core::RawMatch, limit: usize) -> bool {
-        let identity = OwnedMatchIdentity::from(&m);
+    pub(crate) fn push_match(&mut self, raw: keyhog_core::RawMatch, limit: usize) -> bool {
+        self.push_match_with_provenance(raw, CandidateProvenance::unattributed(), limit)
+    }
+
+    pub(crate) fn push_match_with_provenance(
+        &mut self,
+        raw: keyhog_core::RawMatch,
+        provenance: CandidateProvenance,
+        limit: usize,
+    ) -> bool {
+        let candidate = AttributedRawMatch::new(raw, provenance);
+        self.push_attributed_match(candidate, limit)
+    }
+
+    pub(crate) fn push_attributed_match(
+        &mut self,
+        candidate: AttributedRawMatch,
+        limit: usize,
+    ) -> bool {
+        let identity = OwnedMatchIdentity::from(&*candidate);
         if self.claimed_match_identities.contains(&identity) {
-            let accepted = self.replace_claimed_match_if_better(&identity, m);
+            let accepted = self.replace_claimed_match_if_better(&identity, candidate);
             if accepted {
                 self.accepted_match_events = self.accepted_match_events.saturating_add(1);
             }
@@ -769,15 +850,15 @@ impl ScanState {
 
         if self.matches.len() < limit {
             self.claimed_match_identities.insert(identity);
-            self.matches.push(m);
+            self.matches.push(candidate);
             self.accepted_match_events = self.accepted_match_events.saturating_add(1);
             return true;
         }
 
         if let Some(mut worst) = self.matches.peek_mut() {
-            if m < *worst {
-                let displaced = OwnedMatchIdentity::from(&*worst);
-                *worst = m;
+            if candidate < *worst {
+                let displaced = OwnedMatchIdentity::from(&**worst);
+                *worst = candidate;
                 drop(worst);
                 self.claimed_match_identities.remove(&displaced);
                 self.claimed_match_identities.insert(identity);
@@ -788,11 +869,10 @@ impl ScanState {
 
         false
     }
-
     fn replace_claimed_match_if_better(
         &mut self,
         identity: &OwnedMatchIdentity,
-        candidate: keyhog_core::RawMatch,
+        candidate: AttributedRawMatch,
     ) -> bool {
         let should_replace = self
             .matches
@@ -835,11 +915,24 @@ impl ScanState {
     ) where
         F: FnOnce(&mut Self) -> keyhog_core::RawMatch,
     {
-        // Reject from borrowed priority fields before constructing the owned
-        // identity. At capacity, a candidate whose priority prefix is already
-        // worse than the heap root cannot beat any retained match, including a
-        // duplicate of its identity. This keeps the overwhelmingly common
-        // rejection path free of Arc/SensitiveString allocation.
+        self.push_match_lazy_with_provenance(
+            priority,
+            CandidateProvenance::unattributed(),
+            limit,
+            build,
+        );
+    }
+
+    #[cfg(any(feature = "entropy", test))]
+    pub(crate) fn push_match_lazy_with_provenance<F>(
+        &mut self,
+        priority: RawMatchPriority<'_>,
+        provenance: CandidateProvenance,
+        limit: usize,
+        build: F,
+    ) where
+        F: FnOnce(&mut Self) -> keyhog_core::RawMatch,
+    {
         if limit == 0 {
             return;
         }
@@ -857,28 +950,26 @@ impl ScanState {
             if !self.claimed_priority_would_replace(&identity, &priority) {
                 return;
             }
-            let m = build(self);
-            if self.replace_claimed_match_if_better(&identity, m) {
+            let candidate = AttributedRawMatch::new(build(self), provenance);
+            if self.replace_claimed_match_if_better(&identity, candidate) {
                 self.accepted_match_events = self.accepted_match_events.saturating_add(1);
             }
             return;
         }
 
         if self.matches.len() < limit {
-            let m = build(self);
+            let candidate = AttributedRawMatch::new(build(self), provenance);
             self.claimed_match_identities.insert(identity);
-            self.matches.push(m);
+            self.matches.push(candidate);
             self.accepted_match_events = self.accepted_match_events.saturating_add(1);
             return;
         }
 
-        // The borrowed cap check above proved this prefix can still win. Build
-        // once so the full identity tiebreakers can decide the retained match.
-        let m = build(self);
+        let candidate = AttributedRawMatch::new(build(self), provenance);
         if let Some(mut worst) = self.matches.peek_mut() {
-            if m < *worst {
-                let displaced = OwnedMatchIdentity::from(&*worst);
-                *worst = m;
+            if candidate < *worst {
+                let displaced = OwnedMatchIdentity::from(&**worst);
+                *worst = candidate;
                 drop(worst);
                 self.claimed_match_identities.remove(&displaced);
                 self.claimed_match_identities.insert(identity);
@@ -887,44 +978,22 @@ impl ScanState {
         }
     }
 
-    /// Drain all matches into a sorted vector. Dedups identical findings
-    /// (same detector + same credential + same offset) - two engines can
-    /// produce the same finding for the same pattern (e.g. ac_map's
-    /// literal hit + homoglyph fallback variant both fire on plain ASCII
-    /// because the homoglyph char-class includes the original char). The
-    /// caller only wants one of them in the result set.
+    /// Drain all matches into the unchanged public finding vector.
     pub(crate) fn into_matches(self) -> Vec<keyhog_core::RawMatch> {
+        self.into_attributed_matches()
+            .into_iter()
+            .map(AttributedRawMatch::into_raw)
+            .collect()
+    }
+
+    /// Drain matches while retaining secret-safe producer provenance.
+    pub(crate) fn into_attributed_matches(self) -> Vec<AttributedRawMatch> {
         let mut matches: Vec<_> = self.matches.into_iter().collect();
-        // 0 or 1 match cannot contain a duplicate and is already in canonical
-        // order, so skip all sorting and dedup work entirely - no scratch
-        // buffer, no HashSet alloc, no refcount traffic - on the overwhelmingly
-        // common small-chunk case.
         if matches.len() <= 1 {
             return matches;
         }
-        // Group identical findings (same detector + credential + offset)
-        // adjacently with the BEST finding first within each group, in a single
-        // pass: `raw_match_identity_cmp` is the primary key and `RawMatch`'s
-        // best-first `Ord` is the tiebreak. `dedup_by` then keeps the first of
-        // each run - i.e. the highest-confidence entry per identity.
-        //
-        // `sort_unstable_by` is correct AND allocation-free here: the previous
-        // code paid for a separate leading stable `sort()` purely to seed a
-        // stable identity grouping (three sorts total, each allocating an ~n/2
-        // merge buffer). Folding best-first into the comparator's tiebreak makes
-        // the grouping order self-sufficient, so stability is no longer needed -
-        // the only elements an unstable sort may reorder are those Equal under
-        // the *total* comparator, which are identical findings and thus
-        // dedup-interchangeable.
-        matches.sort_unstable_by(|a, b| raw_match_identity_cmp(a, b).then_with(|| a.cmp(b)));
-        matches.dedup_by(|a, b| same_raw_match_identity(a, b));
-        // Restore canonical best-first output order across the now-unique
-        // findings. After dedup every element has a distinct identity, and
-        // `RawMatch::Ord` is total with respect to that identity (Ord-Equal
-        // implies same detector+credential+offset), so no two survivors compare
-        // Equal - the sorted order is uniquely determined and an unstable sort
-        // yields byte-identical output to a stable one, without the scratch
-        // allocation.
+        matches.sort_unstable_by(|a, b| raw_match_identity_cmp(&**a, &**b).then_with(|| a.cmp(b)));
+        matches.dedup_by(|a, b| same_raw_match_identity(&**a, &**b));
         matches.sort_unstable();
         matches
     }

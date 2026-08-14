@@ -44,6 +44,7 @@ fn pending_candidate(offset: usize, min_confidence_floor: f64) -> MlPendingMatch
         9,
         4.25,
         &mut state,
+        crate::candidate_provenance::CandidateProvenance::named(0, 0),
         false,
     );
     MlPendingMatch::detector_candidate(

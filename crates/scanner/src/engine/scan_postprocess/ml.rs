@@ -11,7 +11,7 @@ fn finalize_pending_match(
     config: &crate::types::ScannerConfig,
     pending: MlPendingMatch,
     report_conf: f64,
-) -> Option<keyhog_core::RawMatch> {
+) -> Option<crate::scan_state::AttributedRawMatch> {
     let payload = &pending.pending_raw_match;
     let final_confidence = crate::adjudicate::finalize_report_candidate(
         payload.location.file_path.as_deref(),
@@ -43,6 +43,7 @@ pub(crate) fn finalize_pending_match_for_test(
     report_conf: f64,
 ) -> Option<keyhog_core::RawMatch> {
     finalize_pending_match(config, pending, report_conf)
+        .map(crate::scan_state::AttributedRawMatch::into_raw)
 }
 
 impl CompiledScanner {
@@ -116,8 +117,8 @@ impl CompiledScanner {
         pending: MlPendingMatch,
         report_conf: f64,
     ) {
-        if let Some(raw_match) = finalize_pending_match(&self.config, pending, report_conf) {
-            scan_state.push_match(raw_match, self.config.max_matches_per_chunk);
+        if let Some(attributed_match) = finalize_pending_match(&self.config, pending, report_conf) {
+            scan_state.push_attributed_match(attributed_match, self.config.max_matches_per_chunk);
         }
     }
 

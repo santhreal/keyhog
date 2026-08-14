@@ -10,7 +10,7 @@ use keyhog_core::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const ROUTE_MATCHER_SECTION_VERSION: u16 = 5;
+pub const ROUTE_MATCHER_SECTION_VERSION: u16 = 6;
 std::thread_local! {
     static RUNTIME_LOCALIZATION_HINT_FALLBACKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
@@ -78,6 +78,7 @@ struct RegexEnvelope {
 #[derive(Deserialize, Serialize)]
 struct PackedPattern {
     detector_index: u32,
+    pattern_index: u32,
     regex: String,
     case_insensitive: bool,
     group: Option<u32>,
@@ -460,13 +461,19 @@ pub(crate) fn decode_authenticated_compile_state_sections(
         .iter()
         .map(|detector| detector.id.as_str())
         .collect::<Vec<_>>();
-    decode_authenticated_compile_state_sections_from_ids(
+    let detector_pattern_counts = detectors
+        .iter()
+        .map(|detector| detector.patterns.len())
+        .collect::<Vec<_>>();
+    decode_compile_state_sections_from_ids_inner(
         backend,
         literal_index,
         regex_programs,
         suppression_policy,
         expected_detector_ir_digest,
         &detector_ids,
+        &detector_pattern_counts,
+        SectionDecodeTrust::AuthenticatedPack,
     )
 }
 
@@ -482,13 +489,19 @@ pub(crate) fn decode_compile_state_sections(
         .iter()
         .map(|detector| detector.id.as_str())
         .collect::<Vec<_>>();
-    decode_compile_state_sections_from_ids(
+    let detector_pattern_counts = detectors
+        .iter()
+        .map(|detector| detector.patterns.len())
+        .collect::<Vec<_>>();
+    decode_compile_state_sections_from_ids_inner(
         backend,
         literal_index,
         regex_programs,
         suppression_policy,
         expected_detector_ir_digest,
         &detector_ids,
+        &detector_pattern_counts,
+        SectionDecodeTrust::Untrusted,
     )
 }
 
@@ -499,6 +512,7 @@ pub(crate) fn decode_authenticated_compile_state_sections_from_ids(
     suppression_policy: &[u8],
     expected_detector_ir_digest: [u8; 32],
     detector_ids: &[&str],
+    detector_pattern_counts: &[usize],
 ) -> Result<CompileState, ExecutionPackError> {
     decode_compile_state_sections_from_ids_inner(
         backend,
@@ -507,6 +521,7 @@ pub(crate) fn decode_authenticated_compile_state_sections_from_ids(
         suppression_policy,
         expected_detector_ir_digest,
         detector_ids,
+        detector_pattern_counts,
         SectionDecodeTrust::AuthenticatedPack,
     )
 }
@@ -518,6 +533,7 @@ pub(crate) fn decode_compile_state_sections_from_ids(
     suppression_policy: &[u8],
     expected_detector_ir_digest: [u8; 32],
     detector_ids: &[&str],
+    detector_pattern_counts: &[usize],
 ) -> Result<CompileState, ExecutionPackError> {
     decode_compile_state_sections_from_ids_inner(
         backend,
@@ -526,6 +542,7 @@ pub(crate) fn decode_compile_state_sections_from_ids(
         suppression_policy,
         expected_detector_ir_digest,
         detector_ids,
+        detector_pattern_counts,
         SectionDecodeTrust::Untrusted,
     )
 }
@@ -544,6 +561,10 @@ pub(crate) fn decode_local_matcher_artifact_compile_state_sections(
         .iter()
         .map(|detector| detector.id.as_str())
         .collect::<Vec<_>>();
+    let detector_pattern_counts = detectors
+        .iter()
+        .map(|detector| detector.patterns.len())
+        .collect::<Vec<_>>();
     decode_compile_state_sections_from_ids_inner(
         backend,
         literal_index,
@@ -551,6 +572,7 @@ pub(crate) fn decode_local_matcher_artifact_compile_state_sections(
         suppression_policy,
         expected_detector_ir_digest,
         &detector_ids,
+        &detector_pattern_counts,
         SectionDecodeTrust::LocalDigestCheckedCache,
     )
 }
@@ -562,6 +584,7 @@ fn decode_compile_state_sections_from_ids_inner(
     suppression_policy: &[u8],
     expected_detector_ir_digest: [u8; 32],
     detector_ids: &[&str],
+    detector_pattern_counts: &[usize],
     trust: SectionDecodeTrust,
 ) -> Result<CompileState, ExecutionPackError> {
     let (literal, regex, _suppression) = decode_validated_compile_state_sections(
@@ -583,11 +606,26 @@ fn decode_compile_state_sections_from_ids_inner(
             detector_ids.len()
         )));
     }
+    if detector_pattern_counts.len() != detector_ids.len() {
+        return Err(ExecutionPackError::Incompatible(format!(
+            "compiled route owns {} detector pattern-count rows but runtime loaded {} detectors",
+            detector_pattern_counts.len(),
+            detector_ids.len()
+        )));
+    }
     let ac_map = regex
         .ac_patterns
         .into_iter()
         .enumerate()
-        .map(|(index, pattern)| unpack_pattern(pattern, detector_ids.len(), "ac_map", index))
+        .map(|(index, pattern)| {
+            unpack_pattern(
+                pattern,
+                detector_ids.len(),
+                detector_pattern_counts,
+                "ac_map",
+                index,
+            )
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let phase2_patterns = regex
         .phase2_patterns
@@ -595,7 +633,13 @@ fn decode_compile_state_sections_from_ids_inner(
         .enumerate()
         .map(|(index, packed)| {
             Ok((
-                unpack_pattern(packed.pattern, detector_ids.len(), "phase2_patterns", index)?,
+                unpack_pattern(
+                    packed.pattern,
+                    detector_ids.len(),
+                    detector_pattern_counts,
+                    "phase2_patterns",
+                    index,
+                )?,
                 packed.keywords,
             ))
         })
@@ -628,6 +672,7 @@ fn pack_pattern(pattern: &CompiledPattern) -> Result<PackedPattern, ExecutionPac
                 "compiled pattern detector index exceeds u32".to_owned(),
             )
         })?,
+        pattern_index: pattern.pattern_index,
         regex: pattern.regex.as_str().to_owned(),
         case_insensitive: pattern.regex.is_case_insensitive(),
         group: pattern.group.map(u32::try_from).transpose().map_err(|_| {
@@ -647,6 +692,7 @@ fn pack_pattern(pattern: &CompiledPattern) -> Result<PackedPattern, ExecutionPac
 fn unpack_pattern(
     packed: PackedPattern,
     detectors_len: usize,
+    detector_pattern_counts: &[usize],
     table: &'static str,
     pattern_index: usize,
 ) -> Result<CompiledPattern, ExecutionPackError> {
@@ -655,6 +701,15 @@ fn unpack_pattern(
         return Err(ExecutionPackError::InvalidPack(format!(
             "compiled route {table}[{pattern_index}] references detector index {} but only {detectors_len} detectors are loaded",
             packed.detector_index
+        )));
+    }
+    let source_pattern_index = packed.pattern_index as usize;
+    if source_pattern_index >= detector_pattern_counts[detector_index] {
+        return Err(ExecutionPackError::InvalidPack(format!(
+            "compiled route {table}[{pattern_index}] references source pattern index {} but detector {} owns only {} pattern(s)",
+            packed.pattern_index,
+            packed.detector_index,
+            detector_pattern_counts[detector_index]
         )));
     }
     if packed.case_insensitive == packed.homoglyph_variant {
@@ -669,6 +724,7 @@ fn unpack_pattern(
     };
     Ok(CompiledPattern {
         detector_index,
+        pattern_index: packed.pattern_index,
         regex,
         group: packed.group.map(|group| group as usize),
         client_safe: packed.client_safe,

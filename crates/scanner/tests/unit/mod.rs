@@ -10,6 +10,7 @@ pub mod ascii_ci;
 pub mod base64_byte_predicates;
 pub mod base64_non_padding_equals;
 pub mod bigram_bloom;
+pub mod candidate_provenance;
 pub mod checksum;
 pub mod checksum_extended;
 pub mod compiler_alternation_rewrite_nested_groups;

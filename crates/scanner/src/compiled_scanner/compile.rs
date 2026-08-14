@@ -19,6 +19,7 @@ struct PackedVyreProgramSource<'a>(std::marker::PhantomData<&'a [u8]>);
 
 struct PackedDetectorPlanPrelude<'a> {
     detector_ids: Vec<Arc<str>>,
+    detector_pattern_counts: Vec<usize>,
     static_intern: Arc<crate::static_intern::StaticInterner>,
     decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
     detector_ir_digest: [u8; 32],
@@ -264,6 +265,7 @@ impl CompiledScanner {
             )
         })?;
         let mut detector_ids = Vec::new();
+        let mut detector_pattern_counts = Vec::new();
         let mut static_intern =
             crate::static_intern::StaticInternerBuilder::with_capacity(bytes.len() / 1024);
         let header = crate::execution_pack::CompiledDetectorPlanSection::stream_prelude_records(
@@ -272,6 +274,7 @@ impl CompiledScanner {
             |_, record| {
                 let id = static_intern.intern(record.id);
                 detector_ids.push(Arc::clone(&id));
+                detector_pattern_counts.push(record.patterns.len());
                 static_intern.intern(record.name);
                 static_intern.intern(record.service);
                 if let Some(metadata) = record.entropy_fallback {
@@ -288,6 +291,7 @@ impl CompiledScanner {
         .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
         let prelude = PackedDetectorPlanPrelude {
             detector_ids,
+            detector_pattern_counts,
             static_intern: Arc::new(static_intern.finish()),
             decoder_plan: header.decoder_plan,
             detector_ir_digest: header.detector_ir_digest,
@@ -511,6 +515,7 @@ impl CompiledScanner {
                         section(Section::SuppressionPolicy)?,
                         identity.detector_digest,
                         &detector_ids,
+                        &prelude.detector_pattern_counts,
                     )
                 } else {
                     crate::execution_pack::matcher_sections::decode_compile_state_sections_from_ids(
@@ -520,6 +525,7 @@ impl CompiledScanner {
                         section(Section::SuppressionPolicy)?,
                         identity.detector_digest,
                         &detector_ids,
+                        &prelude.detector_pattern_counts,
                     )
                 }
             } else {

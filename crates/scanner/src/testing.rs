@@ -3639,6 +3639,7 @@ impl LazyRegexProbe {
 pub(crate) fn phase2_keyword_index_summary(regex: &str, keywords: Vec<String>) -> (bool, usize) {
     let pattern = crate::types::CompiledPattern {
         detector_index: 0,
+        pattern_index: 0,
         regex: crate::types::LazyRegex::detector(regex),
         group: None,
         client_safe: false,
@@ -3860,6 +3861,31 @@ impl crate::engine::CompiledScanner {
         )
         .expect("phase-2 diagnostic scan");
         scan_state.into_matches()
+    }
+}
+
+#[cfg(test)]
+impl crate::engine::CompiledScanner {
+    pub(crate) fn debug_scan_phase2_with_provenance(
+        &self,
+        chunk: &keyhog_core::Chunk,
+    ) -> Vec<crate::scan_state::AttributedRawMatch> {
+        let prepared = self.prepare_chunk(chunk);
+        let line_index = prepared.line_index();
+        let mut scan_state =
+            crate::scan_state::ScanState::with_static_intern(self.static_intern.clone());
+        self.scan_phase2_patterns(
+            &prepared.preprocessed,
+            line_index,
+            prepared.chunk,
+            &mut scan_state,
+            None,
+            None,
+            None,
+            self.default_execution_route(),
+        )
+        .expect("phase-2 provenance diagnostic scan");
+        scan_state.into_attributed_matches()
     }
 }
 

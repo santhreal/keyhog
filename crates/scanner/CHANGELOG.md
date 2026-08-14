@@ -4,6 +4,7 @@
 ## 0.5.75 - 2026-08-14
 
 - Merge remote-tracking branch 'origin/main'.
+- Candidates retain their producer channel and exact canonical pattern ordinal through ML scoring and final adjudication without changing public `RawMatch` output, ordering, deduplication, or caps. Matcher section schema version 6 persists the ordinal and rejects stale or out-of-range provenance during hydration.
 
 ## 0.5.74 - 2026-08-14
 

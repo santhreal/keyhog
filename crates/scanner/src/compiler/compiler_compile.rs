@@ -459,8 +459,15 @@ pub(crate) fn compile_pattern(
         }
     }
     drop(validated);
+    let pattern_index =
+        u32::try_from(pattern_index).map_err(|_| ScanError::DetectorPatternPolicy {
+            detector_id: detector_id.to_string(),
+            index: pattern_index,
+            reason: "pattern index exceeds the u32 provenance contract".to_string(),
+        })?;
     Ok(CompiledPattern {
         detector_index,
+        pattern_index,
         regex: LazyRegex::detector(spec.regex.as_str()),
         group: spec.group,
         client_safe: spec.client_safe,

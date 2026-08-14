@@ -473,6 +473,8 @@ impl CompiledScanner {
                     continue;
                 };
                 let line_number = absolute_line(chunk.metadata.base_line, mapped_line);
+                let provenance =
+                    crate::candidate_provenance::CandidateProvenance::generic_assignment();
                 let build_raw = |scan_state: &mut ScanState, confidence| {
                     crate::pipeline::build_synthetic_raw_match(
                         (
@@ -525,6 +527,7 @@ impl CompiledScanner {
                         Some(line_number),
                         Some(entropy),
                         scan_state,
+                        provenance,
                     );
                     let inserted = scan_state.push_detector_ml_pending(
                         pending_raw_match,
@@ -573,7 +576,11 @@ impl CompiledScanner {
                     continue;
                 };
                 let raw = build_raw(scan_state, report_conf);
-                scan_state.push_match(raw, self.config.max_matches_per_chunk);
+                scan_state.push_match_with_provenance(
+                    raw,
+                    provenance,
+                    self.config.max_matches_per_chunk,
+                );
                 metrics::record_emit();
             }
         }

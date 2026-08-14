@@ -50,6 +50,7 @@ fn pending_raw_match(raw: RawMatch) -> PendingRawMatch {
         companions: raw.companions,
         location: raw.location,
         entropy: raw.entropy,
+        provenance: keyhog_scanner::candidate_provenance::CandidateProvenance::unattributed(),
     }
 }
 

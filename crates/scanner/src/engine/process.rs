@@ -423,6 +423,10 @@ impl CompiledScanner {
             self.config.min_confidence,
         );
 
+        let provenance = crate::candidate_provenance::CandidateProvenance::named(
+            entry.detector_index,
+            entry.pattern_index,
+        );
         match policy_result {
             MlScoreResult::Final(policy_conf) => {
                 let Some(report_conf) = crate::adjudicate::finalize_report_candidate(
@@ -463,7 +467,11 @@ impl CompiledScanner {
                     scan_state,
                     entry.client_safe,
                 );
-                if scan_state.push_match(raw_match, self.config.max_matches_per_chunk) {
+                if scan_state.push_match_with_provenance(
+                    raw_match,
+                    provenance,
+                    self.config.max_matches_per_chunk,
+                ) {
                     crate::telemetry::record_match_found();
                 }
             }
@@ -498,6 +506,7 @@ impl CompiledScanner {
                     line,
                     entropy,
                     scan_state,
+                    provenance,
                     entry.client_safe,
                 );
                 if scan_state.push_detector_ml_pending(
