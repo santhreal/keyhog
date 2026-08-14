@@ -23,8 +23,10 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("workflow_run.event == 'push'", RELEASE)
         self.assertIn("workflow_run.head_branch == 'main'", RELEASE)
         # Trusted Publishing rejects workflow_run JWTs, so publish listens for
-        # the v* tag push (and workflow_dispatch for already-pushed tags).
-        self.assertIn('tags: ["v*"]', RELEASE)
+        # exact stable-semver tag pushes. Marketplace-only suffix tags must not
+        # start crates.io publication.
+        self.assertIn('tags: ["v[0-9]+.[0-9]+.[0-9]+"]', RELEASE)
+        self.assertNotIn('tags: ["v*"]', RELEASE)
         self.assertIn("workflow_dispatch:", RELEASE)
         # A tag pushed with GITHUB_TOKEN raises no push event, so the bump job
         # must dispatch the publish for the tag it just created. Both bump

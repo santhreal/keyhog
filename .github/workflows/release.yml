@@ -2,7 +2,7 @@ name: Automatic crates.io release
 
 # Two-phase release:
 # 1) workflow_run after green CI on main → bump versions, commit, tag, push.
-# 2) the v* tag → OIDC crates.io publish plus the GitHub Release for that tag.
+# 2) an exact vMAJOR.MINOR.PATCH tag → OIDC crates.io publish plus the GitHub Release.
 #
 # A tag pushed with GITHUB_TOKEN never raises a `push` event, so phase 1 ends by
 # dispatching phase 2 for the tag it just created. `workflow_dispatch` and
@@ -15,7 +15,7 @@ on:
     workflows: [CI]
     types: [completed]
   push:
-    tags: ["v*"]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
   workflow_dispatch:
     inputs:
       tag:
