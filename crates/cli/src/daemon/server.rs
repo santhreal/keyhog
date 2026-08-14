@@ -3378,6 +3378,7 @@ fn backend_recovery_status_from_receipt(
 /// An open, no-follow handle to the exact regular file one `ScanPath` request
 /// named. Held for the whole scan so the inode cannot be recycled underneath the
 /// read, and re-checked afterwards against the pathname.
+#[derive(Debug)]
 struct PinnedFile(std::fs::File);
 
 /// Open `path` without following a final symlink and require a regular file.
@@ -3735,6 +3736,10 @@ mod system_path_tests;
 #[cfg(test)]
 #[path = "../../tests/unit/daemon_server_guard_event_action.rs"]
 mod guard_event_action_tests;
+
+#[cfg(test)]
+#[path = "../../tests/unit/daemon_server_regression.rs"]
+mod regression_tests;
 
 // Sibling file (daemon/server_tests.rs), not server/ subdir.
 #[path = "server_tests.rs"]
