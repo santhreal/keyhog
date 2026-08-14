@@ -240,18 +240,18 @@ fn anchored_generic_service_detectors_remain_named_through_resolution() {
     let cases = load_inline_cases();
     let detectors = keyhog_core::embedded_detector_specs().to_vec();
     let scanner = CompiledScanner::compile(detectors.clone()).expect("compile embedded detectors");
-    let anchored_generic_ids: std::collections::BTreeSet<&str> = detectors
+    let anchored_generic_ids: std::collections::BTreeSet<String> = detectors
         .iter()
         .filter(|detector| {
             detector.service == "generic" && detector.kind == keyhog_core::DetectorKind::Regex
         })
-        .map(|detector| detector.id.as_str())
+        .map(|detector| detector.id.clone())
         .collect();
     // basic-auth-credentials, bearer-authorization, cli-password-flag,
     // oauth-client-secret, sql-password, url-credentials.
     assert_eq!(anchored_generic_ids.len(), 6);
 
-    let mut checked = 0usize;
+    let mut checked_ids = std::collections::BTreeSet::new();
     for case in cases {
         if !anchored_generic_ids.contains(case.detector_id.as_str()) {
             continue;
@@ -282,12 +282,11 @@ fn anchored_generic_service_detectors_remain_named_through_resolution() {
                     .collect::<Vec<_>>()
             );
         }
-        checked += 1;
+        checked_ids.insert(case.detector_id);
     }
     assert_eq!(
-        checked, 8,
-        "every anchored generic-service detector's inline positives are checked \
-         (oauth-client-secret ships three, the rest one each)"
+        checked_ids, anchored_generic_ids,
+        "every anchored generic-service detector must own and pass an inline positive"
     );
 }
 
@@ -300,7 +299,7 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
     let scanners =
         support::ExactCpuScanners::compile(detectors).expect("exact CPU scanners must compile");
     let resolver = scanner();
-    let corrected: std::collections::BTreeSet<&str> = [
+    let corrected: std::collections::BTreeSet<String> = [
         "alertmanager-credentials",
         "amazon-music-api-credentials",
         "basic-auth-credentials",
@@ -317,8 +316,9 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
         "vonage-video-api",
     ]
     .into_iter()
+    .map(str::to_owned)
     .collect();
-    let mut checked = 0usize;
+    let mut checked_ids = std::collections::BTreeSet::new();
     for case in load_inline_cases() {
         if !corrected.contains(case.detector_id.as_str()) {
             continue;
@@ -355,11 +355,11 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
             "{} lost its own positive during final resolution",
             case.detector_id
         );
-        checked += 1;
+        checked_ids.insert(case.detector_id);
     }
     assert_eq!(
-        checked, 17,
-        "the fourteen corrected detectors own seventeen inline positives"
+        checked_ids, corrected,
+        "every corrected primary-role detector must own and pass an inline positive"
     );
 }
 

@@ -67,19 +67,19 @@ Each shipped detector owns at least one canonical positive/negative truth pair:
 ```toml
 [[detector.tests]]
 pattern_index = 0
-test_positive = "STRIPE_SECRET_KEY=sk_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD"
-test_negative = "sk_live_short"
+test_positive = "SERVICE_PUBLIC_ID=example-production-fixture"
+test_negative = "SERVICE_PUBLIC_ID=short"
 negative_class = "boundary"
 
 [[detector.tests]]
 pattern_index = 1
-test_positive = "STRIPE_SECRET_KEY=sk_test_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD"
-test_negative = "sk_test_short"
+test_positive = "SERVICE_LEGACY_ID=example-legacy-fixture"
+test_negative = "SERVICE_LEGACY_ID=short"
 negative_class = "boundary"
 
 ```
 
-These are executable production-path fixtures, not documentation examples.
+Detector test records are executable production-path fixtures, not prose examples.
 `pattern_index` is the zero-based pattern ordinal. `negative_class` is one of
 `boundary`, `identifier`, `prose`, `regex-literal`, or `sibling-prefix`.
 The positive must surface that exact detector id and the negative must leave
@@ -283,11 +283,8 @@ and duplicate list entries fail corpus validation.
   hyphenated words, write `[_\-\s]*` explicitly in that detector. A narrower
   class remains narrow and changes only that detector's digest and behavior.
 
-  Use an explicit assignment delimiter such as `\s*(?:=|:)\s*` when a provider
-  name anchors a credential value. Do not include `\s` in a repeated separator
-  class: rule definitions, protocol notation, and prose can then become value
-  boundaries. Anchor command-line options before the leading dash so a detector
-  cannot restart inside a longer option such as `--add-password`. When providers
+  Anchor command-line options before the leading dash so a detector cannot
+  restart inside a longer option such as `--add-password`. When providers
   share a token prefix, separate their issued length grammars and use
   provider-owned context for the overlapping shape. Record each decision as a
   `sibling-prefix` or `regex-literal` hard negative.

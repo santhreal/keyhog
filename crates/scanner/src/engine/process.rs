@@ -423,17 +423,11 @@ impl CompiledScanner {
             self.config.min_confidence,
         );
 
-        let source_offset =
-            preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
         let provenance = crate::candidate_provenance::CandidateProvenance::named(
             entry.detector_index,
             entry.pattern_index,
         );
-        let provenance = scan_state
-            .source_semantic_evidence(chunk, source_offset, credential)
-            .map_or(provenance, |evidence| {
-                provenance.with_source_semantics(evidence)
-            });
+
         match policy_result {
             MlScoreResult::Final(policy_conf) => {
                 let Some(report_conf) = crate::adjudicate::finalize_report_candidate(
@@ -459,6 +453,13 @@ impl CompiledScanner {
                 ) else {
                     return;
                 };
+                let source_offset =
+                    preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
+                let provenance = scan_state
+                    .source_semantic_evidence(chunk, source_offset, credential)
+                    .map_or(provenance, |evidence| {
+                        provenance.with_source_semantics(evidence)
+                    });
                 let raw_match = build_raw_match(
                     execution_policy.severity,
                     detector_plan.cloned_metadata(),
@@ -499,6 +500,13 @@ impl CompiledScanner {
                     detector_ml_policy.features,
                     crate::ml_scorer::MlCandidateChannel::Pattern,
                 );
+                let source_offset =
+                    preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
+                let provenance = scan_state
+                    .source_semantic_evidence(chunk, source_offset, credential)
+                    .map_or(provenance, |evidence| {
+                        provenance.with_source_semantics(evidence)
+                    });
                 let pending_raw_match = crate::pipeline::build_pending_raw_match(
                     execution_policy.severity,
                     detector_plan.cloned_metadata(),

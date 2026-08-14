@@ -1,7 +1,7 @@
 # Docs: https://www.mongodb.com/docs/atlas/configure-api-access/
-# Format: Public Key is 8+ characters, Private Key is UUID format paired with Public Key
+# Format: Public Key is 8+ letters; a UUID-shaped Private Key may reinforce it
 # Verify: GET /api/atlas/v2/groups with Digest auth (public:private) returns 200
-# Prefix: none (requires paired keys, public key has no fixed prefix)
+# Prefix: none (requires an Atlas public-key assignment; private key is optional evidence)
 
 [detector]
 id = "mongodb-atlas-api-key"
@@ -13,7 +13,8 @@ match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20,
 keywords = ["MONGODB_ATLAS", "mongodb_atlas", "publicKey", "privateKey", "ATLAS_PUBLIC_KEY"]
 
 [[detector.patterns]]
-regex = '''(?i)\b(?:(?:MONGODB[_-]?)?ATLAS(?:[_-]?PUBLIC[_-]?KEY)?\s*=|(?:MONGODB[_\-\s]*)?ATLAS[_\-\s]+PUBLIC[_\-\s]*KEY\s*:)\s*["']?([A-Za-z]{8,})\b'''
+regex = '''(?i)\b(?:(?:(?:MONGODB[_-]?)?ATLAS[_-]?PUBLIC[_-]?KEY)\s*=|(?-i:ATLAS)\s*=|(?:MONGODB[_\-\s]*)?ATLAS[_\-\s]+PUBLIC[_\-\s]*KEY[=:\s"']+)[\s"']*([A-Za-z]{8,})\b'''
+required_literals = ["ATLAS"]
 description = "MongoDB Atlas Public Key with context anchor"
 group = 1
 
@@ -21,6 +22,7 @@ group = 1
 name = "privateKey"
 regex = '''(?i)\b(?:(?:MONGODB[_-]?)?ATLAS(?:[_-]?PRIVATE[_-]?KEY)?\s*=|(?:MONGODB[_\-\s]*)?ATLAS[_\-\s]+PRIVATE[_\-\s]*KEY\s*:)\s*["']?([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\b'''
 within_lines = 3
+required = false
 
 [[detector.tests]]
 pattern_index = 0

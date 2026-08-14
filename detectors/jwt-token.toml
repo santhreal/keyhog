@@ -12,12 +12,13 @@
 #   labeled positives the `eyJhbGci` anchor never generated a candidate for.
 #   Anchoring on the structural JWT shape instead: `eyJ`-headed base64url
 #   header `.` `eyJ`-headed base64url payload `.` base64url signature, recovers
-#   them. The signature floor remains below the 43-character HS256 encoding but
-#   rejects prose placeholders and intentionally truncated fixture signatures.
-#   The broadened form measures +54 TP for +2 NEW FP over the old anchor
-#   (jwt_non_alg_first candidate, precision 0.964), because both the header and
-#   payload segments starting `eyJ` form a strong two-point structural anchor.
-#   The `eyJ` literal is >= MIN_LITERAL_PREFIX_CHARS (3), so it remains a first-class AC-literal /
+#   them. The signature retains the pre-existing 10-character recall floor;
+#   source-role evidence, not a global token-length increase, owns truncated
+#   documentation and fixture adjudication. The broadened form measures +54 TP
+#   for +2 NEW FP over the old anchor (jwt_non_alg_first candidate, precision
+#   0.964), because both the header and payload segments starting `eyJ` form a
+#   strong two-point structural anchor. The `eyJ` literal is >=
+#   MIN_LITERAL_PREFIX_CHARS (3), so it remains a first-class AC-literal /
 #   Hyperscan trigger (no fallback-only regression).
 
 [detector]
@@ -36,16 +37,16 @@ decode_transforms = { reverse_prefixes = ["eyJ"], caesar_prefixes = ["eyJ"] }
 keywords = ["eyJ", "bearer", "authorization", "jwt"]
 
 [[detector.patterns]]
-regex = "eyJ[a-zA-Z0-9_-]{8,256}\\.eyJ[a-zA-Z0-9_-]{10,1000}\\.[a-zA-Z0-9_-]{32,512}"
+regex = "eyJ[a-zA-Z0-9_-]{8,256}\\.eyJ[a-zA-Z0-9_-]{10,1000}\\.[a-zA-Z0-9_-]{10,512}"
 description = "JWT structural shape: eyJ-headed base64url header.payload.signature (eyJ = base64url of {\")"
 
 [[detector.tests]]
 pattern_index = 0
 test_positive = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5OTk5OTk5OTk5IiwidGVuYW50Ijoia2V5aG9nLWUyZSIsImlhdCI6MTc0ODA3MjAwMH0.K3xqLnZWP4UlH9oZcQK7nBmJrEzVfYp2N1RsAtX5Y8w"
-test_negative = "eyJhbGciOiJIUzUxMiJ9.eyJ0eXAiOiJDIiwiZXhwIjo5OTk5OTk5OTk5fQ.invalid_short_sig_segment"
+test_negative = "eyJhbGciOiJIUzUxMiJ9.eyJ0eXAiOiJDIiwiZXhwIjo5OTk5OTk5OTk5fQ.short_sig"
 negative_class = "boundary"
 
 [[detector.tests]]
 pattern_index = 0
-test_negative = "eyJhbGciOiJub25lIn0.eyJ0eXAiOiJDIiwiZXhwIjowfQ.tampered_sig"
+test_negative = "eyJhbGciOiJub25lIn0.eyJ0eXAiOiJDIiwiZXhwIjowfQ.tiny"
 negative_class = "boundary"
