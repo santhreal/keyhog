@@ -124,6 +124,18 @@ fn parser_failures_and_unsupported_windows_abstain() {
         ("token: \"CFGPROV_BAD_YAML", "config.yaml"),
         ("TOKEN=\"CFGPROV_BAD_ENV", ".env"),
         ("token = \"CFGPROV_BAD_INI", "config.ini"),
+        (
+            "{\"token\":\"CFGPROV_EARLY_JSON\",\"broken\":",
+            "config.json",
+        ),
+        (
+            "{\"token\":\"CFGPROV_EARLY_JSONL\"}\n{\"broken\":",
+            "events.jsonl",
+        ),
+        ("token = \"CFGPROV_EARLY_TOML\"\nbroken = \"", "config.toml"),
+        ("token: CFGPROV_EARLY_YAML\nbroken: \"", "config.yaml"),
+        ("TOKEN=CFGPROV_EARLY_ENV\nBROKEN=\"", ".env"),
+        ("token=CFGPROV_EARLY_INI\nbroken=\"", "config.ini"),
     ];
     for (text, path) in malformed {
         let start = text.find("CFGPROV").expect("fixture candidate");

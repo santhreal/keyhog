@@ -3,7 +3,9 @@
 //! Configuration lives in `scanner_config`; this module owns the per-scan
 //! match heap, credential/metadata interners, and ML batch queue.
 
-use std::collections::{BinaryHeap, HashMap, HashSet};
+#[cfg(feature = "ml")]
+use std::collections::HashMap;
+use std::collections::{BinaryHeap, HashSet};
 use std::sync::Arc;
 
 use crate::candidate_provenance::CandidateProvenance;
@@ -564,12 +566,18 @@ impl Ord for AttributedRawMatch {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct StructuredSourceCacheKey {
     text_address: usize,
     text_len: usize,
     path_address: usize,
     path_len: usize,
+}
+
+#[derive(Debug)]
+struct StructuredSourceCacheEntry {
+    key: StructuredSourceCacheKey,
+    index: Option<crate::source_semantics::StructuredSourceIndex>,
 }
 
 /// Internal state for a single scan operation.
@@ -610,11 +618,10 @@ pub(crate) struct ScanState {
     /// Lock-free on read so concurrent rayon workers share one
     /// instance without contention.
     pub(crate) static_intern: Option<Arc<crate::static_intern::StaticInterner>>,
-    /// Parsed structured values for each bounded source in this scan. The first
-    /// candidate builds the index once; every later producer/candidate performs
-    /// an exact span lookup and reuses cached abstention.
-    structured_source_cache:
-        HashMap<StructuredSourceCacheKey, Option<crate::source_semantics::StructuredSourceIndex>>,
+    /// Parsed structured values for the bounded source owned by this scan state.
+    /// The first candidate builds the index once; every later producer/candidate
+    /// performs an exact span lookup and reuses cached abstention.
+    structured_source_cache: Option<StructuredSourceCacheEntry>,
     /// Detector matches queued for batch ML scoring at the end of the scan.
     #[cfg(feature = "ml")]
     pub(crate) ml_pending: Vec<MlPendingMatch>,
@@ -652,10 +659,19 @@ impl ScanState {
             path_address: path.map_or(0, |value| value.as_ptr() as usize),
             path_len: path.map_or(0, str::len),
         };
-        let index = self.structured_source_cache.entry(key).or_insert_with(|| {
-            crate::source_semantics::build_structured_source_index(&chunk.data, path)
-        });
-        index
+        if self
+            .structured_source_cache
+            .as_ref()
+            .is_none_or(|entry| entry.key != key)
+        {
+            self.structured_source_cache = Some(StructuredSourceCacheEntry {
+                key,
+                index: crate::source_semantics::build_structured_source_index(&chunk.data, path),
+            });
+        }
+        self.structured_source_cache
+            .as_ref()?
+            .index
             .as_ref()?
             .classify(crate::source_semantics::SourceSpan {
                 start: candidate_start,
