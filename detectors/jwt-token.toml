@@ -15,9 +15,10 @@
 #   them. The signature retains the pre-existing 10-character recall floor;
 #   source-role evidence, not a global token-length increase, owns truncated
 #   documentation and fixture adjudication. The broadened form measures +54 TP
-#   for +2 NEW FP over the old anchor
-#   payload segments starting `eyJ` form a strong two-point structural anchor.
-#   The `eyJ` literal is >= MIN_LITERAL_PREFIX_CHARS (3), so it remains a first-class AC-literal /
+#   for +2 NEW FP over the old anchor (jwt_non_alg_first candidate, precision
+#   0.964), because both the header and payload segments starting `eyJ` form a
+#   strong two-point structural anchor. The `eyJ` literal is >=
+#   MIN_LITERAL_PREFIX_CHARS (3), so it remains a first-class AC-literal /
 #   Hyperscan trigger (no fallback-only regression).
 
 [detector]

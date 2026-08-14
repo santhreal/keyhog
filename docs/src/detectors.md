@@ -256,11 +256,8 @@ and duplicate list entries fail corpus validation.
   hyphenated words, write `[_\-\s]*` explicitly in that detector. A narrower
   class remains narrow and changes only that detector's digest and behavior.
 
-  Use an explicit assignment delimiter such as `\s*(?:=|:)\s*` when a provider
-  name anchors a credential value. Do not include `\s` in a repeated separator
-  class: rule definitions, protocol notation, and prose can then become value
-  boundaries. Anchor command-line options before the leading dash so a detector
-  cannot restart inside a longer option such as `--add-password`. When providers
+  Anchor command-line options before the leading dash so a detector cannot
+  restart inside a longer option such as `--add-password`. When providers
   share a token prefix, separate their issued length grammars and use
   provider-owned context for the overlapping shape. Record each decision as a
   `sibling-prefix` or `regex-literal` hard negative.

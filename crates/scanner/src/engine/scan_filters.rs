@@ -207,20 +207,19 @@ pub(crate) fn extend_known_prefix_credential<'a>(
     (credential, match_end, original_validation)
 }
 
-/// True when the byte after a captured candidate starts a quoted assignment
-/// value (`candidate="value"` or `candidate='value'`) on the same line. In
-/// that shape the `=` is syntax, not base64 padding belonging to the candidate.
-fn starts_quoted_assignment_value(bytes: &[u8], equals: usize) -> bool {
-    if bytes.get(equals) != Some(&b'=') {
+/// True when a captured candidate is an unquoted assignment key immediately
+/// followed by a quoted value (`candidate="value"` or `candidate='value'`).
+/// A preceding quote proves value position, where the `=` may be real padding.
+fn starts_quoted_assignment_value(bytes: &[u8], candidate_start: usize, equals: usize) -> bool {
+    if candidate_start > equals
+        || candidate_start
+            .checked_sub(1)
+            .and_then(|index| bytes.get(index))
+            .is_some_and(|byte| matches!(byte, b'\'' | b'"'))
+    {
         return false;
     }
-    let Some(&quote @ (b'"' | b'\'')) = bytes.get(equals + 1) else {
-        return false;
-    };
-    bytes[equals + 2..]
-        .iter()
-        .take_while(|&&byte| !matches!(byte, b'\r' | b'\n'))
-        .any(|&byte| byte == quote)
+    bytes.get(equals) == Some(&b'=') && matches!(bytes.get(equals + 1), Some(b'\'' | b'"'))
 }
 
 /// Swallow up to two trailing `=` when the captured body is base64-shaped.
@@ -239,7 +238,8 @@ fn extend_base64_padding<'a>(
         return (credential, match_end);
     }
     let bytes = data.as_bytes();
-    if guard_quoted_assignment && starts_quoted_assignment_value(bytes, match_end) {
+    let cred_start = (credential.as_ptr() as usize).wrapping_sub(data.as_ptr() as usize);
+    if guard_quoted_assignment && starts_quoted_assignment_value(bytes, cred_start, match_end) {
         return (credential, match_end);
     }
     let mut end = match_end;

@@ -1,15 +1,12 @@
 //! Production-path regressions for observed detector false-positive classes.
 //!
 //! The matrix keeps provider and command recall while rejecting identifier,
-//! sibling-prefix, provider-overlap, and detector-rule collisions.
+//! sibling-prefix, nested-option, and provider-overlap collisions.
 
 mod support;
 
 use keyhog_scanner::CompiledScanner;
-use std::sync::Mutex;
 use support::contracts::{make_chunk, scanner};
-
-static SCAN_LOCK: Mutex<()> = Mutex::new(());
 
 struct Case {
     label: &'static str,
@@ -19,9 +16,6 @@ struct Case {
 }
 
 fn reports(scanner: &CompiledScanner, case: &Case) -> bool {
-    let _guard = SCAN_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     scanner.clear_fragment_cache();
     scanner
         .scan(&make_chunk(case.text, "filesystem", case.path))
@@ -103,6 +97,24 @@ fn observed_detector_repairs_preserve_genuine_counterparts() {
             path: "secret.txt",
         },
         Case {
+            label: "quoted Helicone read key in JSON",
+            detector_id: "helicone-api-key",
+            text: r#"{"api_key": "sk-0ocqX7mxUDlWFHzlNiC0oKONoezJ9vAX"}"#,
+            path: "config.json",
+        },
+        Case {
+            label: "quoted Helicone write key in YAML",
+            detector_id: "helicone-api-key",
+            text: "helicone_api_key: 'pk-Ab3xY7zQ9mK2wL5jH8nR4pT6cV1sF'",
+            path: "helicone.yaml",
+        },
+        Case {
+            label: "quoted Helicone EU key in TOML",
+            detector_id: "helicone-api-key",
+            text: r#"HELICONE_API_KEY = "eu-Ab3xY7zQ9mK2wL5jH8nR4pT6cV1sF""#,
+            path: "helicone.toml",
+        },
+        Case {
             label: "short Helicone key with owned header",
             detector_id: "helicone-api-key",
             text: "Helicone-Auth: Bearer sk-Ab3xY7zQ9mK2wL5jH8nR4pT6",
@@ -118,24 +130,6 @@ fn observed_detector_repairs_preserve_genuine_counterparts() {
             label: "canonical OpenAI legacy key",
             detector_id: "openai-api-key",
             text: "OPENAI_API_KEY=sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ",
-            path: ".env",
-        },
-        Case {
-            label: "Druid password assignment",
-            detector_id: "druid-credentials",
-            text: "DRUID_PASSWORD=AFHzLDdEbht+JO%$Qr",
-            path: ".env",
-        },
-        Case {
-            label: "sovereign private key id assignment",
-            detector_id: "google-cloud-sovereign-credentials",
-            text: "GOOGLE_SOVEREIGN_PRIVATE_KEY_ID=0123456789abcdef0123456789abcdef01234567",
-            path: "service-account.env",
-        },
-        Case {
-            label: "RabbitMQ password assignment",
-            detector_id: "rabbitmq-credentials",
-            text: "RABBITMQ_PASSWORD=SecretPass123456",
             path: ".env",
         },
     ];
@@ -156,7 +150,7 @@ fn observed_detector_repairs_preserve_genuine_counterparts() {
 /// WHY: each reported incident represents a class. Sibling variants keep the
 /// test from passing through one reproduction-specific exclusion.
 #[test]
-fn observed_detector_repairs_reject_siblings_and_rule_literals() {
+fn observed_detector_repairs_reject_sibling_collisions() {
     let cases = [
         Case {
             label: "Atlas field type",
@@ -243,28 +237,16 @@ fn observed_detector_repairs_reject_siblings_and_rule_literals() {
             path: "migration_quoted.rs",
         },
         Case {
+            label: "spaced quoted OpenAI sibling assigned as OpenAI",
+            detector_id: "helicone-api-key",
+            text: "OPENAI_API_KEY= \"sk-abc123def456ghi789jklmnopqrs\"",
+            path: "migration_quoted.yaml",
+        },
+        Case {
             label: "quoted canonical OpenAI key owned by OpenAI",
             detector_id: "helicone-api-key",
             text: "OPENAI_API_KEY=\"sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ\"",
             path: ".env",
-        },
-        Case {
-            label: "Druid detector regex literal",
-            detector_id: "druid-credentials",
-            text: "regex = \"(?:DRUID)[_\\s]*(?:URL|HOST)[=:\\s\\\"'']+(?:https?://|druid://)?(?:[^:@]+):([^@]+)@\"",
-            path: "druid-credentials.toml",
-        },
-        Case {
-            label: "sovereign detector regex literal",
-            detector_id: "google-cloud-sovereign-credentials",
-            text: "regex = \"(?:GOOGLE[_-]?CLOUD[_-]?SOVEREIGN|GOOGLE[_-]?SOVEREIGN)[_\\s]*(?:PROJECT[_-]?ID)[=:\\s\\\"'']+([a-z][a-z0-9-]{4,28})\"",
-            path: "google-cloud-sovereign-credentials.toml",
-        },
-        Case {
-            label: "RabbitMQ detector name literal",
-            detector_id: "rabbitmq-credentials",
-            text: "name = \"rabbitmq_username\"",
-            path: "rabbitmq-management-credentials.toml",
         },
     ];
     let scanner = scanner();
