@@ -179,43 +179,42 @@ impl RequiredSemanticEvidence {
     }
 }
 
-macro_rules! define_hard_negative_classes {
-    ($( $(#[$variant_meta:meta])* $variant:ident => $wire:literal),+ $(,)?) => {
-        /// Named synthetic false-positive class carried by detector test evidence.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-        #[serde(rename_all = "kebab-case")]
-        pub enum DetectorHardNegativeClass {
-            $(
-                $(#[$variant_meta])*
-                $variant,
-            )+
-        }
-
-        impl DetectorHardNegativeClass {
-            /// Complete class registry in declaration order.
-            pub const ALL: &'static [Self] = &[$(Self::$variant),+];
-
-            /// Return the stable detector TOML spelling.
-            pub const fn as_str(self) -> &'static str {
-                match self {
-                    $(Self::$variant => $wire),+
-                }
-            }
-        }
-    };
+/// Named synthetic false-positive class carried by detector test evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DetectorHardNegativeClass {
+    /// A valid-looking token placed across an invalid lexical boundary.
+    Boundary,
+    /// An identifier, type, or member name that resembles a credential.
+    Identifier,
+    /// Prose that contains credential-shaped vocabulary or bytes.
+    Prose,
+    /// A regex, scanner rule, or grammar literal.
+    RegexLiteral,
+    /// A nearby provider or token prefix that the detector does not own.
+    SiblingPrefix,
 }
 
-define_hard_negative_classes! {
-    /// A valid-looking token placed across an invalid lexical boundary.
-    Boundary => "boundary",
-    /// An identifier, type, or member name that resembles a credential.
-    Identifier => "identifier",
-    /// Prose that contains credential-shaped vocabulary or bytes.
-    Prose => "prose",
-    /// A regex, scanner rule, or grammar literal.
-    RegexLiteral => "regex-literal",
-    /// A nearby provider or token prefix that the detector does not own.
-    SiblingPrefix => "sibling-prefix",
+impl DetectorHardNegativeClass {
+    /// Complete class registry in declaration order.
+    pub const ALL: &'static [Self] = &[
+        Self::Boundary,
+        Self::Identifier,
+        Self::Prose,
+        Self::RegexLiteral,
+        Self::SiblingPrefix,
+    ];
+
+    /// Return the stable detector TOML spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Boundary => "boundary",
+            Self::Identifier => "identifier",
+            Self::Prose => "prose",
+            Self::RegexLiteral => "regex-literal",
+            Self::SiblingPrefix => "sibling-prefix",
+        }
+    }
 }
 
 /// Canonical detector semantic policy copied into compiled and packed plans.

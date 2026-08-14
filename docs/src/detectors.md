@@ -731,6 +731,9 @@ Schema 5 adds zero-based `pattern_index` ownership and typed `negative_class`
 values to `[[detector.tests]]`.
 Declaring either field under a schema-1 through schema-4 manifest fails the
 complete corpus load.
+The complete per-pattern evidence gate applies to schema-5 corpora. Schema-4
+semantic policies continue to load without ownership fields that their manifest
+cannot declare.
 
 Schema 4 adds typed `capture_role`, `anchor_role`, `allowed_source_roles`, and
 `required_evidence` declarations. Omission preserves the schema-3 finding

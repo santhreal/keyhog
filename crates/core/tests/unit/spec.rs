@@ -1,7 +1,8 @@
 use keyhog_core::{
-    validate_detector, AnchorSemanticRole, AuthSpec, CaptureSemanticRole, CompanionSpec,
-    DetectorFile, DetectorHardNegativeClass, DetectorSpec, DetectorTestSpec, PatternSpec,
-    QualityIssue, RequiredSemanticEvidence, ScriptEngine, SemanticSourceRole, Severity,
+    validate_detector, validate_detector_for_corpus_schema, AnchorSemanticRole, AuthSpec,
+    CaptureSemanticRole, CompanionSpec, DetectorFile, DetectorHardNegativeClass, DetectorSpec,
+    DetectorTestSpec, PatternSpec, QualityIssue, RequiredSemanticEvidence, ScriptEngine,
+    SemanticSourceRole, Severity,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -67,11 +68,6 @@ fn detector_spec_deserialization() {
 /// as array tables; default-only serialization cannot catch field-order drift.
 #[test]
 fn detector_semantic_roles_are_typed_and_default_to_abstention() {
-    assert_eq!(
-        keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
-        4,
-        "semantic role keys require detector corpus schema 4"
-    );
     let declared: DetectorFile = toml::from_str(
         r#"
         [detector]
@@ -308,8 +304,9 @@ fn detector_semantic_policy_rejects_unknown_or_duplicate_declarations() {
     ));
 }
 
-/// WHY: semantic enforcement without direct evidence can suppress every match
-/// from an unsupported sibling pattern while detector-level fixtures stay green.
+/// WHY: schema-5 semantic enforcement without direct evidence can suppress
+/// every match from an unsupported sibling pattern while detector-level
+/// fixtures stay green. Schema-4 policies must retain their prior validity.
 #[test]
 fn hard_negative_enforcement_requires_indexed_positive_and_named_negative_evidence() {
     let mut detector = valid_detector();
@@ -317,7 +314,16 @@ fn hard_negative_enforcement_requires_indexed_positive_and_named_negative_eviden
     detector.anchor_role = AnchorSemanticRole::ExactKey;
     detector.allowed_source_roles = vec![SemanticSourceRole::StructuredAssignmentValue];
 
-    let missing = validate_detector(&detector);
+    let compatibility = validate_detector(&detector);
+    assert!(
+        !compatibility.iter().any(|issue| {
+            matches!(issue, QualityIssue::Error(message) if message.contains("requires direct positive")
+                || message.contains("requires a named direct hard negative"))
+        }),
+        "schema-independent validation must not impose schema-5 evidence: {compatibility:?}"
+    );
+
+    let missing = validate_detector_for_corpus_schema(&detector, 5);
     assert!(missing.iter().any(
         |issue| matches!(issue, QualityIssue::Error(message) if message.contains("pattern 0 requires direct positive"))
     ));
@@ -332,7 +338,7 @@ fn hard_negative_enforcement_requires_indexed_positive_and_named_negative_eviden
         negative_class: Some(DetectorHardNegativeClass::Identifier),
         test_path: Some("application.toml".into()),
     });
-    let supported = validate_detector(&detector);
+    let supported = validate_detector_for_corpus_schema(&detector, 5);
     assert!(
         !supported.iter().any(|issue| {
             matches!(issue, QualityIssue::Error(message) if message.contains("requires direct positive")

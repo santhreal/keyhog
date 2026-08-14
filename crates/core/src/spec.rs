@@ -20,7 +20,7 @@ pub use semantic::{
     AnchorSemanticRole, CaptureSemanticRole, DetectorHardNegativeClass, DetectorSemanticPolicySpec,
     RequiredSemanticEvidence, SemanticSourceRole,
 };
-pub use validate::{validate_detector, QualityIssue};
+pub use validate::{validate_detector, validate_detector_for_corpus_schema, QualityIssue};
 
 /// Metadata field specification for verification results.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2384,6 +2384,7 @@ pub const DETECTOR_CORPUS_MIN_SCHEMA_VERSION: u32 = 1;
 
 /// Detector schema authored and enforced by this binary.
 pub const DETECTOR_CORPUS_SCHEMA_VERSION: u32 = 5;
+pub(crate) const HARD_NEGATIVE_TEST_EVIDENCE_SCHEMA_VERSION: u32 = 5;
 
 /// Highest newer detector schema this binary may inspect additively.
 ///

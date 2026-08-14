@@ -7,7 +7,8 @@
 use std::collections::BTreeSet;
 
 use keyhog_core::{
-    validate_detector, Chunk, ChunkMetadata, DetectorHardNegativeClass, DetectorSpec, PatternSpec,
+    validate_detector_for_corpus_schema, Chunk, ChunkMetadata, DetectorHardNegativeClass,
+    DetectorSpec, PatternSpec, DETECTOR_CORPUS_SCHEMA_VERSION,
 };
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use regex::{Regex, RegexBuilder};
@@ -222,9 +223,11 @@ fn positive_witnesses(detector: &DetectorSpec, pattern_index: usize) -> Vec<Posi
         .cloned()
         .unwrap_or_else(|| "filesystem".to_owned());
 
-    for test in detector.tests.iter().filter(|test| {
-        test.pattern_index == Some(pattern_index_u32) || test.pattern_index.is_none()
-    }) {
+    for test in detector
+        .tests
+        .iter()
+        .filter(|test| test.pattern_index == Some(pattern_index_u32))
+    {
         if let Some(positive) = test.test_positive.as_deref() {
             witnesses.push(PositiveWitness {
                 text: positive.to_owned(),
@@ -395,7 +398,8 @@ fn enforcement_capable_patterns_have_direct_and_generated_hard_negatives() {
     let mut failures = Vec::new();
 
     for detector in capable {
-        let validation = validate_detector(detector);
+        let validation =
+            validate_detector_for_corpus_schema(detector, DETECTOR_CORPUS_SCHEMA_VERSION);
         for issue in validation {
             let keyhog_core::QualityIssue::Error(message) = issue else {
                 continue;
@@ -474,10 +478,14 @@ fn hard_negative_capable_fixture_rejects_generated_sibling() {
         }],
         ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    assert!(!validate_detector(&detector).iter().any(
-        |issue| matches!(issue, keyhog_core::QualityIssue::Error(message)
+    assert!(
+        !validate_detector_for_corpus_schema(&detector, DETECTOR_CORPUS_SCHEMA_VERSION)
+            .iter()
+            .any(
+                |issue| matches!(issue, keyhog_core::QualityIssue::Error(message)
                 if message.contains("direct positive") || message.contains("direct hard negative"))
-    ));
+            )
+    );
 
     let matcher = detector_regex(&pattern.regex);
     let sibling = generated_sibling_negative(&pattern, &matcher, "demo_ABC12345")

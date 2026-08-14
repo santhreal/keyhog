@@ -3,7 +3,7 @@
 ## 0.5.75 - 2026-08-14
 
 - Detector TOML schema 4 adds typed capture, anchor, source-role, and required-evidence declarations with abstaining defaults, rejects them under older corpus manifests, rejects `unknown` inside allowed source-role lists, and round-trips non-default declarations through TOML.
-- Detector TOML schema 5 adds exact pattern ownership and typed hard-negative classes to synthetic test evidence and rejects those fields under older corpus manifests.
+- Detector TOML schema 5 adds exact pattern ownership and typed hard-negative classes to synthetic test evidence and rejects those fields under older corpus manifests. Corpus loading enforces complete per-pattern evidence only for schema 5; `validate_detector_for_corpus_schema` exposes the same versioned quality gate while schema-independent validation preserves schema-4 compatibility.
 - Merge remote-tracking branch 'origin/main'.
 
 ## 0.5.74 - 2026-08-14

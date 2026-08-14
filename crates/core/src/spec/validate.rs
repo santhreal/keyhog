@@ -2,7 +2,7 @@
 
 use super::{
     CanonicalHexKeyMaterialSpec, DetectorKind, DetectorRelationKind, DetectorSpec,
-    EvidenceRequirement, EvidenceScope,
+    EvidenceRequirement, EvidenceScope, HARD_NEGATIVE_TEST_EVIDENCE_SCHEMA_VERSION,
 };
 use serde::Serialize;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
@@ -37,7 +37,11 @@ pub enum QualityIssue {
     Warning(String),
 }
 
-/// Validate a detector spec against the quality gate.
+/// Validate schema-independent detector quality rules.
+///
+/// Corpus-version gates are applied by the detector loader. Call
+/// [`validate_detector_for_corpus_schema`] when validating an authored corpus
+/// outside that loader.
 ///
 /// # Examples
 ///
@@ -51,6 +55,24 @@ pub enum QualityIssue {
 /// assert!(issues.is_empty(), "{issues:?}");
 /// ```
 pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
+    validate_detector_with_hard_negative_evidence(spec, false)
+}
+
+/// Validate detector quality rules owned by a specific corpus schema.
+pub fn validate_detector_for_corpus_schema(
+    spec: &DetectorSpec,
+    corpus_schema_version: u32,
+) -> Vec<QualityIssue> {
+    validate_detector_with_hard_negative_evidence(
+        spec,
+        corpus_schema_version >= HARD_NEGATIVE_TEST_EVIDENCE_SCHEMA_VERSION,
+    )
+}
+
+fn validate_detector_with_hard_negative_evidence(
+    spec: &DetectorSpec,
+    enforce_complete_hard_negative_evidence: bool,
+) -> Vec<QualityIssue> {
     let mut issues = Vec::new();
     let mut regex_cache = RegexAstCache::default();
     validate_identity(spec, &mut issues);
@@ -74,11 +96,15 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_generic_assignment_suffixes(spec, &mut issues);
     validate_detector_allowlists(spec, &mut issues);
     validate_semantic_policy(spec, &mut issues);
-    validate_detector_test_evidence(spec, &mut issues);
+    validate_detector_test_evidence(spec, &mut issues, enforce_complete_hard_negative_evidence);
     issues
 }
 
-fn validate_detector_test_evidence(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+fn validate_detector_test_evidence(
+    spec: &DetectorSpec,
+    issues: &mut Vec<QualityIssue>,
+    enforce_complete_hard_negative_evidence: bool,
+) {
     for (test_index, test) in spec.tests.iter().enumerate() {
         if let Some(pattern_index) = test.pattern_index {
             if usize::try_from(pattern_index)
@@ -116,13 +142,21 @@ fn validate_detector_test_evidence(spec: &DetectorSpec, issues: &mut Vec<Quality
         }
     }
 
+    if !enforce_complete_hard_negative_evidence {
+        return;
+    }
+
     if !spec.semantic_policy().is_enforcement_capable() {
         return;
     }
 
     for pattern_index in 0..spec.patterns.len() {
-        let pattern_index_u32 =
-            u32::try_from(pattern_index).expect("detector pattern count is validation-bounded");
+        let Ok(pattern_index_u32) = u32::try_from(pattern_index) else {
+            issues.push(QualityIssue::Error(
+                "detector pattern count exceeds the representable pattern_index range".into(),
+            ));
+            break;
+        };
         let has_positive = spec.tests.iter().any(|test| {
             test.pattern_index == Some(pattern_index_u32)
                 && test
