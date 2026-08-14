@@ -38,6 +38,7 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
         dispatch = RELEASE.index("gh workflow run release.yml")
         self.assertLess(RELEASE.index("git push --atomic origin HEAD:main"), dispatch)
         self.assertIn("GH_TOKEN: ${{ github.token }}", RELEASE)
+        self.assertIn("GH_TOKEN: ${{ secrets.MARKETPLACE_RELEASE_TOKEN }}", RELEASE)
         bump_idx = RELEASE.index("Bump, changelog, and tag")
         publish_idx = RELEASE.index("name: Publish crates.io packages")
         auth_idx = RELEASE.index("rust-lang/crates-io-auth-action@")

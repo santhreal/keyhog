@@ -156,8 +156,10 @@ jobs:
 
       - name: Publish the GitHub release for the tag
         shell: bash
+        # A PAT-created release updates the existing Marketplace listing;
+        # GITHUB_TOKEN-created events are suppressed by GitHub.
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.MARKETPLACE_RELEASE_TOKEN }}
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
