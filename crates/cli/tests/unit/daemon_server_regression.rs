@@ -192,6 +192,27 @@ fn warm_route_error_includes_reason_when_only_reason_present() {
     }
 }
 
+/// WHY: a not-ready backend with no reason but a repair command must surface
+/// the provided repair command, not discard it behind the generic fallback.
+#[test]
+fn warm_route_error_includes_repair_when_only_repair_present() {
+    let status = not_ready_warm_backend(None, Some("keyhog autoroute recalibrate"));
+    let resp = warm_route_error(&status).expect("not-ready must produce an error");
+    match resp {
+        Response::Error { message } => {
+            assert!(
+                message.contains("keyhog autoroute recalibrate"),
+                "message must include the provided repair command: {message}"
+            );
+            assert!(
+                !message.contains("internally inconsistent"),
+                "a known repair command must not be hidden behind the generic fallback: {message}"
+            );
+        }
+        _ => panic!("expected Response::Error, got {resp:?}"),
+    }
+}
+
 // ── is_work_request ──────────────────────────────────────────────────
 
 /// WHY: control requests (Hello, Health, Shutdown, GuardList, GuardRemove,
@@ -583,16 +604,36 @@ fn request_id_allocator_produces_unique_ids_with_generation() {
 /// the process-global XDG_RUNTIME_DIR.
 static SOCKET_PATH_ENV_GUARD: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
+/// Drop guard that restores an env var to its original value (or removes
+/// it if it was unset). Ensures cleanup even if an assertion panics.
+struct EnvRestore {
+    key: &'static str,
+    old: Option<std::ffi::OsString>,
+}
+
+impl Drop for EnvRestore {
+    fn drop(&mut self) {
+        match &self.old {
+            Some(v) => std::env::set_var(self.key, v),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
+
 /// WHY: when XDG_RUNTIME_DIR is set, the socket must live there (per-user,
 /// tmpfs-backed, auto-cleaned on logout). When unset, it must fall back to
 /// the cache directory under keyhog/server.sock. Both branches are tested
 /// in one test under a shared mutex so parallel test threads cannot
-/// observe each other's env mutation.
+/// observe each other's env mutation. The drop guard restores the env
+/// var even if an assertion panics.
 #[cfg(unix)]
 #[test]
 fn default_socket_path_prefers_xdg_then_falls_back_to_cache() {
     let _guard = SOCKET_PATH_ENV_GUARD.lock();
-    let old = std::env::var_os("XDG_RUNTIME_DIR");
+    let _restore = EnvRestore {
+        key: "XDG_RUNTIME_DIR",
+        old: std::env::var_os("XDG_RUNTIME_DIR"),
+    };
 
     // Branch 1: XDG_RUNTIME_DIR set.
     let dir = tempfile::tempdir().unwrap();
@@ -608,10 +649,4 @@ fn default_socket_path_prefers_xdg_then_falls_back_to_cache() {
         path.ends_with(std::path::Path::new("keyhog/server.sock")),
         "fallback path must be under keyhog/server.sock: {path:?}"
     );
-
-    // Restore.
-    match old {
-        Some(v) => std::env::set_var("XDG_RUNTIME_DIR", v),
-        None => std::env::remove_var("XDG_RUNTIME_DIR"),
-    }
 }

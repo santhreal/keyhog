@@ -436,9 +436,20 @@ pub(crate) fn warm_route_error(status: &WarmBackendStatus) -> Option<Response> {
             format!("daemon warm route is not ready: {reason}. Repair with `{repair}`.")
         }
         (Some(reason), None) => {
-            format!("daemon warm route is not ready: {reason}. Repair with `keyhog daemon stop && keyhog daemon start`.")
+            format!(
+                "daemon warm route is not ready: {reason}. Repair with `{}`.",
+                crate::daemon::warm_identity::REPAIR_COMMAND
+            )
         }
-        _ => "daemon warm route is not ready and its exact status is internally inconsistent. Repair with `keyhog daemon stop && keyhog daemon start`.".to_string(),
+        (None, Some(repair)) => {
+            format!(
+                "daemon warm route is not ready. Repair with `{repair}`."
+            )
+        }
+        (None, None) => format!(
+            "daemon warm route is not ready and its exact status is internally inconsistent. Repair with `{}`.",
+            crate::daemon::warm_identity::REPAIR_COMMAND
+        ),
     };
     Some(Response::Error { message })
 }
@@ -740,11 +751,27 @@ fn announce_daemon_ready(
             reason,
             repair,
         ),
-        _ => eprintln!(
-            "keyhog daemon status-only on {} ({} detectors, wire={}): warm readiness status is internally inconsistent; repair with `keyhog daemon stop && keyhog daemon start`",
+        (Some(reason), None) => eprintln!(
+            "keyhog daemon status-only on {} ({} detectors, wire={}): warm route not ready: {}; repair with `{}`",
             socket_path.display(),
             detector_count,
             WIRE_VERSION,
+            reason,
+            crate::daemon::warm_identity::REPAIR_COMMAND,
+        ),
+        (None, Some(repair)) => eprintln!(
+            "keyhog daemon status-only on {} ({} detectors, wire={}): warm route not ready; repair with `{}`",
+            socket_path.display(),
+            detector_count,
+            WIRE_VERSION,
+            repair,
+        ),
+        (None, None) => eprintln!(
+            "keyhog daemon status-only on {} ({} detectors, wire={}): warm readiness status is internally inconsistent; repair with `{}`",
+            socket_path.display(),
+            detector_count,
+            WIRE_VERSION,
+            crate::daemon::warm_identity::REPAIR_COMMAND,
         ),
     }
 }
