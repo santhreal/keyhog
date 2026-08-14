@@ -9,6 +9,7 @@
 - Findings preserve detector identity, source location, severity, confidence, and credential hash.
 - Optional acceleration backends must preserve the same match semantics as the default scanner path.
 - Candidate generation retains the producer channel and exact canonical detector-pattern ordinal through shared adjudication. Generated homoglyph variants and packed backend routes keep the source ordinal. Public `RawMatch` ordering, identity, caps, and serialization remain unchanged.
+- Detector TOML schema 5 binds synthetic positive and named hard-negative evidence to exact pattern ordinals. Every pattern receives an exact compiled-regex witness, while the production-path corpus ratchet remains detector-complete. An enforcement-capable semantic policy additionally requires an indexed positive, a named direct hard negative, and a generated sibling-prefix negative for each pattern. Test evidence does not change scan behavior.
 - Detector semantic policy is typed in corpus schema 4 as capture role, anchor role, allowed source roles, and required evidence. Omitted fields resolve to abstaining compatibility defaults and are omitted from serialization. Source compilation and execution-pack hydration preserve the policy exactly. Detector-plan schema version 3 rejects stale sections.
 - Windowed absence memos bind to the exact ordered input bytes; reordered or repeated lines cannot inherit an earlier clean proof.
 

@@ -550,6 +550,26 @@ fn declares_semantic_policy(contents: &str) -> Result<bool, toml::de::Error> {
     .any(|field| detector.contains_key(*field)))
 }
 
+const HARD_NEGATIVE_TEST_EVIDENCE_SCHEMA_VERSION: u32 = 5;
+
+fn declares_hard_negative_test_evidence(contents: &str) -> Result<bool, toml::de::Error> {
+    let document = toml::from_str::<toml::Value>(contents)?;
+    let Some(tests) = document
+        .get("detector")
+        .and_then(|detector| detector.get("tests"))
+        .and_then(toml::Value::as_array)
+    else {
+        return Ok(false);
+    };
+    Ok(tests.iter().any(|test| {
+        test.as_table().is_some_and(|table| {
+            ["pattern_index", "negative_class"]
+                .iter()
+                .any(|field| table.contains_key(*field))
+        })
+    }))
+}
+
 fn read_detector_file(path: &Path, compatibility: CorpusCompatibility) -> ReadDetectorOutcome {
     let contents = match read_detector_toml_file(path) {
         Ok(contents) => contents,
@@ -584,6 +604,28 @@ fn read_detector_file(path: &Path, compatibility: CorpusCompatibility) -> ReadDe
                 return ReadDetectorOutcome::Skipped {
                     message: format!(
                         "failed to inspect detector schema fields in {}: {error}",
+                        path.display()
+                    ),
+                };
+            }
+        }
+    }
+    if compatibility.schema_version < HARD_NEGATIVE_TEST_EVIDENCE_SCHEMA_VERSION {
+        match declares_hard_negative_test_evidence(&contents) {
+            Ok(true) => {
+                return ReadDetectorOutcome::Skipped {
+                    message: format!(
+                        "{} declares hard-negative test evidence fields that require corpus schema {HARD_NEGATIVE_TEST_EVIDENCE_SCHEMA_VERSION}; corpus.toml declares schema {}",
+                        path.display(),
+                        compatibility.schema_version
+                    ),
+                };
+            }
+            Ok(false) => {}
+            Err(error) => {
+                return ReadDetectorOutcome::Skipped {
+                    message: format!(
+                        "failed to inspect detector test evidence fields in {}: {error}",
                         path.display()
                     ),
                 };

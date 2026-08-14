@@ -74,7 +74,82 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_generic_assignment_suffixes(spec, &mut issues);
     validate_detector_allowlists(spec, &mut issues);
     validate_semantic_policy(spec, &mut issues);
+    validate_detector_test_evidence(spec, &mut issues);
     issues
+}
+
+fn validate_detector_test_evidence(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    for (test_index, test) in spec.tests.iter().enumerate() {
+        if let Some(pattern_index) = test.pattern_index {
+            if usize::try_from(pattern_index)
+                .ok()
+                .is_none_or(|index| index >= spec.patterns.len())
+            {
+                issues.push(QualityIssue::Error(format!(
+                    "tests[{test_index}].pattern_index {pattern_index} is out of range for {} patterns",
+                    spec.patterns.len()
+                )));
+            }
+        }
+        let has_positive = test
+            .test_positive
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty());
+        let has_negative = test
+            .test_negative
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty());
+        if test.pattern_index.is_some() && !has_positive && !has_negative {
+            issues.push(QualityIssue::Error(format!(
+                "tests[{test_index}].pattern_index requires non-empty positive or negative evidence"
+            )));
+        }
+        if test.negative_class.is_some() && test.pattern_index.is_none() {
+            issues.push(QualityIssue::Error(format!(
+                "tests[{test_index}].negative_class requires pattern_index"
+            )));
+        }
+        if test.negative_class.is_some() && !has_negative {
+            issues.push(QualityIssue::Error(format!(
+                "tests[{test_index}].negative_class requires non-empty test_negative"
+            )));
+        }
+    }
+
+    if !spec.semantic_policy().is_enforcement_capable() {
+        return;
+    }
+
+    for pattern_index in 0..spec.patterns.len() {
+        let pattern_index_u32 =
+            u32::try_from(pattern_index).expect("detector pattern count is validation-bounded");
+        let has_positive = spec.tests.iter().any(|test| {
+            test.pattern_index == Some(pattern_index_u32)
+                && test
+                    .test_positive
+                    .as_deref()
+                    .is_some_and(|value| !value.trim().is_empty())
+        });
+        if !has_positive {
+            issues.push(QualityIssue::Error(format!(
+                "enforcement-capable pattern {pattern_index} requires direct positive evidence"
+            )));
+        }
+
+        let has_negative = spec.tests.iter().any(|test| {
+            test.pattern_index == Some(pattern_index_u32)
+                && test.negative_class.is_some()
+                && test
+                    .test_negative
+                    .as_deref()
+                    .is_some_and(|value| !value.trim().is_empty())
+        });
+        if !has_negative {
+            issues.push(QualityIssue::Error(format!(
+                "enforcement-capable pattern {pattern_index} requires a named direct hard negative"
+            )));
+        }
+    }
 }
 
 fn validate_semantic_policy(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {

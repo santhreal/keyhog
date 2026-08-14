@@ -1578,6 +1578,8 @@ fn spec_hash_ignores_tests_field() {
     b.tests.push(keyhog_core::DetectorTestSpec {
         test_positive: Some("demo_ABCD1234".into()),
         test_negative: None,
+        pattern_index: None,
+        negative_class: None,
         test_path: None,
     });
     assert_eq!(

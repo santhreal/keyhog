@@ -69,20 +69,26 @@ follows the same shape.
 Verification success and metadata `json_path` fields use the single rooted
 response-selector grammar documented in [Verification](./verification.md#what-live-means).
 
-Each shipped detector also owns a canonical positive/negative truth pair:
+Each shipped detector owns at least one canonical positive/negative truth pair:
 
 ```toml
 [[detector.tests]]
+pattern_index = 0
 test_positive = "STRIPE_SECRET_KEY=sk_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD"
 test_negative = "sk_live_short"
+negative_class = "boundary"
 ```
 
 These are executable production-path fixtures, not documentation examples.
+`pattern_index` is the zero-based pattern ordinal. `negative_class` is one of
+`boundary`, `identifier`, `prose`, `regex-literal`, or `sibling-prefix`.
 The positive must surface that exact detector id and the negative must leave
-that detector silent. Keeping the pair beside the detector's patterns and
-policy makes a TOML change reviewable and independently tunable without hunting
-through a second registry. Larger adversarial, evasion, performance, and scale
-corpora remain separate because one compact pair cannot prove those contracts.
+that detector silent. An enforcement-capable policy requires one indexed
+positive and named negative per pattern. Compatibility-mode detectors retain
+their detector-level pairs; the deterministic corpus gate supplies an exact
+regex witness for every pattern. Larger adversarial, evasion, performance, and
+scale corpora remain separate because one compact pair cannot prove those
+contracts.
 
 ### Fields
 
@@ -704,7 +710,7 @@ creates a focused corpus from the repository's shipped Stripe detector:
 mkdir -p "$PWD/.keyhog/detectors"
 cp detectors/stripe-secret-key.toml "$PWD/.keyhog/detectors/"
 cat > "$PWD/.keyhog/detectors/corpus.toml" <<'EOF'
-schema_version = 4
+schema_version = 5
 EOF
 keyhog detectors --detectors "$PWD/.keyhog/detectors" --audit
 ```
@@ -712,14 +718,19 @@ keyhog detectors --detectors "$PWD/.keyhog/detectors" --audit
 Edit the copied TOML only after the audit succeeds. A new detector must declare
 all required policy blocks. Copying only the short `[detector]` and
 `[[detector.patterns]]` example from this chapter does not create a valid
-schema-4 detector.
+schema-5 detector.
 
 Declare the current corpus schema beside the detector files:
 
 ```toml
 # my-detectors/corpus.toml
-schema_version = 4
+schema_version = 5
 ```
+
+Schema 5 adds zero-based `pattern_index` ownership and typed `negative_class`
+values to `[[detector.tests]]`.
+Declaring either field under a schema-1 through schema-4 manifest fails the
+complete corpus load.
 
 Schema 4 adds typed `capture_role`, `anchor_role`, `allowed_source_roles`, and
 `required_evidence` declarations. Omission preserves the schema-3 finding
@@ -740,17 +751,16 @@ tables written before policy classification are normalized to
 `status_with_error_backstop`: an accepted status is necessary, but a known
 error-shaped response still prevents a live verdict. This is deliberately not
 the more permissive `status_authoritative` policy. New corpora should declare
-schema 4 and serialize every policy rather than relying on legacy
+schema 5 and serialize every policy rather than relying on legacy
 normalization.
 
-Manifest typos, unsupported schema versions, and schema-2, schema-3, or
-schema-4 success tables with missing policies fail closed. A bounded newer
-schema declaration may be parsed only to produce compatibility diagnostics; a
-gated load refuses the complete corpus rather than skipping fields or detector
-files it cannot interpret. The effective corpus digest binds the normalized
-schema and manifest identity, so legacy, schema-2, schema-3, and schema-4
-corpora cannot share an identity merely because their detector fields otherwise
-match.
+Manifest typos, unsupported schema versions, and schema-2 through schema-5
+success tables with missing policies fail closed. A bounded newer schema
+declaration may be parsed only to produce compatibility diagnostics; a gated
+load refuses the complete corpus rather than skipping fields or detector files
+it cannot interpret. The effective corpus digest binds the normalized schema
+and manifest identity, so legacy and schema-2 through schema-5 corpora cannot
+share an identity merely because their detector fields otherwise match.
 
 Audit a custom corpus directly before scanning with it:
 
@@ -820,7 +830,7 @@ Use a replacement corpus when you want an allowlist of detector files:
 ```sh
 mkdir -p "$PWD/my-detectors"
 cp detectors/stripe-secret-key.toml detectors/aws-*.toml "$PWD/my-detectors/"
-printf 'schema_version = 4\n' > "$PWD/my-detectors/corpus.toml"
+printf 'schema_version = 5\n' > "$PWD/my-detectors/corpus.toml"
 keyhog detectors --detectors "$PWD/my-detectors" --audit
 keyhog scan . --detectors "$PWD/my-detectors" --detectors-mode replace
 ```

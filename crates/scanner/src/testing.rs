@@ -65,6 +65,11 @@ pub fn pattern_regex_strs(scanner: &crate::CompiledScanner) -> Vec<&str> {
     scanner.pattern_regex_strs()
 }
 
+/// Canonical literal prefixes used by production pattern routing.
+pub fn pattern_literal_prefixes(regex: &str) -> Vec<String> {
+    crate::compiler::compiler_prefix::extract_literal_prefixes(regex)
+}
+
 /// Production scan-window ceiling used by behavioral tests that must force the
 /// real windowed path without duplicating its tuning constant.
 pub fn max_scan_chunk_bytes() -> usize {

@@ -179,6 +179,45 @@ impl RequiredSemanticEvidence {
     }
 }
 
+macro_rules! define_hard_negative_classes {
+    ($( $(#[$variant_meta:meta])* $variant:ident => $wire:literal),+ $(,)?) => {
+        /// Named synthetic false-positive class carried by detector test evidence.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[serde(rename_all = "kebab-case")]
+        pub enum DetectorHardNegativeClass {
+            $(
+                $(#[$variant_meta])*
+                $variant,
+            )+
+        }
+
+        impl DetectorHardNegativeClass {
+            /// Complete class registry in declaration order.
+            pub const ALL: &'static [Self] = &[$(Self::$variant),+];
+
+            /// Return the stable detector TOML spelling.
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $wire),+
+                }
+            }
+        }
+    };
+}
+
+define_hard_negative_classes! {
+    /// A valid-looking token placed across an invalid lexical boundary.
+    Boundary => "boundary",
+    /// An identifier, type, or member name that resembles a credential.
+    Identifier => "identifier",
+    /// Prose that contains credential-shaped vocabulary or bytes.
+    Prose => "prose",
+    /// A regex, scanner rule, or grammar literal.
+    RegexLiteral => "regex-literal",
+    /// A nearby provider or token prefix that the detector does not own.
+    SiblingPrefix => "sibling-prefix",
+}
+
 /// Canonical detector semantic policy copied into compiled and packed plans.
 ///
 /// The policy participates in execution identity. Current scan admission does
@@ -198,4 +237,18 @@ pub struct DetectorSemanticPolicySpec {
     /// Detector-owned evidence requirements.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub required_evidence: Vec<RequiredSemanticEvidence>,
+}
+
+impl DetectorSemanticPolicySpec {
+    /// Whether the declaration carries every typed field required for verdict
+    /// enforcement.
+    pub fn is_enforcement_capable(&self) -> bool {
+        self.capture_role != CaptureSemanticRole::Unknown
+            && self.anchor_role != AnchorSemanticRole::Unknown
+            && !self.allowed_source_roles.is_empty()
+            && self
+                .allowed_source_roles
+                .iter()
+                .all(|role| *role != SemanticSourceRole::Unknown)
+    }
 }
