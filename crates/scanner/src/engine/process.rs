@@ -429,15 +429,11 @@ impl CompiledScanner {
             entry.detector_index,
             entry.pattern_index,
         );
-        let provenance = crate::source_semantics::classify_exact_structured_candidate(
-            &chunk.data,
-            chunk.metadata.path.as_deref(),
-            source_offset,
-            credential,
-        )
-        .map_or(provenance, |evidence| {
-            provenance.with_source_semantics(evidence)
-        });
+        let provenance = scan_state
+            .structured_source_evidence(chunk, source_offset, credential)
+            .map_or(provenance, |evidence| {
+                provenance.with_source_semantics(evidence)
+            });
         match policy_result {
             MlScoreResult::Final(policy_conf) => {
                 let Some(report_conf) = crate::adjudicate::finalize_report_candidate(

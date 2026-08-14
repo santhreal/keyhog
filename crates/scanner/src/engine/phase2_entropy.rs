@@ -313,15 +313,11 @@ impl CompiledScanner {
                 &entropy_match.value,
             );
             let provenance = crate::candidate_provenance::CandidateProvenance::entropy();
-            let provenance = crate::source_semantics::classify_exact_structured_candidate(
-                &chunk.data,
-                chunk.metadata.path.as_deref(),
-                source_offset,
-                &entropy_match.value,
-            )
-            .map_or(provenance, |evidence| {
-                provenance.with_source_semantics(evidence)
-            });
+            let provenance = scan_state
+                .structured_source_evidence(chunk, source_offset, &entropy_match.value)
+                .map_or(provenance, |evidence| {
+                    provenance.with_source_semantics(evidence)
+                });
             let Some(offset) = absolute_offset(chunk.metadata.base_offset, source_offset) else {
                 continue;
             };

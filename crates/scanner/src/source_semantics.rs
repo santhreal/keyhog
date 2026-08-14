@@ -7,7 +7,6 @@ use keyhog_core::SemanticSourceRole;
 
 pub(crate) const MAX_SEMANTIC_WINDOW_BYTES: usize = 64 * 1024;
 const MAX_KEY_PATH_SEGMENTS: usize = 12;
-const MAX_NESTING_DEPTH: usize = 32;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -52,26 +51,63 @@ pub(crate) struct StructuredSourceEvidence {
 }
 
 impl StructuredSourceEvidence {
-    fn new(
-        role: SemanticSourceRole,
-        candidate_span: SourceSpan,
-        value_span: SourceSpan,
-        key_path: &KeyPath,
-    ) -> Self {
+    pub(crate) fn key_path(&self) -> impl Iterator<Item = SourceSpan> + '_ {
+        self.key_path[..usize::from(self.key_path_len)]
+            .iter()
+            .copied()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StructuredValueEvidence {
+    role: SemanticSourceRole,
+    value_span: SourceSpan,
+    key_path: [SourceSpan; MAX_KEY_PATH_SEGMENTS],
+    key_path_len: u8,
+}
+
+impl StructuredValueEvidence {
+    fn new(role: SemanticSourceRole, value_span: SourceSpan, key_path: &KeyPath) -> Self {
         Self {
             role,
-            confidence: SemanticParserConfidence::Parsed,
-            candidate_span,
             value_span,
             key_path: key_path.segments,
             key_path_len: key_path.len,
         }
     }
 
-    pub(crate) fn key_path(&self) -> impl Iterator<Item = SourceSpan> + '_ {
-        self.key_path[..usize::from(self.key_path_len)]
+    fn for_candidate(self, candidate_span: SourceSpan) -> Option<StructuredSourceEvidence> {
+        self.value_span
+            .contains(candidate_span)
+            .then_some(StructuredSourceEvidence {
+                role: self.role,
+                confidence: SemanticParserConfidence::Parsed,
+                candidate_span,
+                value_span: self.value_span,
+                key_path: self.key_path,
+                key_path_len: self.key_path_len,
+            })
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct StructuredSourceIndex {
+    values: Vec<StructuredValueEvidence>,
+}
+
+impl StructuredSourceIndex {
+    fn push(&mut self, role: SemanticSourceRole, value_span: SourceSpan, key_path: &KeyPath) {
+        if value_span.start < value_span.end {
+            self.values
+                .push(StructuredValueEvidence::new(role, value_span, key_path));
+        }
+    }
+
+    pub(crate) fn classify(&self, candidate_span: SourceSpan) -> Option<StructuredSourceEvidence> {
+        self.values
             .iter()
             .copied()
+            .find_map(|value| value.for_candidate(candidate_span))
     }
 }
 
@@ -136,32 +172,44 @@ pub(crate) fn classify_exact_structured_candidate(
     classify_structured_candidate(text, path, candidate_start, candidate_end)
 }
 
-/// Classify one exact source candidate. Unsupported syntax, an invalid local
-/// parse, an out-of-bounds span, and oversized parser input all abstain.
+/// Classify one exact source candidate. Unsupported syntax, an invalid parse,
+/// an out-of-bounds span, and oversized parser input all abstain.
 pub(crate) fn classify_structured_candidate(
     text: &str,
     path: Option<&str>,
     candidate_start: usize,
     candidate_end: usize,
 ) -> Option<StructuredSourceEvidence> {
-    if candidate_start >= candidate_end
-        || candidate_end > text.len()
-        || !text.is_char_boundary(candidate_start)
-        || !text.is_char_boundary(candidate_end)
-    {
+    let target = checked_candidate_span(text, candidate_start, candidate_end)?;
+    build_structured_source_index(text, path)?.classify(target)
+}
+
+fn checked_candidate_span(
+    text: &str,
+    candidate_start: usize,
+    candidate_end: usize,
+) -> Option<SourceSpan> {
+    (candidate_start < candidate_end
+        && candidate_end <= text.len()
+        && text.is_char_boundary(candidate_start)
+        && text.is_char_boundary(candidate_end))
+    .then_some(SourceSpan::new(candidate_start, candidate_end))
+}
+
+pub(crate) fn build_structured_source_index(
+    text: &str,
+    path: Option<&str>,
+) -> Option<StructuredSourceIndex> {
+    if text.len() > MAX_SEMANTIC_WINDOW_BYTES {
         return None;
     }
-    let target = SourceSpan::new(candidate_start, candidate_end);
     match syntax_for_path(path?)? {
-        StructuredSyntax::Json => classify_json(text, 0, target),
-        StructuredSyntax::JsonLines => {
-            let (start, end) = line_bounds(text, candidate_start);
-            classify_json(&text[start..end], start, target)
-        }
-        StructuredSyntax::Toml => classify_toml(text, target),
-        StructuredSyntax::Yaml => classify_yaml(text, target),
-        StructuredSyntax::Dotenv => classify_dotenv(text, target),
-        StructuredSyntax::Ini => classify_ini(text, target),
+        StructuredSyntax::Json => index_json(text, 0),
+        StructuredSyntax::JsonLines => index_json_lines(text),
+        StructuredSyntax::Toml => index_toml(text),
+        StructuredSyntax::Yaml => index_yaml(text),
+        StructuredSyntax::Dotenv => index_dotenv(text),
+        StructuredSyntax::Ini => index_ini(text),
     }
 }
 
@@ -203,35 +251,43 @@ struct JsonParser<'a> {
     bytes: &'a [u8],
     base: usize,
     cursor: usize,
-    target: SourceSpan,
     path: KeyPath,
-    found: Option<StructuredSourceEvidence>,
+    index: StructuredSourceIndex,
 }
 
-fn classify_json(text: &str, base: usize, target: SourceSpan) -> Option<StructuredSourceEvidence> {
-    if text.len() > MAX_SEMANTIC_WINDOW_BYTES
-        || target.start < base
-        || target.end > base + text.len()
-    {
-        return None;
-    }
+fn index_json(text: &str, base: usize) -> Option<StructuredSourceIndex> {
     let mut parser = JsonParser {
         bytes: text.as_bytes(),
         base,
         cursor: 0,
-        target,
         path: KeyPath::new(),
-        found: None,
+        index: StructuredSourceIndex::default(),
     };
     parser.parse_value(0).ok()?;
     parser.skip_ws();
-    (parser.cursor == parser.bytes.len()).then_some(())?;
-    parser.found
+    (parser.cursor == parser.bytes.len()).then_some(parser.index)
+}
+
+fn index_json_lines(text: &str) -> Option<StructuredSourceIndex> {
+    let mut index = StructuredSourceIndex::default();
+    let mut start = 0;
+    loop {
+        let end = line_end(text, start);
+        if !text[start..end].trim().is_empty() {
+            index
+                .values
+                .extend(index_json(&text[start..end], start)?.values);
+        }
+        let Some(next) = next_line_start(text, start) else {
+            return Some(index);
+        };
+        start = next;
+    }
 }
 
 impl JsonParser<'_> {
     fn parse_value(&mut self, depth: usize) -> Result<(), ()> {
-        if depth > MAX_NESTING_DEPTH {
+        if depth > crate::structured::parsers::MAX_STRUCTURED_TRAVERSAL_DEPTH {
             return Err(());
         }
         self.skip_ws();
@@ -240,7 +296,7 @@ impl JsonParser<'_> {
             Some(b'[') => self.parse_array(depth + 1),
             Some(b'"') => {
                 let value = self.parse_string()?;
-                self.record_if_target(value);
+                self.record_value(value);
                 Ok(())
             }
             Some(b't') => self.parse_literal(b"true"),
@@ -340,7 +396,7 @@ impl JsonParser<'_> {
             return Err(());
         }
         self.cursor += literal.len();
-        self.record_if_target(SourceSpan::new(self.base + start, self.base + self.cursor));
+        self.record_value(SourceSpan::new(self.base + start, self.base + self.cursor));
         Ok(())
     }
 
@@ -387,18 +443,17 @@ impl JsonParser<'_> {
                 return Err(());
             }
         }
-        self.record_if_target(SourceSpan::new(self.base + start, self.base + self.cursor));
+        self.record_value(SourceSpan::new(self.base + start, self.base + self.cursor));
         Ok(())
     }
 
-    fn record_if_target(&mut self, value: SourceSpan) {
-        if self.found.is_none() && value.contains(self.target) && self.path.len != 0 {
-            self.found = Some(StructuredSourceEvidence::new(
+    fn record_value(&mut self, value: SourceSpan) {
+        if self.path.len != 0 {
+            self.index.push(
                 SemanticSourceRole::StructuredAssignmentValue,
-                self.target,
                 value,
                 &self.path,
-            ));
+            );
         }
     }
 
@@ -422,40 +477,38 @@ impl JsonParser<'_> {
     }
 }
 
-fn classify_dotenv(text: &str, target: SourceSpan) -> Option<StructuredSourceEvidence> {
-    let search_start = target.start.saturating_sub(MAX_SEMANTIC_WINDOW_BYTES);
-    let mut current_line_start = line_start(text, target.start);
+fn index_dotenv(text: &str) -> Option<StructuredSourceIndex> {
+    let mut index = StructuredSourceIndex::default();
+    let mut current_line_start = 0;
     loop {
-        if current_line_start < search_start {
-            return None;
-        }
-        if let Some((key, value)) = parse_dotenv_assignment(text, current_line_start) {
-            if value.contains(target) {
+        let mut consumed_through = current_line_start;
+        match parse_dotenv_assignment(text, current_line_start) {
+            Some((key, value)) => {
                 let mut path = KeyPath::new();
-                path.push(key);
-                return Some(StructuredSourceEvidence::new(
-                    SemanticSourceRole::EnvironmentAssignmentValue,
-                    target,
-                    value,
-                    &path,
-                ));
+                if !path.push(key) {
+                    return None;
+                }
+                index.push(SemanticSourceRole::EnvironmentAssignmentValue, value, &path);
+                consumed_through = line_start(text, value.end);
             }
+            None if line_starts_quoted_assignment(text, current_line_start) => return None,
+            None => {}
         }
-        if current_line_start == 0 {
-            return None;
-        }
-        current_line_start = line_start(text, current_line_start.saturating_sub(1));
+        let Some(next) = next_line_start(text, consumed_through) else {
+            return Some(index);
+        };
+        current_line_start = next;
     }
 }
 
 fn parse_dotenv_assignment(text: &str, start: usize) -> Option<(SourceSpan, SourceSpan)> {
     let bytes = text.as_bytes();
-    let mut cursor = skip_ascii_ws(bytes, start);
-    let line_end = line_end(text, cursor);
+    let line_end = line_end(text, start);
+    let mut cursor = skip_ascii_ws_until(bytes, start, line_end);
     if bytes.get(cursor..cursor + 6) == Some(b"export")
         && bytes.get(cursor + 6).is_some_and(u8::is_ascii_whitespace)
     {
-        cursor = skip_ascii_ws(bytes, cursor + 6);
+        cursor = skip_ascii_ws_until(bytes, cursor + 6, line_end);
     }
     let key_start = cursor;
     if !bytes
@@ -477,35 +530,68 @@ fn parse_dotenv_assignment(text: &str, start: usize) -> Option<(SourceSpan, Sour
         return None;
     }
     cursor = skip_ascii_ws_until(bytes, cursor + 1, line_end);
-    let value = parse_line_or_quoted_value(text, cursor, b"#", true)?;
+    let value = parse_line_or_quoted_value(text, cursor, b"#", true, false)?;
     Some((key, value))
 }
 
-fn classify_toml(text: &str, target: SourceSpan) -> Option<StructuredSourceEvidence> {
-    let search_start = target.start.saturating_sub(MAX_SEMANTIC_WINDOW_BYTES);
-    let mut assignment_start = line_start(text, target.start);
+fn line_starts_quoted_assignment(text: &str, start: usize) -> bool {
+    let bytes = text.as_bytes();
+    let end = line_end(text, start);
+    let Some(delimiter) = find_unquoted_delimiter(bytes, start, end, b'=') else {
+        return false;
+    };
+    let value_start = skip_ascii_ws_until(bytes, delimiter + 1, end);
+    matches!(bytes.get(value_start), Some(b'\'' | b'"'))
+}
+
+fn index_toml(text: &str) -> Option<StructuredSourceIndex> {
+    let mut index = StructuredSourceIndex::default();
+    let mut assignment_start = 0;
     loop {
-        if assignment_start < search_start {
-            return None;
+        let line_span = trim_ascii_span(
+            text.as_bytes(),
+            assignment_start,
+            line_end(text, assignment_start),
+        );
+        let line = text.as_bytes().get(line_span.start..line_span.end)?;
+        if line.starts_with(b"[") {
+            let valid_section = if line.starts_with(b"[[") {
+                line.ends_with(b"]]")
+                    && parse_dotted_key(
+                        text,
+                        SourceSpan::new(line_span.start + 2, line_span.end - 2),
+                    )
+                    .is_some()
+            } else {
+                line.ends_with(b"]")
+                    && parse_dotted_key(
+                        text,
+                        SourceSpan::new(line_span.start + 1, line_span.end - 1),
+                    )
+                    .is_some()
+            };
+            if !valid_section {
+                return None;
+            }
         }
-        if let Some((keys, value)) = parse_toml_assignment(text, assignment_start) {
-            if value.contains(target) {
-                let mut path = toml_section_path(text, assignment_start, search_start)?;
+
+        let mut consumed_through = assignment_start;
+        match parse_toml_assignment(text, assignment_start) {
+            Some((keys, value)) => {
+                let mut path = toml_section_path(text, assignment_start, 0)?;
                 if !path.append(&keys) {
                     return None;
                 }
-                return Some(StructuredSourceEvidence::new(
-                    SemanticSourceRole::StructuredAssignmentValue,
-                    target,
-                    value,
-                    &path,
-                ));
+                index.push(SemanticSourceRole::StructuredAssignmentValue, value, &path);
+                consumed_through = line_start(text, value.end);
             }
+            None if line_starts_quoted_assignment(text, assignment_start) => return None,
+            None => {}
         }
-        if assignment_start == 0 {
-            return None;
-        }
-        assignment_start = line_start(text, assignment_start.saturating_sub(1));
+        let Some(next) = next_line_start(text, consumed_through) else {
+            return Some(index);
+        };
+        assignment_start = next;
     }
 }
 
@@ -580,78 +666,69 @@ fn toml_section_path(text: &str, before: usize, lower_bound: usize) -> Option<Ke
     Some(KeyPath::new())
 }
 
-fn classify_ini(text: &str, target: SourceSpan) -> Option<StructuredSourceEvidence> {
-    let start = line_start(text, target.start);
-    let end = line_end(text, target.start);
-    let delimiter = find_first_unquoted(text.as_bytes(), start, end, &[b'=', b':'])?;
-    let key = trim_ascii_span(text.as_bytes(), start, delimiter);
-    if key.start == key.end || matches!(text.as_bytes()[key.start], b'#' | b';' | b'[') {
-        return None;
-    }
-    let value_start = skip_ascii_ws_until(text.as_bytes(), delimiter + 1, end);
-    let value = parse_line_or_quoted_value(text, value_start, b";#", false)?;
-    if !value.contains(target) {
-        return None;
-    }
-    let mut path = ini_section_path(
-        text,
-        start,
-        target.start.saturating_sub(MAX_SEMANTIC_WINDOW_BYTES),
-    )?;
-    if !path.push(key) {
-        return None;
-    }
-    Some(StructuredSourceEvidence::new(
-        SemanticSourceRole::StructuredAssignmentValue,
-        target,
-        value,
-        &path,
-    ))
-}
-
-fn ini_section_path(text: &str, before: usize, lower_bound: usize) -> Option<KeyPath> {
-    let mut cursor = before;
-    while cursor > lower_bound {
-        cursor = line_start(text, cursor.saturating_sub(1));
-        let end = line_end(text, cursor);
-        let span = trim_ascii_span(text.as_bytes(), cursor, end);
-        if text.as_bytes().get(span.start) == Some(&b'[') {
-            if text.as_bytes().get(span.end.saturating_sub(1)) != Some(&b']') {
-                return None;
-            }
-            let mut path = KeyPath::new();
-            path.push(SourceSpan::new(span.start + 1, span.end - 1));
-            return Some(path);
-        }
-        if cursor == 0 {
-            break;
-        }
-    }
-    Some(KeyPath::new())
-}
-
-fn classify_yaml(text: &str, target: SourceSpan) -> Option<StructuredSourceEvidence> {
-    let lower_bound = target.start.saturating_sub(MAX_SEMANTIC_WINDOW_BYTES);
-    let mut cursor = line_start(text, target.start);
+fn index_ini(text: &str) -> Option<StructuredSourceIndex> {
+    let mut index = StructuredSourceIndex::default();
+    let mut section = KeyPath::new();
+    let mut start = 0;
     loop {
-        if cursor < lower_bound {
-            return None;
-        }
-        if let Some(mapping) = parse_yaml_mapping(text, cursor) {
-            if mapping.value.contains(target) {
-                let path = yaml_key_path(text, cursor, lower_bound, mapping.indent, mapping.key)?;
-                return Some(StructuredSourceEvidence::new(
-                    SemanticSourceRole::StructuredAssignmentValue,
-                    target,
-                    mapping.value,
-                    &path,
-                ));
+        let end = line_end(text, start);
+        let line = trim_ascii_span(text.as_bytes(), start, end);
+        if line.start < line.end {
+            match text.as_bytes()[line.start] {
+                b'#' | b';' => {}
+                b'[' => {
+                    if text.as_bytes().get(line.end.saturating_sub(1)) != Some(&b']') {
+                        return None;
+                    }
+                    section = KeyPath::new();
+                    if !section.push(SourceSpan::new(line.start + 1, line.end - 1)) {
+                        return None;
+                    }
+                }
+                _ => {
+                    if let Some(delimiter) =
+                        find_first_unquoted(text.as_bytes(), start, end, &[b'=', b':'])
+                    {
+                        let key = trim_ascii_span(text.as_bytes(), start, delimiter);
+                        let value_start = skip_ascii_ws_until(text.as_bytes(), delimiter + 1, end);
+                        let value =
+                            parse_line_or_quoted_value(text, value_start, b";#", false, false)?;
+                        let mut path = section;
+                        if key.start == key.end || !path.push(key) {
+                            return None;
+                        }
+                        index.push(SemanticSourceRole::StructuredAssignmentValue, value, &path);
+                    }
+                }
             }
         }
-        if cursor == 0 {
+        let Some(next) = next_line_start(text, start) else {
+            return Some(index);
+        };
+        start = next;
+    }
+}
+
+fn index_yaml(text: &str) -> Option<StructuredSourceIndex> {
+    let mut index = StructuredSourceIndex::default();
+    let mut cursor = 0;
+    loop {
+        let mut consumed_through = cursor;
+        if let Some(mapping) = parse_yaml_mapping(text, cursor) {
+            let path = yaml_key_path(text, cursor, 0, mapping.indent, mapping.key)?;
+            index.push(
+                SemanticSourceRole::StructuredAssignmentValue,
+                mapping.value,
+                &path,
+            );
+            consumed_through = line_start(text, mapping.value.end);
+        } else if line_starts_quoted_mapping(text, cursor) {
             return None;
         }
-        cursor = line_start(text, cursor.saturating_sub(1));
+        let Some(next) = next_line_start(text, consumed_through) else {
+            return Some(index);
+        };
+        cursor = next;
     }
 }
 
@@ -704,8 +781,18 @@ fn parse_yaml_mapping(text: &str, start: usize) -> Option<YamlMapping> {
         let value = yaml_block_span(text, start, indent)?;
         return Some(YamlMapping { indent, key, value });
     }
-    let value = parse_line_or_quoted_value(text, value_start, b"#", true)?;
+    let value = parse_line_or_quoted_value(text, value_start, b"#", true, true)?;
     Some(YamlMapping { indent, key, value })
+}
+
+fn line_starts_quoted_mapping(text: &str, start: usize) -> bool {
+    let bytes = text.as_bytes();
+    let end = line_end(text, start);
+    let Some(delimiter) = find_unquoted_delimiter(bytes, start, end, b':') else {
+        return false;
+    };
+    let value_start = skip_ascii_ws_until(bytes, delimiter + 1, end);
+    matches!(bytes.get(value_start), Some(b'\'' | b'"'))
 }
 
 fn yaml_block_span(text: &str, header_start: usize, header_indent: usize) -> Option<SourceSpan> {
@@ -776,6 +863,7 @@ fn parse_line_or_quoted_value(
     start: usize,
     comments: &[u8],
     allow_multiline_quote: bool,
+    quote_aware_comments: bool,
 ) -> Option<SourceSpan> {
     let bytes = text.as_bytes();
     let quote = *bytes.get(start)?;
@@ -800,7 +888,14 @@ fn parse_line_or_quoted_value(
         return Some(SourceSpan::new(start + 1, close));
     }
     let end = line_end(text, start);
-    let comment_start = find_first_unquoted(bytes, start, end, comments).unwrap_or(end);
+    let comment_start = if quote_aware_comments {
+        find_first_unquoted(bytes, start, end, comments).unwrap_or(end)
+    } else {
+        bytes[start..end]
+            .iter()
+            .position(|byte| comments.contains(byte))
+            .map_or(end, |offset| start + offset)
+    };
     let value = trim_ascii_span(bytes, start, comment_start);
     (value.start < value.end).then_some(value)
 }

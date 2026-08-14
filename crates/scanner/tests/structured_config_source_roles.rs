@@ -6,7 +6,8 @@ use keyhog_core::{
 };
 use keyhog_scanner::testing::{
     candidate_source_roles_for_test, classify_structured_source_candidate_for_test,
-    named_detector_fixture_defaults, structured_source_semantic_window_bytes_for_test,
+    named_detector_fixture_defaults, structured_max_traversal_depth_for_test,
+    structured_source_semantic_window_bytes_for_test,
 };
 use support::contracts::{make_chunk, scanner};
 
@@ -56,6 +57,15 @@ fn supported_structured_formats_emit_exact_candidate_roles_and_key_paths() {
     let (_, keys) = classify(toml, "settings.toml", "CFGPROV_TOML_123456");
     assert_eq!(keys, ["auth", "credentials", "token"]);
 
+    let toml_inner_assignment =
+        "[auth]\nblob = \"\"\"\ntoken = \"CFGPROV_TOML_INNER_123456\"\n\"\"\"\n";
+    let (_, keys) = classify(
+        toml_inner_assignment,
+        "settings.toml",
+        "CFGPROV_TOML_INNER_123456",
+    );
+    assert_eq!(keys, ["auth", "blob"]);
+
     let yaml = "auth:\n  token: &primary \"CFGPROV_YAML_123456\"\n  alias: *primary_alias\n  template: ${CFGPROV_TEMPLATE_123456}\n  block: |-\n    CFGPROV_BLOCK_123456\n";
     let (_, keys) = classify(yaml, "settings.yaml", "CFGPROV_YAML_123456");
     assert_eq!(keys, ["auth", "token"]);
@@ -66,14 +76,38 @@ fn supported_structured_formats_emit_exact_candidate_roles_and_key_paths() {
     let (_, keys) = classify(yaml, "settings.yaml", "CFGPROV_BLOCK_123456");
     assert_eq!(keys, ["auth", "block"]);
 
+    let yaml_inner_mapping = "auth:\n  block: |\n    token: CFGPROV_YAML_INNER_123456\n";
+    let (_, keys) = classify(
+        yaml_inner_mapping,
+        "settings.yaml",
+        "CFGPROV_YAML_INNER_123456",
+    );
+    assert_eq!(keys, ["auth", "block"]);
+
     let dotenv = "export APP_TOKEN=\"first\nCFGPROV_ENV_123456\n${ROTATED_TOKEN}\"\n";
     let (evidence, keys) = classify(dotenv, ".env.production", "CFGPROV_ENV_123456");
     assert_eq!(evidence.role, "environment-assignment-value");
     assert_eq!(keys, ["APP_TOKEN"]);
 
+    let dotenv_comment = "TOKEN=don't-CFGPROV_ENV_COMMENT_123456 # rotated\n";
+    let (evidence, keys) = classify(dotenv_comment, ".env", "CFGPROV_ENV_COMMENT_123456");
+    assert_eq!(keys, ["TOKEN"]);
+    assert_eq!(
+        &dotenv_comment[evidence.value_span.0..evidence.value_span.1],
+        "don't-CFGPROV_ENV_COMMENT_123456"
+    );
+
     let ini = "[auth]\ntoken = CFGPROV_INI_123456 ; rotated quarterly\n";
     let (_, keys) = classify(ini, "settings.ini", "CFGPROV_INI_123456");
     assert_eq!(keys, ["auth", "token"]);
+
+    let ini_comment = "[auth]\ntoken = it's-CFGPROV_INI_COMMENT_123456 ; rotated\n";
+    let (evidence, keys) = classify(ini_comment, "settings.ini", "CFGPROV_INI_COMMENT_123456");
+    assert_eq!(keys, ["auth", "token"]);
+    assert_eq!(
+        &ini_comment[evidence.value_span.0..evidence.value_span.1],
+        "it's-CFGPROV_INI_COMMENT_123456"
+    );
 }
 
 /// WHY: invalid, truncated, unsupported, or over-budget syntax carries no
@@ -83,6 +117,10 @@ fn parser_failures_and_unsupported_windows_abstain() {
     let malformed = [
         ("{\"token\":\"CFGPROV_BAD_JSON\"", "config.json"),
         ("token = \"CFGPROV_BAD_TOML", "config.toml"),
+        (
+            "blob = \"\"\"\ntoken = \"CFGPROV_BAD_TOML_INNER\"",
+            "config.toml",
+        ),
         ("token: \"CFGPROV_BAD_YAML", "config.yaml"),
         ("TOKEN=\"CFGPROV_BAD_ENV", ".env"),
         ("token = \"CFGPROV_BAD_INI", "config.ini"),
@@ -125,10 +163,34 @@ fn parser_failures_and_unsupported_windows_abstain() {
     )
     .is_none());
 
+    for (assignment, path) in [
+        ("token = ", "config.toml"),
+        ("token: ", "config.yaml"),
+        ("TOKEN=", ".env"),
+        ("token = ", "config.ini"),
+    ] {
+        let oversized = format!(
+            "padding={}\n{assignment}CFGPROV_BIG_LINE_123456",
+            "a".repeat(cap)
+        );
+        let start = oversized.find("CFGPROV_BIG_LINE_123456").unwrap();
+        assert!(
+            classify_structured_source_candidate_for_test(
+                &oversized,
+                path,
+                start,
+                start + "CFGPROV_BIG_LINE_123456".len(),
+            )
+            .is_none(),
+            "over-budget {path} must abstain"
+        );
+    }
+
+    let over_depth = structured_max_traversal_depth_for_test() + 1;
     let over_nested = format!(
-        "{}\"CFGPROV_DEEP_123456\"{}",
-        "{\"key\":".repeat(33),
-        "}".repeat(33)
+        "{}{{\"key\":\"CFGPROV_DEEP_123456\"}}{}",
+        "[".repeat(over_depth),
+        "]".repeat(over_depth)
     );
     let start = over_nested.find("CFGPROV_DEEP_123456").unwrap();
     assert!(classify_structured_source_candidate_for_test(
@@ -211,15 +273,23 @@ fn candidate_chunk(text: &str, path: &str) -> Chunk {
 #[test]
 fn production_candidates_retain_roles_without_changing_recall() {
     let valid = candidate_chunk(
-        "{\"arbitrary\":\"AB12CFGPROVQ7W8E9R0T1Y2U3I4\"}",
+        concat!(
+            "{\"primary\":\"AB12CFGPROVQ7W8E9R0T1Y2U3I4\",",
+            "\"secondary\":\"CD34CFGPROVA1S2D3F4G5H6J7K8\"}"
+        ),
         "config.json",
     );
     let roles = candidate_source_roles_for_test(vec![semantic_detector()], &valid)
         .expect("valid structured scan");
-    assert_eq!(roles.len(), 1);
-    assert_eq!(roles[0].detector_id, "structured-role-fixture");
-    assert_eq!(roles[0].role, "structured-assignment-value");
-    assert_eq!(roles[0].confidence, "parsed");
+    assert_eq!(roles.len(), 2, "one cached source index serves both values");
+    assert!(
+        roles
+            .iter()
+            .all(|role| role.detector_id == "structured-role-fixture"
+                && role.role == "structured-assignment-value"
+                && role.confidence == "parsed"),
+        "every candidate retains parsed structured-role provenance: {roles:?}"
+    );
 
     for chunk in [
         candidate_chunk(

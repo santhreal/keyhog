@@ -657,12 +657,18 @@ pub fn structured_max_traversal_depth_for_test() -> usize {
     crate::structured::parsers::MAX_STRUCTURED_TRAVERSAL_DEPTH
 }
 
+/// Secret-safe structured source evidence returned by the integration facade.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructuredSourceEvidenceForTest {
+    /// Classified semantic role.
     pub role: &'static str,
+    /// Parser confidence attached to the role.
     pub confidence: &'static str,
+    /// Exact candidate byte span in the source.
     pub candidate_span: (usize, usize),
+    /// Exact owning value byte span in the source.
     pub value_span: (usize, usize),
+    /// Borrowed key-path segment spans represented as byte ranges.
     pub key_path_spans: Vec<(usize, usize)>,
 }
 
@@ -692,14 +698,19 @@ pub fn classify_structured_source_candidate_for_test(
     })
 }
 
+/// Return the production per-candidate semantic parser byte budget.
 pub fn structured_source_semantic_window_bytes_for_test() -> usize {
     crate::source_semantics::MAX_SEMANTIC_WINDOW_BYTES
 }
 
+/// Secret-safe source-role sidecar retained on one emitted candidate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CandidateSourceRoleForTest {
+    /// Detector identity that emitted the candidate.
     pub detector_id: String,
+    /// Retained source role.
     pub role: &'static str,
+    /// Retained parser confidence.
     pub confidence: &'static str,
 }
 

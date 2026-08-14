@@ -3,9 +3,7 @@
 //! Configuration lives in `scanner_config`; this module owns the per-scan
 //! match heap, credential/metadata interners, and ML batch queue.
 
-#[cfg(feature = "ml")]
-use std::collections::HashMap;
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::candidate_provenance::CandidateProvenance;
@@ -566,6 +564,14 @@ impl Ord for AttributedRawMatch {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct StructuredSourceCacheKey {
+    text_address: usize,
+    text_len: usize,
+    path_address: usize,
+    path_len: usize,
+}
+
 /// Internal state for a single scan operation.
 #[derive(Default)]
 pub(crate) struct ScanState {
@@ -604,6 +610,11 @@ pub(crate) struct ScanState {
     /// Lock-free on read so concurrent rayon workers share one
     /// instance without contention.
     pub(crate) static_intern: Option<Arc<crate::static_intern::StaticInterner>>,
+    /// Parsed structured values for each bounded source in this scan. The first
+    /// candidate builds the index once; every later producer/candidate performs
+    /// an exact span lookup and reuses cached abstention.
+    structured_source_cache:
+        HashMap<StructuredSourceCacheKey, Option<crate::source_semantics::StructuredSourceIndex>>,
     /// Detector matches queued for batch ML scoring at the end of the scan.
     #[cfg(feature = "ml")]
     pub(crate) ml_pending: Vec<MlPendingMatch>,
@@ -624,6 +635,34 @@ pub(crate) struct ProducedMatchRef<'a> {
 }
 
 impl ScanState {
+    pub(crate) fn structured_source_evidence(
+        &mut self,
+        chunk: &keyhog_core::Chunk,
+        candidate_start: usize,
+        candidate: &str,
+    ) -> Option<crate::source_semantics::StructuredSourceEvidence> {
+        let candidate_end = candidate_start.checked_add(candidate.len())?;
+        if chunk.data.get(candidate_start..candidate_end) != Some(candidate) {
+            return None;
+        }
+        let path = chunk.metadata.path.as_deref();
+        let key = StructuredSourceCacheKey {
+            text_address: chunk.data.as_ptr() as usize,
+            text_len: chunk.data.len(),
+            path_address: path.map_or(0, |value| value.as_ptr() as usize),
+            path_len: path.map_or(0, str::len),
+        };
+        let index = self.structured_source_cache.entry(key).or_insert_with(|| {
+            crate::source_semantics::build_structured_source_index(&chunk.data, path)
+        });
+        index
+            .as_ref()?
+            .classify(crate::source_semantics::SourceSpan {
+                start: candidate_start,
+                end: candidate_end,
+            })
+    }
+
     /// Intern a credential string, returning a shared zeroizing allocation.
     pub(crate) fn intern_credential(&mut self, s: &str) -> SensitiveString {
         if let Some(existing) = self.credential_interner.get(s) {
