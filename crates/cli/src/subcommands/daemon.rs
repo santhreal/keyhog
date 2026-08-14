@@ -287,9 +287,15 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
                     warm_backend.reason.as_deref(),
                     warm_backend.repair_command.as_deref(),
                 ) {
-                    (Some(reason), Some(repair)) => (reason, repair),
-                    _ => anyhow::bail!(
-                        "daemon status: warm-backend status is internally inconsistent; restart with `keyhog daemon stop && keyhog daemon start`"
+                    (Some(reason), Some(repair)) => (reason.to_string(), repair.to_string()),
+                    (Some(reason), None) => (
+                        reason.to_string(),
+                        crate::daemon::warm_identity::REPAIR_COMMAND.to_string(),
+                    ),
+                    (None, Some(repair)) => ("unknown".to_string(), repair.to_string()),
+                    (None, None) => (
+                        "internally inconsistent".to_string(),
+                        crate::daemon::warm_identity::REPAIR_COMMAND.to_string(),
                     ),
                 };
                 println!(
