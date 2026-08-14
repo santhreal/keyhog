@@ -9,7 +9,7 @@
 - Findings preserve detector identity, source location, severity, confidence, and credential hash.
 - Optional acceleration backends must preserve the same match semantics as the default scanner path.
 - Candidate generation retains the producer channel and exact canonical detector-pattern ordinal through shared adjudication. Generated homoglyph variants and packed backend routes keep the source ordinal. Public `RawMatch` ordering, identity, caps, and serialization remain unchanged.
-- Detector semantic policy is typed in TOML as capture role, anchor role, allowed source roles, and required evidence. Omitted fields resolve to abstaining compatibility defaults. Source compilation and execution-pack hydration preserve the policy exactly. Detector-plan schema version 3 rejects stale sections.
+- Detector semantic policy is typed in corpus schema 4 as capture role, anchor role, allowed source roles, and required evidence. Omitted fields resolve to abstaining compatibility defaults and are omitted from serialization. Source compilation and execution-pack hydration preserve the policy exactly. Detector-plan schema version 3 rejects stale sections.
 - Windowed absence memos bind to the exact ordered input bytes; reordered or repeated lines cannot inherit an earlier clean proof.
 
 ## Ordered GPU device routes

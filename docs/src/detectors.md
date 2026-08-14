@@ -213,6 +213,29 @@ keyword-gated or always-active phase-2 path. `kind = "phase2-generic"` detectors
 require keywords because their assignment/context bridge is the candidate
 source.
 
+`detector.capture_role` declares what the pattern captures. Values are
+`unknown`, `assignment-value`, `token`, `credential-envelope`,
+`private-key-block`, `connection-string`, `url-userinfo`, `header-value`, and
+`command-argument-value`.
+
+`detector.anchor_role` declares the surrounding anchor strength. Values are
+`unknown`, `exact-key`, `distinctive-prefix`, `structured-envelope`,
+`companion-bound`, `weak-context`, and `unanchored`.
+
+`detector.allowed_source_roles` is a list of candidate-bounded source roles.
+Values are `structured-assignment-value`, `environment-assignment-value`,
+`string-literal`, `command-argument-value`, `command-option-declaration`,
+`header-value`, `url-authority-userinfo`, `connection-string`,
+`standalone-token`, `pem-block`, `regex-rule-definition`,
+`identifier-type-member-name`, `prose-documentation`, `test-fixture`,
+`generated-vendor-material`, and `unknown`.
+
+`detector.required_evidence` is a list containing `checksum`,
+`required-companion`, `private-key-companion`, `structural-grammar`, or
+`live-verification`. Omitted semantic fields carry no proof and preserve the
+schema-3 finding policy. Unknown enum spellings and ambiguous role lists fail
+corpus validation.
+
 `detector.patterns[]` - one or more regexes. Each carries:
 
 - `regex` - the pattern. Every regex is compiled `case_insensitive`, so
@@ -679,7 +702,7 @@ creates a focused corpus from the repository's shipped Stripe detector:
 mkdir -p "$PWD/.keyhog/detectors"
 cp detectors/stripe-secret-key.toml "$PWD/.keyhog/detectors/"
 cat > "$PWD/.keyhog/detectors/corpus.toml" <<'EOF'
-schema_version = 3
+schema_version = 4
 EOF
 keyhog detectors --detectors "$PWD/.keyhog/detectors" --audit
 ```
@@ -687,14 +710,18 @@ keyhog detectors --detectors "$PWD/.keyhog/detectors" --audit
 Edit the copied TOML only after the audit succeeds. A new detector must declare
 all required policy blocks. Copying only the short `[detector]` and
 `[[detector.patterns]]` example from this chapter does not create a valid
-schema-3 detector.
+schema-4 detector.
 
 Declare the current corpus schema beside the detector files:
 
 ```toml
 # my-detectors/corpus.toml
-schema_version = 3
+schema_version = 4
 ```
+
+Schema 4 adds typed `capture_role`, `anchor_role`, `allowed_source_roles`, and
+`required_evidence` declarations. Omission preserves the schema-3 finding
+policy and carries no semantic proof.
 
 Schema 3 adds typed companion semantics and cross-detector relations. It also
 keeps the schema-2 requirement that every `[detector.verify.success]` and
@@ -709,16 +736,17 @@ tables written before policy classification are normalized to
 `status_with_error_backstop`: an accepted status is necessary, but a known
 error-shaped response still prevents a live verdict. This is deliberately not
 the more permissive `status_authoritative` policy. New corpora should declare
-schema 3 and serialize every policy rather than relying on legacy
+schema 4 and serialize every policy rather than relying on legacy
 normalization.
 
-Manifest typos, unsupported schema versions, and schema-2 or schema-3 success
-tables with missing policies fail closed. A bounded newer schema declaration
-may be parsed only to produce compatibility diagnostics; a gated load refuses
-the complete corpus rather than skipping fields or detector files it cannot
-interpret. The effective corpus digest binds the normalized schema and
-manifest identity, so legacy, schema-2, and schema-3 corpora cannot share an
-identity merely because their detector fields otherwise match.
+Manifest typos, unsupported schema versions, and schema-2, schema-3, or
+schema-4 success tables with missing policies fail closed. A bounded newer
+schema declaration may be parsed only to produce compatibility diagnostics; a
+gated load refuses the complete corpus rather than skipping fields or detector
+files it cannot interpret. The effective corpus digest binds the normalized
+schema and manifest identity, so legacy, schema-2, schema-3, and schema-4
+corpora cannot share an identity merely because their detector fields otherwise
+match.
 
 Audit a custom corpus directly before scanning with it:
 
@@ -788,7 +816,7 @@ Use a replacement corpus when you want an allowlist of detector files:
 ```sh
 mkdir -p "$PWD/my-detectors"
 cp detectors/stripe-secret-key.toml detectors/aws-*.toml "$PWD/my-detectors/"
-printf 'schema_version = 3\n' > "$PWD/my-detectors/corpus.toml"
+printf 'schema_version = 4\n' > "$PWD/my-detectors/corpus.toml"
 keyhog detectors --detectors "$PWD/my-detectors" --audit
 keyhog scan . --detectors "$PWD/my-detectors" --detectors-mode replace
 ```

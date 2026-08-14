@@ -73,19 +73,17 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             if d.anchor_role != Default::default() {
                 entries.push(format!("anchor-role:{}:{}", d.id, d.anchor_role.as_str()));
             }
-            for (index, role) in d.allowed_source_roles.iter().enumerate() {
+            for role in &d.allowed_source_roles {
                 entries.push(format!(
-                    "allowed-source-role:{}:{}:{}",
+                    "allowed-source-role:{}:{}",
                     d.id,
-                    index,
                     role.as_str()
                 ));
             }
-            for (index, evidence) in d.required_evidence.iter().enumerate() {
+            for evidence in &d.required_evidence {
                 entries.push(format!(
-                    "required-evidence:{}:{}:{}",
+                    "required-evidence:{}:{}",
                     d.id,
-                    index,
                     evidence.as_str()
                 ));
             }

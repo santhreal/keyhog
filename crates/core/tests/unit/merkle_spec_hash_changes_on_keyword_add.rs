@@ -58,7 +58,25 @@ fn merkle_compute_spec_hash_changes_when_semantic_policy_changes() {
     changed.allowed_source_roles = vec![keyhog_core::SemanticSourceRole::StringLiteral];
     assert_ne!(baseline, compute_spec_hash(std::slice::from_ref(&changed)));
 
-    changed = base;
+    changed = base.clone();
     changed.required_evidence = vec![keyhog_core::RequiredSemanticEvidence::StructuralGrammar];
     assert_ne!(baseline, compute_spec_hash(std::slice::from_ref(&changed)));
+
+    let mut reordered = base.clone();
+    reordered.allowed_source_roles = vec![
+        keyhog_core::SemanticSourceRole::StringLiteral,
+        keyhog_core::SemanticSourceRole::StructuredAssignmentValue,
+    ];
+    reordered.required_evidence = vec![
+        keyhog_core::RequiredSemanticEvidence::StructuralGrammar,
+        keyhog_core::RequiredSemanticEvidence::Checksum,
+    ];
+    let ordered = compute_spec_hash(std::slice::from_ref(&reordered));
+    reordered.allowed_source_roles.reverse();
+    reordered.required_evidence.reverse();
+    assert_eq!(
+        ordered,
+        compute_spec_hash(std::slice::from_ref(&reordered)),
+        "set-like semantic declarations must be order-independent"
+    );
 }

@@ -95,19 +95,19 @@ pub struct DetectorSpec {
     pub patterns: Vec<PatternSpec>,
     /// Syntactic role of the bytes captured as the credential. `unknown`
     /// preserves current behavior and requires semantic adjudication to abstain.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "CaptureSemanticRole::is_unknown")]
     pub capture_role: CaptureSemanticRole,
     /// Strength and kind of the detector's anchor. `unknown` preserves current
     /// behavior and carries no proof.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "AnchorSemanticRole::is_unknown")]
     pub anchor_role: AnchorSemanticRole,
     /// Source roles in which this detector may later become enforcement-capable.
     /// Empty is the compatibility default and imposes no semantic restriction.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_source_roles: Vec<SemanticSourceRole>,
     /// Typed evidence required by later semantic enforcement. Empty preserves
     /// the existing detector decision.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub required_evidence: Vec<RequiredSemanticEvidence>,
     /// Secondary patterns required to confirm a match.
     #[serde(default)]
@@ -2374,7 +2374,7 @@ pub const DETECTOR_CORPUS_MANIFEST_FILE: &str = "corpus.toml";
 pub const DETECTOR_CORPUS_MIN_SCHEMA_VERSION: u32 = 1;
 
 /// Detector schema authored and enforced by this binary.
-pub const DETECTOR_CORPUS_SCHEMA_VERSION: u32 = 3;
+pub const DETECTOR_CORPUS_SCHEMA_VERSION: u32 = 4;
 
 /// Highest newer detector schema this binary may inspect additively.
 ///

@@ -40,6 +40,11 @@ impl CaptureSemanticRole {
             Self::CommandArgumentValue => "command-argument-value",
         }
     }
+
+    /// Whether this role carries no semantic proof.
+    pub const fn is_unknown(&self) -> bool {
+        matches!(self, Self::Unknown)
+    }
 }
 
 /// Strength and kind of the detector anchor surrounding a capture.
@@ -75,6 +80,11 @@ impl AnchorSemanticRole {
             Self::WeakContext => "weak-context",
             Self::Unanchored => "unanchored",
         }
+    }
+
+    /// Whether this role carries no anchor proof.
+    pub const fn is_unknown(&self) -> bool {
+        matches!(self, Self::Unknown)
     }
 }
 

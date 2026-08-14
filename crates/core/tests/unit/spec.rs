@@ -65,6 +65,11 @@ fn detector_spec_deserialization() {
 
 #[test]
 fn detector_semantic_roles_are_typed_and_default_to_abstention() {
+    assert_eq!(
+        keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
+        4,
+        "semantic role keys require detector corpus schema 4"
+    );
     let declared: DetectorFile = toml::from_str(
         r#"
         [detector]
@@ -121,6 +126,19 @@ fn detector_semantic_roles_are_typed_and_default_to_abstention() {
     assert_eq!(omitted.detector.anchor_role, AnchorSemanticRole::Unknown);
     assert!(omitted.detector.allowed_source_roles.is_empty());
     assert!(omitted.detector.required_evidence.is_empty());
+    let serialized =
+        toml::to_string(&omitted.detector).expect("default semantic policy must serialize");
+    for field in [
+        "capture_role",
+        "anchor_role",
+        "allowed_source_roles",
+        "required_evidence",
+    ] {
+        assert!(
+            !serialized.contains(field),
+            "compatibility-default field {field} must not perturb corpus identity"
+        );
+    }
 }
 
 #[test]
