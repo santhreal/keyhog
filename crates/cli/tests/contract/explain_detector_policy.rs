@@ -34,6 +34,8 @@ fn detector_bpe_ceiling(detector_id: &str) -> f64 {
         })
 }
 
+/// WHY: omitted scalar semantic roles carry no detector proof, so the operator
+/// must see the compatibility state rather than an invented detector default.
 #[test]
 fn explain_generic_secret_prints_detector_entropy_bpe_and_semantic_policy() {
     let output = explain("generic-secret");
@@ -49,8 +51,8 @@ fn explain_generic_secret_prints_detector_entropy_bpe_and_semantic_policy() {
     for expected in [
         "Declared detector policy:".to_string(),
         "kind: phase2-generic".to_string(),
-        "capture_role: unknown".to_string(),
-        "anchor_role: unknown".to_string(),
+        "capture_role: unknown (compatibility default)".to_string(),
+        "anchor_role: unknown (compatibility default)".to_string(),
         "allowed_source_roles: any (compatibility default)".to_string(),
         "required_evidence: none".to_string(),
         "entropy_high: 4.5 bits/byte".to_string(),

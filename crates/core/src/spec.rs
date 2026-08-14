@@ -86,6 +86,25 @@ pub struct DetectorSpec {
     /// active corpus, so a custom corpus never inherits unrelated prefixes.
     #[serde(default)]
     pub decode_transforms: DetectorDecodeTransformSpec,
+    /// Typed classification of the captured credential bytes. Current scan
+    /// admission does not consume this declaration; `unknown` preserves
+    /// current findings.
+    #[serde(default, skip_serializing_if = "CaptureSemanticRole::is_unknown")]
+    pub capture_role: CaptureSemanticRole,
+    /// Typed classification of the detector anchor. Current scan admission
+    /// does not consume this declaration; `unknown` preserves current findings.
+    #[serde(default, skip_serializing_if = "AnchorSemanticRole::is_unknown")]
+    pub anchor_role: AnchorSemanticRole,
+    /// Detector-owned source-role declaration included in execution identity.
+    /// Current scan admission does not consume this list. Empty preserves
+    /// current findings.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_source_roles: Vec<SemanticSourceRole>,
+    /// Detector-owned evidence declaration included in execution identity.
+    /// Current scan admission does not consume this list. Empty preserves
+    /// current findings.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_evidence: Vec<RequiredSemanticEvidence>,
     /// List of regex patterns to match. Defaults to empty so a
     /// `kind = "phase2-generic"` detector can omit it when it has no structured
     /// envelope; a `kind = "regex"` detector with no patterns is rejected by
@@ -93,22 +112,6 @@ pub struct DetectorSpec {
     /// silently ships a dead regex detector.
     #[serde(default)]
     pub patterns: Vec<PatternSpec>,
-    /// Syntactic role of the bytes captured as the credential. `unknown`
-    /// preserves current behavior and requires semantic adjudication to abstain.
-    #[serde(default, skip_serializing_if = "CaptureSemanticRole::is_unknown")]
-    pub capture_role: CaptureSemanticRole,
-    /// Strength and kind of the detector's anchor. `unknown` preserves current
-    /// behavior and carries no proof.
-    #[serde(default, skip_serializing_if = "AnchorSemanticRole::is_unknown")]
-    pub anchor_role: AnchorSemanticRole,
-    /// Source roles in which this detector may later become enforcement-capable.
-    /// Empty is the compatibility default and imposes no semantic restriction.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub allowed_source_roles: Vec<SemanticSourceRole>,
-    /// Typed evidence required by later semantic enforcement. Empty preserves
-    /// the existing detector decision.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub required_evidence: Vec<RequiredSemanticEvidence>,
     /// Secondary patterns required to confirm a match.
     #[serde(default)]
     pub companions: Vec<CompanionSpec>,

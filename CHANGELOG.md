@@ -6,7 +6,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
-- Scanner detector TOML schema 4 accepts typed capture, anchor, allowed-source, and required-evidence roles. Omitted declarations preserve current findings and serialization. The schema bump causes one fail-closed detector-corpus cache, execution-pack, and autoroute recalibration. Detector-plan schema version 3 persists the resolved policy, rejects stale sections, and `explain` renders the policy.
+- Scanner detector TOML schema 4 accepts typed capture, anchor, allowed-source, and required-evidence roles. Omitted declarations preserve current findings and serialization; declaring them under an older corpus schema fails closed. The schema identity change rejects prior detector-corpus caches and execution packs. Autoroute reports a detector corpus digest mismatch and instructs `keyhog calibrate-autoroute`. Detector-plan schema version 3 persists the resolved policy, rejects stale sections, and `explain` labels omitted scalar roles as compatibility defaults.
 - Merge remote-tracking branch 'origin/main'.
 - Scanner candidates retain their producer channel and exact canonical pattern ordinal through ML scoring and final adjudication without changing public `RawMatch` output, ordering, deduplication, or caps. Matcher section schema version 6 persists the ordinal and rejects stale or out-of-range provenance during hydration.
 

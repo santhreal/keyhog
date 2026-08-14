@@ -87,13 +87,12 @@ fn validate_semantic_policy(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>)
             )));
         }
     }
-    if spec.allowed_source_roles.len() > 1
-        && spec
-            .allowed_source_roles
-            .contains(&crate::SemanticSourceRole::Unknown)
+    if spec
+        .allowed_source_roles
+        .contains(&crate::SemanticSourceRole::Unknown)
     {
         issues.push(QualityIssue::Error(
-            "allowed_source_roles cannot combine `unknown` with proven source roles".into(),
+            "allowed_source_roles cannot contain `unknown`; omit the field to preserve compatibility behavior".into(),
         ));
     }
 

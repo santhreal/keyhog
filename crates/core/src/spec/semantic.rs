@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CaptureSemanticRole {
-    /// No syntax proof is declared. Adjudication must abstain.
+    /// Compatibility state for an omitted declaration; carries no syntax proof.
     #[default]
     Unknown,
     /// Credential bytes captured from an assignment value.
@@ -122,7 +122,7 @@ pub enum SemanticSourceRole {
     TestFixture,
     /// Generated or vendored material.
     GeneratedVendorMaterial,
-    /// Unsupported, ambiguous, or unparsed context. Policy must abstain.
+    /// Unsupported, ambiguous, or unparsed context; carries no source-role proof.
     Unknown,
 }
 
@@ -150,7 +150,7 @@ impl SemanticSourceRole {
     }
 }
 
-/// Typed semantic proof a detector requires before later policy may enforce it.
+/// Typed semantic proof named by a detector policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RequiredSemanticEvidence {
@@ -180,6 +180,9 @@ impl RequiredSemanticEvidence {
 }
 
 /// Canonical detector semantic policy copied into compiled and packed plans.
+///
+/// The policy participates in execution identity. Current scan admission does
+/// not consume its declarations.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DetectorSemanticPolicySpec {
@@ -189,10 +192,10 @@ pub struct DetectorSemanticPolicySpec {
     /// Strength and kind of the detector anchor.
     #[serde(default)]
     pub anchor_role: AnchorSemanticRole,
-    /// Source roles in which later semantic enforcement may apply.
+    /// Detector-owned source roles.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_source_roles: Vec<SemanticSourceRole>,
-    /// Evidence required before later semantic enforcement may apply.
+    /// Detector-owned evidence requirements.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub required_evidence: Vec<RequiredSemanticEvidence>,
 }

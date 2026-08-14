@@ -227,14 +227,16 @@ Values are `structured-assignment-value`, `environment-assignment-value`,
 `string-literal`, `command-argument-value`, `command-option-declaration`,
 `header-value`, `url-authority-userinfo`, `connection-string`,
 `standalone-token`, `pem-block`, `regex-rule-definition`,
-`identifier-type-member-name`, `prose-documentation`, `test-fixture`,
-`generated-vendor-material`, and `unknown`.
+`identifier-type-member-name`, `prose-documentation`, `test-fixture`, and
+`generated-vendor-material`. The observed source-role enum also contains
+`unknown`, but it is invalid in this declaration. Omit the field when no
+source-role restriction is declared.
 
 `detector.required_evidence` is a list containing `checksum`,
 `required-companion`, `private-key-companion`, `structural-grammar`, or
 `live-verification`. Omitted semantic fields carry no proof and preserve the
-schema-3 finding policy. Unknown enum spellings and ambiguous role lists fail
-corpus validation.
+schema-3 finding policy. Unknown enum spellings, `unknown` source-role entries,
+and duplicate list entries fail corpus validation.
 
 `detector.patterns[]` - one or more regexes. Each carries:
 
@@ -722,6 +724,8 @@ schema_version = 4
 Schema 4 adds typed `capture_role`, `anchor_role`, `allowed_source_roles`, and
 `required_evidence` declarations. Omission preserves the schema-3 finding
 policy and carries no semantic proof.
+Declaring any of these fields under a schema-1, schema-2, or schema-3 manifest
+fails the complete corpus load.
 
 Schema 3 adds typed companion semantics and cross-detector relations. It also
 keeps the schema-2 requirement that every `[detector.verify.success]` and

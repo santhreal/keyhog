@@ -344,8 +344,16 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
     };
     println!("  {}Declared detector policy:{}", style.bold, style.reset);
     println!("    kind: {kind}");
-    println!("    capture_role: {}", d.capture_role.as_str());
-    println!("    anchor_role: {}", d.anchor_role.as_str());
+    if d.capture_role.is_unknown() {
+        println!("    capture_role: unknown (compatibility default)");
+    } else {
+        println!("    capture_role: {}", d.capture_role.as_str());
+    }
+    if d.anchor_role.is_unknown() {
+        println!("    anchor_role: unknown (compatibility default)");
+    } else {
+        println!("    anchor_role: {}", d.anchor_role.as_str());
+    }
     if d.allowed_source_roles.is_empty() {
         println!("    allowed_source_roles: any (compatibility default)");
     } else {
