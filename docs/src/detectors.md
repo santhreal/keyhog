@@ -67,19 +67,19 @@ Each shipped detector owns at least one canonical positive/negative truth pair:
 ```toml
 [[detector.tests]]
 pattern_index = 0
-test_positive = "STRIPE_SECRET_KEY=sk_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD"
-test_negative = "sk_live_short"
+test_positive = "SERVICE_PUBLIC_ID=example-production-fixture"
+test_negative = "SERVICE_PUBLIC_ID=short"
 negative_class = "boundary"
 
 [[detector.tests]]
 pattern_index = 1
-test_positive = "STRIPE_SECRET_KEY=sk_test_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD"
-test_negative = "sk_test_short"
+test_positive = "SERVICE_LEGACY_ID=example-legacy-fixture"
+test_negative = "SERVICE_LEGACY_ID=short"
 negative_class = "boundary"
 
 ```
 
-These are executable production-path fixtures, not documentation examples.
+Detector test records are executable production-path fixtures, not prose examples.
 `pattern_index` is the zero-based pattern ordinal. `negative_class` is one of
 `boundary`, `identifier`, `prose`, `regex-literal`, or `sibling-prefix`.
 The positive must surface that exact detector id and the negative must leave

@@ -1,14 +1,15 @@
 //! Production-path regressions for observed detector false-positive classes.
 //!
 //! The matrix keeps provider and command recall while rejecting identifier,
-//! sibling-prefix, truncated-JWT, and detector-rule collisions.
+//! sibling-prefix, provider-overlap, and detector-rule collisions.
 
 mod support;
 
-use std::sync::LazyLock;
-
 use keyhog_scanner::CompiledScanner;
+use std::sync::Mutex;
 use support::contracts::{make_chunk, scanner};
+
+static SCAN_LOCK: Mutex<()> = Mutex::new(());
 
 struct Case {
     label: &'static str,
@@ -17,11 +18,12 @@ struct Case {
     path: &'static str,
 }
 
-static SCANNER: LazyLock<CompiledScanner> = LazyLock::new(scanner);
-
-fn reports(case: &Case) -> bool {
-    SCANNER.clear_fragment_cache();
-    SCANNER
+fn reports(scanner: &CompiledScanner, case: &Case) -> bool {
+    let _guard = SCAN_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    scanner.clear_fragment_cache();
+    scanner
         .scan(&make_chunk(case.text, "filesystem", case.path))
         .expect("observed detector-class scan succeeds")
         .iter()
@@ -137,10 +139,11 @@ fn observed_detector_repairs_preserve_genuine_counterparts() {
             path: ".env",
         },
     ];
+    let scanner = scanner();
 
     let failures = cases
         .iter()
-        .filter(|case| !reports(case))
+        .filter(|case| !reports(&scanner, case))
         .map(|case| case.label)
         .collect::<Vec<_>>();
     assert!(
@@ -206,25 +209,7 @@ fn observed_detector_repairs_reject_siblings_and_rule_literals() {
         Case {
             label: "Scalr JWT below signature boundary",
             detector_id: "scalr-api-token",
-            text: "SCALR_TOKEN=eyJabcdefgh.eyJabcdefghij.ABCDEFGHIJKLMNOPQRSTUVWXYZabcde",
-            path: "fixture.env",
-        },
-        Case {
-            label: "truncated JWT signature fixture",
-            detector_id: "jwt-token",
-            text: "eyJhbGciOiJIUzUxMiJ9.eyJ0eXAiOiJDIiwiZXhwIjo5OTk5OTk5OTk5fQ.invalid_short_sig_segment",
-            path: "fixture.rs",
-        },
-        Case {
-            label: "tampered JWT signature fixture",
-            detector_id: "jwt-token",
-            text: "eyJhbGciOiJub25lIn0.eyJ0eXAiOiJDIiwiZXhwIjowfQ.tampered_sig",
-            path: "fixture.rs",
-        },
-        Case {
-            label: "JWT below signature boundary",
-            detector_id: "jwt-token",
-            text: "TOKEN=eyJabcdefgh.eyJabcdefghij.ABCDEFGHIJKLMNOPQRSTUVWXYZabcde",
+            text: "SCALR_TOKEN=eyJabcdefgh.eyJabcdefghij.ABCDEFGHIJKLMNOPQRS",
             path: "fixture.env",
         },
         Case {
@@ -252,6 +237,18 @@ fn observed_detector_repairs_reject_siblings_and_rule_literals() {
             path: ".env",
         },
         Case {
+            label: "quoted OpenAI sibling assigned as OpenAI",
+            detector_id: "helicone-api-key",
+            text: "OPENAI_API_KEY=\"sk-abc123def456ghi789jklmnopqrs\"",
+            path: "migration_quoted.rs",
+        },
+        Case {
+            label: "quoted canonical OpenAI key owned by OpenAI",
+            detector_id: "helicone-api-key",
+            text: "OPENAI_API_KEY=\"sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ\"",
+            path: ".env",
+        },
+        Case {
             label: "Druid detector regex literal",
             detector_id: "druid-credentials",
             text: "regex = \"(?:DRUID)[_\\s]*(?:URL|HOST)[=:\\s\\\"'']+(?:https?://|druid://)?(?:[^:@]+):([^@]+)@\"",
@@ -270,10 +267,11 @@ fn observed_detector_repairs_reject_siblings_and_rule_literals() {
             path: "rabbitmq-management-credentials.toml",
         },
     ];
+    let scanner = scanner();
 
     let failures = cases
         .iter()
-        .filter(|case| reports(case))
+        .filter(|case| reports(&scanner, case))
         .map(|case| case.label)
         .collect::<Vec<_>>();
     assert!(

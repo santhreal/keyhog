@@ -13,7 +13,7 @@ match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20,
 keywords = ["SCALR_TOKEN", "scalr.io", "Authorization", "Bearer"]
 
 [[detector.patterns]]
-regex = '''(?:SCALR[_\-\s]*TOKEN|SCALR[_\-\s]*API[_\-\s]*TOKEN)[=:\s"'']+(eyJ[a-zA-Z0-9_-]{8,256}\.eyJ[a-zA-Z0-9_-]{10,1000}\.[a-zA-Z0-9_-]{32,512})'''
+regex = '''(?:SCALR[_\-\s]*TOKEN|SCALR[_\-\s]*API[_\-\s]*TOKEN)[=:\s"'']+(eyJ[a-zA-Z0-9_-]{8,256}\.eyJ[a-zA-Z0-9_-]{10,1000}\.[a-zA-Z0-9_-]{20,512})'''
 description = "Scalr API JWT token with context anchor"
 group = 1
 
@@ -23,7 +23,7 @@ description = "Scalr hostname for API endpoint"
 group = 1
 
 [[detector.patterns]]
-regex = "Authorization[=:\\s\"'']+[Bb]earer\\s+(eyJ[a-zA-Z0-9_-]{8,256}\\.eyJ[a-zA-Z0-9_-]{10,1000}\\.[a-zA-Z0-9_-]{32,512})"
+regex = "Authorization[=:\\s\"'']+[Bb]earer\\s+(eyJ[a-zA-Z0-9_-]{8,256}\\.eyJ[a-zA-Z0-9_-]{10,1000}\\.[a-zA-Z0-9_-]{20,512})"
 description = "Scalr Bearer JWT token"
 group = 1
 
@@ -31,6 +31,12 @@ group = 1
 pattern_index = 0
 test_positive = "SCALR_TOKEN=eyJqEn0DWRqaI8.eyJ2EZmQ0rQI1KS2vAHKhbVxPEJrwHqJUcpDGcDzG5b6ZjeO_rTJlAFLwM_mj9M4z90pm5indkRJqaMe_7qcLhcbk.zatKoCFZ3LnYyOgxIRh6SRcFLfddJzxS8Kk2_emw-BnII8IGYXfjppfEeEqE_K0IGediMBiPhaX7Te67vFmO6XL7wc-93hJ"
 test_negative = "SCALR_TOKEN=eyJ.eyJ.sig"
+negative_class = "boundary"
+
+[[detector.tests]]
+pattern_index = 0
+test_positive = "SCALR_TOKEN=eyJabcdefgh.eyJabcdefghij.ABCDEFGHIJKLMNOPQRST"
+test_negative = "SCALR_TOKEN=eyJabcdefgh.eyJabcdefghij.ABCDEFGHIJKLMNOPQRS"
 negative_class = "boundary"
 
 [[detector.tests]]

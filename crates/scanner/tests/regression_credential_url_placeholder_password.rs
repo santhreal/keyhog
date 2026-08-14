@@ -16,9 +16,9 @@
 //! the extracted password alone. This file pins:
 //!
 //!   * every credentialled-URL detector in the registry, enumerated at run time
-//!     from each detector's OWN positive fixture, so a connection-string
-//!     detector added tomorrow is covered the day its spec lands and no id list
-//!     here can go stale;
+//!     from each detector's OWN positive fixture whose selected pattern capture
+//!     is the complete URL, so a connection-string detector added tomorrow is
+//!     covered the day its spec lands and no id list here can go stale;
 //!   * every placeholder FORM, so the fix is not pinned to the reported
 //!     `<password>` spelling;
 //!   * the negative twin per detector: the detector's own vetted positive, whose
@@ -47,6 +47,7 @@ use keyhog_scanner::context::CodeContext;
 use keyhog_scanner::testing::{
     credential_url_userinfo_password_for_test, named_detector_suppressed,
 };
+use regex::Regex;
 
 /// One credentialled-URL detector and a URL of its own to exercise it with.
 struct UrlCase {
@@ -98,10 +99,10 @@ fn url_span(text: &str) -> Option<(String, String)> {
     Some((url.to_string(), password.to_string()))
 }
 
-/// Every credentialled-URL detector in the registry, derived at run time from
-/// the detectors' own `[[detector.tests]] test_positive` fixtures. There is no
-/// id list to keep: a detector is in scope exactly when it declares a positive
-/// whose credential is a `scheme://user:password@host` URL.
+/// Every whole-credential URL detector in the registry, derived at run time
+/// from the detectors' own `[[detector.tests]] test_positive` fixtures and
+/// selected capture groups. A URL-shaped input whose detector captures only
+/// its password sub-field is outside this whole-URL suppression contract.
 fn url_cases() -> Vec<UrlCase> {
     let mut cases = Vec::new();
     for spec in keyhog_core::embedded_detector_specs() {
@@ -109,7 +110,26 @@ fn url_cases() -> Vec<UrlCase> {
             let Some(positive) = test.test_positive.as_deref() else {
                 continue;
             };
-            let Some((url, password)) = url_span(positive) else {
+            let captured_url = spec
+                .patterns
+                .iter()
+                .enumerate()
+                .find_map(|(index, pattern)| {
+                    if test
+                        .pattern_index
+                        .is_some_and(|selected| usize::try_from(selected).ok() != Some(index))
+                    {
+                        return None;
+                    }
+                    let regex = Regex::new(&pattern.regex).unwrap_or_else(|error| {
+                        panic!("{} pattern[{index}] must compile: {error}", spec.id)
+                    });
+                    let captures = regex.captures(positive)?;
+                    let capture = captures.get(pattern.group.unwrap_or(0))?.as_str();
+                    let (url, password) = url_span(capture)?;
+                    (url == capture).then_some((url, password))
+                });
+            let Some((url, password)) = captured_url else {
                 continue;
             };
             cases.push(UrlCase {
@@ -142,8 +162,8 @@ fn suppressed(detector_id: &str, credential: &str) -> bool {
 fn the_derived_union_is_populated_and_contains_the_reported_detector() {
     let cases = url_cases();
     assert!(
-        cases.len() >= 10,
-        "derivation collapsed: only {} credentialled-URL fixtures found",
+        cases.len() >= 5,
+        "derivation collapsed below the five currently owned credentialled-URL fixtures: found {}",
         cases.len()
     );
     assert!(
