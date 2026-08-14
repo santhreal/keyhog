@@ -80,9 +80,9 @@ fn raw_match(confidence: f64, credential: &'static str, offset: usize) -> RawMat
 #[test]
 fn push_match_keeps_highest_confidence_when_capped() {
     let mut state = ScanState::default();
-    state.push_match(raw_match(0.10, "low", 1), 2);
-    state.push_match(raw_match(0.90, "high", 2), 2);
-    state.push_match(raw_match(0.50, "mid", 3), 2);
+    state.push_unattributed_match(raw_match(0.10, "low", 1), 2);
+    state.push_unattributed_match(raw_match(0.90, "high", 2), 2);
+    state.push_unattributed_match(raw_match(0.50, "mid", 3), 2);
 
     let kept: Vec<_> = state
         .into_matches()
@@ -95,10 +95,10 @@ fn push_match_keeps_highest_confidence_when_capped() {
 #[test]
 fn push_match_lazy_builds_only_for_admitted_candidates() {
     let mut state = ScanState::default();
-    state.push_match(raw_match(0.90, "retained", 1), 1);
+    state.push_unattributed_match(raw_match(0.90, "retained", 1), 1);
 
     let mut rejected_built = false;
-    state.push_match_lazy(
+    state.push_unattributed_match_lazy(
         RawMatchPriority {
             confidence: Some(0.10),
             severity: Severity::High,
@@ -119,7 +119,7 @@ fn push_match_lazy_builds_only_for_admitted_candidates() {
     );
 
     let mut admitted_built = false;
-    state.push_match_lazy(
+    state.push_unattributed_match_lazy(
         RawMatchPriority {
             confidence: Some(0.99),
             severity: Severity::High,
@@ -151,7 +151,7 @@ fn push_match_lazy_zero_limit_never_builds_or_retains() {
     let mut state = ScanState::default();
     let mut built = false;
 
-    state.push_match_lazy(
+    state.push_unattributed_match_lazy(
         RawMatchPriority {
             confidence: Some(1.0),
             severity: Severity::Critical,
@@ -261,7 +261,7 @@ fn pending_ml_queue_keeps_pattern_and_entropy_evidence_separate() {
 #[cfg(feature = "ml")]
 fn produced_match_view_preserves_final_and_pending_twin_order() {
     let mut state = ScanState::default();
-    assert!(state.push_match(raw_match(0.95, "emitted", 3), 8));
+    assert!(state.push_unattributed_match(raw_match(0.95, "emitted", 3), 8));
     assert!(push_pattern_pending(
         &mut state,
         raw_match(0.05, "pending-reject", 7),

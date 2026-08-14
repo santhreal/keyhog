@@ -62,8 +62,8 @@ fn provenance_sidecar_does_not_change_heap_or_public_output() {
     assert_eq!(retained[0].provenance, CandidateProvenance::named(0, 1));
 
     let mut public = ScanState::default();
-    public.push_match(low, 1);
-    public.push_match(high, 1);
+    public.push_unattributed_match(low, 1);
+    public.push_unattributed_match(high, 1);
     assert_eq!(
         retained
             .into_iter()
@@ -258,14 +258,12 @@ fn phase2_named_match_retains_exact_pattern_identity() {
         .find(|finding| finding.detector_id.as_ref() == "provenance-fixture")
         .expect("second canonical pattern must produce a finding");
     assert_eq!(finding.provenance.channel(), CandidateChannel::NamedPattern);
-    assert_eq!(
-        finding
-            .provenance
-            .pattern()
-            .expect("named pattern provenance")
-            .pattern_index,
-        1
-    );
+    let pattern = finding
+        .provenance
+        .pattern()
+        .expect("named pattern provenance");
+    assert_eq!(pattern.detector_index, 0);
+    assert_eq!(pattern.pattern_index, 1);
 }
 
 /// WHY: provenance is diagnostic metadata only. Its debug form must contain no

@@ -534,13 +534,6 @@ impl AttributedRawMatch {
     pub(crate) fn into_raw(self) -> keyhog_core::RawMatch {
         let Self { raw, provenance } = self;
         debug_assert!(provenance.is_well_formed());
-        debug_assert_eq!(
-            provenance.pattern().is_some(),
-            matches!(
-                provenance.channel(),
-                crate::candidate_provenance::CandidateChannel::NamedPattern
-            )
-        );
         raw
     }
 }
@@ -818,9 +811,13 @@ impl ScanState {
         }
     }
 
-    /// Push a match to the state, maintaining priority and capacity.
-    /// High-confidence secrets will displace lower-confidence findings.
-    pub(crate) fn push_match(&mut self, raw: keyhog_core::RawMatch, limit: usize) -> bool {
+    /// Compatibility insertion for callers that do not own producer provenance.
+    /// Production candidate lanes must use `push_match_with_provenance`.
+    pub(crate) fn push_unattributed_match(
+        &mut self,
+        raw: keyhog_core::RawMatch,
+        limit: usize,
+    ) -> bool {
         self.push_match_with_provenance(raw, CandidateProvenance::unattributed(), limit)
     }
 
@@ -907,7 +904,7 @@ impl ScanState {
     }
 
     #[cfg(any(feature = "entropy", test))]
-    pub(crate) fn push_match_lazy<F>(
+    pub(crate) fn push_unattributed_match_lazy<F>(
         &mut self,
         priority: RawMatchPriority<'_>,
         limit: usize,
