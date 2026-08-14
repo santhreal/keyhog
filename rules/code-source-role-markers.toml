@@ -1,0 +1,28 @@
+schema_version = 1
+
+[markers]
+option_declarations = [
+  "Arg::new(",
+  ".long(",
+  ".short(",
+  ".option(",
+  "add_argument(",
+  "add_option(",
+]
+command_invocations = [
+  "Command::new(",
+  ".arg(",
+  ".args(",
+  "subprocess.run(",
+  "subprocess.Popen(",
+  "spawn(",
+  "exec(",
+  "execFile(",
+]
+regex_constructors = [
+  "Regex::new(",
+  "RegexBuilder::new(",
+  "RegExp(",
+  "re.compile(",
+  "regex!(",
+]

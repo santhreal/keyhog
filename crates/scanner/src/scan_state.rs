@@ -567,7 +567,7 @@ impl Ord for AttributedRawMatch {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct StructuredSourceCacheKey {
+struct SourceSemanticCacheKey {
     text_address: usize,
     text_len: usize,
     path_address: usize,
@@ -575,9 +575,9 @@ struct StructuredSourceCacheKey {
 }
 
 #[derive(Debug)]
-struct StructuredSourceCacheEntry {
-    key: StructuredSourceCacheKey,
-    index: Option<crate::source_semantics::StructuredSourceIndex>,
+struct SourceSemanticCacheEntry {
+    key: SourceSemanticCacheKey,
+    index: Option<crate::source_semantics::CandidateSourceIndex>,
 }
 
 /// Internal state for a single scan operation.
@@ -618,10 +618,10 @@ pub(crate) struct ScanState {
     /// Lock-free on read so concurrent rayon workers share one
     /// instance without contention.
     pub(crate) static_intern: Option<Arc<crate::static_intern::StaticInterner>>,
-    /// Parsed structured values for the bounded source owned by this scan state.
+    /// Parsed semantic values for the bounded source owned by this scan state.
     /// The first candidate builds the index once; every later producer/candidate
     /// performs an exact span lookup and reuses cached abstention.
-    structured_source_cache: Option<StructuredSourceCacheEntry>,
+    source_semantic_cache: Option<SourceSemanticCacheEntry>,
     /// Detector matches queued for batch ML scoring at the end of the scan.
     #[cfg(feature = "ml")]
     pub(crate) ml_pending: Vec<MlPendingMatch>,
@@ -642,34 +642,34 @@ pub(crate) struct ProducedMatchRef<'a> {
 }
 
 impl ScanState {
-    pub(crate) fn structured_source_evidence(
+    pub(crate) fn source_semantic_evidence(
         &mut self,
         chunk: &keyhog_core::Chunk,
         candidate_start: usize,
         candidate: &str,
-    ) -> Option<crate::source_semantics::StructuredSourceEvidence> {
+    ) -> Option<crate::source_semantics::SourceSemanticEvidence> {
         let candidate_end = candidate_start.checked_add(candidate.len())?;
         if chunk.data.get(candidate_start..candidate_end) != Some(candidate) {
             return None;
         }
         let path = chunk.metadata.path.as_deref();
-        let key = StructuredSourceCacheKey {
+        let key = SourceSemanticCacheKey {
             text_address: chunk.data.as_ptr() as usize,
             text_len: chunk.data.len(),
             path_address: path.map_or(0, |value| value.as_ptr() as usize),
             path_len: path.map_or(0, str::len),
         };
         if self
-            .structured_source_cache
+            .source_semantic_cache
             .as_ref()
             .is_none_or(|entry| entry.key != key)
         {
-            self.structured_source_cache = Some(StructuredSourceCacheEntry {
+            self.source_semantic_cache = Some(SourceSemanticCacheEntry {
                 key,
-                index: crate::source_semantics::build_structured_source_index(&chunk.data, path),
+                index: crate::source_semantics::build_candidate_source_index(&chunk.data, path),
             });
         }
-        self.structured_source_cache
+        self.source_semantic_cache
             .as_ref()?
             .index
             .as_ref()?

@@ -320,6 +320,7 @@ jobs:
           --test detector_pattern_hard_negative_gates
           --test regression_observed_detector_class_repairs
           --test structured_config_source_roles
+          --test source_code_roles
 
   # Preserve the established required-check name while making it an explicit
   # fail-closed aggregate of the five independent integration lanes.

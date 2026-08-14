@@ -657,9 +657,9 @@ pub fn structured_max_traversal_depth_for_test() -> usize {
     crate::structured::parsers::MAX_STRUCTURED_TRAVERSAL_DEPTH
 }
 
-/// Secret-safe structured source evidence returned by the integration facade.
+/// Secret-safe source semantic evidence returned by integration facades.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StructuredSourceEvidenceForTest {
+pub struct SourceSemanticEvidenceForTest {
     /// Classified semantic role.
     pub role: &'static str,
     /// Parser confidence attached to the role.
@@ -679,14 +679,14 @@ pub fn classify_structured_source_candidate_for_test(
     path: &str,
     candidate_start: usize,
     candidate_end: usize,
-) -> Option<StructuredSourceEvidenceForTest> {
+) -> Option<SourceSemanticEvidenceForTest> {
     let evidence = crate::source_semantics::classify_structured_candidate(
         text,
         Some(path),
         candidate_start,
         candidate_end,
     )?;
-    Some(StructuredSourceEvidenceForTest {
+    Some(SourceSemanticEvidenceForTest {
         role: evidence.role.as_str(),
         confidence: evidence.confidence.as_str(),
         candidate_span: (evidence.candidate_span.start, evidence.candidate_span.end),
@@ -701,6 +701,34 @@ pub fn classify_structured_source_candidate_for_test(
 /// Return the production per-candidate semantic parser byte budget.
 pub fn structured_source_semantic_window_bytes_for_test() -> usize {
     crate::source_semantics::MAX_SEMANTIC_WINDOW_BYTES
+}
+
+/// Classify one exact source-code candidate through the production Rust,
+/// JavaScript/TypeScript, or Python lexical-role index.
+pub fn classify_code_source_candidate_for_test(
+    text: &str,
+    path: &str,
+    candidate_start: usize,
+    candidate_end: usize,
+) -> Option<SourceSemanticEvidenceForTest> {
+    if text.get(candidate_start..candidate_end).is_none() || candidate_start >= candidate_end {
+        return None;
+    }
+    let evidence = crate::code_semantics::build_code_source_index(text, path)?.classify(
+        crate::source_semantics::SourceSpan::new(candidate_start, candidate_end),
+    )?;
+    Some(SourceSemanticEvidenceForTest {
+        role: evidence.role.as_str(),
+        confidence: evidence.confidence.as_str(),
+        candidate_span: (evidence.candidate_span.start, evidence.candidate_span.end),
+        value_span: (evidence.value_span.start, evidence.value_span.end),
+        key_path_spans: Vec::new(),
+    })
+}
+
+/// Return the production source-code semantic parser byte budget.
+pub fn code_source_semantic_window_bytes_for_test() -> usize {
+    crate::code_semantics::MAX_CODE_SOURCE_BYTES
 }
 
 /// Secret-safe source-role sidecar retained on one emitted candidate.

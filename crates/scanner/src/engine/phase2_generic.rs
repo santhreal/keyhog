@@ -476,7 +476,7 @@ impl CompiledScanner {
                 let provenance =
                     crate::candidate_provenance::CandidateProvenance::generic_assignment();
                 let provenance = scan_state
-                    .structured_source_evidence(chunk, source_offset, value)
+                    .source_semantic_evidence(chunk, source_offset, value)
                     .map_or(provenance, |evidence| {
                         provenance.with_source_semantics(evidence)
                     });

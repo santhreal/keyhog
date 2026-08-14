@@ -247,6 +247,14 @@ truncated syntax and unsupported, over-nested, or over-budget input yields
 failure never suppresses a finding. These roles are retained as adjudication
 evidence without changing public `RawMatch` output.
 
+Rust, JavaScript/TypeScript, and Python source-role extraction runs only for
+emitted candidates and accepts at most 64 KiB of source. Exact lexical spans
+distinguish string literals, identifiers, regex definitions, test fixtures,
+command arguments, and command-option declarations. Inline test scopes use
+balanced syntax; test-file ownership uses the scanner's Tier-B path rules.
+Malformed, truncated, unsupported, or over-budget code yields `unknown` with
+abstaining confidence and never suppresses a finding.
+
 `detector.required_evidence` is a list containing `checksum`,
 `required-companion`, `private-key-companion`, `structural-grammar`, or
 `live-verification`. Omitted semantic fields carry no proof and preserve the

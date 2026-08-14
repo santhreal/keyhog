@@ -314,7 +314,7 @@ impl CompiledScanner {
             );
             let provenance = crate::candidate_provenance::CandidateProvenance::entropy();
             let provenance = scan_state
-                .structured_source_evidence(chunk, source_offset, &entropy_match.value)
+                .source_semantic_evidence(chunk, source_offset, &entropy_match.value)
                 .map_or(provenance, |evidence| {
                     provenance.with_source_semantics(evidence)
                 });

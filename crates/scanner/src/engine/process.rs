@@ -430,7 +430,7 @@ impl CompiledScanner {
             entry.pattern_index,
         );
         let provenance = scan_state
-            .structured_source_evidence(chunk, source_offset, credential)
+            .source_semantic_evidence(chunk, source_offset, credential)
             .map_or(provenance, |evidence| {
                 provenance.with_source_semantics(evidence)
             });

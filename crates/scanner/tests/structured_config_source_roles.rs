@@ -16,7 +16,7 @@ fn classify<'a>(
     path: &str,
     needle: &str,
 ) -> (
-    keyhog_scanner::testing::StructuredSourceEvidenceForTest,
+    keyhog_scanner::testing::SourceSemanticEvidenceForTest,
     Vec<&'a str>,
 ) {
     let start = text.find(needle).expect("fixture contains candidate");

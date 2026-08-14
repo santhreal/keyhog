@@ -25,7 +25,9 @@ pub use inference::infer_context;
 pub(crate) use inference::infer_context_with_index;
 #[cfg(test)]
 pub(crate) use inference::parse_test_path_rules;
-pub(crate) use inference::{is_in_test_function, is_rust_fn_signature, strip_comment_prefix};
+pub(crate) use inference::{
+    is_in_test_function, is_rust_fn_signature, is_test_file, strip_comment_prefix,
+};
 pub(crate) use line_index::LineContextIndex;
 pub(crate) use placeholder::is_known_example_credential;
 #[cfg(feature = "entropy")]

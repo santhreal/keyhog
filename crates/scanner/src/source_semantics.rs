@@ -31,17 +31,17 @@ pub(crate) struct SourceSpan {
 }
 
 impl SourceSpan {
-    const fn new(start: usize, end: usize) -> Self {
+    pub(crate) const fn new(start: usize, end: usize) -> Self {
         Self { start, end }
     }
 
-    const fn contains(self, other: Self) -> bool {
+    pub(crate) const fn contains(self, other: Self) -> bool {
         self.start <= other.start && other.end <= self.end
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct StructuredSourceEvidence {
+pub(crate) struct SourceSemanticEvidence {
     pub(crate) role: SemanticSourceRole,
     pub(crate) confidence: SemanticParserConfidence,
     pub(crate) candidate_span: SourceSpan,
@@ -50,7 +50,22 @@ pub(crate) struct StructuredSourceEvidence {
     key_path_len: u8,
 }
 
-impl StructuredSourceEvidence {
+impl SourceSemanticEvidence {
+    pub(crate) const fn parsed(
+        role: SemanticSourceRole,
+        candidate_span: SourceSpan,
+        value_span: SourceSpan,
+    ) -> Self {
+        Self {
+            role,
+            confidence: SemanticParserConfidence::Parsed,
+            candidate_span,
+            value_span,
+            key_path: [SourceSpan::new(0, 0); MAX_KEY_PATH_SEGMENTS],
+            key_path_len: 0,
+        }
+    }
+
     pub(crate) fn key_path(&self) -> impl Iterator<Item = SourceSpan> + '_ {
         self.key_path[..usize::from(self.key_path_len)]
             .iter()
@@ -76,10 +91,10 @@ impl StructuredValueEvidence {
         }
     }
 
-    fn for_candidate(self, candidate_span: SourceSpan) -> Option<StructuredSourceEvidence> {
+    fn for_candidate(self, candidate_span: SourceSpan) -> Option<SourceSemanticEvidence> {
         self.value_span
             .contains(candidate_span)
-            .then_some(StructuredSourceEvidence {
+            .then_some(SourceSemanticEvidence {
                 role: self.role,
                 confidence: SemanticParserConfidence::Parsed,
                 candidate_span,
@@ -103,11 +118,26 @@ impl StructuredSourceIndex {
         }
     }
 
-    pub(crate) fn classify(&self, candidate_span: SourceSpan) -> Option<StructuredSourceEvidence> {
+    pub(crate) fn classify(&self, candidate_span: SourceSpan) -> Option<SourceSemanticEvidence> {
         self.values
             .iter()
             .copied()
             .find_map(|value| value.for_candidate(candidate_span))
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum CandidateSourceIndex {
+    Structured(StructuredSourceIndex),
+    Code(crate::code_semantics::CodeSourceIndex),
+}
+
+impl CandidateSourceIndex {
+    pub(crate) fn classify(&self, candidate_span: SourceSpan) -> Option<SourceSemanticEvidence> {
+        match self {
+            Self::Structured(index) => index.classify(candidate_span),
+            Self::Code(index) => index.classify(candidate_span),
+        }
     }
 }
 
@@ -164,7 +194,7 @@ pub(crate) fn classify_exact_structured_candidate(
     path: Option<&str>,
     candidate_start: usize,
     candidate: &str,
-) -> Option<StructuredSourceEvidence> {
+) -> Option<SourceSemanticEvidence> {
     let candidate_end = candidate_start.checked_add(candidate.len())?;
     if text.get(candidate_start..candidate_end) != Some(candidate) {
         return None;
@@ -179,7 +209,7 @@ pub(crate) fn classify_structured_candidate(
     path: Option<&str>,
     candidate_start: usize,
     candidate_end: usize,
-) -> Option<StructuredSourceEvidence> {
+) -> Option<SourceSemanticEvidence> {
     let target = checked_candidate_span(text, candidate_start, candidate_end)?;
     build_structured_source_index(text, path)?.classify(target)
 }
@@ -210,6 +240,18 @@ pub(crate) fn build_structured_source_index(
         StructuredSyntax::Yaml => index_yaml(text),
         StructuredSyntax::Dotenv => index_dotenv(text),
         StructuredSyntax::Ini => index_ini(text),
+    }
+}
+
+pub(crate) fn build_candidate_source_index(
+    text: &str,
+    path: Option<&str>,
+) -> Option<CandidateSourceIndex> {
+    let path = path?;
+    if syntax_for_path(path).is_some() {
+        build_structured_source_index(text, Some(path)).map(CandidateSourceIndex::Structured)
+    } else {
+        crate::code_semantics::build_code_source_index(text, path).map(CandidateSourceIndex::Code)
     }
 }
 
