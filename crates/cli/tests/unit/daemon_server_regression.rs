@@ -12,9 +12,9 @@ use crate::daemon::protocol::{Request, Response, WarmBackendIdentity, WarmBacken
 use keyhog_core::guard_state::{FilesystemIdentity, GitHashAlgorithm};
 use keyhog_scanner::{BackendRecoveryReceipt, RecoveredInputRange, ScanBackend};
 use std::io::ErrorKind;
-use std::path::Path;
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
+use std::path::Path;
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -80,8 +80,12 @@ fn transient_accept_error_classifies_std_error_kinds() {
 #[cfg(unix)]
 #[test]
 fn transient_accept_error_catches_fd_exhaustion_via_raw_errno() {
-    assert!(is_transient_accept_error(&std::io::Error::from_raw_os_error(24)));
-    assert!(is_transient_accept_error(&std::io::Error::from_raw_os_error(23)));
+    assert!(is_transient_accept_error(
+        &std::io::Error::from_raw_os_error(24)
+    ));
+    assert!(is_transient_accept_error(
+        &std::io::Error::from_raw_os_error(23)
+    ));
 }
 
 /// WHY: errors that are not transient must be classified as fatal so the
@@ -101,9 +105,9 @@ fn transient_accept_error_rejects_unrelated_errors() {
         "ECONNRESET"
     )));
     #[cfg(unix)]
-    assert!(!is_transient_accept_error(&std::io::Error::from_raw_os_error(
-        13
-    )));
+    assert!(!is_transient_accept_error(
+        &std::io::Error::from_raw_os_error(13)
+    ));
 }
 
 // ── warm_route_error ─────────────────────────────────────────────────
@@ -127,7 +131,10 @@ fn warm_route_error_includes_reason_and_repair_when_both_present() {
     let resp = warm_route_error(&status).expect("not-ready must produce an error");
     match resp {
         Response::Error { message } => {
-            assert!(message.contains("GPU driver crashed"), "message must contain reason: {message}");
+            assert!(
+                message.contains("GPU driver crashed"),
+                "message must contain reason: {message}"
+            );
             assert!(
                 message.contains("keyhog daemon stop && keyhog daemon start"),
                 "message must contain repair command: {message}"
@@ -187,7 +194,9 @@ fn is_work_request_rejects_control_requests() {
     assert!(!is_work_request(&Request::Health));
     assert!(!is_work_request(&Request::Shutdown));
     assert!(!is_work_request(&Request::GuardList));
-    assert!(!is_work_request(&Request::GuardRemove { root: String::new() }));
+    assert!(!is_work_request(&Request::GuardRemove {
+        root: String::new()
+    }));
     assert!(!is_work_request(&Request::GuardStatus {
         root: String::new(),
     }));
@@ -554,14 +563,8 @@ fn request_id_allocator_produces_unique_ids_with_generation() {
     assert_ne!(id0, id1, "ids must be unique");
     assert_ne!(id1, id2, "ids must be unique");
     assert_ne!(id0, id2, "ids must be unique");
-    assert!(
-        id0.contains("gen-abc"),
-        "id must carry generation: {id0}"
-    );
-    assert!(
-        id1.contains("gen-abc"),
-        "id must carry generation: {id1}"
-    );
+    assert!(id0.contains("gen-abc"), "id must carry generation: {id0}");
+    assert!(id1.contains("gen-abc"), "id must carry generation: {id1}");
 }
 
 // ── default_socket_path ──────────────────────────────────────────────
