@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Include the known reason in the daemon warm-route error when only a reason (no repair command) is present, instead of hiding it behind the generic fallback. Make is_work_request exhaustive so adding a new Request variant causes a compile error. Add 30 regression tests pinning daemon server pure-function behaviors before modularization."
+crates = ["cli"]

@@ -5,7 +5,7 @@
 use super::{
     backend_recovery_status_from_receipt, compute_git_blob_oid, default_socket_path,
     file_type_label, filesystem_identity, is_transient_accept_error, is_work_request,
-    pin_regular_file, refused_file_type_message, warm_route_error, Admission, MassBatchDispatch,
+    pin_regular_file, refused_file_type_message, warm_route_error, MassBatchDispatch,
     RequestIdAllocator,
 };
 use crate::daemon::protocol::{Request, Response, WarmBackendIdentity, WarmBackendStatus};
@@ -166,17 +166,26 @@ fn warm_route_error_falls_back_when_reason_and_repair_absent() {
     }
 }
 
-/// WHY: a not-ready backend with only a reason but no repair command must
-/// hit the fallback arm, not panic or produce a partial message.
+/// WHY: a not-ready backend with a reason but no repair command must include
+/// the reason in the error message and suggest the default restart command,
+/// not drop the known cause behind a generic "internally inconsistent" message.
 #[test]
-fn warm_route_error_falls_back_when_only_reason_present() {
+fn warm_route_error_includes_reason_when_only_reason_present() {
     let status = not_ready_warm_backend(Some("GPU missing"), None);
     let resp = warm_route_error(&status).expect("not-ready must produce an error");
     match resp {
         Response::Error { message } => {
             assert!(
-                message.contains("internally inconsistent"),
-                "partial info must hit fallback: {message}"
+                message.contains("GPU missing"),
+                "message must include the known reason: {message}"
+            );
+            assert!(
+                message.contains("keyhog daemon stop && keyhog daemon start"),
+                "message must suggest the default restart: {message}"
+            );
+            assert!(
+                !message.contains("internally inconsistent"),
+                "a known reason must not be hidden behind the generic fallback: {message}"
             );
         }
         _ => panic!("expected Response::Error, got {resp:?}"),
@@ -381,6 +390,7 @@ fn filesystem_identity_returns_real_dev_and_inode_for_existing_path() {
 /// WHY: a path that does not exist must return zeros, not panic, so
 /// registration can proceed and the root existence check happens
 /// separately.
+#[cfg(unix)]
 #[test]
 fn filesystem_identity_returns_zeros_for_missing_path() {
     let identity = filesystem_identity(Path::new("/nonexistent/keyhog-test-identity"));
@@ -569,52 +579,39 @@ fn request_id_allocator_produces_unique_ids_with_generation() {
 
 // ── default_socket_path ──────────────────────────────────────────────
 
+/// Serializes env-var mutation so parallel test threads do not race on
+/// the process-global XDG_RUNTIME_DIR.
+static SOCKET_PATH_ENV_GUARD: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
 /// WHY: when XDG_RUNTIME_DIR is set, the socket must live there (per-user,
-/// tmpfs-backed, auto-cleaned on logout).
+/// tmpfs-backed, auto-cleaned on logout). When unset, it must fall back to
+/// the cache directory under keyhog/server.sock. Both branches are tested
+/// in one test under a shared mutex so parallel test threads cannot
+/// observe each other's env mutation.
 #[cfg(unix)]
 #[test]
-fn default_socket_path_prefers_xdg_runtime_dir() {
+fn default_socket_path_prefers_xdg_then_falls_back_to_cache() {
+    let _guard = SOCKET_PATH_ENV_GUARD.lock();
+    let old = std::env::var_os("XDG_RUNTIME_DIR");
+
+    // Branch 1: XDG_RUNTIME_DIR set.
     let dir = tempfile::tempdir().unwrap();
     let xdg = dir.path().to_path_buf();
-    let old = std::env::var_os("XDG_RUNTIME_DIR");
     std::env::set_var("XDG_RUNTIME_DIR", &xdg);
-
     let path = default_socket_path();
     assert_eq!(path, xdg.join("keyhog.sock"));
 
-    match old {
-        Some(v) => std::env::set_var("XDG_RUNTIME_DIR", v),
-        None => std::env::remove_var("XDG_RUNTIME_DIR"),
-    }
-}
-
-/// WHY: when XDG_RUNTIME_DIR is unset, the socket must fall back to the
-/// cache directory under keyhog/server.sock, not /tmp/keyhog.sock.
-#[cfg(unix)]
-#[test]
-fn default_socket_path_falls_back_to_cache_dir() {
-    let old = std::env::var_os("XDG_RUNTIME_DIR");
+    // Branch 2: XDG_RUNTIME_DIR unset.
     std::env::remove_var("XDG_RUNTIME_DIR");
-
     let path = default_socket_path();
     assert!(
         path.ends_with(std::path::Path::new("keyhog/server.sock")),
         "fallback path must be under keyhog/server.sock: {path:?}"
     );
 
+    // Restore.
     match old {
         Some(v) => std::env::set_var("XDG_RUNTIME_DIR", v),
-        None => {}
+        None => std::env::remove_var("XDG_RUNTIME_DIR"),
     }
-}
-
-// ── Admission enum ───────────────────────────────────────────────────
-
-/// WHY: the two admission variants must be distinguishable so a
-/// control-only connection is refused scan work. This pins the enum
-/// shape; the refusal logic is tested via is_work_request above and
-/// integration tests.
-#[test]
-fn admission_variants_are_distinct() {
-    assert_ne!(Admission::Scan, Admission::ControlOnly);
 }
