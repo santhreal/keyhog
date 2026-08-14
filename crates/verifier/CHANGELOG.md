@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.75 - 2026-08-14
+
+- Merge remote-tracking branch 'origin/main'.
+
 ## 0.5.74 - 2026-08-14
 
 - fix(release): ignore Marketplace-only tags.

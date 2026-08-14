@@ -2,6 +2,12 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.75] - 2026-08-14
+
+### Changed
+
+- Merge remote-tracking branch 'origin/main'.
+
 ## [0.5.74] - 2026-08-14
 
 ### Changed
