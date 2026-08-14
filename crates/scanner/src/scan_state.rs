@@ -577,6 +577,9 @@ struct StructuredSourceCacheKey {
 #[derive(Debug)]
 struct StructuredSourceCacheEntry {
     key: StructuredSourceCacheKey,
+    /// Retains the source allocation so its cache-key address cannot be reused
+    /// by a different bounded source while this entry is live.
+    _text_owner: SensitiveString,
     index: Option<crate::source_semantics::StructuredSourceIndex>,
 }
 
@@ -666,6 +669,7 @@ impl ScanState {
         {
             self.structured_source_cache = Some(StructuredSourceCacheEntry {
                 key,
+                _text_owner: chunk.data.clone(),
                 index: crate::source_semantics::build_structured_source_index(&chunk.data, path),
             });
         }

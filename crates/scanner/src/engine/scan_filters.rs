@@ -150,9 +150,9 @@ pub(crate) fn extend_known_prefix_credential<'a>(
     let original = credential;
     let original_end = match_end;
     let original_validation = validate(original, true);
-    let (credential, match_end) = if original_validation.claims_family()
-        || crate::confidence::known_prefix_body(credential).is_some()
-    {
+    let has_provider_identity = original_validation.claims_family()
+        || crate::confidence::known_prefix_body(credential).is_some();
+    let (credential, match_end) = if has_provider_identity {
         let bytes = data.as_bytes();
         let mut end = match_end;
         while end < bytes.len() && is_provider_token_byte(bytes[end]) {
@@ -180,7 +180,8 @@ pub(crate) fn extend_known_prefix_credential<'a>(
         (credential, match_end)
     };
 
-    let (credential, match_end) = extend_base64_padding(data, credential, match_end);
+    let (credential, match_end) =
+        extend_base64_padding(data, credential, match_end, has_provider_identity);
 
     // A boundary extension must never DOWNGRADE an already-valid checksum. A
     // known-prefix token whose canonical form passes its checksum is complete;
@@ -192,10 +193,9 @@ pub(crate) fn extend_known_prefix_credential<'a>(
     // exercises exactly this (homoglyphed companion context whose trailing `=`
     // was being appended to a valid pypi token). Cheap: the length guard keeps
     // the checksum-validity comparison off the hot path until an extension
-    // actually changed the credential. The comparison itself lives in the
-    // Both decisions come from the active detector's already-compiled validator
-    // set. Return the surviving decision with the slice so suppression and final
-    // confidence never repeat validation.
+    // actually changed the credential. Both decisions come from the active
+    // detector's already-compiled validator set. Return the surviving decision
+    // with the slice so suppression and final confidence never repeat validation.
     if credential.len() != original.len() {
         let extended_validation = validate(credential, false);
         if original_validation.is_proven_valid() && !extended_validation.is_proven_valid() {
@@ -207,6 +207,22 @@ pub(crate) fn extend_known_prefix_credential<'a>(
     (credential, match_end, original_validation)
 }
 
+/// True when the byte after a captured candidate starts a quoted assignment
+/// value (`candidate="value"` or `candidate='value'`) on the same line. In
+/// that shape the `=` is syntax, not base64 padding belonging to the candidate.
+fn starts_quoted_assignment_value(bytes: &[u8], equals: usize) -> bool {
+    if bytes.get(equals) != Some(&b'=') {
+        return false;
+    }
+    let Some(&quote @ (b'"' | b'\'')) = bytes.get(equals + 1) else {
+        return false;
+    };
+    bytes[equals + 2..]
+        .iter()
+        .take_while(|&&byte| !matches!(byte, b'\r' | b'\n'))
+        .any(|&byte| byte == quote)
+}
+
 /// Swallow up to two trailing `=` when the captured body is base64-shaped.
 /// Regexes often end with `=?` or `{20,}=?` and drop the second padding
 /// char on values like `YWJj…vcA==` - `splitio-api-key` and friends.
@@ -214,6 +230,7 @@ fn extend_base64_padding<'a>(
     data: &'a str,
     credential: &'a str,
     match_end: usize,
+    guard_quoted_assignment: bool,
 ) -> (&'a str, usize) {
     if !credential
         .bytes()
@@ -222,6 +239,9 @@ fn extend_base64_padding<'a>(
         return (credential, match_end);
     }
     let bytes = data.as_bytes();
+    if guard_quoted_assignment && starts_quoted_assignment_value(bytes, match_end) {
+        return (credential, match_end);
+    }
     let mut end = match_end;
     let mut pad = 0u8;
     while end < bytes.len() && bytes[end] == b'=' && pad < 2 {

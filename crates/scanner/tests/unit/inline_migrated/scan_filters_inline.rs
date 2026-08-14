@@ -45,3 +45,28 @@ fn non_checksum_base64_value_still_recovers_padding() {
     );
     assert_eq!(end, token.len() + 2);
 }
+
+#[test]
+fn candidate_used_as_assignment_key_does_not_absorb_separator() {
+    let token = "sk-0ocqX7mxUDlWFHzlNiC0oKONoezJ9vAX";
+    let data = format!("{token}=\"{token}\"");
+    let credential = &data[..token.len()];
+    let (cred, end) = extend_known_prefix_credential(&data, credential, token.len());
+    assert_eq!(
+        cred, token,
+        "a quoted assignment delimiter is syntax, not token padding"
+    );
+    assert_eq!(end, token.len());
+}
+
+/// WHY: the quoted-assignment guard is provider-boundary evidence, not a
+/// global reinterpretation of detector captures that intentionally own `=`.
+#[test]
+fn ordinary_candidate_can_recover_equals_before_quoted_value() {
+    let token = "73405814";
+    let data = format!("{token}=\"{token}\"");
+    let credential = &data[..token.len()];
+    let (cred, end) = extend_known_prefix_credential(&data, credential, token.len());
+    assert_eq!(cred, "73405814=");
+    assert_eq!(end, token.len() + 1);
+}

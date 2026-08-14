@@ -42,7 +42,8 @@ fn classify<'a>(
 
 /// WHY: each supported structured syntax must preserve source byte spans and a
 /// key path without parsing unrelated repository bytes. The matrix includes
-/// nested, escaped, multiline, anchor, alias, template, and section forms.
+/// nested, escaped, multiline, anchor, alias, template, comment, empty-setting,
+/// wide-mapping, and section forms.
 #[test]
 fn supported_structured_formats_emit_exact_candidate_roles_and_key_paths() {
     let json = r#"{"auth":{"token":"prefix_\"_CFGPROV_ABC123_suffix"}}"#;
@@ -108,6 +109,41 @@ fn supported_structured_formats_emit_exact_candidate_roles_and_key_paths() {
         &ini_comment[evidence.value_span.0..evidence.value_span.1],
         "it's-CFGPROV_INI_COMMENT_123456"
     );
+
+    let commented_toml =
+        "# token = \"retired\"\n[[services.auth]] # active\ntoken = \"CFGPROV_TOML_COMMENT_123456\"\n";
+    let (_, keys) = classify(
+        commented_toml,
+        "settings.toml",
+        "CFGPROV_TOML_COMMENT_123456",
+    );
+    assert_eq!(keys, ["services", "auth", "token"]);
+
+    let commented_yaml = "# token: \"retired\"\nauth:\n  token: CFGPROV_YAML_COMMENT_123456\n";
+    let (_, keys) = classify(
+        commented_yaml,
+        "settings.yaml",
+        "CFGPROV_YAML_COMMENT_123456",
+    );
+    assert_eq!(keys, ["auth", "token"]);
+
+    let commented_dotenv = "# TOKEN=\"retired\"\nTOKEN=CFGPROV_ENV_COMMENTED_123456\n";
+    let (_, keys) = classify(commented_dotenv, ".env", "CFGPROV_ENV_COMMENTED_123456");
+    assert_eq!(keys, ["TOKEN"]);
+
+    let sparse_ini =
+        "[auth] ; active credentials\nempty = ; rotated\ntoken = CFGPROV_INI_EMPTY_123456\n";
+    let (_, keys) = classify(sparse_ini, "settings.ini", "CFGPROV_INI_EMPTY_123456");
+    assert_eq!(keys, ["auth", "token"]);
+
+    let wide_yaml = format!(
+        "auth:\n{}  token: CFGPROV_YAML_WIDE_123456\n",
+        (0..512)
+            .map(|index| format!("  public_{index}: value\n"))
+            .collect::<String>()
+    );
+    let (_, keys) = classify(&wide_yaml, "settings.yaml", "CFGPROV_YAML_WIDE_123456");
+    assert_eq!(keys, ["auth", "token"]);
 }
 
 /// WHY: invalid, truncated, unsupported, or over-budget syntax carries no
