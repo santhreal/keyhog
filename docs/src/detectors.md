@@ -40,13 +40,6 @@ description = "Stripe live secret key"
 regex = 'sk_test_[a-zA-Z0-9]{24,}'
 description = "Stripe test secret key"
 
-[[detector.patterns]]
-regex = 'rk_live_[a-zA-Z0-9]{24,}'
-description = "Stripe live restricted key"
-
-[[detector.patterns]]
-regex = 'rk_test_[a-zA-Z0-9]{24,}'
-description = "Stripe test restricted key"
 
 [detector.verify]
 method = "GET"
@@ -77,6 +70,13 @@ pattern_index = 0
 test_positive = "STRIPE_SECRET_KEY=sk_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD"
 test_negative = "sk_live_short"
 negative_class = "boundary"
+
+[[detector.tests]]
+pattern_index = 1
+test_positive = "STRIPE_SECRET_KEY=sk_test_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD"
+test_negative = "sk_test_short"
+negative_class = "boundary"
+
 ```
 
 These are executable production-path fixtures, not documentation examples.

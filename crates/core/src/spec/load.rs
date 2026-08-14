@@ -591,22 +591,27 @@ fn read_detector_file(path: &Path, compatibility: CorpusCompatibility) -> ReadDe
             return ReadDetectorOutcome::Skipped { message };
         }
     };
-    let declared_fields =
-        if compatibility.schema_version < HARD_NEGATIVE_TEST_EVIDENCE_SCHEMA_VERSION {
-            match declared_schema_fields(&contents) {
-                Ok(fields) => fields,
-                Err(error) => {
-                    return ReadDetectorOutcome::Skipped {
+    let declared_fields = if compatibility.schema_version
+        < HARD_NEGATIVE_TEST_EVIDENCE_SCHEMA_VERSION
+    {
+        match declared_schema_fields(&contents) {
+            Ok(fields) => fields,
+            Err(error) => {
+                return ReadDetectorOutcome::Skipped {
                         message: format!(
-                            "failed to inspect detector schema fields in {}: {error}",
-                            path.display()
+                            "failed to parse {} under detector corpus schema {}: {}. Fix: correct \
+                             misspelled or invalid detector fields; only a corpus manifest declaring \
+                             a supported newer schema permits an unknown future field",
+                            path.display(),
+                            compatibility.schema_version,
+                            error
                         ),
                     };
-                }
             }
-        } else {
-            DeclaredSchemaFields::default()
-        };
+        }
+    } else {
+        DeclaredSchemaFields::default()
+    };
     if compatibility.schema_version < SEMANTIC_POLICY_SCHEMA_VERSION
         && declared_fields.semantic_policy
     {
