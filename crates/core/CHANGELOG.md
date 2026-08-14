@@ -2,6 +2,7 @@
 
 ## 0.5.75 - 2026-08-14
 
+- Detector TOML schema 4 adds typed capture, anchor, source-role, and required-evidence declarations with abstaining defaults.
 - Merge remote-tracking branch 'origin/main'.
 
 ## 0.5.74 - 2026-08-14
