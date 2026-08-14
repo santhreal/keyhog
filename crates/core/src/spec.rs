@@ -3,6 +3,7 @@
 
 mod evidence;
 pub(crate) mod load;
+mod semantic;
 mod validate;
 
 use std::fmt;
@@ -14,6 +15,10 @@ pub use evidence::{ProviderEvidenceRole, ProviderEvidenceSensitivity};
 pub use load::{
     load_detector_corpus, load_detectors, read_detector_toml_file, LoadedDetectorCorpus, SpecError,
     DETECTOR_TOML_FILE_BYTES,
+};
+pub use semantic::{
+    AnchorSemanticRole, CaptureSemanticRole, DetectorSemanticPolicySpec, RequiredSemanticEvidence,
+    SemanticSourceRole,
 };
 pub use validate::{validate_detector, QualityIssue};
 
@@ -88,6 +93,22 @@ pub struct DetectorSpec {
     /// silently ships a dead regex detector.
     #[serde(default)]
     pub patterns: Vec<PatternSpec>,
+    /// Syntactic role of the bytes captured as the credential. `unknown`
+    /// preserves current behavior and requires semantic adjudication to abstain.
+    #[serde(default)]
+    pub capture_role: CaptureSemanticRole,
+    /// Strength and kind of the detector's anchor. `unknown` preserves current
+    /// behavior and carries no proof.
+    #[serde(default)]
+    pub anchor_role: AnchorSemanticRole,
+    /// Source roles in which this detector may later become enforcement-capable.
+    /// Empty is the compatibility default and imposes no semantic restriction.
+    #[serde(default)]
+    pub allowed_source_roles: Vec<SemanticSourceRole>,
+    /// Typed evidence required by later semantic enforcement. Empty preserves
+    /// the existing detector decision.
+    #[serde(default)]
+    pub required_evidence: Vec<RequiredSemanticEvidence>,
     /// Secondary patterns required to confirm a match.
     #[serde(default)]
     pub companions: Vec<CompanionSpec>,
@@ -1144,6 +1165,16 @@ impl DetectorSpec {
     /// Whether this detector supplies policy to the generic entropy engine.
     pub fn owns_entropy_policy(&self) -> bool {
         self.kind == DetectorKind::Phase2Generic || self.entropy_policy_priority.is_some()
+    }
+
+    /// Canonical semantic policy copied into compiled and persisted plans.
+    pub fn semantic_policy(&self) -> DetectorSemanticPolicySpec {
+        DetectorSemanticPolicySpec {
+            capture_role: self.capture_role,
+            anchor_role: self.anchor_role,
+            allowed_source_roles: self.allowed_source_roles.clone(),
+            required_evidence: self.required_evidence.clone(),
+        }
     }
 
     /// Return the stable, redaction-safe declaration used by detector

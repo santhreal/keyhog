@@ -35,7 +35,7 @@ fn detector_bpe_ceiling(detector_id: &str) -> f64 {
 }
 
 #[test]
-fn explain_generic_secret_prints_detector_owned_entropy_and_bpe_policy() {
+fn explain_generic_secret_prints_detector_entropy_bpe_and_semantic_policy() {
     let output = explain("generic-secret");
 
     assert_eq!(
@@ -49,6 +49,10 @@ fn explain_generic_secret_prints_detector_owned_entropy_and_bpe_policy() {
     for expected in [
         "Declared detector policy:".to_string(),
         "kind: phase2-generic".to_string(),
+        "capture_role: unknown".to_string(),
+        "anchor_role: unknown".to_string(),
+        "allowed_source_roles: any (compatibility default)".to_string(),
+        "required_evidence: none".to_string(),
         "entropy_high: 4.5 bits/byte".to_string(),
         "entropy_low: 3 bits/byte".to_string(),
         "plausibility:".to_string(),

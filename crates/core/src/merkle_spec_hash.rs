@@ -19,7 +19,11 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     + d.source_admission.path_patterns.len()
                     + d.source_admission.source_types.len()
                     + d.source_admission.file_extensions.len()
-                    + d.keywords.len(),
+                    + d.keywords.len()
+                    + usize::from(d.capture_role != Default::default())
+                    + usize::from(d.anchor_role != Default::default())
+                    + d.allowed_source_roles.len()
+                    + d.required_evidence.len(),
             );
             entries.push(format!("id:{}", d.id));
             // Bind severity to the detector id: an un-bound `sev:{severity}` key
@@ -58,6 +62,32 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                         crate::hex_encode(literal.as_bytes())
                     ));
                 }
+            }
+            if d.capture_role != Default::default() {
+                entries.push(format!(
+                    "capture-role:{}:{}",
+                    d.id,
+                    d.capture_role.as_str()
+                ));
+            }
+            if d.anchor_role != Default::default() {
+                entries.push(format!("anchor-role:{}:{}", d.id, d.anchor_role.as_str()));
+            }
+            for (index, role) in d.allowed_source_roles.iter().enumerate() {
+                entries.push(format!(
+                    "allowed-source-role:{}:{}:{}",
+                    d.id,
+                    index,
+                    role.as_str()
+                ));
+            }
+            for (index, evidence) in d.required_evidence.iter().enumerate() {
+                entries.push(format!(
+                    "required-evidence:{}:{}:{}",
+                    d.id,
+                    index,
+                    evidence.as_str()
+                ));
             }
             for (index, c) in d.companions.iter().enumerate() {
                 assert_companion_hash_field_inventory_is_exhaustive(c);
@@ -585,6 +615,10 @@ fn assert_scan_hash_field_inventory_is_exhaustive(detector: &DetectorSpec) {
         validators: _,
         decode_transforms: _,
         patterns: _,
+        capture_role: _,
+        anchor_role: _,
+        allowed_source_roles: _,
+        required_evidence: _,
         companions: _,
         detector_relations: _,
         source_admission: _,

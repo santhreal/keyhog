@@ -73,7 +73,39 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_credential_shape(spec, &mut issues);
     validate_generic_assignment_suffixes(spec, &mut issues);
     validate_detector_allowlists(spec, &mut issues);
+    validate_semantic_policy(spec, &mut issues);
     issues
+}
+
+fn validate_semantic_policy(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    let mut source_roles = HashSet::new();
+    for role in &spec.allowed_source_roles {
+        if !source_roles.insert(*role) {
+            issues.push(QualityIssue::Error(format!(
+                "allowed_source_roles contains duplicate role `{}`",
+                role.as_str()
+            )));
+        }
+    }
+    if spec.allowed_source_roles.len() > 1
+        && spec
+            .allowed_source_roles
+            .contains(&crate::SemanticSourceRole::Unknown)
+    {
+        issues.push(QualityIssue::Error(
+            "allowed_source_roles cannot combine `unknown` with proven source roles".into(),
+        ));
+    }
+
+    let mut evidence = HashSet::new();
+    for requirement in &spec.required_evidence {
+        if !evidence.insert(*requirement) {
+            issues.push(QualityIssue::Error(format!(
+                "required_evidence contains duplicate requirement `{}`",
+                requirement.as_str()
+            )));
+        }
+    }
 }
 fn validate_generic_assignment_suffixes(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     for (field, suffixes) in [

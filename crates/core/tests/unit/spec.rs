@@ -1,6 +1,7 @@
 use keyhog_core::{
-    validate_detector, AuthSpec, CompanionSpec, DetectorFile, DetectorSpec, PatternSpec,
-    QualityIssue, ScriptEngine, Severity,
+    validate_detector, AnchorSemanticRole, AuthSpec, CaptureSemanticRole, CompanionSpec,
+    DetectorFile, DetectorSpec, PatternSpec, QualityIssue, RequiredSemanticEvidence, ScriptEngine,
+    SemanticSourceRole, Severity,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -60,6 +61,122 @@ fn detector_spec_deserialization() {
     assert_eq!(spec.severity, Severity::High);
     assert_eq!(spec.patterns.len(), 1);
     assert_eq!(spec.keywords.len(), 2);
+}
+
+#[test]
+fn detector_semantic_roles_are_typed_and_default_to_abstention() {
+    let declared: DetectorFile = toml::from_str(
+        r#"
+        [detector]
+        id = "semantic-role-test"
+        name = "Semantic Role Test"
+        service = "test"
+        severity = "high"
+        ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
+        capture_role = "assignment-value"
+        anchor_role = "exact-key"
+        allowed_source_roles = ["structured-assignment-value", "environment-assignment-value"]
+        required_evidence = ["checksum", "required-companion"]
+
+        [[detector.patterns]]
+        regex = 'demo_[A-Z0-9]{8}'
+        "#,
+    )
+    .expect("known semantic roles must parse");
+    assert_eq!(
+        declared.detector.capture_role,
+        CaptureSemanticRole::AssignmentValue
+    );
+    assert_eq!(declared.detector.anchor_role, AnchorSemanticRole::ExactKey);
+    assert_eq!(
+        declared.detector.allowed_source_roles,
+        [
+            SemanticSourceRole::StructuredAssignmentValue,
+            SemanticSourceRole::EnvironmentAssignmentValue,
+        ]
+    );
+    assert_eq!(
+        declared.detector.required_evidence,
+        [
+            RequiredSemanticEvidence::Checksum,
+            RequiredSemanticEvidence::RequiredCompanion,
+        ]
+    );
+
+    let omitted: DetectorFile = toml::from_str(
+        r#"
+        [detector]
+        id = "semantic-role-default"
+        name = "Semantic Role Default"
+        service = "test"
+        severity = "high"
+        ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
+
+        [[detector.patterns]]
+        regex = 'demo_[A-Z0-9]{8}'
+        "#,
+    )
+    .expect("omitted semantic roles must use compatibility defaults");
+    assert_eq!(omitted.detector.capture_role, CaptureSemanticRole::Unknown);
+    assert_eq!(omitted.detector.anchor_role, AnchorSemanticRole::Unknown);
+    assert!(omitted.detector.allowed_source_roles.is_empty());
+    assert!(omitted.detector.required_evidence.is_empty());
+}
+
+#[test]
+fn unknown_detector_semantic_roles_fail_schema_parsing() {
+    for declaration in [
+        r#"capture_role = "not-a-capture-role""#,
+        r#"anchor_role = "not-an-anchor-role""#,
+        r#"allowed_source_roles = ["not-a-source-role"]"#,
+        r#"required_evidence = ["not-an-evidence-kind"]"#,
+    ] {
+        let source = format!(
+            r#"
+            [detector]
+            id = "semantic-role-invalid"
+            name = "Semantic Role Invalid"
+            service = "test"
+            severity = "high"
+            ml = {{ match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }}
+            {declaration}
+
+            [[detector.patterns]]
+            regex = 'demo_[A-Z0-9]{{8}}'
+            "#
+        );
+        let error = toml::from_str::<DetectorFile>(&source)
+            .expect_err("unknown semantic role must fail closed");
+        assert!(
+            error.to_string().contains("unknown variant"),
+            "unexpected error for {declaration}: {error}"
+        );
+    }
+}
+
+#[test]
+fn detector_semantic_policy_rejects_ambiguous_or_duplicate_declarations() {
+    let mut detector = valid_detector();
+    detector.allowed_source_roles = vec![
+        SemanticSourceRole::Unknown,
+        SemanticSourceRole::StringLiteral,
+        SemanticSourceRole::StringLiteral,
+    ];
+    detector.required_evidence = vec![
+        RequiredSemanticEvidence::Checksum,
+        RequiredSemanticEvidence::Checksum,
+    ];
+
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(
+        |issue| matches!(issue, QualityIssue::Error(message) if message.contains("cannot combine `unknown`"))
+    ));
+    assert!(issues.iter().any(
+        |issue| matches!(issue, QualityIssue::Error(message) if message.contains("duplicate role"))
+    ));
+    assert!(issues.iter().any(
+        |issue| matches!(issue, QualityIssue::Error(message) if message.contains("duplicate requirement"))
+    ));
 }
 
 #[test]

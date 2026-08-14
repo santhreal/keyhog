@@ -30,3 +30,35 @@ fn merkle_compute_spec_hash_changes_when_keywords_change() {
         compute_spec_hash(&[with_extra])
     );
 }
+
+#[test]
+fn merkle_compute_spec_hash_changes_when_semantic_policy_changes() {
+    let base = DetectorSpec {
+        id: "semantic-hash-detector".into(),
+        name: "semantic hash".into(),
+        service: "test".into(),
+        severity: Severity::Medium,
+        patterns: vec![PatternSpec {
+            regex: "[A-Z0-9]{32}".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let baseline = compute_spec_hash(std::slice::from_ref(&base));
+
+    let mut changed = base.clone();
+    changed.capture_role = keyhog_core::CaptureSemanticRole::AssignmentValue;
+    assert_ne!(baseline, compute_spec_hash(std::slice::from_ref(&changed)));
+
+    changed = base.clone();
+    changed.anchor_role = keyhog_core::AnchorSemanticRole::ExactKey;
+    assert_ne!(baseline, compute_spec_hash(std::slice::from_ref(&changed)));
+
+    changed = base.clone();
+    changed.allowed_source_roles = vec![keyhog_core::SemanticSourceRole::StringLiteral];
+    assert_ne!(baseline, compute_spec_hash(std::slice::from_ref(&changed)));
+
+    changed = base;
+    changed.required_evidence = vec![keyhog_core::RequiredSemanticEvidence::StructuralGrammar];
+    assert_ne!(baseline, compute_spec_hash(std::slice::from_ref(&changed)));
+}
