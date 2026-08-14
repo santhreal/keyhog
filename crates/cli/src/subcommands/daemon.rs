@@ -293,10 +293,12 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
                         crate::daemon::warm_identity::REPAIR_COMMAND.to_string(),
                     ),
                     (None, Some(repair)) => ("unknown".to_string(), repair.to_string()),
-                    (None, None) => (
-                        "internally inconsistent".to_string(),
-                        crate::daemon::warm_identity::REPAIR_COMMAND.to_string(),
-                    ),
+                    (None, None) => {
+                        anyhow::bail!(
+                            "daemon status: warm-backend status is internally inconsistent; restart with `{}`",
+                            crate::daemon::warm_identity::REPAIR_COMMAND
+                        )
+                    }
                 };
                 println!(
                     "warm backend: not ready · generation {} · {reason} · repair `{repair}`",
