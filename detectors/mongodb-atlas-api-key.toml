@@ -13,15 +13,23 @@ match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20,
 keywords = ["MONGODB_ATLAS", "mongodb_atlas", "publicKey", "privateKey", "ATLAS_PUBLIC_KEY"]
 
 [[detector.patterns]]
-regex = '''(?:ATLAS|atlas)[_\-\s]*(?:PUBLIC|public)?[_\-\s]*(?:KEY|key)?[=:\s"']+([a-zA-Z]{8,})'''
+regex = '''(?i)\b(?:(?:MONGODB[_-]?)?ATLAS(?:[_-]?PUBLIC[_-]?KEY)?\s*=|(?:MONGODB[_\-\s]*)?ATLAS[_\-\s]+PUBLIC[_\-\s]*KEY\s*:)\s*["']?([A-Za-z]{8,})\b'''
 description = "MongoDB Atlas Public Key with context anchor"
 group = 1
 
 [[detector.companions]]
 name = "privateKey"
-regex = '''(?:ATLAS|atlas)[_\-\s]*(?:PRIVATE|private)?[_\-\s]*(?:KEY|key)?[=:\s"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+regex = '''(?i)\b(?:(?:MONGODB[_-]?)?ATLAS(?:[_-]?PRIVATE[_-]?KEY)?\s*=|(?:MONGODB[_\-\s]*)?ATLAS[_\-\s]+PRIVATE[_\-\s]*KEY\s*:)\s*["']?([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\b'''
 within_lines = 3
 
 [[detector.tests]]
-test_positive = "ATLAS=eHIfkXby"
-test_negative = "ATLAS=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+pattern_index = 0
+test_positive = "MONGODB_ATLAS_PUBLIC_KEY=eHIfkXby"
+test_negative = "atlas: GlyphAtlas"
+negative_class = "identifier"
+
+[[detector.tests]]
+pattern_index = 0
+test_positive = "ATLAS=eHIfkXby\nMONGODB_ATLAS_PRIVATE_KEY=12345678-1234-1234-1234-123456789abc"
+test_negative = "atlas_generation: GlyphAtlas"
+negative_class = "identifier"
