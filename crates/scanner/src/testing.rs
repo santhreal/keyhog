@@ -748,17 +748,28 @@ pub fn candidate_source_roles_for_test(
     detectors: Vec<keyhog_core::DetectorSpec>,
     chunk: &keyhog_core::Chunk,
 ) -> Result<Vec<CandidateSourceRoleForTest>, String> {
+    candidate_source_roles_and_cache_for_test(detectors, chunk).map(|(roles, _)| roles)
+}
+
+/// Run the production phase-2 path and report whether structured parsing was
+/// initialized. This pins that synchronous suppression remains parser-free.
+pub fn candidate_source_roles_and_cache_for_test(
+    detectors: Vec<keyhog_core::DetectorSpec>,
+    chunk: &keyhog_core::Chunk,
+) -> Result<(Vec<CandidateSourceRoleForTest>, bool), String> {
     let scanner = crate::CompiledScanner::compile(detectors).map_err(|error| error.to_string())?;
-    Ok(scanner
-        .debug_scan_phase2_with_provenance(chunk)
-        .map_err(|error| error.to_string())?
+    let (matches, cache_built) = scanner
+        .debug_scan_phase2_with_provenance_and_cache_state(chunk)
+        .map_err(|error| error.to_string())?;
+    let roles = matches
         .into_iter()
         .map(|matched| CandidateSourceRoleForTest {
             detector_id: matched.detector_id.to_string(),
             role: matched.provenance.source_role().as_str(),
             confidence: matched.provenance.parser_confidence().as_str(),
         })
-        .collect())
+        .collect();
+    Ok((roles, cache_built))
 }
 
 /// (multiline::config) the concatenation-marker predicates, exposed to pin the
@@ -3978,6 +3989,14 @@ impl crate::engine::CompiledScanner {
         &self,
         chunk: &keyhog_core::Chunk,
     ) -> Result<Vec<crate::scan_state::AttributedRawMatch>, crate::error::ScanError> {
+        self.debug_scan_phase2_with_provenance_and_cache_state(chunk)
+            .map(|(matches, _)| matches)
+    }
+
+    pub(crate) fn debug_scan_phase2_with_provenance_and_cache_state(
+        &self,
+        chunk: &keyhog_core::Chunk,
+    ) -> Result<(Vec<crate::scan_state::AttributedRawMatch>, bool), crate::error::ScanError> {
         let prepared = self.prepare_chunk(chunk);
         let line_index = prepared.line_index();
         let mut scan_state =
@@ -3992,7 +4011,8 @@ impl crate::engine::CompiledScanner {
             None,
             self.default_execution_route(),
         )?;
-        Ok(scan_state.into_attributed_matches())
+        let cache_built = scan_state.has_source_semantic_cache();
+        Ok((scan_state.into_attributed_matches(), cache_built))
     }
 }
 

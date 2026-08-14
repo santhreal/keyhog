@@ -312,12 +312,7 @@ impl CompiledScanner {
                 entropy_match.offset,
                 &entropy_match.value,
             );
-            let provenance = crate::candidate_provenance::CandidateProvenance::entropy();
-            let provenance = scan_state
-                .source_semantic_evidence(chunk, source_offset, &entropy_match.value)
-                .map_or(provenance, |evidence| {
-                    provenance.with_source_semantics(evidence)
-                });
+
             let Some(offset) = absolute_offset(chunk.metadata.base_offset, source_offset) else {
                 continue;
             };
@@ -394,6 +389,14 @@ impl CompiledScanner {
                 );
                 continue;
             }
+            let provenance = crate::candidate_provenance::CandidateProvenance::entropy();
+            let enrich_provenance = |scan_state: &mut ScanState| {
+                scan_state
+                    .source_semantic_evidence(chunk, source_offset, &entropy_match.value)
+                    .map_or(provenance, |evidence| {
+                        provenance.with_source_semantics(evidence)
+                    })
+            };
             let build_raw_match = |scan_state: &mut ScanState, report_conf| {
                 // Clone metadata only for candidates that need an owned RawMatch.
                 let detector_id = Arc::clone(&metadata.0);
@@ -464,6 +467,7 @@ impl CompiledScanner {
                     policy.features,
                     crate::ml_scorer::MlCandidateChannel::Entropy,
                 );
+                let provenance = enrich_provenance(scan_state);
                 let pending_raw_match = crate::pipeline::build_pending_synthetic_raw_match(
                     (
                         Arc::clone(&metadata.0),
@@ -521,6 +525,7 @@ impl CompiledScanner {
             ) else {
                 continue;
             };
+            let provenance = enrich_provenance(scan_state);
             scan_state.push_match_lazy_with_provenance(
                 crate::types::RawMatchPriority {
                     confidence: Some(report_conf),

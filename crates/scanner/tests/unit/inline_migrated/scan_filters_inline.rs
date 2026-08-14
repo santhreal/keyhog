@@ -45,3 +45,61 @@ fn non_checksum_base64_value_still_recovers_padding() {
     );
     assert_eq!(end, token.len() + 2);
 }
+
+#[test]
+fn candidate_used_as_assignment_key_does_not_absorb_separator() {
+    let token = "sk-0ocqX7mxUDlWFHzlNiC0oKONoezJ9vAX";
+    let data = format!("{token}=\"{token}\"");
+    let credential = &data[..token.len()];
+    let (cred, end) = extend_known_prefix_credential(&data, credential, token.len());
+    assert_eq!(
+        cred, token,
+        "a quoted assignment delimiter is syntax, not token padding"
+    );
+    assert_eq!(end, token.len());
+}
+
+/// WHY: the quoted-assignment guard is provider-boundary evidence, not a
+/// global reinterpretation of detector captures that intentionally own `=`.
+#[test]
+fn ordinary_candidate_can_recover_equals_before_quoted_value() {
+    let token = "73405814";
+    let data = format!("{token}=\"{token}\"");
+    let credential = &data[..token.len()];
+    let (cred, end) = extend_known_prefix_credential(&data, credential, token.len());
+    assert_eq!(cred, "73405814=");
+    assert_eq!(end, token.len() + 1);
+}
+
+/// WHY: assignment syntax is proved by its immediate boundary; malformed or
+/// multiline values must not turn the separator into credential padding.
+#[test]
+fn assignment_key_guard_does_not_require_a_same_line_closing_quote() {
+    let token = "sk-0ocqX7mxUDlWFHzlNiC0oKONoezJ9vAX";
+    for suffix in [
+        "=\"unterminated",
+        "=\"first line\nsecond line\"",
+        "='unterminated",
+        "='first line\nsecond line'",
+    ] {
+        let data = format!("{token}{suffix}");
+        let credential = &data[..token.len()];
+        let (cred, end) = extend_known_prefix_credential(&data, credential, token.len());
+        assert_eq!(cred, token, "assignment suffix {suffix:?}");
+        assert_eq!(end, token.len(), "assignment suffix {suffix:?}");
+    }
+}
+
+/// WHY: a quote immediately before the candidate proves value position. In
+/// that position a following `=` is token padding even if another quote follows.
+#[test]
+fn quoted_provider_value_retains_real_base64_padding() {
+    let token = "sk-0ocqX7mxUDlWFHzlNiC0oKONoezJ9vAX";
+    for quote in ['"', '\''] {
+        let data = format!("{quote}{token}={quote}, {quote}other{quote}: {quote}value{quote}");
+        let credential = &data[1..1 + token.len()];
+        let (cred, end) = extend_known_prefix_credential(&data, credential, 1 + token.len());
+        assert_eq!(cred, format!("{token}="), "quote {quote:?}");
+        assert_eq!(end, 1 + token.len() + 1, "quote {quote:?}");
+    }
+}

@@ -577,6 +577,9 @@ struct SourceSemanticCacheKey {
 #[derive(Debug)]
 struct SourceSemanticCacheEntry {
     key: SourceSemanticCacheKey,
+    /// Retains the source allocation so its cache-key address cannot be reused
+    /// by a different bounded source while this entry is live.
+    _text_owner: SensitiveString,
     index: Option<crate::source_semantics::CandidateSourceIndex>,
 }
 
@@ -666,6 +669,7 @@ impl ScanState {
         {
             self.source_semantic_cache = Some(SourceSemanticCacheEntry {
                 key,
+                _text_owner: chunk.data.clone(),
                 index: crate::source_semantics::build_candidate_source_index(&chunk.data, path),
             });
         }
@@ -677,6 +681,10 @@ impl ScanState {
                 start: candidate_start,
                 end: candidate_end,
             })
+    }
+
+    pub(crate) fn has_source_semantic_cache(&self) -> bool {
+        self.source_semantic_cache.is_some()
     }
 
     /// Intern a credential string, returning a shared zeroizing allocation.
