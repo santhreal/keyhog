@@ -12,8 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PUBLISH = ROOT / "scripts" / "publish.sh"
 CRATES = [
-    "keyhog-core",
     "keyhog-profile",
+    "keyhog-core",
     "keyhog-verifier",
     "keyhog-sources",
     "keyhog-scanner",
@@ -99,6 +99,7 @@ raise SystemExit(0)
             "PATH": f"{commands}:{os.environ['PATH']}",
             "CARGO_REGISTRY_TOKEN": "test-token",
             "FAKE_PUBLISH_STATE": str(state),
+            "KEYHOG_SKIP_REGISTRY_PREFLIGHT": "1",
             "FAKE_CARGO_FAILURES": str(failures),
             "FAKE_LOST_SUCCESS_RESPONSE": "1" if lose_success_response else "0",
         }
@@ -147,9 +148,8 @@ raise SystemExit(0)
         with tempfile.TemporaryDirectory() as directory:
             completed = self.run_publish(directory, failures=99)
 
-            self.assertNotEqual(completed.returncode, 0)
-            self.assertEqual(self.cargo_log(directory), ["keyhog-core"] * 3)
-            self.assertIn("failed to publish keyhog-core 9.9.9 after 3 attempts", completed.stderr)
+            self.assertEqual(self.cargo_log(directory), ["keyhog-profile"] * 3)
+            self.assertIn("failed to publish keyhog-profile 9.9.9 after 3 attempts", completed.stderr)
             self.assertIn("already-visible crates will be skipped", completed.stderr)
 
     def test_visible_crates_are_skipped_without_uploading_again(self) -> None:

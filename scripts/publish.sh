@@ -22,6 +22,10 @@ PY
 fi
 CRATES=(keyhog-profile keyhog-core keyhog-verifier keyhog-sources keyhog-scanner keyhog)
 
+if [[ "${KEYHOG_SKIP_REGISTRY_PREFLIGHT:-}" != "1" ]]; then
+    python3 -B scripts/publish_registry_preflight.py
+fi
+
 crate_visible() {
     python3 -B - "$1" "$VERSION" <<'PY'
 import sys

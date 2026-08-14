@@ -65,7 +65,8 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
         # Old tags predate the notes renderer, so publish overlays it like the
         # publisher script instead of trusting the tagged tree to carry it.
         self.assertIn(
-            'git checkout "origin/${default_branch}" -- scripts/publish.sh scripts/release_notes.py',
+            'git checkout "origin/${default_branch}" -- scripts/publish.sh '
+            "scripts/publish_registry_preflight.py scripts/release_notes.py",
             RELEASE,
         )
 
@@ -116,6 +117,17 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
         for obsolete in ("signature", "sbom", "provenance", "license_gate"):
             with self.subTest(obsolete=obsolete):
                 self.assertNotIn(obsolete, PUBLISH.casefold())
+
+    def test_publisher_preflights_external_registry_dependencies_before_upload(self) -> None:
+        """No KeyHog crate may publish before every packaged Git dependency exists."""
+        preflight = PUBLISH.index("python3 -B scripts/publish_registry_preflight.py")
+        upload = PUBLISH.index("cargo publish")
+        self.assertLess(preflight, upload)
+        self.assertIn(
+            "scripts/publish_registry_preflight.py",
+            RELEASE,
+            "tag publication must overlay the current registry preflight",
+        )
 
     def test_publisher_prefers_oidc_trusted_identity_with_token_fallback(self) -> None:
         """Publishing must try OIDC first; repo token is only the fallback while TP is rebuilt."""
