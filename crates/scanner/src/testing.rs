@@ -672,6 +672,21 @@ pub struct SourceSemanticEvidenceForTest {
     pub key_path_spans: Vec<(usize, usize)>,
 }
 
+fn source_semantic_evidence_for_test(
+    evidence: crate::source_semantics::SourceSemanticEvidence,
+) -> SourceSemanticEvidenceForTest {
+    SourceSemanticEvidenceForTest {
+        role: evidence.role.as_str(),
+        confidence: evidence.confidence.as_str(),
+        candidate_span: (evidence.candidate_span.start, evidence.candidate_span.end),
+        value_span: (evidence.value_span.start, evidence.value_span.end),
+        key_path_spans: evidence
+            .key_path()
+            .map(|span| (span.start, span.end))
+            .collect(),
+    }
+}
+
 /// Classify one candidate through the production structured-source semantic
 /// extractor without exposing candidate bytes in the evidence record.
 pub fn classify_structured_source_candidate_for_test(
@@ -686,16 +701,7 @@ pub fn classify_structured_source_candidate_for_test(
         candidate_start,
         candidate_end,
     )?;
-    Some(SourceSemanticEvidenceForTest {
-        role: evidence.role.as_str(),
-        confidence: evidence.confidence.as_str(),
-        candidate_span: (evidence.candidate_span.start, evidence.candidate_span.end),
-        value_span: (evidence.value_span.start, evidence.value_span.end),
-        key_path_spans: evidence
-            .key_path()
-            .map(|span| (span.start, span.end))
-            .collect(),
-    })
+    Some(source_semantic_evidence_for_test(evidence))
 }
 
 /// Return the production per-candidate semantic parser byte budget.
@@ -717,18 +723,34 @@ pub fn classify_code_source_candidate_for_test(
     let evidence = crate::code_semantics::build_code_source_index(text, path)?.classify(
         crate::source_semantics::SourceSpan::new(candidate_start, candidate_end),
     )?;
-    Some(SourceSemanticEvidenceForTest {
-        role: evidence.role.as_str(),
-        confidence: evidence.confidence.as_str(),
-        candidate_span: (evidence.candidate_span.start, evidence.candidate_span.end),
-        value_span: (evidence.value_span.start, evidence.value_span.end),
-        key_path_spans: Vec::new(),
-    })
+    Some(source_semantic_evidence_for_test(evidence))
 }
 
 /// Return the production source-code semantic parser byte budget.
 pub fn code_source_semantic_window_bytes_for_test() -> usize {
     crate::code_semantics::MAX_CODE_SOURCE_BYTES
+}
+
+/// Classify one exact candidate through the production source-format dispatcher.
+pub fn classify_candidate_source_semantics_for_test(
+    text: &str,
+    path: &str,
+    candidate_start: usize,
+    candidate_end: usize,
+) -> Option<SourceSemanticEvidenceForTest> {
+    if text.get(candidate_start..candidate_end).is_none() || candidate_start >= candidate_end {
+        return None;
+    }
+    let evidence =
+        crate::source_semantics::build_candidate_source_index(text, Some(path))?.classify(
+            crate::source_semantics::SourceSpan::new(candidate_start, candidate_end),
+        )?;
+    Some(source_semantic_evidence_for_test(evidence))
+}
+
+/// Return the production documentation and shell semantic parser byte budget.
+pub fn document_source_semantic_window_bytes_for_test() -> usize {
+    crate::documentation_semantics::MAX_DOCUMENT_SOURCE_BYTES
 }
 
 /// Secret-safe source-role sidecar retained on one emitted candidate.
@@ -749,6 +771,25 @@ pub fn candidate_source_roles_for_test(
     chunk: &keyhog_core::Chunk,
 ) -> Result<Vec<CandidateSourceRoleForTest>, String> {
     let scanner = crate::CompiledScanner::compile(detectors).map_err(|error| error.to_string())?;
+    collect_candidate_source_roles(&scanner, chunk)
+}
+
+/// Run the production phase-2 emission path with an explicit scanner config.
+pub fn candidate_source_roles_with_config_for_test(
+    detectors: Vec<keyhog_core::DetectorSpec>,
+    chunk: &keyhog_core::Chunk,
+    config: crate::ScannerConfig,
+) -> Result<Vec<CandidateSourceRoleForTest>, String> {
+    let scanner = crate::CompiledScanner::compile(detectors)
+        .map_err(|error| error.to_string())?
+        .with_config(config);
+    collect_candidate_source_roles(&scanner, chunk)
+}
+
+fn collect_candidate_source_roles(
+    scanner: &crate::CompiledScanner,
+    chunk: &keyhog_core::Chunk,
+) -> Result<Vec<CandidateSourceRoleForTest>, String> {
     Ok(scanner
         .debug_scan_phase2_with_provenance(chunk)
         .map_err(|error| error.to_string())?

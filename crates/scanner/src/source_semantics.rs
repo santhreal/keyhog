@@ -4,9 +4,64 @@
 //! candidate. It never walks a repository or parses a file before retrieval.
 
 use keyhog_core::SemanticSourceRole;
+use std::sync::LazyLock;
 
 pub(crate) const MAX_SEMANTIC_WINDOW_BYTES: usize = 64 * 1024;
 const MAX_KEY_PATH_SEGMENTS: usize = 12;
+
+const STRUCTURED_ROLE_MARKERS_TOML: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/rules/structured-source-role-markers.toml"
+));
+
+#[derive(serde::Deserialize)]
+struct StructuredRoleMarkerFile {
+    schema_version: u32,
+    fields: StructuredRoleFields,
+    paths: StructuredRolePaths,
+}
+
+#[derive(serde::Deserialize)]
+struct StructuredRoleFields {
+    regex_definitions: Vec<String>,
+    test_fixtures: Vec<String>,
+    prose: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct StructuredRolePaths {
+    rule_components: Vec<String>,
+}
+
+static STRUCTURED_ROLE_MARKERS: LazyLock<StructuredRoleMarkerFile> = LazyLock::new(|| {
+    let parsed: StructuredRoleMarkerFile = match toml::from_str(STRUCTURED_ROLE_MARKERS_TOML) {
+        Ok(parsed) => parsed,
+        Err(error) => panic!(
+            "invalid rules/structured-source-role-markers.toml: {error}. Fix the bundled role markers; refusing to classify structured source roles without them."
+        ),
+    };
+    if parsed.schema_version != 1 {
+        panic!(
+            "unsupported rules/structured-source-role-markers.toml schema {}; expected 1",
+            parsed.schema_version
+        );
+    }
+    let sets = [
+        &parsed.fields.regex_definitions,
+        &parsed.fields.test_fixtures,
+        &parsed.fields.prose,
+        &parsed.paths.rule_components,
+    ];
+    if sets
+        .iter()
+        .any(|values| values.is_empty() || values.iter().any(String::is_empty))
+    {
+        panic!(
+            "rules/structured-source-role-markers.toml requires non-empty marker sets and spellings"
+        );
+    }
+    parsed
+});
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -124,12 +179,60 @@ impl StructuredSourceIndex {
             .copied()
             .find_map(|value| value.for_candidate(candidate_span))
     }
+
+    fn apply_field_roles(&mut self, text: &str, path: &str) {
+        let rule_path = path.split(['/', '\\', '!']).any(|component| {
+            STRUCTURED_ROLE_MARKERS
+                .paths
+                .rule_components
+                .iter()
+                .any(|marker| component.eq_ignore_ascii_case(marker))
+        });
+        for value in &mut self.values {
+            let Some(key_index) = usize::from(value.key_path_len).checked_sub(1) else {
+                continue;
+            };
+            let Some(key_span) = value.key_path.get(key_index) else {
+                continue;
+            };
+            let Some(key) = text.get(key_span.start..key_span.end) else {
+                continue;
+            };
+            let key = key.trim_matches(['\'', '"']);
+            if rule_path
+                && STRUCTURED_ROLE_MARKERS
+                    .fields
+                    .test_fixtures
+                    .iter()
+                    .any(|marker| key.eq_ignore_ascii_case(marker))
+            {
+                value.role = SemanticSourceRole::TestFixture;
+            } else if rule_path
+                && STRUCTURED_ROLE_MARKERS
+                    .fields
+                    .regex_definitions
+                    .iter()
+                    .any(|marker| key.eq_ignore_ascii_case(marker))
+            {
+                value.role = SemanticSourceRole::RegexRuleDefinition;
+            } else if rule_path
+                && STRUCTURED_ROLE_MARKERS
+                    .fields
+                    .prose
+                    .iter()
+                    .any(|marker| key.eq_ignore_ascii_case(marker))
+            {
+                value.role = SemanticSourceRole::ProseDocumentation;
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
 pub(crate) enum CandidateSourceIndex {
     Structured(StructuredSourceIndex),
     Code(crate::code_semantics::CodeSourceIndex),
+    Document(crate::documentation_semantics::DocumentSourceIndex),
 }
 
 impl CandidateSourceIndex {
@@ -137,6 +240,7 @@ impl CandidateSourceIndex {
         match self {
             Self::Structured(index) => index.classify(candidate_span),
             Self::Code(index) => index.classify(candidate_span),
+            Self::Document(index) => index.classify(candidate_span),
         }
     }
 }
@@ -233,14 +337,18 @@ pub(crate) fn build_structured_source_index(
     if text.len() > MAX_SEMANTIC_WINDOW_BYTES {
         return None;
     }
-    match syntax_for_path(path?)? {
-        StructuredSyntax::Json => index_json(text, 0),
-        StructuredSyntax::JsonLines => index_json_lines(text),
-        StructuredSyntax::Toml => index_toml(text),
-        StructuredSyntax::Yaml => index_yaml(text),
-        StructuredSyntax::Dotenv => index_dotenv(text),
-        StructuredSyntax::Ini => index_ini(text),
-    }
+    let path = path?;
+    let syntax = syntax_for_path(path)?;
+    let mut index = match syntax {
+        StructuredSyntax::Json => index_json(text, 0)?,
+        StructuredSyntax::JsonLines => index_json_lines(text)?,
+        StructuredSyntax::Toml => index_toml(text)?,
+        StructuredSyntax::Yaml => index_yaml(text)?,
+        StructuredSyntax::Dotenv => index_dotenv(text)?,
+        StructuredSyntax::Ini => index_ini(text)?,
+    };
+    index.apply_field_roles(text, path);
+    Some(index)
 }
 
 pub(crate) fn build_candidate_source_index(
@@ -250,6 +358,10 @@ pub(crate) fn build_candidate_source_index(
     let path = path?;
     if syntax_for_path(path).is_some() {
         build_structured_source_index(text, Some(path)).map(CandidateSourceIndex::Structured)
+    } else if let Some(index) =
+        crate::documentation_semantics::build_document_source_index(text, path)
+    {
+        Some(CandidateSourceIndex::Document(index))
     } else {
         crate::code_semantics::build_code_source_index(text, path).map(CandidateSourceIndex::Code)
     }
