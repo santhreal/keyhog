@@ -790,7 +790,7 @@ where
         || decoded.backend() != backend.pascal_name()
     {
         return Err(ExecutionPackError::Incompatible(format!(
-            "compiled route {name} version or backend is incompatible"
+            "compiled route {name} version or backend is incompatible; rebuild installed execution packs with this binary"
         )));
     }
     if !trust.skip_canonical_reencode() {

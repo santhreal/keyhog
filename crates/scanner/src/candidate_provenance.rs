@@ -4,7 +4,8 @@
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum CandidateChannel {
-    /// A compiled detector regex, including generated routing variants.
+    /// A compiled detector regex, including regexes owned by generic detectors
+    /// and generated routing variants. This is not proof of vendor attribution.
     NamedPattern,
     /// The generic credential-key assignment bridge.
     GenericAssignment,
@@ -31,12 +32,14 @@ pub(crate) struct PatternRef {
 /// size of `CandidateChannel + Option<PatternRef>`. This sidecar is retained for
 /// every capped finding and pending ML row, so its layout is a scan-memory
 /// contract rather than incidental structure padding.
+/// All fields are private. Source and pack compilation reject the reserved
+/// sentinel ordinals, so constructors preserve this invariant in release builds.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct CandidateProvenance {
     detector_index: usize,
     pattern_index: u32,
-    pub(crate) channel: CandidateChannel,
+    channel: CandidateChannel,
 }
 
 impl CandidateProvenance {
@@ -70,6 +73,10 @@ impl CandidateProvenance {
             pattern_index: Self::NO_PATTERN,
             channel,
         }
+    }
+
+    pub(crate) const fn channel(self) -> CandidateChannel {
+        self.channel
     }
 
     pub(crate) const fn pattern(self) -> Option<PatternRef> {

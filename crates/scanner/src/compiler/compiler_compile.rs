@@ -459,11 +459,13 @@ pub(crate) fn compile_pattern(
         }
     }
     drop(validated);
-    let pattern_index =
-        u32::try_from(pattern_index).map_err(|_| ScanError::DetectorPatternPolicy {
+    let pattern_index = u32::try_from(pattern_index)
+        .ok()
+        .filter(|index| *index != u32::MAX)
+        .ok_or_else(|| ScanError::DetectorPatternPolicy {
             detector_id: detector_id.to_string(),
             index: pattern_index,
-            reason: "pattern index exceeds the u32 provenance contract".to_string(),
+            reason: "pattern index exceeds the provenance ordinal contract".to_string(),
         })?;
     Ok(CompiledPattern {
         detector_index,

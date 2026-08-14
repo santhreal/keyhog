@@ -115,11 +115,12 @@ fn packed_matcher_graph_rejects_version_backend_detector_count_and_provenance_co
         b"\"version\":6",
         b"\"version\":5",
     );
-    assert!(bad_version
+    let stale_error = bad_version
         .validate_canonical()
         .expect_err("unknown version must fail")
-        .to_string()
-        .contains("version or backend"));
+        .to_string();
+    assert!(stale_error.contains("version or backend"));
+    assert!(stale_error.contains("rebuild installed execution packs"));
 
     let mut bad_backend = sections(&detectors);
     replace_once(

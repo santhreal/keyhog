@@ -7,7 +7,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Changed
 
 - Merge remote-tracking branch 'origin/main'.
-- Scanner candidates retain their producer channel and exact canonical pattern ordinal through ML scoring and final adjudication without changing public `RawMatch` output, ordering, deduplication, or caps. Matcher section schema version 6 persists the ordinal and rejects stale or out-of-range provenance during hydration.
+- Scanner candidates retain their producer channel and exact canonical pattern ordinal through ML scoring and final adjudication without changing public `RawMatch` output, ordering, deduplication, or caps. Matcher section schema version 6 persists the ordinal and rejects stale or out-of-range provenance during hydration. Recompile installed execution packs after upgrading; version 5 matcher sections fail closed with a rebuild diagnostic.
 
 ## [0.5.74] - 2026-08-14
 

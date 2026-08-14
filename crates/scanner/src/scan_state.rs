@@ -537,7 +537,7 @@ impl AttributedRawMatch {
         debug_assert_eq!(
             provenance.pattern().is_some(),
             matches!(
-                provenance.channel,
+                provenance.channel(),
                 crate::candidate_provenance::CandidateChannel::NamedPattern
             )
         );
@@ -979,6 +979,7 @@ impl ScanState {
     }
 
     /// Drain all matches into the unchanged public finding vector.
+    /// The ABI projection moves owned handles; it does not clone credential bytes.
     pub(crate) fn into_matches(self) -> Vec<keyhog_core::RawMatch> {
         self.into_attributed_matches()
             .into_iter()
@@ -988,10 +989,12 @@ impl ScanState {
 
     /// Drain matches while retaining secret-safe producer provenance.
     pub(crate) fn into_attributed_matches(self) -> Vec<AttributedRawMatch> {
-        let mut matches: Vec<_> = self.matches.into_iter().collect();
+        let mut matches = self.matches.into_vec();
         if matches.len() <= 1 {
             return matches;
         }
+        // Identity-first ordering makes equal identities adjacent; the best-first
+        // tiebreak retains the same winner regardless of unstable sort order.
         matches.sort_unstable_by(|a, b| raw_match_identity_cmp(&**a, &**b).then_with(|| a.cmp(b)));
         matches.dedup_by(|a, b| same_raw_match_identity(&**a, &**b));
         matches.sort_unstable();

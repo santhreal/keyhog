@@ -257,7 +257,7 @@ fn phase2_named_match_retains_exact_pattern_identity() {
         .iter()
         .find(|finding| finding.detector_id.as_ref() == "provenance-fixture")
         .expect("second canonical pattern must produce a finding");
-    assert_eq!(finding.provenance.channel, CandidateChannel::NamedPattern);
+    assert_eq!(finding.provenance.channel(), CandidateChannel::NamedPattern);
     assert_eq!(
         finding
             .provenance
