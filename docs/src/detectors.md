@@ -238,6 +238,14 @@ Values are `structured-assignment-value`, `environment-assignment-value`,
 `unknown`, but it is invalid in this declaration. Omit the field when no
 source-role restriction is declared.
 
+Structured source-role extraction runs only for emitted candidates. JSON,
+JSONL, TOML, YAML, dotenv, and INI inputs use at most a 64 KiB candidate
+window and retain exact candidate/value byte spans plus bounded key-path spans.
+Malformed or truncated candidate syntax and unsupported, over-nested, or
+over-budget input yields `unknown` with abstaining parser confidence. Parser
+failure never suppresses a finding. These roles are retained as adjudication
+evidence without changing public `RawMatch` output.
+
 `detector.required_evidence` is a list containing `checksum`,
 `required-companion`, `private-key-companion`, `structural-grammar`, or
 `live-verification`. Omitted semantic fields carry no proof and preserve the

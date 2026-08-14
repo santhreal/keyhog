@@ -6,6 +6,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Emitted candidates in JSON, JSONL, TOML, YAML, dotenv, and INI configuration receive candidate-bounded source-role classification with exact value/candidate spans and borrowed key-path spans. The compact role and parser confidence survive adjudication in the 16-byte sidecar. Malformed or truncated candidate syntax and unsupported, over-nested, or over-budget input abstain without suppressing the finding, and public `RawMatch` output is unchanged.
 - Detector-owned grammars keep MongoDB Atlas key pairs and command-line password arguments across shell, Dockerfile, PowerShell, CI, and programmatic literal contexts while rejecting Atlas identifiers, nested password-option names, truncated JWT fixtures, OpenAI and Helicone sibling shapes, and scanner-rule syntax. These decisions do not use repository or path exclusions.
 - Detector TOML schema 5 binds synthetic positives and named hard negatives to exact pattern ordinals and rejects those fields under older manifests. A deterministic regex-HIR generator exercises every shipped pattern. Schema-5 enforcement-capable semantic policies require direct positive, named hard-negative, and generated sibling-prefix evidence; schema-4 policies retain their prior validity. The schema identity change rejects prior detector-corpus caches, execution packs, and autoroute decisions.
 - Hosted Action release proofs now default to the workspace's published 0.5.75 scanner instead of the obsolete 0.5.70 crate.

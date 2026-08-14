@@ -475,6 +475,15 @@ impl CompiledScanner {
                 let line_number = absolute_line(chunk.metadata.base_line, mapped_line);
                 let provenance =
                     crate::candidate_provenance::CandidateProvenance::generic_assignment();
+                let provenance = crate::source_semantics::classify_exact_structured_candidate(
+                    &chunk.data,
+                    chunk.metadata.path.as_deref(),
+                    source_offset,
+                    value,
+                )
+                .map_or(provenance, |evidence| {
+                    provenance.with_source_semantics(evidence)
+                });
                 let build_raw = |scan_state: &mut ScanState, confidence| {
                     crate::pipeline::build_synthetic_raw_match(
                         (

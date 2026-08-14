@@ -657,6 +657,71 @@ pub fn structured_max_traversal_depth_for_test() -> usize {
     crate::structured::parsers::MAX_STRUCTURED_TRAVERSAL_DEPTH
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructuredSourceEvidenceForTest {
+    pub role: &'static str,
+    pub confidence: &'static str,
+    pub candidate_span: (usize, usize),
+    pub value_span: (usize, usize),
+    pub key_path_spans: Vec<(usize, usize)>,
+}
+
+/// Classify one candidate through the production structured-source semantic
+/// extractor without exposing candidate bytes in the evidence record.
+pub fn classify_structured_source_candidate_for_test(
+    text: &str,
+    path: &str,
+    candidate_start: usize,
+    candidate_end: usize,
+) -> Option<StructuredSourceEvidenceForTest> {
+    let evidence = crate::source_semantics::classify_structured_candidate(
+        text,
+        Some(path),
+        candidate_start,
+        candidate_end,
+    )?;
+    Some(StructuredSourceEvidenceForTest {
+        role: evidence.role.as_str(),
+        confidence: evidence.confidence.as_str(),
+        candidate_span: (evidence.candidate_span.start, evidence.candidate_span.end),
+        value_span: (evidence.value_span.start, evidence.value_span.end),
+        key_path_spans: evidence
+            .key_path()
+            .map(|span| (span.start, span.end))
+            .collect(),
+    })
+}
+
+pub fn structured_source_semantic_window_bytes_for_test() -> usize {
+    crate::source_semantics::MAX_SEMANTIC_WINDOW_BYTES
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CandidateSourceRoleForTest {
+    pub detector_id: String,
+    pub role: &'static str,
+    pub confidence: &'static str,
+}
+
+/// Run the production phase-2 emission path and return only secret-safe source
+/// role evidence retained on each attributed candidate.
+pub fn candidate_source_roles_for_test(
+    detectors: Vec<keyhog_core::DetectorSpec>,
+    chunk: &keyhog_core::Chunk,
+) -> Result<Vec<CandidateSourceRoleForTest>, String> {
+    let scanner = crate::CompiledScanner::compile(detectors).map_err(|error| error.to_string())?;
+    Ok(scanner
+        .debug_scan_phase2_with_provenance(chunk)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .map(|matched| CandidateSourceRoleForTest {
+            detector_id: matched.detector_id.to_string(),
+            role: matched.provenance.source_role().as_str(),
+            confidence: matched.provenance.parser_confidence().as_str(),
+        })
+        .collect())
+}
+
 /// (multiline::config) the concatenation-marker predicates, exposed to pin the
 /// marker recognition + both-scan indicator routing externally.
 #[cfg(feature = "multiline")]
@@ -3869,12 +3934,11 @@ impl crate::engine::CompiledScanner {
     }
 }
 
-#[cfg(test)]
 impl crate::engine::CompiledScanner {
     pub(crate) fn debug_scan_phase2_with_provenance(
         &self,
         chunk: &keyhog_core::Chunk,
-    ) -> Vec<crate::scan_state::AttributedRawMatch> {
+    ) -> Result<Vec<crate::scan_state::AttributedRawMatch>, crate::error::ScanError> {
         let prepared = self.prepare_chunk(chunk);
         let line_index = prepared.line_index();
         let mut scan_state =
@@ -3888,9 +3952,8 @@ impl crate::engine::CompiledScanner {
             None,
             None,
             self.default_execution_route(),
-        )
-        .expect("phase-2 provenance diagnostic scan");
-        scan_state.into_attributed_matches()
+        )?;
+        Ok(scan_state.into_attributed_matches())
     }
 }
 

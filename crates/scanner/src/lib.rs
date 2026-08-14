@@ -187,6 +187,8 @@ pub(crate) mod pipeline;
 /// Prefix trie for efficient keyword propagation.
 pub(crate) mod prefix_trie;
 pub(crate) mod probabilistic_gate;
+/// Candidate-bounded typed source-role evidence.
+pub(crate) mod source_semantics;
 pub(crate) mod structured;
 pub(crate) mod suppression;
 /// Per-scan telemetry: always-on counters + opt-in `--dogfood` events.

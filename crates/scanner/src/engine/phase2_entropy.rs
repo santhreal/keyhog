@@ -252,7 +252,6 @@ impl CompiledScanner {
                 continue;
             };
             let detector_plan = self.detector_plans.get(policy_detector_index);
-            let provenance = crate::candidate_provenance::CandidateProvenance::entropy();
             let match_confidence = self.detector_plans.match_confidence(policy_detector_index);
             let execution_policy = &detector_plan.execution;
             let Some(compiled_policy) = self.detector_plans.entropy(policy_detector_index) else {
@@ -313,6 +312,16 @@ impl CompiledScanner {
                 entropy_match.offset,
                 &entropy_match.value,
             );
+            let provenance = crate::candidate_provenance::CandidateProvenance::entropy();
+            let provenance = crate::source_semantics::classify_exact_structured_candidate(
+                &chunk.data,
+                chunk.metadata.path.as_deref(),
+                source_offset,
+                &entropy_match.value,
+            )
+            .map_or(provenance, |evidence| {
+                provenance.with_source_semantics(evidence)
+            });
             let Some(offset) = absolute_offset(chunk.metadata.base_offset, source_offset) else {
                 continue;
             };

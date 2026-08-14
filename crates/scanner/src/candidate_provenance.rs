@@ -26,11 +26,12 @@ pub(crate) struct PatternRef {
     pub(crate) pattern_index: u32,
 }
 
-/// Minimal provenance carried on the hot path before richer semantic evidence is added.
+/// Compact provenance carried from candidate production through adjudication.
 ///
-/// The flat sentinel representation is 16 bytes on 64-bit targets, half the
-/// size of `CandidateChannel + Option<PatternRef>`. This sidecar is retained for
-/// every capped finding and pending ML row, so its layout is a scan-memory
+/// The flat representation remains 16 bytes on 64-bit targets. Pattern
+/// identity, producer channel, typed source role, and parser confidence occupy
+/// the padding the original sidecar already paid for. This sidecar is retained
+/// for every capped finding and pending ML row, so its layout is a scan-memory
 /// contract rather than incidental structure padding.
 /// All fields are private. Source and pack compilation reject the reserved
 /// sentinel ordinals, so constructors preserve this invariant in release builds.
@@ -40,6 +41,8 @@ pub(crate) struct CandidateProvenance {
     detector_index: usize,
     pattern_index: u32,
     channel: CandidateChannel,
+    source_role: keyhog_core::SemanticSourceRole,
+    parser_confidence: crate::source_semantics::SemanticParserConfidence,
 }
 
 impl CandidateProvenance {
@@ -51,7 +54,18 @@ impl CandidateProvenance {
             detector_index,
             pattern_index,
             channel: CandidateChannel::NamedPattern,
+            source_role: keyhog_core::SemanticSourceRole::Unknown,
+            parser_confidence: crate::source_semantics::SemanticParserConfidence::Abstained,
         }
+    }
+
+    pub(crate) const fn with_source_semantics(
+        mut self,
+        evidence: crate::source_semantics::StructuredSourceEvidence,
+    ) -> Self {
+        self.source_role = evidence.role;
+        self.parser_confidence = evidence.confidence;
+        self
     }
 
     pub(crate) const fn generic_assignment() -> Self {
@@ -72,11 +86,23 @@ impl CandidateProvenance {
             detector_index: Self::NO_DETECTOR,
             pattern_index: Self::NO_PATTERN,
             channel,
+            source_role: keyhog_core::SemanticSourceRole::Unknown,
+            parser_confidence: crate::source_semantics::SemanticParserConfidence::Abstained,
         }
     }
 
     pub(crate) const fn channel(self) -> CandidateChannel {
         self.channel
+    }
+
+    pub(crate) const fn source_role(self) -> keyhog_core::SemanticSourceRole {
+        self.source_role
+    }
+
+    pub(crate) const fn parser_confidence(
+        self,
+    ) -> crate::source_semantics::SemanticParserConfidence {
+        self.parser_confidence
     }
 
     pub(crate) const fn pattern(self) -> Option<PatternRef> {
@@ -91,7 +117,7 @@ impl CandidateProvenance {
     }
 
     pub(crate) const fn is_well_formed(self) -> bool {
-        match self.channel {
+        let identity_is_valid = match self.channel {
             CandidateChannel::NamedPattern => {
                 self.detector_index != Self::NO_DETECTOR && self.pattern_index != Self::NO_PATTERN
             }
@@ -102,6 +128,15 @@ impl CandidateProvenance {
             CandidateChannel::Entropy => {
                 self.detector_index == Self::NO_DETECTOR && self.pattern_index == Self::NO_PATTERN
             }
-        }
+        };
+        let semantics_are_valid = match self.parser_confidence {
+            crate::source_semantics::SemanticParserConfidence::Abstained => {
+                matches!(self.source_role, keyhog_core::SemanticSourceRole::Unknown)
+            }
+            crate::source_semantics::SemanticParserConfidence::Parsed => {
+                !matches!(self.source_role, keyhog_core::SemanticSourceRole::Unknown)
+            }
+        };
+        identity_is_valid && semantics_are_valid
     }
 }
