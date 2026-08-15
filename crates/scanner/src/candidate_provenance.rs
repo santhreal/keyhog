@@ -61,7 +61,7 @@ impl CandidateProvenance {
 
     pub(crate) const fn with_source_semantics(
         mut self,
-        evidence: crate::source_semantics::StructuredSourceEvidence,
+        evidence: crate::source_semantics::SourceSemanticEvidence,
     ) -> Self {
         self.source_role = evidence.role;
         self.parser_confidence = evidence.confidence;

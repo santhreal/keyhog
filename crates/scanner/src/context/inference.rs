@@ -178,7 +178,7 @@ fn infer_context_from_lines(
     infer_default_context(trimmed)
 }
 
-fn is_test_file(path: &str) -> bool {
+pub(crate) fn is_test_file(path: &str) -> bool {
     let rules = test_path_rules();
     let filename = crate::platform_compat::path_basename(path);
     let stem = filename.split('.').next().unwrap_or(filename); // LAW10: split yields >=1 element; unwrap_or is the never-taken total default, recall-safe

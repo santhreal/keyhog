@@ -312,6 +312,7 @@ impl CompiledScanner {
                 entropy_match.offset,
                 &entropy_match.value,
             );
+
             let Some(offset) = absolute_offset(chunk.metadata.base_offset, source_offset) else {
                 continue;
             };
@@ -391,7 +392,7 @@ impl CompiledScanner {
             let provenance = crate::candidate_provenance::CandidateProvenance::entropy();
             let enrich_provenance = |scan_state: &mut ScanState| {
                 scan_state
-                    .structured_source_evidence(chunk, source_offset, &entropy_match.value)
+                    .source_semantic_evidence(chunk, source_offset, &entropy_match.value)
                     .map_or(provenance, |evidence| {
                         provenance.with_source_semantics(evidence)
                     })

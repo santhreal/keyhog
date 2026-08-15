@@ -427,6 +427,7 @@ impl CompiledScanner {
             entry.detector_index,
             entry.pattern_index,
         );
+
         match policy_result {
             MlScoreResult::Final(policy_conf) => {
                 let Some(report_conf) = crate::adjudicate::finalize_report_candidate(
@@ -455,7 +456,7 @@ impl CompiledScanner {
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
                 let provenance = scan_state
-                    .structured_source_evidence(chunk, source_offset, credential)
+                    .source_semantic_evidence(chunk, source_offset, credential)
                     .map_or(provenance, |evidence| {
                         provenance.with_source_semantics(evidence)
                     });
@@ -502,7 +503,7 @@ impl CompiledScanner {
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
                 let provenance = scan_state
-                    .structured_source_evidence(chunk, source_offset, credential)
+                    .source_semantic_evidence(chunk, source_offset, credential)
                     .map_or(provenance, |evidence| {
                         provenance.with_source_semantics(evidence)
                     });

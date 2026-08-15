@@ -81,6 +81,8 @@ pub mod aws;
 pub(crate) mod candidate_provenance;
 /// Service-specific credential checksum validation (GitHub, npm, Slack, etc.).
 pub mod checksum;
+/// Candidate-bounded source-code semantic roles.
+pub(crate) mod code_semantics;
 /// Compiled scanner construction and lifecycle implementation.
 mod compiled_scanner;
 /// Detector compilation into high-performance matching structures.
