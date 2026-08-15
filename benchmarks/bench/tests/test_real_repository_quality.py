@@ -8,6 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+import bench.real_repository_quality as quality
 
 from bench.real_repository_quality import (
     IDENTITY_SCHEMA,
@@ -329,3 +330,28 @@ def test_malformed_identity_receipt_rejects_extra_paths_and_bad_hashes():
     bad_hash = {**_IDENTITY, "executable_sha256": "A" * 64}
     with pytest.raises(QualityGateError, match="lowercase SHA-256"):
         validate_binary_identity(bad_hash, bad_hash)
+
+
+def test_quality_writer_creates_documented_results_parent(tmp_path: Path):
+    output = tmp_path / "results" / "real-repository-quality.json"
+
+    quality._write_json(output, {"schema": "quality-test-v1"})
+
+    assert json.loads(output.read_text(encoding="utf-8")) == {
+        "schema": "quality-test-v1"
+    }
+
+
+def test_binary_identity_preserves_actionable_freshness_failure(tmp_path: Path, monkeypatch):
+    binary = tmp_path / "keyhog"
+    binary.write_bytes(b"source-built-candidate")
+    monkeypatch.setattr(
+        quality,
+        "assert_keyhog_binary_current",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            quality.KeyhogVersionError("tracked workspace has uncommitted changes")
+        ),
+    )
+
+    with pytest.raises(QualityGateError, match="tracked workspace has uncommitted changes"):
+        quality.capture_binary_identity(binary, repo_root=tmp_path)

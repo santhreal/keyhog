@@ -402,8 +402,14 @@ def capture_binary_identity(
             "source_version": workspace_keyhog_version(root),
             "detector_set_digest": workspace_detector_digest(root),
         }
-    except (OSError, KeyhogVersionError) as exc:
-        raise QualityGateError("candidate binary cannot prove current-source identity") from exc
+    except KeyhogVersionError as exc:
+        raise QualityGateError(
+            f"candidate binary cannot prove current-source identity: {exc}"
+        ) from exc
+    except OSError as exc:
+        raise QualityGateError(
+            f"candidate binary cannot prove current-source identity: {exc}"
+        ) from exc
 
 
 def validate_binary_identity(value: object, current: Mapping[str, str]) -> dict[str, str]:
@@ -533,9 +539,13 @@ def evaluate_quality(
 
 def _write_json(path: pathlib.Path, value: object) -> None:
     try:
-        path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(value, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     except OSError as exc:
-        raise QualityGateError("quality output cannot be written") from exc
+        raise QualityGateError(f"quality output cannot be written: {exc}") from exc
 
 
 def _parser() -> argparse.ArgumentParser:
