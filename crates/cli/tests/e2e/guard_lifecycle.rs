@@ -84,11 +84,11 @@ fn guard_lifecycle_add_status_list_remove() {
         String::from_utf8_lossy(&list.stdout),
         String::from_utf8_lossy(&list.stderr)
     );
-    let list_err = String::from_utf8_lossy(&list.stderr);
+    let list_out = String::from_utf8_lossy(&list.stdout);
     assert!(
-        list_err.contains(root_arg),
-        "guard list should contain the root path in stderr: got: {}",
-        list_err
+        list_out.contains(root_arg),
+        "guard list should contain the root path in stdout: got: {}",
+        list_out
     );
 
     // 4. Remove the root.
@@ -208,5 +208,55 @@ fn guard_remove_nonexistent_fails() {
     assert!(
         !remove.status.success(),
         "guard remove on nonexistent root should fail"
+    );
+}
+#[cfg(unix)]
+#[test]
+fn guard_reconciliation_does_not_block_review_only_root() {
+    let daemon = DaemonGuard::start_cpu_embedded();
+    let root = tempfile::tempdir().expect("guard root tempdir");
+    let root_path = root.path().canonicalize().expect("canonicalize root");
+    let root_arg = root_path.to_str().expect("root path");
+    let review_token = concat!(
+        "ABUSEIPDB_API_KEY=",
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "\n"
+    );
+    std::fs::write(root_path.join("provider.txt"), review_token).expect("write review fixture");
+
+    let add = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
+        .args(["guard", "add", root_arg, "--mode", "filesystem"])
+        .output()
+        .expect("guard add review-only root");
+    assert!(
+        matches!(add.status.code(), Some(0 | 13)),
+        "review-only findings must not block default-policy reconciliation; stdout={}; stderr={}",
+        String::from_utf8_lossy(&add.stdout),
+        String::from_utf8_lossy(&add.stderr)
+    );
+    assert!(
+        !String::from_utf8_lossy(&add.stderr).contains("root is blocked"),
+        "review-only findings must not produce a blocked reconciliation state"
+    );
+
+    let status = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
+        .args(["guard", "status", root_arg, "--format", "json"])
+        .output()
+        .expect("guard status review-only root");
+    assert!(
+        matches!(status.status.code(), Some(0 | 13)),
+        "review-only reconciled root may be current or dirty after a concurrent watcher event; stderr={}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&status.stdout).expect("guard status JSON");
+    assert!(
+        matches!(parsed["state"].as_str(), Some("current" | "dirty")),
+        "review-only evidence must not produce a blocked root: {parsed}"
     );
 }

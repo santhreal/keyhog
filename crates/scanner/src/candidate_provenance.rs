@@ -93,13 +93,7 @@ impl CandidateProvenance {
                         missing_required = true;
                     }
                 }
-                RequiredSemanticEvidence::StructuralGrammar => {
-                    strongest_proof = Some(
-                        strongest_proof
-                            .unwrap_or(EvidenceReasonCode::StructuralGrammar)
-                            .max(EvidenceReasonCode::StructuralGrammar),
-                    );
-                }
+                RequiredSemanticEvidence::StructuralGrammar => missing_required = true,
                 RequiredSemanticEvidence::LiveVerification => missing_required = true,
             }
         }
@@ -233,8 +227,40 @@ impl CandidateProvenance {
         self.parser_confidence
     }
 
-    pub(crate) const fn evidence(self) -> keyhog_core::EvidenceVerdict {
-        keyhog_core::EvidenceVerdict::from_reason(self.evidence_reason)
+    pub(crate) const fn evidence(self, detector_digest: u64) -> keyhog_core::EvidenceVerdict {
+        let provenance = match self.channel {
+            CandidateChannel::NamedPattern => keyhog_core::FindingProvenance::pattern(
+                detector_digest,
+                self.pattern_index,
+                self.source_role,
+                self.evidence_reason,
+            ),
+            CandidateChannel::GenericAssignment => {
+                keyhog_core::FindingProvenance::generic_assignment(
+                    detector_digest,
+                    self.source_role,
+                    self.evidence_reason,
+                )
+            }
+            #[cfg(feature = "entropy")]
+            CandidateChannel::Entropy => keyhog_core::FindingProvenance::entropy(
+                detector_digest,
+                self.source_role,
+                self.evidence_reason,
+            ),
+            CandidateChannel::Unattributed => keyhog_core::FindingProvenance::unattributed(),
+        };
+        keyhog_core::EvidenceVerdict::from_reason(self.evidence_reason).with_provenance(provenance)
+    }
+
+    pub(crate) fn preference_cmp(self, other: Self) -> std::cmp::Ordering {
+        (other.evidence_reason as u8)
+            .cmp(&(self.evidence_reason as u8))
+            .then_with(|| self.detector_index.cmp(&other.detector_index))
+            .then_with(|| self.pattern_index.cmp(&other.pattern_index))
+            .then_with(|| (self.channel as u8).cmp(&(other.channel as u8)))
+            .then_with(|| (self.source_role as u8).cmp(&(other.source_role as u8)))
+            .then_with(|| (self.parser_confidence as u8).cmp(&(other.parser_confidence as u8)))
     }
 
     pub(crate) const fn pattern(self) -> Option<PatternRef> {

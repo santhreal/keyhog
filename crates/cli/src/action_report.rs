@@ -142,8 +142,9 @@ fn report_finding_count(
 ) -> Result<usize> {
     match format {
         ActionReportFormat::Json => {
-            let value: serde_json::Value = serde_json::from_reader(open_regular(path)?)
-                .context("parsing Action JSON report")?;
+            let value: serde_json::Value =
+                serde_json::from_reader(BufReader::new(open_regular(path)?))
+                    .context("parsing Action JSON report")?;
             value
                 .as_array()
                 .map(Vec::len)
@@ -177,7 +178,7 @@ fn report_finding_count(
                 results: Vec<serde::de::IgnoredAny>,
             }
 
-            let sarif: Sarif = serde_json::from_reader(open_regular(path)?)
+            let sarif: Sarif = serde_json::from_reader(BufReader::new(open_regular(path)?))
                 .context("parsing Action SARIF report")?;
             sarif.runs.into_iter().try_fold(0usize, |total, run| {
                 total

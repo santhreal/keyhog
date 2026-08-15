@@ -30,8 +30,8 @@ fn github_annotation_emits_file_line_title_and_redacted_message() {
         "annotation message must carry the redacted credential: {out:?}"
     );
     assert!(
-        out.contains("verification=live confidence=0.875"),
-        "annotation message must carry verification and confidence: {out:?}"
+        out.contains("verification=live evidence_tier=review evidence_reason_code=unattributed evidence_score=0.875"),
+        "annotation message must carry verification and evidence verdict: {out:?}"
     );
 }
 

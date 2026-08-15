@@ -486,7 +486,7 @@ fn baseline_json(entries: &str) -> String {
 
 fn entry_json(detector_id: &str, credential_hash: &str, file_path: &str, line: usize) -> String {
     format!(
-        r#"{{"detector_id": "{detector_id}", "credential_hash": "{credential_hash}", "file_path": "{file_path}", "line": {line}, "evidence": {{"tier": "review", "reason_code": "unattributed"}}}}"#
+        r#"{{"detector_id": "{detector_id}", "credential_hash": "{credential_hash}", "file_path": "{file_path}", "line": {line}, "evidence": {{"tier": "review", "reason_code": "unattributed", "provenance": {{"schema_version": 1, "detector_digest": null, "pattern_index": null, "candidate_channel": "unattributed", "source_role": "unknown", "context_class": "unattributed"}}}}}}"#
     )
 }
 

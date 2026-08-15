@@ -42,8 +42,7 @@ pub(crate) fn finalize_pending_match_for_test(
     pending: MlPendingMatch,
     report_conf: f64,
 ) -> Option<keyhog_core::RawMatch> {
-    finalize_pending_match(config, pending, report_conf)
-        .map(crate::scan_state::AttributedRawMatch::into_raw)
+    finalize_pending_match(config, pending, report_conf).map(|matched| matched.into_raw(0))
 }
 
 impl CompiledScanner {
