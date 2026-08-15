@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import subprocess
 from dataclasses import replace
@@ -419,3 +420,37 @@ def test_binary_identity_maps_subprocess_timeouts_to_actionable_gate_errors(
 
     with pytest.raises(QualityGateError, match="timed out after 30 seconds"):
         quality.capture_binary_identity(binary, repo_root=tmp_path)
+
+
+def test_binary_identity_hashes_the_same_held_snapshot_that_proves_freshness(
+    tmp_path: Path, monkeypatch
+):
+    binary = tmp_path / "keyhog"
+    original = b"source-built-candidate"
+    replacement = b"replacement-after-version-proof"
+    binary.write_bytes(original)
+
+    def replace_source_after_proof(_path, *, repo_root, pass_fds=()):
+        del pass_fds
+        assert repo_root == tmp_path
+        binary.write_bytes(replacement)
+
+    monkeypatch.setattr(
+        quality, "assert_keyhog_binary_current", replace_source_after_proof
+    )
+    monkeypatch.setattr(
+        quality, "workspace_git_hash", lambda _root: _IDENTITY["source_commit"]
+    )
+    monkeypatch.setattr(
+        quality, "workspace_keyhog_version", lambda _root: _IDENTITY["source_version"]
+    )
+    monkeypatch.setattr(
+        quality,
+        "workspace_detector_digest",
+        lambda _root: _IDENTITY["detector_set_digest"],
+    )
+
+    receipt = quality.capture_binary_identity(binary, repo_root=tmp_path)
+
+    assert binary.read_bytes() == replacement
+    assert receipt["executable_sha256"] == hashlib.sha256(original).hexdigest()

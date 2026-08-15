@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Mapping, Sequence
 
+from .executable_snapshot import sibling_executable_snapshot
 from .keyhog_version import (
     KeyhogVersionError,
     assert_keyhog_binary_current,
@@ -391,33 +392,26 @@ def load_evidence_directory(path: str | pathlib.Path) -> Mapping[str, Repository
     return evidence
 
 
-def _sha256_file(path: pathlib.Path) -> str:
-    digest = hashlib.sha256()
-    try:
-        with path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
-    except OSError as exc:
-        raise QualityGateError("candidate binary cannot be hashed") from exc
-    return digest.hexdigest()
-
-
 def capture_binary_identity(
     binary: str | pathlib.Path, *, repo_root: pathlib.Path | None = None
 ) -> dict[str, str]:
     """Create a source-built identity receipt after proving the binary is current."""
     root = repo_root or pathlib.Path(__file__).resolve().parents[2]
     try:
-        binary_path = pathlib.Path(binary).resolve(strict=True)
-        assert_keyhog_binary_current(str(binary_path), repo_root=root)
-        return {
-            "schema": IDENTITY_SCHEMA,
-            "executable_sha256": _sha256_file(binary_path),
-            "source_commit": workspace_git_hash(root),
-            "source_version": workspace_keyhog_version(root),
-            "detector_set_digest": workspace_detector_digest(root),
-        }
-    except (KeyhogVersionError, subprocess.SubprocessError, OSError) as exc:
+        with sibling_executable_snapshot(str(binary)) as snapshot:
+            assert_keyhog_binary_current(
+                str(snapshot.launch_path),
+                pass_fds=snapshot.pass_fds,
+                repo_root=root,
+            )
+            return {
+                "schema": IDENTITY_SCHEMA,
+                "executable_sha256": snapshot.sha256,
+                "source_commit": workspace_git_hash(root),
+                "source_version": workspace_keyhog_version(root),
+                "detector_set_digest": workspace_detector_digest(root),
+            }
+    except (KeyhogVersionError, subprocess.SubprocessError, OSError, RuntimeError) as exc:
         raise QualityGateError(
             f"candidate binary cannot prove current-source identity: {exc}"
         ) from exc
