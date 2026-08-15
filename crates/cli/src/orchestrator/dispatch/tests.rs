@@ -344,6 +344,31 @@ fn admission_recovery_receipt_is_counted_in_json_and_terminal_status() {
     API.reset_scan_runtime_state_for_test(&guard);
 }
 
+/// WHY: a scanner-thread panic invalidates scan completeness even when the
+/// source layer recorded no coverage gap. Report metadata must carry `partial`
+/// so the exit-11 Action receipt remains representable and fail closed.
+#[test]
+fn scanner_panic_marks_report_metadata_partial_without_a_source_gap() {
+    use crate::testing::{CliTestApi, API};
+    use keyhog_core::ScanCompletionStatus;
+    use std::sync::atomic::Ordering::Relaxed;
+
+    let guard = API.scan_runtime_guard_for_test();
+    API.reset_scan_runtime_state_for_test(&guard);
+    crate::SCANNER_PANICKED.store(true, Relaxed);
+
+    let cli = crate::args::Cli::parse_from(["keyhog", "scan", "."]);
+    let crate::args::Command::Scan(args) = cli.command.expect("scan command parsed") else {
+        panic!("expected scan command");
+    };
+    let now = chrono::Utc::now();
+    let metadata =
+        crate::reporting::report_metadata_from_scan_run(&args, now, now, 0, 0, 0, 1, None);
+
+    assert_eq!(metadata.scan_status, ScanCompletionStatus::Partial);
+    API.reset_scan_runtime_state_for_test(&guard);
+}
+
 // ── incremental batch-split state ───────────────────────────────────────────
 //
 // `BatchRouteState` replaced a predicate that rescanned the whole accumulating

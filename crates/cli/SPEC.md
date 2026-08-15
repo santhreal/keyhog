@@ -8,7 +8,7 @@
 - Operational progress goes to stderr.
 - Scanner, source, verifier, and baseline behavior is configured from explicit CLI options and config files.
 - Exit status distinguishes clean scans, findings, user errors, and system errors.
-- `keyhog triage` accepts only the current bounded redacted envelope with the scanner's exact public `evidence.provenance` and channel-specific detector owner, then creates distinct versioned runtime-suppression and pattern-feedback artifacts without plaintext credential, context, or path fields.
+- `keyhog triage` accepts only the current bounded redacted envelope with the scanner's exact public `evidence.provenance` and channel-specific detector owner, then creates distinct versioned runtime-suppression and pattern-feedback artifacts without plaintext credential, context, or path fields. Unix file operations resolve through held no-follow parent descriptors; Windows fails closed until equivalent reparse-point-safe held-handle I/O is available.
 
 ## Boundaries
 

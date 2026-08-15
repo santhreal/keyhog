@@ -326,11 +326,12 @@ fn report_metadata_from_scan_run_inner(
         );
     }
     metadata.resolved_scan = Some(resolved_scan);
-    let has_coverage_gaps = !coverage_gap_summary(&CoverageCounts::current_with_scanned_bytes(
-        source_bytes_scanned,
-    ))
-    .is_empty();
-    metadata.scan_status = if has_coverage_gaps {
+    let scan_incomplete = crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed)
+        || !coverage_gap_summary(&CoverageCounts::current_with_scanned_bytes(
+            source_bytes_scanned,
+        ))
+        .is_empty();
+    metadata.scan_status = if scan_incomplete {
         ScanCompletionStatus::Partial
     } else if crate::BACKEND_RECOVERY_EVENTS.load(std::sync::atomic::Ordering::Relaxed) > 0 {
         ScanCompletionStatus::CompleteAfterRecovery

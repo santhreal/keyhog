@@ -1,11 +1,39 @@
 use crate::args::TriageArgs;
 use anyhow::{anyhow, Result};
-use keyhog_core::triage::{TriageEnvelope, MAX_TRIAGE_INPUT_BYTES, MAX_TRIAGE_OUTPUT_BYTES};
-use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
-use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
+#[cfg(unix)]
+use keyhog_core::triage::{TriageEnvelope, MAX_TRIAGE_INPUT_BYTES, MAX_TRIAGE_OUTPUT_BYTES};
+#[cfg(unix)]
+use std::ffi::{CString, OsStr};
+#[cfg(unix)]
+use std::fs::File;
+#[cfg(unix)]
+use std::io::{Read, Write};
+#[cfg(unix)]
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
+#[cfg(unix)]
+use std::path::Component;
+#[cfg(unix)]
+use std::path::Path;
+
+#[cfg(windows)]
+pub(crate) fn run(_args: TriageArgs) -> Result<ExitCode> {
+    Err(anyhow!(
+        "keyhog triage requires descriptor-relative no-follow file access, which is unavailable on this Windows build"
+    ))
+}
+
+#[cfg(not(any(unix, windows)))]
+pub(crate) fn run(_args: TriageArgs) -> Result<ExitCode> {
+    Err(anyhow!(
+        "keyhog triage is unsupported on this platform because safe descriptor-relative file access is unavailable"
+    ))
+}
+
+#[cfg(unix)]
 pub(crate) fn run(args: TriageArgs) -> Result<ExitCode> {
     if args.suppressions == args.pattern_feedback
         || args.input == args.suppressions
@@ -31,37 +59,28 @@ pub(crate) fn run(args: TriageArgs) -> Result<ExitCode> {
         return Err(anyhow!("triage output exceeds the byte limit"));
     }
 
-    validate_new_output(&args.suppressions)?;
-    validate_new_output(&args.pattern_feedback)?;
     let mut suppression_file = create_private_file(&args.suppressions)?;
     let mut feedback_file = match create_private_file(&args.pattern_feedback) {
         Ok(file) => file,
         Err(error) => {
-            let _ = std::fs::remove_file(&args.suppressions);
+            suppression_file.cleanup();
             return Err(error);
         }
     };
-    if suppression_file.write_all(&suppression_bytes).is_err()
-        || suppression_file.write_all(b"\n").is_err()
-        || suppression_file.sync_all().is_err()
-    {
-        drop(feedback_file);
-        let _ = std::fs::remove_file(&args.suppressions);
-        let _ = std::fs::remove_file(&args.pattern_feedback);
+    if write_private_output(&mut suppression_file.file, &suppression_bytes).is_err() {
+        suppression_file.cleanup();
+        feedback_file.cleanup();
         return Err(anyhow!("failed to write triage outputs"));
     }
-    if feedback_file.write_all(&feedback_bytes).is_err()
-        || feedback_file.write_all(b"\n").is_err()
-        || feedback_file.sync_all().is_err()
-    {
-        drop(suppression_file);
-        let _ = std::fs::remove_file(&args.suppressions);
-        let _ = std::fs::remove_file(&args.pattern_feedback);
+    if write_private_output(&mut feedback_file.file, &feedback_bytes).is_err() {
+        suppression_file.cleanup();
+        feedback_file.cleanup();
         return Err(anyhow!("failed to write triage outputs"));
     }
     Ok(ExitCode::SUCCESS)
 }
 
+#[cfg(unix)]
 fn active_detector_digest() -> Result<String> {
     let detectors = keyhog_core::load_embedded_detectors_or_fail()
         .map_err(|_| anyhow!("active detector corpus could not be loaded"))?;
@@ -73,18 +92,68 @@ fn active_detector_digest() -> Result<String> {
     Ok(format!("{:016x}", scanner.runtime_status().detector_digest))
 }
 
+#[cfg(unix)]
+fn write_private_output(file: &mut File, bytes: &[u8]) -> std::io::Result<()> {
+    file.write_all(bytes)?;
+    file.write_all(b"\n")?;
+    file.sync_all()
+}
+
+#[cfg(unix)]
+struct HeldParent {
+    directory: OwnedFd,
+    final_name: CString,
+}
+
+#[cfg(unix)]
+pub(crate) struct PrivateOutput {
+    file: File,
+    parent: HeldParent,
+}
+
+#[cfg(unix)]
+impl PrivateOutput {
+    fn cleanup(self) {
+        unsafe {
+            libc::unlinkat(
+                self.parent.directory.as_raw_fd(),
+                self.parent.final_name.as_ptr(),
+                0,
+            );
+        }
+    }
+}
+
+#[cfg(unix)]
 fn read_bounded_regular_file(path: &Path) -> Result<Vec<u8>> {
-    reject_symlink_components(path)?;
-    let metadata =
-        std::fs::symlink_metadata(path).map_err(|_| anyhow!("triage input is unavailable"))?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
+    read_bounded_regular_file_with_hook(path, || {})
+}
+
+#[cfg(unix)]
+pub(crate) fn read_bounded_regular_file_with_hook(
+    path: &Path,
+    hook: impl FnOnce(),
+) -> Result<Vec<u8>> {
+    let parent = open_parent_with_hook(path, hook)?;
+    let descriptor = openat(
+        parent.directory.as_raw_fd(),
+        &parent.final_name,
+        libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK,
+        0,
+    )
+    .map_err(|_| anyhow!("triage input is unavailable"))?;
+    let metadata = descriptor_metadata(descriptor.as_raw_fd())
+        .map_err(|_| anyhow!("triage input is unavailable"))?;
+    if metadata.st_mode & libc::S_IFMT != libc::S_IFREG {
         return Err(anyhow!("triage input must be a regular non-symlink file"));
     }
-    if metadata.len() > MAX_TRIAGE_INPUT_BYTES as u64 {
+    let length = u64::try_from(metadata.st_size)
+        .map_err(|_| anyhow!("triage input must be a regular non-symlink file"))?;
+    if length > MAX_TRIAGE_INPUT_BYTES as u64 {
         return Err(anyhow!("triage envelope exceeds the byte limit"));
     }
-    let file = File::open(path).map_err(|_| anyhow!("triage input is unavailable"))?;
-    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    let file: File = descriptor.into();
+    let mut bytes = Vec::with_capacity(length as usize);
     file.take((MAX_TRIAGE_INPUT_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
         .map_err(|_| anyhow!("triage input could not be read"))?;
@@ -94,56 +163,148 @@ fn read_bounded_regular_file(path: &Path) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn validate_new_output(path: &Path) -> Result<()> {
-    reject_symlink_components(path)?;
-    match std::fs::symlink_metadata(path) {
-        Ok(_) => Err(anyhow!("triage output destination already exists")),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(_) => Err(anyhow!("triage output destination is unavailable")),
-    }
+#[cfg(unix)]
+fn create_private_file(path: &Path) -> Result<PrivateOutput> {
+    create_private_file_with_hook(path, || {})
 }
 
-fn reject_symlink_components(path: &Path) -> Result<()> {
-    if path
-        .components()
-        .any(|component| matches!(component, Component::ParentDir))
-    {
-        return Err(anyhow!("triage paths cannot contain parent traversal"));
+#[cfg(unix)]
+pub(crate) fn create_private_file_with_hook(
+    path: &Path,
+    hook: impl FnOnce(),
+) -> Result<PrivateOutput> {
+    let parent = open_parent_with_hook(path, hook)?;
+    let descriptor = openat(
+        parent.directory.as_raw_fd(),
+        &parent.final_name,
+        libc::O_WRONLY
+            | libc::O_CREAT
+            | libc::O_EXCL
+            | libc::O_NOFOLLOW
+            | libc::O_CLOEXEC
+            | libc::O_NONBLOCK,
+        0o600,
+    )
+    .map_err(|_| anyhow!("triage output destination could not be created"))?;
+    let metadata = descriptor_metadata(descriptor.as_raw_fd())
+        .map_err(|_| anyhow!("triage output destination could not be created"))?;
+    if metadata.st_mode & libc::S_IFMT != libc::S_IFREG {
+        return Err(anyhow!(
+            "triage output destination could not be created as a regular file"
+        ));
     }
-    let mut current = PathBuf::new();
+    Ok(PrivateOutput {
+        file: descriptor.into(),
+        parent,
+    })
+}
+
+#[cfg(unix)]
+fn open_parent_with_hook(path: &Path, hook: impl FnOnce()) -> Result<HeldParent> {
+    let mut components = Vec::new();
+    let mut absolute = false;
     for component in path.components() {
         match component {
-            Component::Prefix(_) | Component::RootDir | Component::CurDir => {
-                current.push(component.as_os_str());
-            }
+            Component::RootDir => absolute = true,
+            Component::CurDir => {}
+            Component::Normal(part) => components.push(part),
             Component::ParentDir => {
                 return Err(anyhow!("triage paths cannot contain parent traversal"));
             }
-            Component::Normal(part) => {
-                current.push(part);
-                match std::fs::symlink_metadata(&current) {
-                    Ok(metadata) if metadata.file_type().is_symlink() => {
-                        return Err(anyhow!("triage paths cannot traverse symlinks"));
-                    }
-                    Ok(_) => {}
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
-                    Err(_) => return Err(anyhow!("triage path validation failed")),
-                }
+            Component::Prefix(_) => {
+                return Err(anyhow!(
+                    "triage path prefix is unsupported on this platform"
+                ));
             }
         }
     }
-    Ok(())
+    let (final_name, parents) = components
+        .split_last()
+        .ok_or_else(|| anyhow!("triage path must name a file"))?;
+    let mut directory = open_directory(if absolute {
+        OsStr::new("/")
+    } else {
+        OsStr::new(".")
+    })
+    .map_err(|_| anyhow!("triage path root is unavailable"))?;
+    for component in parents {
+        let name = c_string(component)?;
+        directory = openat(
+            directory.as_raw_fd(),
+            &name,
+            libc::O_RDONLY
+                | libc::O_DIRECTORY
+                | libc::O_NOFOLLOW
+                | libc::O_CLOEXEC
+                | libc::O_NONBLOCK,
+            0,
+        )
+        .map_err(|_| anyhow!("triage paths cannot traverse symlinks or non-directories"))?;
+    }
+    let held = HeldParent {
+        directory,
+        final_name: c_string(final_name)?,
+    };
+    hook();
+    Ok(held)
 }
 
-fn create_private_file(path: &Path) -> Result<File> {
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
+#[cfg(unix)]
+fn open_directory(path: &OsStr) -> std::io::Result<OwnedFd> {
+    let name = c_string_io(path)?;
+    let descriptor = unsafe {
+        libc::open(
+            name.as_ptr(),
+            libc::O_RDONLY
+                | libc::O_DIRECTORY
+                | libc::O_NOFOLLOW
+                | libc::O_CLOEXEC
+                | libc::O_NONBLOCK,
+        )
+    };
+    owned_fd(descriptor)
+}
+
+#[cfg(unix)]
+fn openat(
+    directory: libc::c_int,
+    name: &CString,
+    flags: libc::c_int,
+    mode: libc::mode_t,
+) -> std::io::Result<OwnedFd> {
+    let descriptor = unsafe { libc::openat(directory, name.as_ptr(), flags, mode) };
+    owned_fd(descriptor)
+}
+
+#[cfg(unix)]
+fn owned_fd(descriptor: libc::c_int) -> std::io::Result<OwnedFd> {
+    if descriptor < 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(unsafe { OwnedFd::from_raw_fd(descriptor) })
     }
-    options
-        .open(path)
-        .map_err(|_| anyhow!("triage output destination could not be created"))
+}
+
+#[cfg(unix)]
+fn descriptor_metadata(descriptor: libc::c_int) -> std::io::Result<libc::stat> {
+    let mut metadata = std::mem::MaybeUninit::<libc::stat>::uninit();
+    if unsafe { libc::fstat(descriptor, metadata.as_mut_ptr()) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(unsafe { metadata.assume_init() })
+}
+
+#[cfg(unix)]
+fn c_string(component: &OsStr) -> Result<CString> {
+    c_string_io(component).map_err(|_| anyhow!("triage path contains an invalid component"))
+}
+
+#[cfg(unix)]
+fn c_string_io(component: &OsStr) -> std::io::Result<CString> {
+    CString::new(component.as_bytes()).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "path component contains NUL",
+        )
+    })
 }

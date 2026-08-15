@@ -226,6 +226,18 @@ fn triage_symlinks_parent_traversal_and_oversized_input_fail_without_outputs() {
     assert!(!linked.status.success());
     assert!(!runtime.exists() && !feedback.exists());
 
+    let real_parent = temp.path().join("real-parent");
+    std::fs::create_dir(&real_parent).expect("real parent");
+    let nested_input = real_parent.join("input.json");
+    write_envelope(&nested_input, vec![record(TriageScope::Exact, "nested")]);
+    let linked_parent = temp.path().join("linked-parent");
+    symlink(&real_parent, &linked_parent).expect("parent symlink");
+    let runtime = temp.path().join("runtime-parent-link.json");
+    let feedback = temp.path().join("feedback-parent-link.json");
+    let linked_parent_result = run(&linked_parent.join("input.json"), &runtime, &feedback);
+    assert!(!linked_parent_result.status.success());
+    assert!(!runtime.exists() && !feedback.exists());
+
     let oversized = temp.path().join("oversized.json");
     std::fs::write(&oversized, vec![b'x'; MAX_TRIAGE_INPUT_BYTES + 1]).expect("oversized input");
     let runtime = temp.path().join("runtime-oversized.json");
@@ -250,6 +262,80 @@ fn triage_symlinks_parent_traversal_and_oversized_input_fail_without_outputs() {
     assert!(!rejected.status.success());
     assert_eq!(std::fs::read(&target).expect("target bytes"), b"unchanged");
     assert!(!feedback.exists());
+}
+
+/// WHY: validating a pathname before opening it leaves a parent-replacement
+/// race. The final component must resolve through the already-held directory,
+/// both for bounded input reads and create-new outputs.
+#[test]
+fn triage_parent_replacement_uses_the_held_directory() {
+    let temp = TempDir::new().expect("tempdir");
+
+    let input_parent = temp.path().join("input-parent");
+    let held_input_parent = temp.path().join("held-input-parent");
+    std::fs::create_dir(&input_parent).expect("input parent");
+    let input = input_parent.join("input.json");
+    std::fs::write(&input, b"original-parent-bytes").expect("input");
+    let bytes = keyhog::testing::triage_read_after_parent_open_for_test(&input, || {
+        std::fs::rename(&input_parent, &held_input_parent).expect("hold original input parent");
+        std::fs::create_dir(&input_parent).expect("replacement input parent");
+        std::fs::write(input_parent.join("input.json"), b"replacement-parent-bytes")
+            .expect("replacement input");
+    })
+    .expect("descriptor-relative input read");
+    assert_eq!(bytes, b"original-parent-bytes");
+
+    let output_parent = temp.path().join("output-parent");
+    let held_output_parent = temp.path().join("held-output-parent");
+    std::fs::create_dir(&output_parent).expect("output parent");
+    let output = output_parent.join("runtime.json");
+    keyhog::testing::triage_create_after_parent_open_for_test(&output, || {
+        std::fs::rename(&output_parent, &held_output_parent).expect("hold original output parent");
+        std::fs::create_dir(&output_parent).expect("replacement output parent");
+    })
+    .expect("descriptor-relative output create");
+    assert!(
+        held_output_parent.join("runtime.json").is_file(),
+        "output must be created in the directory proven before the race seam"
+    );
+    assert!(
+        !output.exists(),
+        "replacement path must not redirect descriptor-relative creation"
+    );
+}
+
+/// WHY: special inputs must reject without blocking, and a second create-new
+/// failure must clean the first artifact through its held parent descriptor.
+#[test]
+fn triage_special_input_and_partial_output_fail_closed() {
+    let temp = TempDir::new().expect("tempdir");
+    let fifo = temp.path().join("input.fifo");
+    let status = Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .expect("create fifo");
+    assert!(status.success());
+    let runtime = temp.path().join("runtime-fifo.json");
+    let feedback = temp.path().join("feedback-fifo.json");
+    let fifo_result = run(&fifo, &runtime, &feedback);
+    assert!(!fifo_result.status.success());
+    assert!(!runtime.exists() && !feedback.exists());
+
+    let input = temp.path().join("input.json");
+    write_envelope(&input, vec![record(TriageScope::Exact, "finding")]);
+    let runtime = temp.path().join("runtime-partial.json");
+    let feedback = temp.path().join("feedback-existing.json");
+    std::fs::write(&feedback, b"unchanged").expect("pre-existing feedback");
+    let partial = run(&input, &runtime, &feedback);
+    assert!(!partial.status.success());
+    assert!(
+        !runtime.exists(),
+        "first output must be unlinked when the second create-new operation fails"
+    );
+    assert_eq!(
+        std::fs::read(&feedback).expect("feedback unchanged"),
+        b"unchanged"
+    );
 }
 
 #[test]

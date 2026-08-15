@@ -754,6 +754,11 @@ pub fn document_source_semantic_window_bytes_for_test() -> usize {
     crate::documentation_semantics::MAX_DOCUMENT_SOURCE_BYTES
 }
 
+/// Return every structured Markdown fence language and its parser path.
+pub fn structured_markdown_fences_for_test() -> &'static [(&'static str, &'static str)] {
+    crate::documentation_semantics::STRUCTURED_MARKDOWN_FENCES
+}
+
 /// Secret-safe source-role sidecar retained on one emitted candidate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CandidateSourceRoleForTest {

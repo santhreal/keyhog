@@ -5,8 +5,10 @@
 - Added default and paranoid evidence exit policies. Default blocks `likely` and `confirmed`; paranoid also blocks `review`, without hiding non-blocking findings. Baseline schema 2 stores required evidence and secret-safe candidate provenance and rejects v1 and the removed `status` alias. Daemon wire 15 carries exact evidence plus staged-guard blocking counts, preserving one-shot, daemon, and guard exit semantics.
 - `explain` renders typed detector semantic policies and labels omitted capture and anchor roles as compatibility defaults. Autoroute rejects prior detector-corpus identities with a detector digest mismatch and directs `keyhog calibrate-autoroute`.
 - Detector parse-cache writes and hits reapply the selected corpus schema's validation rules. Schema-5 per-pattern evidence cannot be bypassed by a cache hit, and legacy schema semantics remain valid.
-- Added `keyhog triage` with bounded redacted input, the 16-hex active detector digest and authoritative scanner provenance, distinct create-new runtime-suppression and pattern-feedback outputs, typed scopes, and fail-closed path and symlink validation.
+- Added `keyhog triage` with bounded redacted input, the 16-hex active detector digest and authoritative scanner provenance, distinct create-new runtime-suppression and pattern-feedback outputs, typed scopes, and fail-closed path handling. Unix reads, creates, and cleanup resolve through held no-follow parent descriptors; Windows fails closed until equivalent reparse-point-safe held-handle I/O is available.
 - Merge remote-tracking branch 'origin/main'.
+- Action autoroute calibration now probes published scanners before passing `--evidence-policy`, matching the scan runner's paranoid-only legacy migration. Scanner-thread panics mark report metadata partial so exit-11 receipts remain internally consistent.
+- Staged-guard profiling counts one authenticated blob payload once across path aliases while retaining one source-context scan per alias.
 
 ## 0.5.74 - 2026-08-14
 

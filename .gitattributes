@@ -10,3 +10,8 @@
 #
 # Guarded by crates/scanner/tests/contract/rust_test_sources_are_not_lfs_pointers.rs
 # (do not re-add `filter=lfs` rules for files under crates/scanner/tests/).
+
+# Build-time calibration identity hashes exact UTF-8 bytes. Keep both sides of
+# that identity LF-stable on Windows checkouts.
+crates/scanner/src/model_card.json text eol=lf
+crates/scanner/src/pattern_calibration.json text eol=lf

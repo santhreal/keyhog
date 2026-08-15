@@ -299,9 +299,6 @@ pub(crate) fn is_isolated_bare_secret_plausible(
         if crate::jwt::has_jwt_header_prefix(value) {
             return false;
         }
-        if crate::suppression::shape::looks_like_dotted_source_identifier(value) {
-            return false;
-        }
     }
     if super::isolated::isolated_special_shape_floor_met_with_policy(
         value,
@@ -371,6 +368,12 @@ fn is_isolated_leading_slash_base64_secret(
 
 fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool {
     if context.reject_repeated_blocks && crate::suppression::shape::has_repeated_block_mask(value) {
+        return false;
+    }
+    if value.contains('.')
+        && !crate::suppression::shape::is_structured_dotted_token(value)
+        && crate::suppression::shape::looks_like_dotted_source_identifier(value)
+    {
         return false;
     }
     // Outside a credential-keyword anchor, any >10-char pure-hex value is a

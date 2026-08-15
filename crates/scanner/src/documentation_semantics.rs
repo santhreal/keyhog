@@ -5,6 +5,18 @@ use keyhog_core::SemanticSourceRole;
 use crate::source_semantics::{SourceSemanticEvidence, SourceSpan};
 
 pub(crate) const MAX_DOCUMENT_SOURCE_BYTES: usize = 64 * 1024;
+pub(crate) const STRUCTURED_MARKDOWN_FENCES: &[(&str, &str)] = &[
+    ("env", ".env"),
+    ("dotenv", ".env"),
+    ("json", "snippet.json"),
+    ("jsonl", "snippet.jsonl"),
+    ("ndjson", "snippet.ndjson"),
+    ("toml", "snippet.toml"),
+    ("yaml", "snippet.yaml"),
+    ("yml", "snippet.yml"),
+    ("ini", "snippet.ini"),
+    ("cfg", "snippet.cfg"),
+];
 
 #[derive(Debug, Clone, Copy)]
 struct DocumentValue {
@@ -100,25 +112,48 @@ fn document_kind(path: &str) -> Option<DocumentKind> {
     }
 }
 
+#[derive(Clone, Copy)]
+enum MarkdownFenceLanguage {
+    Documentation,
+    Shell,
+    Structured(&'static str),
+}
+
+#[derive(Clone, Copy)]
+struct MarkdownFence {
+    marker: u8,
+    width: usize,
+    language: MarkdownFenceLanguage,
+    content_start: usize,
+}
+
 fn index_markdown(text: &str) -> Option<DocumentSourceIndex> {
     let mut index = DocumentSourceIndex::new(text.len(), SemanticSourceRole::ProseDocumentation);
     let mut line = 0usize;
-    let mut fence: Option<(u8, usize, bool)> = None;
+    let mut fence: Option<MarkdownFence> = None;
     while line < text.len() {
         let inside_fence = fence.is_some();
         let end = line_end(text, line);
         let trimmed_start = skip_spaces(text.as_bytes(), line, end);
         let marker = fence_marker(text.as_bytes(), trimmed_start, end);
-        if let Some((byte, width, shell)) = fence {
+        if let Some(active) = fence {
             if marker.is_some_and(|(candidate, candidate_width, _)| {
-                candidate == byte && candidate_width >= width
+                candidate == active.marker && candidate_width >= active.width
             }) {
+                if let MarkdownFenceLanguage::Structured(path) = active.language {
+                    append_structured_fence(&mut index, text, active.content_start, line, path)?;
+                }
                 fence = None;
-            } else if shell {
+            } else if matches!(active.language, MarkdownFenceLanguage::Shell) {
                 append_shell_line(&mut index, text, line, end)?;
             }
-        } else if let Some((byte, width, shell)) = marker {
-            fence = Some((byte, width, shell));
+        } else if let Some((marker, width, language)) = marker {
+            fence = Some(MarkdownFence {
+                marker,
+                width,
+                language,
+                content_start: next_line(text, line).unwrap_or(end),
+            });
         }
         if !inside_fence && marker.is_none() {
             append_inline_code(&mut index, text, line, end)?;
@@ -131,7 +166,11 @@ fn index_markdown(text: &str) -> Option<DocumentSourceIndex> {
     fence.is_none().then_some(index)
 }
 
-fn fence_marker(bytes: &[u8], start: usize, end: usize) -> Option<(u8, usize, bool)> {
+fn fence_marker(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<(u8, usize, MarkdownFenceLanguage)> {
     let byte @ (b'`' | b'~') = *bytes.get(start)? else {
         return None;
     };
@@ -143,10 +182,44 @@ fn fence_marker(bytes: &[u8], start: usize, end: usize) -> Option<(u8, usize, bo
         return None;
     }
     let info = std::str::from_utf8(&bytes[start + width..end]).ok()?.trim();
-    let shell = ["sh", "shell", "bash", "zsh", "console"]
+    let language = if ["sh", "shell", "bash", "zsh", "console"]
         .iter()
-        .any(|candidate| info.eq_ignore_ascii_case(candidate));
-    Some((byte, width, shell))
+        .any(|candidate| info.eq_ignore_ascii_case(candidate))
+    {
+        MarkdownFenceLanguage::Shell
+    } else if let Some((_, path)) = STRUCTURED_MARKDOWN_FENCES
+        .iter()
+        .find(|(candidate, _)| info.eq_ignore_ascii_case(candidate))
+    {
+        MarkdownFenceLanguage::Structured(path)
+    } else {
+        MarkdownFenceLanguage::Documentation
+    };
+    Some((byte, width, language))
+}
+
+fn append_structured_fence(
+    index: &mut DocumentSourceIndex,
+    text: &str,
+    start: usize,
+    end: usize,
+    path: &str,
+) -> Option<()> {
+    let body = text.get(start..end)?;
+    let structured = crate::source_semantics::build_structured_source_index(body, Some(path))?;
+    let mut valid = true;
+    structured.for_each_value(|role, span| {
+        let Some(value_start) = start.checked_add(span.start) else {
+            valid = false;
+            return;
+        };
+        let Some(value_end) = start.checked_add(span.end) else {
+            valid = false;
+            return;
+        };
+        index.push(SourceSpan::new(value_start, value_end), role);
+    });
+    valid.then_some(())
 }
 
 fn append_inline_code(

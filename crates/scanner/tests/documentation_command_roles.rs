@@ -5,6 +5,7 @@ use keyhog_scanner::{
     testing::{
         candidate_source_roles_with_config_for_test, classify_candidate_source_semantics_for_test,
         document_source_semantic_window_bytes_for_test, named_detector_fixture_defaults,
+        structured_markdown_fences_for_test,
     },
     ScannerConfig,
 };
@@ -20,8 +21,8 @@ fn classify(text: &str, path: &str, needle: &str, expected_role: &str) {
     assert!(evidence.value_span.0 <= start && start + needle.len() <= evidence.value_span.1);
 }
 
-/// WHY: Markdown prose and inline code are documentation evidence, while a
-/// shell fence must preserve the command-value role of a real argument.
+/// WHY: Markdown prose and inline code are documentation evidence, while shell
+/// and structured fences must preserve the source role of a real value.
 #[test]
 fn markdown_prose_inline_code_and_shell_fences_have_exact_roles() {
     let markdown = r#"
@@ -31,6 +32,14 @@ The field is `token=CFGDOC_INLINE_123456`.
 
 ```sh
 tool --password CFGDOC_COMMAND_123456
+```
+
+```env
+API_TOKEN=CFGDOC_ENV_FENCE_123456
+```
+
+```json
+{"api_token":"CFGDOC_JSON_FENCE_123456"}
 ```
 "#;
     classify(
@@ -51,6 +60,58 @@ tool --password CFGDOC_COMMAND_123456
         "CFGDOC_COMMAND_123456",
         "command-argument-value",
     );
+    classify(
+        markdown,
+        "docs/guide.md",
+        "CFGDOC_ENV_FENCE_123456",
+        "environment-assignment-value",
+    );
+    classify(
+        markdown,
+        "docs/guide.md",
+        "CFGDOC_JSON_FENCE_123456",
+        "structured-assignment-value",
+    );
+}
+
+/// WHY: adding a supported structured fence must turn the suite red until its
+/// exact parser role is covered. This enumerates the production registry rather
+/// than a second hardcoded language list.
+#[test]
+fn every_structured_markdown_fence_uses_its_value_parser() {
+    const NEEDLE: &str = "CFGDOC_STRUCTURED_FENCE_123456";
+
+    for (language, _) in structured_markdown_fences_for_test() {
+        let (body, role) = match *language {
+            "env" | "dotenv" => (
+                format!("API_TOKEN={NEEDLE}"),
+                "environment-assignment-value",
+            ),
+            "json" => (
+                format!(r#"{{"api_token":"{NEEDLE}"}}"#),
+                "structured-assignment-value",
+            ),
+            "jsonl" | "ndjson" => (
+                format!(r#"{{"api_token":"{NEEDLE}"}}"#),
+                "structured-assignment-value",
+            ),
+            "toml" => (
+                format!(r#"api_token = "{NEEDLE}""#),
+                "structured-assignment-value",
+            ),
+            "yaml" | "yml" => (
+                format!(r#"api_token: "{NEEDLE}""#),
+                "structured-assignment-value",
+            ),
+            "ini" | "cfg" => (
+                format!(r#"api_token = {NEEDLE}"#),
+                "structured-assignment-value",
+            ),
+            added => panic!("add a structured Markdown fence fixture for {added}"),
+        };
+        let markdown = format!("```{language}\n{body}\n```\n");
+        classify(&markdown, "docs/guide.md", NEEDLE, role);
+    }
 }
 
 /// WHY: roff escapes and option declarations are distinct syntax. Escaped
@@ -183,6 +244,10 @@ positive = "CFGDOC_CONFIG_POSITIVE_123456"
 fn parser_failures_and_unsupported_documents_abstain() {
     for (text, path) in [
         ("text CFGDOC_BAD_FENCE_123456\n```sh\ntool", "guide.md"),
+        (
+            "```json\n{\"token\":\"CFGDOC_BAD_JSON_123456\"\n```\n",
+            "guide.md",
+        ),
         ("tool --password 'CFGDOC_BAD_SHELL_123456", "deploy.sh"),
         (".B \"--password=CFGDOC_BAD_ROFF_123456", "keyhog.1"),
     ] {

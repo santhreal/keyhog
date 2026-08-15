@@ -207,10 +207,13 @@ reason.
 }
 ```
 
-The command accepts only the detector corpus built into the running binary.
-Stale detector or pattern identities, unknown fields, malformed digests,
-version mismatches, excessive input, symbolic links, and existing output files
-fail without publishing either output. See
+The command accepts only the detector corpus built into the running binary. On
+Unix, every input read, output create, and failed-output cleanup resolves
+relative to held no-follow directory descriptors. Windows builds fail before
+reading the envelope because equivalent reparse-point-safe held-handle I/O is
+not available. Stale detector or pattern identities, unknown fields, malformed
+digests, version mismatches, excessive input, symbolic links, special input
+files, and existing output files fail without publishing either output. See
 [`keyhog triage`](./reference/cli.md#keyhog-triage).
 
 ### `.keyhogignore`: one condition per line

@@ -3752,6 +3752,110 @@ fn composite_action_calibrates_exact_workload_without_forcing_a_backend() {
     );
 }
 
+/// WHY: published scanners can predate `--evidence-policy`. Autoroute
+/// calibration runs before `run-scan.sh`, so it must apply the same explicit
+/// paranoid-only compatibility rule rather than failing on an unknown flag.
+#[test]
+fn composite_action_calibration_migrates_legacy_evidence_policy() {
+    for (policy, expected_success) in [("paranoid", true), ("default", false)] {
+        let dir = TempDir::new().expect("legacy calibration tempdir");
+        let runner_temp = dir.path().join("runner-temp");
+        fs::create_dir(&runner_temp).expect("runner temp");
+        let call_log = dir.path().join("calls.bin");
+        write_executable(
+            &dir.path().join("keyhog"),
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "scan" && "${2:-}" == "--help" ]]; then
+  printf 'legacy scan help\n'
+  exit 0
+fi
+printf '__CALL__\0' >> "$KEYHOG_CALL_LOG"
+printf '%s\0' "$@" >> "$KEYHOG_CALL_LOG"
+for arg in "$@"; do
+  if [[ "$arg" == "--evidence-policy" ]]; then
+    echo "legacy scanner received unsupported policy flag" >&2
+    exit 86
+  fi
+done
+if [[ "${1:-}" == "config" ]]; then
+  printf '[effective-config]\nincremental = false\n'
+  exit 0
+fi
+previous=""
+for arg in "$@"; do
+  if [[ "$previous" == "--output" ]]; then
+    printf '[]\n' > "$arg"
+  elif [[ "$previous" == "--autoroute-cache" ]]; then
+    printf '{"schema_version":1}\n' > "$arg"
+  fi
+  previous="$arg"
+done
+"#,
+        );
+        let path = format!(
+            "{}:{}",
+            dir.path().display(),
+            env::var("PATH").expect("PATH")
+        );
+        let output = run_manifest_bash_step(
+            "Calibrate autoroute for this scan",
+            &[
+                ("RUNNER_OS", "Linux"),
+                ("ACTION_RELEASE_REQUIRED", "true"),
+                ("ACTION_EVIDENCE_POLICY", policy),
+                ("ACTION_LOCKDOWN", "false"),
+                ("ACTION_PRESET", "default"),
+                ("ACTION_SCAN_PATH", "."),
+                ("ACTION_SEVERITY", "high"),
+                (
+                    "RUNNER_TEMP",
+                    runner_temp.to_str().expect("UTF-8 runner temp"),
+                ),
+                (
+                    "KEYHOG_CALL_LOG",
+                    call_log.to_str().expect("UTF-8 call log"),
+                ),
+                ("PATH", path.as_str()),
+            ],
+        );
+
+        assert_eq!(
+            output.status.success(),
+            expected_success,
+            "{policy} legacy calibration result: {}",
+            combined_output(&output)
+        );
+        if expected_success {
+            let calls = fs::read(&call_log).expect("legacy calibration calls");
+            assert!(
+                !calls
+                    .windows("--evidence-policy".len())
+                    .any(|window| window == b"--evidence-policy"),
+                "legacy paranoid calibration must omit the unsupported flag"
+            );
+            assert_eq!(
+                calls
+                    .split(|byte| *byte == 0)
+                    .filter(|field| *field == b"__CALL__")
+                    .count(),
+                2,
+                "legacy paranoid calibration must execute config and scan"
+            );
+        } else {
+            assert!(
+                combined_output(&output)
+                    .contains("cannot implement the requested default blocking policy"),
+                "legacy default rejection must explain the unavailable policy"
+            );
+            assert!(
+                !call_log.exists(),
+                "legacy default rejection must happen before config or scan"
+            );
+        }
+    }
+}
+
 /// Regression: non-Linux runners cannot honor core lockdown's `mlockall`
 /// guarantee, so the Action must reject them before invoking calibration.
 #[test]

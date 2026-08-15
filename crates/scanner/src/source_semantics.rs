@@ -190,6 +190,12 @@ impl StructuredSourceIndex {
             .find_map(|value| value.for_candidate(candidate_span, &self.key_paths))
     }
 
+    pub(crate) fn for_each_value(&self, mut visit: impl FnMut(SemanticSourceRole, SourceSpan)) {
+        for value in &self.values {
+            visit(value.role, value.value_span);
+        }
+    }
+
     fn apply_field_roles(&mut self, text: &str, path: &str) {
         let rule_path = path.split(['/', '\\', '!']).any(|component| {
             STRUCTURED_ROLE_MARKERS

@@ -356,6 +356,7 @@ runs:
         ACTION_PRESET: ${{ inputs.preset }}
         ACTION_LOCKDOWN: ${{ inputs.lockdown }}
         ACTION_EVIDENCE_POLICY: ${{ inputs.evidence-policy }}
+        ACTION_RELEASE_REQUIRED: ${{ steps.version.outputs.release_required }}
         ACTION_CACHE_HOME: ${{ steps.runtime.outputs.path }}/cache
         ACTION_KEYHOG: ${{ steps.install.outputs.binary-path }}
         ACTION_RUNTIME: ${{ steps.runtime.outputs.path }}
@@ -391,6 +392,26 @@ runs:
             exit 2
             ;;
         esac
+        evidence_policy="${ACTION_EVIDENCE_POLICY:-default}"
+        evidence_policy_args=(--evidence-policy "$evidence_policy")
+        if [[ "${ACTION_RELEASE_REQUIRED:-false}" == "true" ]]; then
+          set +e
+          evidence_help="$("$ACTION_KEYHOG" scan --help 2>&1)"
+          evidence_help_exit=$?
+          set -e
+          if [[ "$evidence_help_exit" != "0" ]]; then
+            echo "::error title=KeyHog::Published keyhog could not report whether it supports --evidence-policy."
+            exit 2
+          fi
+          if [[ "$evidence_help" != *"--evidence-policy"* ]]; then
+            if [[ "$evidence_policy" != "paranoid" ]]; then
+              echo "::error title=KeyHog::Published keyhog lacks --evidence-policy and cannot implement the requested default blocking policy."
+              exit 2
+            fi
+            evidence_policy_args=()
+            echo "::notice title=KeyHog::Published keyhog predates --evidence-policy; its blocking behavior is equivalent to paranoid."
+          fi
+        fi
         if [[ "${ACTION_LOCKDOWN:-false}" == "true" && -n "${RUNNER_OS:-}" && "$RUNNER_OS" != "Linux" ]]; then
           echo "::error title=KeyHog::lockdown=true requires a Linux runner with sufficient locked-memory capacity. Configure a self-hosted Linux runner/container with a sufficient memlock limit (for example --cap-add IPC_LOCK or --ulimit memlock=-1:-1), or set lockdown:false."
           exit 2
@@ -422,7 +443,6 @@ runs:
           --severity "$ACTION_SEVERITY"
           --format json
           --autoroute-cache "$route_cache"
-          --evidence-policy "${ACTION_EVIDENCE_POLICY:-default}"
         )
         args=(
           scan
@@ -434,8 +454,9 @@ runs:
           --format json
           --output "$probe"
           --autoroute-cache "$route_cache"
-          --evidence-policy "${ACTION_EVIDENCE_POLICY:-default}"
         )
+        config_args+=("${evidence_policy_args[@]}")
+        args+=("${evidence_policy_args[@]}")
         if [[ -n "$preset_flag" ]]; then
           config_args+=("$preset_flag")
           args+=("$preset_flag")

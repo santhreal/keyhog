@@ -637,9 +637,13 @@ keyhog triage \
   --pattern-feedback pattern-feedback.json
 ```
 
-The command creates new regular files with private permissions. Input and
-output files must be distinct and must not traverse symbolic links or parent
-components. Existing output files are not overwritten.
+On Unix, the command creates new regular files with private permissions through
+held no-follow parent-directory descriptors. Input reads and failed-output
+cleanup use the same descriptor-relative boundary, so parent replacement cannot
+redirect the operation. Input and output paths must be distinct and cannot use
+symbolic links or parent components. Existing output files are not overwritten.
+Windows builds fail before reading the envelope until equivalent held-handle,
+reparse-point-safe I/O is available.
 
 Scopes are `exact`, `path`, `repository`, and `pattern-feedback-only`. Path and
 repository scopes carry BLAKE3 identities, not names or filesystem locations.

@@ -284,3 +284,22 @@ fn serving_parser_rejects_oversized_and_empty_attributed_artifacts() {
     )
     .is_err());
 }
+
+/// WHY: the build script hashes exact calibration bytes. Windows checkout
+/// conversion must not turn an LF-authored artifact into CRLF and invalidate
+/// the model-card receipt before compilation begins.
+#[test]
+fn calibration_identity_artifacts_have_lf_checkout_policy() {
+    let attributes = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.gitattributes"));
+    for path in [
+        "crates/scanner/src/model_card.json",
+        "crates/scanner/src/pattern_calibration.json",
+    ] {
+        assert!(
+            attributes
+                .lines()
+                .any(|line| line == format!("{path} text eol=lf")),
+            "{path} must remain byte-identical across Windows and Unix checkouts"
+        );
+    }
+}

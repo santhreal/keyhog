@@ -16,6 +16,17 @@ pub struct TestApi;
 pub const API: TestApi = TestApi;
 
 #[cfg(unix)]
+pub fn triage_read_after_parent_open_for_test(path: &Path, hook: impl FnOnce()) -> Result<Vec<u8>> {
+    crate::subcommands::triage::read_bounded_regular_file_with_hook(path, hook)
+}
+
+#[cfg(unix)]
+pub fn triage_create_after_parent_open_for_test(path: &Path, hook: impl FnOnce()) -> Result<()> {
+    let _output = crate::subcommands::triage::create_private_file_with_hook(path, hook)?;
+    Ok(())
+}
+
+#[cfg(unix)]
 #[derive(Debug)]
 pub enum DaemonTerminalFixture {
     CleanShutdown,

@@ -2139,18 +2139,20 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     || -> Result<Vec<RawMatch>> {
                         let mut contextual_payload = payload;
                         let mut raw = Vec::new();
+                        let total_bytes: usize = contextual_payload
+                            .iter()
+                            .map(|chunk| chunk.data.len())
+                            .sum();
+                        keyhog_profile::add_input_units(contextual_payload.len() as u64);
+                        keyhog_profile::add_input_bytes(total_bytes as u64);
+                        if contextual_payload.is_empty() {
+                            return Ok(raw);
+                        }
                         for resolved_path in resolved_paths {
                             for chunk in &mut contextual_payload {
                                 chunk.metadata.path = Some(resolved_path.clone());
                             }
                             scanner.clear_fragment_cache();
-                            let total_bytes: usize =
-                                contextual_payload.iter().map(|c| c.data.len()).sum();
-                            keyhog_profile::add_input_units(contextual_payload.len() as u64);
-                            keyhog_profile::add_input_bytes(total_bytes as u64);
-                            if contextual_payload.is_empty() {
-                                continue;
-                            }
                             let selection = router.choose_with_plan(
                                 scanner.as_ref(),
                                 backend_override,
