@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-pub const DETECTOR_PLAN_SECTION_VERSION: u16 = 2;
+pub const DETECTOR_PLAN_SECTION_VERSION: u16 = 3;
 const DETECTOR_PLAN_MAGIC: [u8; 8] = *b"KHDPPLAN";
 const DETECTOR_PLAN_HEADER_LEN: usize = 146;
 const MAX_DETECTORS: usize = 16_384;
@@ -55,6 +55,7 @@ pub(crate) struct DetectorPlanRecord {
     pub validators: Vec<keyhog_core::DetectorValidatorSpec>,
     pub decode_transforms: keyhog_core::DetectorDecodeTransformSpec,
     pub patterns: Vec<keyhog_core::PatternSpec>,
+    pub semantic: keyhog_core::DetectorSemanticPolicySpec,
     pub companion_names: Vec<String>,
     pub detector_relations: Vec<keyhog_core::DetectorRelationSpec>,
     pub source_admission: keyhog_core::SourceAdmissionSpec,
@@ -164,6 +165,7 @@ impl DetectorPlanRecord {
             validators: spec.validators.clone(),
             decode_transforms: spec.decode_transforms.clone(),
             patterns: spec.patterns.clone(),
+            semantic: spec.semantic_policy(),
             companion_names: spec.companions.iter().map(|row| row.name.clone()).collect(),
             detector_relations: spec.detector_relations.clone(),
             source_admission: spec.source_admission.clone(),
@@ -225,6 +227,10 @@ impl DetectorPlanRecord {
             validators: self.validators,
             decode_transforms: self.decode_transforms,
             patterns: self.patterns,
+            capture_role: self.semantic.capture_role,
+            anchor_role: self.semantic.anchor_role,
+            allowed_source_roles: self.semantic.allowed_source_roles,
+            required_evidence: self.semantic.required_evidence,
             companions: self
                 .companion_names
                 .into_iter()

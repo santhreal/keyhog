@@ -42,14 +42,14 @@ fn detector_plan_round_trip_streams_one_canonical_row_at_a_time() {
 /// boundary must fail closed so a corrupted installed plan cannot hydrate into
 /// a different detector execution contract.
 #[test]
-fn detector_plan_rejects_framing_identity_row_and_trailing_corruption() {
+fn detector_plan_rejects_stale_semantic_schema_framing_identity_and_trailing_corruption() {
     let (section, digest) = fixture();
 
     let mut version = section.clone();
-    version[8..10].copy_from_slice(&9u16.to_le_bytes());
+    version[8..10].copy_from_slice(&2u16.to_le_bytes());
     assert!(stream_detector_plan_for_test(&version, digest)
-        .expect_err("version drift must fail")
-        .contains("version 9"));
+        .expect_err("legacy detector-plan version must fail closed")
+        .contains("version 2"));
 
     let mut count = section.clone();
     count[140..144].copy_from_slice(&9u32.to_le_bytes());

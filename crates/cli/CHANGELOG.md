@@ -2,6 +2,7 @@
 
 ## 0.5.75 - 2026-08-14
 
+- `explain` renders typed detector semantic policies and labels omitted capture and anchor roles as compatibility defaults. Autoroute rejects prior detector-corpus identities with a detector digest mismatch and directs `keyhog calibrate-autoroute`.
 - Merge remote-tracking branch 'origin/main'.
 
 ## 0.5.74 - 2026-08-14

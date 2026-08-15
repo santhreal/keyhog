@@ -1,6 +1,7 @@
 use keyhog_core::{
-    validate_detector, AuthSpec, CompanionSpec, DetectorFile, DetectorSpec, PatternSpec,
-    QualityIssue, ScriptEngine, Severity,
+    validate_detector, AnchorSemanticRole, AuthSpec, CaptureSemanticRole, CompanionSpec,
+    DetectorFile, DetectorSpec, PatternSpec, QualityIssue, RequiredSemanticEvidence, ScriptEngine,
+    SemanticSourceRole, Severity,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -60,6 +61,251 @@ fn detector_spec_deserialization() {
     assert_eq!(spec.severity, Severity::High);
     assert_eq!(spec.patterns.len(), 1);
     assert_eq!(spec.keywords.len(), 2);
+}
+
+/// WHY: declared semantic fields must remain valid TOML when patterns serialize
+/// as array tables; default-only serialization cannot catch field-order drift.
+#[test]
+fn detector_semantic_roles_are_typed_and_default_to_abstention() {
+    assert_eq!(
+        keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
+        4,
+        "semantic role keys require detector corpus schema 4"
+    );
+    let declared: DetectorFile = toml::from_str(
+        r#"
+        [detector]
+        id = "semantic-role-test"
+        name = "Semantic Role Test"
+        service = "test"
+        severity = "high"
+        ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
+        capture_role = "assignment-value"
+        anchor_role = "exact-key"
+        allowed_source_roles = ["structured-assignment-value", "environment-assignment-value"]
+        required_evidence = ["checksum", "required-companion"]
+
+        [[detector.patterns]]
+        regex = 'demo_[A-Z0-9]{8}'
+        "#,
+    )
+    .expect("known semantic roles must parse");
+    assert_eq!(
+        declared.detector.capture_role,
+        CaptureSemanticRole::AssignmentValue
+    );
+    assert_eq!(declared.detector.anchor_role, AnchorSemanticRole::ExactKey);
+    assert_eq!(
+        declared.detector.allowed_source_roles,
+        [
+            SemanticSourceRole::StructuredAssignmentValue,
+            SemanticSourceRole::EnvironmentAssignmentValue,
+        ]
+    );
+    assert_eq!(
+        declared.detector.required_evidence,
+        [
+            RequiredSemanticEvidence::Checksum,
+            RequiredSemanticEvidence::RequiredCompanion,
+        ]
+    );
+    let serialized =
+        toml::to_string(&declared.detector).expect("declared semantic policy must serialize");
+    let round_trip: DetectorSpec =
+        toml::from_str(&serialized).expect("declared semantic policy must round-trip");
+    assert_eq!(round_trip.capture_role, declared.detector.capture_role);
+    assert_eq!(round_trip.anchor_role, declared.detector.anchor_role);
+    assert_eq!(
+        round_trip.allowed_source_roles,
+        declared.detector.allowed_source_roles
+    );
+    assert_eq!(
+        round_trip.required_evidence,
+        declared.detector.required_evidence
+    );
+
+    let omitted: DetectorFile = toml::from_str(
+        r#"
+        [detector]
+        id = "semantic-role-default"
+        name = "Semantic Role Default"
+        service = "test"
+        severity = "high"
+        ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
+
+        [[detector.patterns]]
+        regex = 'demo_[A-Z0-9]{8}'
+        "#,
+    )
+    .expect("omitted semantic roles must use compatibility defaults");
+    assert_eq!(omitted.detector.capture_role, CaptureSemanticRole::Unknown);
+    assert_eq!(omitted.detector.anchor_role, AnchorSemanticRole::Unknown);
+    assert!(omitted.detector.allowed_source_roles.is_empty());
+    assert!(omitted.detector.required_evidence.is_empty());
+    let serialized =
+        toml::to_string(&omitted.detector).expect("default semantic policy must serialize");
+    for field in [
+        "capture_role",
+        "anchor_role",
+        "allowed_source_roles",
+        "required_evidence",
+    ] {
+        assert!(
+            !serialized.contains(field),
+            "compatibility-default field {field} must not perturb corpus identity"
+        );
+    }
+}
+
+/// WHY: every schema-4 semantic key must fail closed under every older manifest
+/// version instead of acquiring behavior that the declared schema cannot name.
+#[test]
+fn semantic_policy_fields_require_schema_four_manifest() {
+    let declarations = [
+        ("capture_role", r#"capture_role = "unknown""#),
+        ("anchor_role", r#"anchor_role = "unknown""#),
+        (
+            "allowed_source_roles",
+            r#"allowed_source_roles = ["string-literal"]"#,
+        ),
+        ("required_evidence", r#"required_evidence = ["checksum"]"#),
+    ];
+    for schema_version in 1..4 {
+        for (field, declaration) in declarations {
+            let dir = temp_dir(&format!("semantic-schema-{schema_version}-{field}"));
+            fs::write(
+                dir.join("corpus.toml"),
+                format!("schema_version = {schema_version}\n"),
+            )
+            .unwrap();
+            fs::write(
+                dir.join("semantic.toml"),
+                format!(
+                    r#"
+                    [detector]
+                    id = "semantic-schema-version"
+                    name = "Semantic Schema Version"
+                    service = "test"
+                    severity = "high"
+                    ml = {{ match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }}
+                    {declaration}
+
+                    [[detector.patterns]]
+                    regex = 'demo_[A-Z0-9]{{8}}'
+                    "#
+                ),
+            )
+            .unwrap();
+
+            let error = match keyhog_core::load_detectors(&dir) {
+                Ok(_) => {
+                    panic!("schema-{schema_version} corpus must reject schema-4 field {field}")
+                }
+                Err(error) => error,
+            };
+            assert!(
+                error.to_string().contains("require corpus schema 4"),
+                "unexpected schema-{schema_version} result for {field}: {error}"
+            );
+            fs::remove_dir_all(dir).unwrap();
+        }
+    }
+}
+
+/// WHY: the version gate must reject only older manifests; schema 4 must load
+/// and retain every semantic declaration through the production corpus loader.
+#[test]
+fn schema_four_manifest_loads_semantic_policy_fields() {
+    let dir = temp_dir("semantic-schema-four");
+    fs::write(dir.join("corpus.toml"), "schema_version = 4\n").unwrap();
+    let mut detector = valid_detector();
+    detector.capture_role = CaptureSemanticRole::AssignmentValue;
+    detector.anchor_role = AnchorSemanticRole::ExactKey;
+    detector.allowed_source_roles = vec![SemanticSourceRole::StringLiteral];
+    detector.required_evidence = vec![RequiredSemanticEvidence::Checksum];
+    fs::write(
+        dir.join("demo-token.toml"),
+        toml::to_string(&DetectorFile { detector }).unwrap(),
+    )
+    .unwrap();
+
+    let loaded =
+        keyhog_core::load_detectors(&dir).expect("schema-4 corpus must load semantic fields");
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].capture_role, CaptureSemanticRole::AssignmentValue);
+    assert_eq!(loaded[0].anchor_role, AnchorSemanticRole::ExactKey);
+    assert_eq!(
+        loaded[0].allowed_source_roles,
+        [SemanticSourceRole::StringLiteral]
+    );
+    assert_eq!(
+        loaded[0].required_evidence,
+        [RequiredSemanticEvidence::Checksum]
+    );
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn unknown_detector_semantic_roles_fail_schema_parsing() {
+    for declaration in [
+        r#"capture_role = "not-a-capture-role""#,
+        r#"anchor_role = "not-an-anchor-role""#,
+        r#"allowed_source_roles = ["not-a-source-role"]"#,
+        r#"required_evidence = ["not-an-evidence-kind"]"#,
+    ] {
+        let source = format!(
+            r#"
+            [detector]
+            id = "semantic-role-invalid"
+            name = "Semantic Role Invalid"
+            service = "test"
+            severity = "high"
+            ml = {{ match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }}
+            {declaration}
+
+            [[detector.patterns]]
+            regex = 'demo_[A-Z0-9]{{8}}'
+            "#
+        );
+        let error = toml::from_str::<DetectorFile>(&source)
+            .expect_err("unknown semantic role must fail closed");
+        assert!(
+            error.to_string().contains("unknown variant"),
+            "unexpected error for {declaration}: {error}"
+        );
+    }
+}
+
+/// WHY: `unknown` is an observed abstention state, not an allowlist member, and
+/// duplicate declarations must not create identity changes without policy changes.
+#[test]
+fn detector_semantic_policy_rejects_unknown_or_duplicate_declarations() {
+    let mut unknown_source = valid_detector();
+    unknown_source.allowed_source_roles = vec![SemanticSourceRole::Unknown];
+    let issues = validate_detector(&unknown_source);
+    assert!(issues.iter().any(
+        |issue| matches!(issue, QualityIssue::Error(message) if message.contains("cannot contain `unknown`"))
+    ));
+
+    let mut duplicate_source = valid_detector();
+    duplicate_source.allowed_source_roles = vec![
+        SemanticSourceRole::StringLiteral,
+        SemanticSourceRole::StringLiteral,
+    ];
+    let issues = validate_detector(&duplicate_source);
+    assert!(issues.iter().any(
+        |issue| matches!(issue, QualityIssue::Error(message) if message.contains("duplicate role"))
+    ));
+
+    let mut duplicate_evidence = valid_detector();
+    duplicate_evidence.required_evidence = vec![
+        RequiredSemanticEvidence::Checksum,
+        RequiredSemanticEvidence::Checksum,
+    ];
+    let issues = validate_detector(&duplicate_evidence);
+    assert!(issues.iter().any(
+        |issue| matches!(issue, QualityIssue::Error(message) if message.contains("duplicate requirement"))
+    ));
 }
 
 #[test]

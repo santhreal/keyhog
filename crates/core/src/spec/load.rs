@@ -533,6 +533,23 @@ enum ReadDetectorOutcome {
     },
 }
 
+const SEMANTIC_POLICY_SCHEMA_VERSION: u32 = 4;
+
+fn declares_semantic_policy(contents: &str) -> Result<bool, toml::de::Error> {
+    let document = toml::from_str::<toml::Value>(contents)?;
+    let Some(detector) = document.get("detector").and_then(toml::Value::as_table) else {
+        return Ok(false);
+    };
+    Ok([
+        "capture_role",
+        "anchor_role",
+        "allowed_source_roles",
+        "required_evidence",
+    ]
+    .iter()
+    .any(|field| detector.contains_key(*field)))
+}
+
 fn read_detector_file(path: &Path, compatibility: CorpusCompatibility) -> ReadDetectorOutcome {
     let contents = match read_detector_toml_file(path) {
         Ok(contents) => contents,
@@ -551,6 +568,28 @@ fn read_detector_file(path: &Path, compatibility: CorpusCompatibility) -> ReadDe
             return ReadDetectorOutcome::Skipped { message };
         }
     };
+    if compatibility.schema_version < SEMANTIC_POLICY_SCHEMA_VERSION {
+        match declares_semantic_policy(&contents) {
+            Ok(true) => {
+                return ReadDetectorOutcome::Skipped {
+                    message: format!(
+                        "{} declares semantic policy fields that require corpus schema {SEMANTIC_POLICY_SCHEMA_VERSION}; corpus.toml declares schema {}",
+                        path.display(),
+                        compatibility.schema_version
+                    ),
+                };
+            }
+            Ok(false) => {}
+            Err(error) => {
+                return ReadDetectorOutcome::Skipped {
+                    message: format!(
+                        "failed to inspect detector schema fields in {}: {error}",
+                        path.display()
+                    ),
+                };
+            }
+        }
+    }
 
     match toml::from_str::<DetectorFile>(&contents) {
         Ok(mut file) => {

@@ -3,6 +3,7 @@
 
 mod evidence;
 pub(crate) mod load;
+mod semantic;
 mod validate;
 
 use std::fmt;
@@ -14,6 +15,10 @@ pub use evidence::{ProviderEvidenceRole, ProviderEvidenceSensitivity};
 pub use load::{
     load_detector_corpus, load_detectors, read_detector_toml_file, LoadedDetectorCorpus, SpecError,
     DETECTOR_TOML_FILE_BYTES,
+};
+pub use semantic::{
+    AnchorSemanticRole, CaptureSemanticRole, DetectorSemanticPolicySpec, RequiredSemanticEvidence,
+    SemanticSourceRole,
 };
 pub use validate::{validate_detector, QualityIssue};
 
@@ -81,6 +86,25 @@ pub struct DetectorSpec {
     /// active corpus, so a custom corpus never inherits unrelated prefixes.
     #[serde(default)]
     pub decode_transforms: DetectorDecodeTransformSpec,
+    /// Typed classification of the captured credential bytes. Current scan
+    /// admission does not consume this declaration; `unknown` preserves
+    /// current findings.
+    #[serde(default, skip_serializing_if = "CaptureSemanticRole::is_unknown")]
+    pub capture_role: CaptureSemanticRole,
+    /// Typed classification of the detector anchor. Current scan admission
+    /// does not consume this declaration; `unknown` preserves current findings.
+    #[serde(default, skip_serializing_if = "AnchorSemanticRole::is_unknown")]
+    pub anchor_role: AnchorSemanticRole,
+    /// Detector-owned source-role declaration included in execution identity.
+    /// Current scan admission does not consume this list. Empty preserves
+    /// current findings.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_source_roles: Vec<SemanticSourceRole>,
+    /// Detector-owned evidence declaration included in execution identity.
+    /// Current scan admission does not consume this list. Empty preserves
+    /// current findings.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_evidence: Vec<RequiredSemanticEvidence>,
     /// List of regex patterns to match. Defaults to empty so a
     /// `kind = "phase2-generic"` detector can omit it when it has no structured
     /// envelope; a `kind = "regex"` detector with no patterns is rejected by
@@ -1144,6 +1168,16 @@ impl DetectorSpec {
     /// Whether this detector supplies policy to the generic entropy engine.
     pub fn owns_entropy_policy(&self) -> bool {
         self.kind == DetectorKind::Phase2Generic || self.entropy_policy_priority.is_some()
+    }
+
+    /// Canonical semantic policy copied into compiled and persisted plans.
+    pub fn semantic_policy(&self) -> DetectorSemanticPolicySpec {
+        DetectorSemanticPolicySpec {
+            capture_role: self.capture_role,
+            anchor_role: self.anchor_role,
+            allowed_source_roles: self.allowed_source_roles.clone(),
+            required_evidence: self.required_evidence.clone(),
+        }
     }
 
     /// Return the stable, redaction-safe declaration used by detector
@@ -2343,7 +2377,7 @@ pub const DETECTOR_CORPUS_MANIFEST_FILE: &str = "corpus.toml";
 pub const DETECTOR_CORPUS_MIN_SCHEMA_VERSION: u32 = 1;
 
 /// Detector schema authored and enforced by this binary.
-pub const DETECTOR_CORPUS_SCHEMA_VERSION: u32 = 3;
+pub const DETECTOR_CORPUS_SCHEMA_VERSION: u32 = 4;
 
 /// Highest newer detector schema this binary may inspect additively.
 ///
