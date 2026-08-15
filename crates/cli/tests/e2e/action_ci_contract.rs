@@ -1559,6 +1559,96 @@ printf '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tc
     );
 }
 
+/// Published scanners before the evidence-verdict cutover already implement
+/// paranoid blocking but do not recognize the new flag. The Action may omit the
+/// flag only for that exact policy; it must reject an unimplementable default
+/// policy instead of silently changing semantics.
+#[test]
+fn published_legacy_scanner_migrates_only_paranoid_evidence_policy() {
+    fn install_legacy_stub(dir: &TempDir) {
+        write_stub(
+            dir,
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "scan" && "${2:-}" == "--help" ]]; then
+  printf 'legacy scan help\n'
+  exit 0
+fi
+cmd="${1:-}"
+printf '%s' "$cmd" >> "$CALLS_FILE"
+for arg in "${@:2}"; do
+  printf '|%s' "$arg" >> "$CALLS_FILE"
+done
+printf '\n' >> "$CALLS_FILE"
+if [[ "$cmd" == "config" ]]; then
+  printf '[effective-config]\n'
+  exit 0
+fi
+out=''
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == '--output' ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+printf '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1.0/sarif-schema-2.1.0.json","runs":[{"results":[],"tool":{"driver":{"name":"keyhog"}}}]}\n' > "$out"
+"#,
+        );
+    }
+
+    let paranoid = TempDir::new().expect("paranoid legacy tempdir");
+    install_legacy_stub(&paranoid);
+    let paranoid_calls = paranoid.path().join("calls.txt");
+    let paranoid_calls_arg = paranoid_calls.to_string_lossy().into_owned();
+    let output = run_action_with_script_args(
+        &paranoid,
+        &["--print-effective-config"],
+        &[
+            ("ACTION_RELEASE_REQUIRED", "true"),
+            ("ACTION_INPUT_EVIDENCE_POLICY", "paranoid"),
+            ("CALLS_FILE", paranoid_calls_arg.as_str()),
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        combined_output(&output)
+    );
+    let calls = fs::read_to_string(paranoid_calls).expect("read legacy paranoid calls");
+    assert_eq!(calls.lines().count(), 2);
+    assert!(
+        !calls.contains("--evidence-policy"),
+        "legacy paranoid migration must omit only the unsupported flag: {calls}"
+    );
+    assert!(
+        combined_output(&output).contains("blocking behavior is equivalent to paranoid"),
+        "legacy migration must be operator-visible"
+    );
+
+    let default_policy = TempDir::new().expect("default legacy tempdir");
+    install_legacy_stub(&default_policy);
+    let default_calls = default_policy.path().join("calls.txt");
+    let default_calls_arg = default_calls.to_string_lossy().into_owned();
+    let rejected = run_action_with_script_args(
+        &default_policy,
+        &[],
+        &[
+            ("ACTION_RELEASE_REQUIRED", "true"),
+            ("ACTION_INPUT_EVIDENCE_POLICY", "default"),
+            ("CALLS_FILE", default_calls_arg.as_str()),
+        ],
+    );
+    assert_eq!(rejected.status.code(), Some(2));
+    assert!(combined_output(&rejected)
+        .contains("cannot implement the requested default blocking policy"));
+    assert!(
+        !default_calls.exists(),
+        "an unsupported default policy must fail before config or scan"
+    );
+}
+
 /// Regression: preset and lockdown inputs were documented but not forwarded
 /// consistently to effective-config preflight and the real scan.
 #[test]
@@ -2741,6 +2831,10 @@ fn composite_action_passes_policy_inputs_to_scanner_script() {
     assert!(
         manifest.contains("ACTION_EVIDENCE_POLICY: ${{ inputs.evidence-policy }}"),
         "composite action must validate evidence-policy in the tested script"
+    );
+    assert!(
+        manifest.contains("ACTION_RELEASE_REQUIRED: ${{ steps.version.outputs.release_required }}"),
+        "the scanner script must distinguish published compatibility from source cutover"
     );
     assert!(
         manifest.contains("ACTION_UPLOAD_SARIF: ${{ inputs.upload-sarif }}"),

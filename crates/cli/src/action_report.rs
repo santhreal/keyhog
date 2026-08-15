@@ -211,9 +211,9 @@ fn parse_decimal(value: &str, name: &str) -> Result<usize> {
 
 fn validate_semantics(findings: usize, exit_code: u8, status: &str) -> Result<()> {
     match (exit_code, status, findings) {
-        (0, "success" | "complete_after_recovery" | "partial", _) => Ok(()),
+        (0 | 3, "success" | "complete_after_recovery" | "partial", _) => Ok(()),
         (1 | 10, "success" | "complete_after_recovery" | "partial", 1..) => Ok(()),
-        (13, "partial", _) => Ok(()),
+        (11 | 13, "partial", _) => Ok(()),
         _ => bail!("Action receipt count/status/exit semantics contradict: findings={findings}, status={status}, exit={exit_code}"),
     }
 }

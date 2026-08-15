@@ -167,6 +167,9 @@ and context class bind the evidence used before optional live verification.
 Unsupported scanner context retains its producer identity and uses the
 `unsupported-context` context class. Caller-created findings use the
 `unattributed` channel with no detector digest or pattern ordinal.
+Cross-detector grouping retains the strongest evidence reason while keeping
+provenance owned by the detector named in `detector_id`; folded detectors remain
+listed in `cross_detector.*` companions.
 
 Do not enable `--show-secrets` when stdout or `--output` is retained by CI,
 uploaded as an artifact, or sent to another process. That option deliberately

@@ -453,7 +453,8 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
             );
             winner.companions.entry(Arc::from(key)).or_insert(value);
             winner.entropy = max_entropy(winner.entropy, loser.entropy);
-            winner.evidence = winner.evidence.stronger(loser.evidence);
+            let strongest_reason = winner.evidence.stronger(loser.evidence).reason_code();
+            winner.evidence = winner.evidence.with_reason(strongest_reason);
             merge_cross_detector_locations(&mut winner, &mut seen_locations, loser);
         }
         out.push(winner);

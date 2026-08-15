@@ -2,8 +2,9 @@
 
 use crate::daemon::frame;
 use crate::daemon::protocol::{
-    BackendRecoveryStatus, RecoveredInputRangeStatus, Request, RequiredOption, Response,
-    SourceCoverageGaps, WarmBackendIdentity, WarmBackendStatus, WIRE_VERSION,
+    guard_commit_receipt_wire_len, BackendRecoveryStatus, GuardCommitReceiptWireFields,
+    RecoveredInputRangeStatus, Request, RequiredOption, Response, SourceCoverageGaps,
+    WarmBackendIdentity, WarmBackendStatus, WIRE_VERSION,
 };
 use keyhog_scanner::telemetry::StaticRecoveryStatus;
 use std::collections::BTreeMap;
@@ -325,6 +326,23 @@ fn guard_receipt_requires_default_policy_blocking_count() {
     likely.evidence =
         keyhog_core::EvidenceVerdict::from_reason(keyhog_core::EvidenceReasonCode::VendorPattern);
 
+    let findings = vec![review, likely];
+    let predicted_len = guard_commit_receipt_wire_len(GuardCommitReceiptWireFields {
+        objects_requested: 3,
+        objects_hit: 1,
+        objects_scanned: 2,
+        objects_skipped: 0,
+        bytes_requested: 90,
+        bytes_hit: 30,
+        bytes_scanned: 60,
+        findings_count: 2,
+        findings: &findings,
+        blocking_findings_count: 1,
+        coverage_gaps: 0,
+        terminal_state: "blocked",
+        terminal_sequence: 7,
+    })
+    .expect("size borrowed guard receipt");
     let response = Response::GuardCommitReceipt {
         objects_requested: 3,
         objects_hit: 1,
@@ -334,12 +352,19 @@ fn guard_receipt_requires_default_policy_blocking_count() {
         bytes_hit: 30,
         bytes_scanned: 60,
         findings_count: 2,
-        findings: vec![review, likely],
+        findings,
         blocking_findings_count: 1,
         coverage_gaps: 0,
         terminal_state: "blocked".into(),
         terminal_sequence: 7,
     };
+    assert_eq!(
+        predicted_len,
+        serde_json::to_vec(&response)
+            .expect("serialize guard receipt bytes")
+            .len(),
+        "borrowed sizing must exactly match the protected response encoder"
+    );
     let encoded = serde_json::to_value(&response).expect("serialize guard receipt");
     assert_eq!(encoded["blocking_findings_count"], 1);
     assert_eq!(encoded["findings"][0]["evidence"]["tier"], "review");

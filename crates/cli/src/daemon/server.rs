@@ -2341,11 +2341,49 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     ),
                 };
             }
-            // All validation passed. Take ownership without cloning the staged
-            // path index or accounting vectors.
-            let txn = match state.guard.finish_transaction(transaction_id) {
-                Some(txn) => txn,
-                None => {
+            // Prove the exact terminal frame fits before consuming the
+            // transaction or updating durable guard state. The byte counter
+            // serializes borrowed findings and therefore does not clone the
+            // protected payload.
+            let txn = match state.guard.finish_transaction_if(transaction_id, |txn| {
+                let total_objects = txn.clean_hits.len() as u64
+                    + txn.scanned_oids.len() as u64
+                    + txn.objects_skipped;
+                let terminal_state =
+                    guard_commit_terminal_state(txn.blocking_findings_count, txn.coverage_gaps);
+                let wire_len = crate::daemon::protocol::guard_commit_receipt_wire_len(
+                    crate::daemon::protocol::GuardCommitReceiptWireFields {
+                        objects_requested: total_objects,
+                        objects_hit: txn.clean_hits.len() as u64,
+                        objects_scanned: txn.scanned_oids.len() as u64,
+                        objects_skipped: txn.objects_skipped,
+                        bytes_requested: txn.bytes_requested,
+                        bytes_hit: txn.bytes_hit,
+                        bytes_scanned: txn.bytes_scanned,
+                        findings_count: txn.findings_count,
+                        findings: &txn.reported_findings,
+                        blocking_findings_count: txn.blocking_findings_count,
+                        coverage_gaps: txn.coverage_gaps,
+                        terminal_state: terminal_state.label(),
+                        // Decimal u64::MAX is the longest possible sequence.
+                        terminal_sequence: u64::MAX,
+                    },
+                )
+                .map_err(|error| {
+                    format!(
+                        "daemon: guard commit finish: cannot size protected receipt: {error}"
+                    )
+                })?;
+                if wire_len > crate::daemon::protocol::MAX_FRAME_BYTES as usize {
+                    return Err(format!(
+                        "daemon: guard commit finish: protected receipt requires {wire_len} bytes but the frame limit is {}",
+                        crate::daemon::protocol::MAX_FRAME_BYTES
+                    ));
+                }
+                Ok(())
+            }) {
+                Ok(Some(txn)) => txn,
+                Ok(None) => {
                     return Response::Error {
                         message: format!(
                             "daemon: guard commit finish: transaction {} was already finished",
@@ -2353,6 +2391,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                         ),
                     };
                 }
+                Err(message) => return Response::Error { message },
             };
             let total_objects =
                 txn.clean_hits.len() as u64 + txn.scanned_oids.len() as u64 + txn.objects_skipped;
