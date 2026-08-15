@@ -3,7 +3,10 @@
 #[path = "support/mod.rs"]
 mod support;
 
-use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
+use keyhog_core::{
+    Chunk, ChunkMetadata, DetectorSpec, FindingCandidateChannel, FindingProvenance, PatternSpec,
+    RawMatch, Severity,
+};
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 use support::paths::detector_dir;
 
@@ -66,6 +69,43 @@ fn synthetic_hot_scanner(hot_prefix: bool, backend: ScanBackend) -> CompiledScan
         backend,
     )
     .expect("synthetic non-Stripe hot detector compiles")
+}
+
+fn normalize_expected_corpus_digest(
+    mut matches: Vec<RawMatch>,
+    expected_digest: u64,
+) -> Vec<RawMatch> {
+    for matched in &mut matches {
+        let provenance = matched.evidence.provenance();
+        assert_eq!(
+            provenance.detector_digest(),
+            Some(expected_digest),
+            "every scanner-produced finding must carry its exact corpus identity"
+        );
+        let normalized = match provenance.candidate_channel() {
+            FindingCandidateChannel::Pattern => FindingProvenance::pattern(
+                0,
+                provenance
+                    .pattern_index()
+                    .expect("pattern provenance has an ordinal"),
+                provenance.source_role(),
+                provenance.context_class(),
+            ),
+            FindingCandidateChannel::GenericAssignment => FindingProvenance::generic_assignment(
+                0,
+                provenance.source_role(),
+                provenance.context_class(),
+            ),
+            FindingCandidateChannel::Entropy => {
+                FindingProvenance::entropy(0, provenance.source_role(), provenance.context_class())
+            }
+            FindingCandidateChannel::Unattributed => {
+                panic!("scanner-produced parity finding cannot be unattributed")
+            }
+        };
+        matched.evidence = matched.evidence.with_provenance(normalized);
+    }
+    matches
 }
 
 #[test]
@@ -136,7 +176,7 @@ fn detector_owned_hot_dedup_is_offset_scoped_not_detector_scoped() {
 }
 
 #[test]
-fn detector_owned_hot_and_confirmed_only_paths_emit_byte_identical_findings() {
+fn detector_owned_hot_and_confirmed_only_paths_preserve_findings_across_corpus_acceleration() {
     let chunk = Chunk {
         data: "prefix ZEPHYR_0123456789ABCDEF\n".into(),
         metadata: ChunkMetadata {
@@ -146,20 +186,31 @@ fn detector_owned_hot_and_confirmed_only_paths_emit_byte_identical_findings() {
             ..Default::default()
         },
     };
-    let hot = synthetic_hot_scanner(true, ScanBackend::CpuFallback)
+    let hot_scanner = synthetic_hot_scanner(true, ScanBackend::CpuFallback);
+    let confirmed_scanner = synthetic_hot_scanner(false, ScanBackend::CpuFallback);
+    let hot_digest = hot_scanner.runtime_status().detector_digest;
+    let confirmed_digest = confirmed_scanner.runtime_status().detector_digest;
+    assert_ne!(
+        hot_digest, confirmed_digest,
+        "simdsieve declarations are detector-corpus identity"
+    );
+    let hot = hot_scanner
         .scan_with_backend(&chunk, ScanBackend::CpuFallback)
         .expect("selected backend scan succeeds");
-    let confirmed_only = synthetic_hot_scanner(false, ScanBackend::CpuFallback)
+    let confirmed_only = confirmed_scanner
         .scan_with_backend(&chunk, ScanBackend::CpuFallback)
         .expect("selected backend scan succeeds");
 
-    assert_eq!(hot, confirmed_only);
+    assert_eq!(
+        normalize_expected_corpus_digest(hot.clone(), hot_digest),
+        normalize_expected_corpus_digest(confirmed_only, confirmed_digest)
+    );
     assert_eq!(hot.len(), 1, "findings={hot:?}");
     assert_eq!(hot[0].location.offset, 256 + "prefix ".len());
 }
 
 #[test]
-fn shipped_hot_detectors_are_byte_identical_without_hot_acceleration() {
+fn shipped_hot_detectors_preserve_findings_without_hot_acceleration() {
     let stripe = "sk_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD";
     let square = "sq0csp-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij0123456";
     let chunk = Chunk {
@@ -171,15 +222,25 @@ fn shipped_hot_detectors_are_byte_identical_without_hot_acceleration() {
             ..Default::default()
         },
     };
-
-    let accelerated = scanner()
+    let accelerated_scanner = scanner();
+    let confirmed_scanner = scanner_without_hot_acceleration();
+    let accelerated_digest = accelerated_scanner.runtime_status().detector_digest;
+    let confirmed_digest = confirmed_scanner.runtime_status().detector_digest;
+    assert_ne!(
+        accelerated_digest, confirmed_digest,
+        "simdsieve declarations are detector-corpus identity"
+    );
+    let accelerated = accelerated_scanner
         .scan_with_backend(&chunk, ScanBackend::CpuFallback)
         .expect("selected backend scan succeeds");
-    let confirmed_only = scanner_without_hot_acceleration()
+    let confirmed_only = confirmed_scanner
         .scan_with_backend(&chunk, ScanBackend::CpuFallback)
         .expect("selected backend scan succeeds");
 
-    assert_eq!(accelerated, confirmed_only);
+    assert_eq!(
+        normalize_expected_corpus_digest(accelerated.clone(), accelerated_digest),
+        normalize_expected_corpus_digest(confirmed_only, confirmed_digest)
+    );
     assert!(accelerated
         .iter()
         .any(|m| m.detector_id.as_ref() == "stripe-secret-key"));
