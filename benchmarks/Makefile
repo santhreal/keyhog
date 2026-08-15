@@ -12,7 +12,8 @@
 #   make ioc-recovery-axes    # score value/certificate/detector/span/mechanism axes
 #   make agentre-corpus       # verify sources and build the pinned Linux binaries
 #   make leakage-audit        # prove train/calibration/sealed-test split isolation
-#   make real-repository-quality # enforce redacted repository-class quality floors
+#   make real-repository-quality # enforce fresh redacted repository-class quality floors
+#   make real-repository-quality-contract # validate the committed gate contract
 #   make creddata          # fetch, repair, and validate pinned Samsung/CredData
 #   make bloom             # measure Bloom rejection + bypass parity on CredData F/X records
 #   make canonical         # rerun the exact KH-020 mirror run set with Bloom linkage
@@ -62,7 +63,8 @@ LEAKAGE_RECEIPT ?= reports/leakage-receipt.json
 REAL_REPOSITORY_IDENTITY ?= results/real-repository-quality-identity.json
 REAL_REPOSITORY_REPORT ?= results/real-repository-quality.json
 REAL_REPOSITORY_REGISTRY ?= quality/repository-classes.toml
-REAL_REPOSITORY_EVIDENCE ?= quality/synthetic-evidence
+REAL_REPOSITORY_EVIDENCE ?=
+REAL_REPOSITORY_CONTRACT_EVIDENCE ?= quality/synthetic-evidence
 README_MATRIX_CONFIG_OUT ?= results-readme-config
 README_MATRIX_DAEMON_OUT ?= results-readme-daemon
 README_MATRIX_DAEMON_CORPUS ?= corpora/daemon-file-8mib.txt
@@ -99,7 +101,7 @@ ifneq ($(strip $(KEYHOG_BIN)),)
 export KEYHOG_BIN
 endif
 
-.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery agentre-corpus leakage-audit real-repository-quality creddata bloom canonical readme-matrix-corpus readme-scaling readme-scaling-check readme-matrix readme-matrix-check require-clean-tree kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
+.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery agentre-corpus leakage-audit real-repository-quality real-repository-quality-contract creddata bloom canonical readme-matrix-corpus readme-scaling readme-scaling-check readme-matrix readme-matrix-check require-clean-tree kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
 
 help:
 	@grep -E '^#   make ' $(lastword $(MAKEFILE_LIST)) | sed 's/^#   /  /'
@@ -144,6 +146,7 @@ leakage-audit:
 
 real-repository-quality:
 	@test -n "$(KEYHOG_BIN)" || { echo "KEYHOG_BIN is required for the real-repository quality gate" >&2; exit 2; }
+	@test -n "$(REAL_REPOSITORY_EVIDENCE)" || { echo "REAL_REPOSITORY_EVIDENCE is required for the real-repository quality gate" >&2; exit 2; }
 	cd $(BENCH_DIR) && $(PY) -B -m bench.real_repository_quality identity \
 		--binary "$(KEYHOG_BIN)" --output "$(REAL_REPOSITORY_IDENTITY)"
 	cd $(BENCH_DIR) && $(PY) -B -m bench.real_repository_quality gate \
@@ -152,6 +155,10 @@ real-repository-quality:
 		--binary "$(KEYHOG_BIN)" \
 		--identity-receipt "$(REAL_REPOSITORY_IDENTITY)" \
 		--output "$(REAL_REPOSITORY_REPORT)"
+
+real-repository-quality-contract:
+	$(MAKE) real-repository-quality \
+		REAL_REPOSITORY_EVIDENCE="$(REAL_REPOSITORY_CONTRACT_EVIDENCE)"
 
 creddata:
 	cd $(BENCH_DIR) && $(PY) -m bench.corpora.creddata --download --jobs "$(CREDDATA_JOBS)"

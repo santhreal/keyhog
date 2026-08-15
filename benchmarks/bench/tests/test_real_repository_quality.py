@@ -129,23 +129,27 @@ def test_synthetic_registry_passes_at_exact_quality_boundaries_without_sensitive
     assert "plaintext" not in encoded
 
 
-def test_make_target_and_nightly_workflow_execute_the_source_built_gate():
+def test_make_target_separates_operational_evidence_from_the_nightly_contract():
     makefile = (_BENCH_ROOT / "Makefile").read_text(encoding="utf-8")
     workflow = (_REPO_ROOT / ".github/workflows/bench-nightly.yml").read_text(
         encoding="utf-8"
     )
 
     for contract in (
+        "REAL_REPOSITORY_EVIDENCE ?=",
         "real-repository-quality:",
+        "REAL_REPOSITORY_EVIDENCE is required",
+        "real-repository-quality-contract:",
+        'REAL_REPOSITORY_EVIDENCE="$(REAL_REPOSITORY_CONTRACT_EVIDENCE)"',
         "--binary \"$(KEYHOG_BIN)\"",
         "--identity-receipt \"$(REAL_REPOSITORY_IDENTITY)\"",
-        "--evidence-dir \"$(REAL_REPOSITORY_EVIDENCE)\"",
     ):
         assert contract in makefile
     build = workflow.index("- name: Build keyhog release binary")
-    gate = workflow.index("- name: Enforce redacted real-repository quality gate")
-    assert build < gate
-    assert "make -C benchmarks real-repository-quality" in workflow
+    contract = workflow.index("- name: Validate redacted quality gate contract")
+    assert build < contract
+    assert "make -C benchmarks real-repository-quality-contract" in workflow
+    assert "Enforce redacted real-repository quality gate" not in workflow
 
 
 @pytest.mark.parametrize("unsafe_key", ["repository_path", "repository_name", "plaintext_label", "raw_finding"])
@@ -331,6 +335,15 @@ def test_labeled_finding_hash_must_match_ground_truth_hash(tmp_path: Path):
     value["findings"][0]["content_sha256"] = "e" * 64
 
     with pytest.raises(QualityGateError, match="content hash disagrees"):
+        load_evidence(_write_fixture(tmp_path, value))
+
+
+def test_unlabeled_finding_cannot_alias_a_ground_truth_hash(tmp_path: Path):
+    value = _fixture()
+    value["findings"][0]["redacted_label"] = None
+    value["labels"][0]["outcome"] = "missed"
+
+    with pytest.raises(QualityGateError, match="collides with a ground-truth hash"):
         load_evidence(_write_fixture(tmp_path, value))
 
 

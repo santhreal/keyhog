@@ -193,22 +193,29 @@ unlabeled density ceiling above 2.0 findings per MLOC. The required class set
 is loaded from the registry for each run, so adding a class without its
 evidence fails.
 
-Capture and gate with a source-built release candidate:
+Capture and gate with a source-built release candidate and a fresh redacted
+measurement:
 
 ```bash
 python3 -m bench.real_repository_quality identity \
-  --binary "$KEYHOG_BIN" --output results/real-repository-binary.json
+  --binary "$KEYHOG_BIN" --output results/real-repository-quality-identity.json
 python3 -m bench.real_repository_quality gate \
   --registry quality/repository-classes.toml \
-  --evidence-dir quality/synthetic-evidence \
+  --evidence-dir /path/to/redacted-evidence \
   --binary "$KEYHOG_BIN" \
-  --identity-receipt results/real-repository-binary.json \
+  --identity-receipt results/real-repository-quality-identity.json \
   --output results/real-repository-quality.json
 ```
 
-`make real-repository-quality KEYHOG_BIN="$KEYHOG_BIN"` runs both commands with
-the committed registry and synthetic evidence. The nightly benchmark workflow
-runs this target against its source-built release binary.
+`make real-repository-quality KEYHOG_BIN="$KEYHOG_BIN"
+REAL_REPOSITORY_EVIDENCE="/path/to/redacted-evidence"` runs both commands with
+the committed registry and an explicit operational measurement. The target has
+no evidence default and fails when evidence is omitted.
+
+`make real-repository-quality-contract KEYHOG_BIN="$KEYHOG_BIN"` validates the
+committed synthetic schema and threshold-boundary fixtures. The nightly
+benchmark workflow runs this contract self-test against its source-built
+release binary. It does not represent a fresh repository scan.
 
 Run these commands from `benchmarks/`. The identity receipt binds the
 executable SHA-256, source commit, workspace version, and detector-set digest.

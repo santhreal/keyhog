@@ -341,6 +341,7 @@ def load_evidence(path: str | pathlib.Path) -> RepositoryEvidence:
     content_hashes = [label.content_sha256 for label in all_labels]
     if len(content_hashes) != len(set(content_hashes)):
         raise QualityGateError("repository evidence contains duplicate ground-truth hashes")
+    ground_truth_hashes = set(content_hashes)
 
     findings = tuple(_load_finding(value) for value in findings_raw)
     known = {label.redacted_label: label for label in all_labels}
@@ -348,6 +349,13 @@ def load_evidence(path: str | pathlib.Path) -> RepositoryEvidence:
     if any(label not in known for label in matched):
         raise QualityGateError("finding references an undeclared redacted label")
     for finding in findings:
+        if (
+            finding.label is None
+            and finding.content_sha256 in ground_truth_hashes
+        ):
+            raise QualityGateError(
+                "unlabeled finding collides with a ground-truth hash"
+            )
         if finding.label is not None and (
             finding.content_sha256 != known[finding.label].content_sha256
         ):
