@@ -78,6 +78,7 @@ fn filter_inline_suppressions_keeps_non_filesystem_matches() {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     let kept = API.filter_inline_suppressions(vec![m]);
     assert_eq!(kept.len(), 1);
@@ -112,6 +113,7 @@ fn filter_inline_suppressions_drops_directive_marked_line() {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     let kept = API.filter_inline_suppressions(vec![m]);
     assert!(kept.is_empty());
@@ -146,6 +148,7 @@ fn filter_inline_suppressions_keeps_findings_after_read_error() {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
 
     let kept = API.filter_inline_suppressions(vec![m]);
@@ -186,6 +189,7 @@ fn filter_inline_suppressions_supports_migrated_directives() {
             },
             entropy: None,
             confidence: None,
+            evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
         };
         let kept = API.filter_inline_suppressions(vec![m]);
         assert!(
@@ -226,6 +230,7 @@ fn filter_inline_suppressions_with_detector_suffix() {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     let kept_match = API.filter_inline_suppressions(vec![m_match]);
     assert!(
@@ -253,6 +258,7 @@ fn filter_inline_suppressions_with_detector_suffix() {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     let kept_nonmatch = API.filter_inline_suppressions(vec![m_nonmatch]);
     assert_eq!(
@@ -297,6 +303,7 @@ fn filter_inline_suppressions_detector_suffix_is_case_insensitive() {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
 
     // Mixed-case id that case-folds to the directive target: suppressed.

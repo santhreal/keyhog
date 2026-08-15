@@ -8,9 +8,9 @@ use tempfile::TempDir;
 #[test]
 fn symlink_follows_secret_target_exit_one() {
     let dir = TempDir::new().expect("tempdir");
-    let real = dir.path().join("real.env");
+    let real = dir.path().join(".env.real");
     std::fs::write(&real, "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n").expect("write real secret");
-    std::os::unix::fs::symlink(&real, dir.path().join("link.env")).expect("symlink");
+    std::os::unix::fs::symlink(&real, dir.path().join(".env.link")).expect("symlink");
 
     let output = Command::new(binary())
         .args([

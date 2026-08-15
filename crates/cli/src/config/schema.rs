@@ -89,6 +89,8 @@ pub struct ScanSection {
     pub decode_depth: Option<usize>,
     pub min_secret_len: Option<usize>,
     pub format: Option<String>,
+    /// Finding evidence tiers that produce a non-zero CI exit.
+    pub evidence_policy: Option<String>,
     pub exclude: Option<Vec<String>>,
     pub threads: Option<usize>,
     pub reader_threads: Option<usize>,

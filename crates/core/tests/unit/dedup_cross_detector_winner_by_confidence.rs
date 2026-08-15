@@ -28,6 +28,7 @@ fn make_deduped(detector: &str, conf: Option<f64>, severity: Severity) -> Dedupe
         additional_locations: Vec::new(),
         entropy: None,
         confidence: conf,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

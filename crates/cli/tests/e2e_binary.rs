@@ -48,11 +48,11 @@ fn doc_text(rel: &str) -> String {
         .unwrap_or_else(|error| panic!("read {rel} for doc/banner coherence contract: {error}"))
 }
 
-/// One-line helper: write a temp file with given content, scan it
+/// One-line helper: write a dotenv fixture with given content, scan it
 /// with `--format json`, return (stdout, stderr, exit-code).
 fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option<i32>) {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("planted.txt");
+    let path = dir.path().join(".env.planted");
     std::fs::write(&path, content).expect("write fixture");
 
     let output = Command::new(binary())
@@ -595,7 +595,7 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
     let dir = TempDir::new().expect("tempdir");
     let fixture_dir = dir.path().join("tests").join("fixtures");
     std::fs::create_dir_all(&fixture_dir).expect("create fixture dir");
-    let path = fixture_dir.join("planted.env");
+    let path = fixture_dir.join(".env.planted");
     std::fs::write(&path, fixture).expect("write fixture");
 
     let default_out = Command::new(binary())
@@ -644,8 +644,8 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
     let optout_arr = optout_findings.as_array().expect("array");
     assert_eq!(
         optout_out.status.code(),
-        Some(1),
-        "surfacing the opted-out test-path finding must use the findings exit; stderr={}",
+        Some(0),
+        "the opted-out test-path finding remains visible review evidence and does not block the default policy; stderr={}",
         String::from_utf8_lossy(&optout_out.stderr)
     );
     assert_eq!(
@@ -659,6 +659,8 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
         Some("generic-password"),
         "the PASSWORD assignment must stay with its detector-data owner; got {optout_json}"
     );
+    assert_eq!(surfaced["evidence"]["tier"], "review");
+    assert_eq!(surfaced["evidence"]["reason_code"], "test-fixture");
     assert_eq!(
         surfaced.pointer("/location/line").and_then(|v| v.as_u64()),
         Some(1),
@@ -684,7 +686,7 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
         "the report must use keyhog_core::redact's one-character edges for this short credential"
     );
     let confidence = surfaced
-        .get("confidence")
+        .get("evidence_score")
         .and_then(|v| v.as_f64())
         .unwrap_or_default();
     assert!(
@@ -716,7 +718,7 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
 fn demo_secret_aws_example_summary_distinguishes_suppression_from_clean() {
     let fixture = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n";
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("demo-secret.env");
+    let path = dir.path().join(".env.demo-secret");
     std::fs::write(&path, fixture).expect("write fixture");
 
     // --daemon=off to guarantee the in-process orchestrator path is
@@ -890,7 +892,7 @@ fn git_staged_scan_finds_only_staged_secret() {
     init_git_repo(repo_path);
 
     std::fs::write(
-        repo_path.join("staged.env"),
+        repo_path.join(".env.staged"),
         concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
     )
     .unwrap();
@@ -900,7 +902,7 @@ fn git_staged_scan_finds_only_staged_secret() {
     )
     .unwrap();
     Command::new("git")
-        .args(["add", "staged.env"])
+        .args(["add", ".env.staged"])
         .current_dir(repo_path)
         .output()
         .unwrap();
@@ -935,7 +937,7 @@ fn git_staged_scan_finds_only_staged_secret() {
             f.get("location")
                 .and_then(|l| l.get("file_path"))
                 .and_then(|p| p.as_str())
-                .is_some_and(|p| p.ends_with("staged.env"))
+                .is_some_and(|p| p.ends_with(".env.staged"))
         }),
         "must find staged file secret; got {arr:?}"
     );
@@ -1156,7 +1158,7 @@ fn daemon_wire_scan_path_finds_planted_secret() {
     use std::process::Command;
 
     let dir = TempDir::new().expect("fixture dir");
-    let fixture = dir.path().join("daemon_planted.txt");
+    let fixture = dir.path().join(".env.daemon-planted");
     std::fs::write(
         &fixture,
         concat!("AWS_ACCESS_KEY_ID = \"ASIA", "Y34FZKBOKMUTVV7A\"\n"),
@@ -1202,8 +1204,8 @@ fn daemon_wire_scan_path_finds_planted_secret() {
 /// `daemon/protocol.rs` ScanText doc) - over a REAL bound socket
 /// rather than the in-memory `tokio::io::duplex` mock the unit test
 /// uses. Pipes a planted AWS key into `keyhog scan --daemon --stdin
-/// --format json` and asserts exit 1 + the AWS finding came back over
-/// the wire.
+/// --evidence-policy paranoid --format json` and asserts exit 1 + the AWS
+/// finding came back over the wire.
 #[cfg(unix)]
 #[test]
 fn daemon_wire_scan_stdin_finds_planted_secret() {
@@ -1215,7 +1217,15 @@ fn daemon_wire_scan_stdin_finds_planted_secret() {
     let fixture = concat!("AWS_ACCESS_KEY_ID = \"ASIA", "Y34FZKBOKMUTVV7A\"\n");
     let mut child = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
-        .args(["scan", "--daemon", "--stdin", "--format", "json"])
+        .args([
+            "scan",
+            "--daemon",
+            "--stdin",
+            "--evidence-policy",
+            "paranoid",
+            "--format",
+            "json",
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1331,7 +1341,7 @@ fn daemon_status_reports_payload_after_live_scan() {
     use std::process::Command;
 
     let dir = TempDir::new().expect("fixture dir");
-    let fixture = dir.path().join("daemon_status_planted.txt");
+    let fixture = dir.path().join(".env.daemon-status-planted");
     std::fs::write(
         &fixture,
         concat!("AWS_ACCESS_KEY_ID = \"ASIA", "Y34FZKBOKMUTVV7A\"\n"),
@@ -1557,7 +1567,7 @@ fn scan_dir_with_config(
     extra: &[&str],
 ) -> (String, String, Option<i32>) {
     let dir = TempDir::new().expect("tempdir");
-    std::fs::write(dir.path().join("planted.txt"), content).expect("write fixture");
+    std::fs::write(dir.path().join(".env.planted"), content).expect("write fixture");
     std::fs::write(dir.path().join(".keyhog.toml"), config).expect("write config");
     let output = Command::new(binary())
         .args([
@@ -1695,7 +1705,7 @@ fn config_detector_min_confidence_floor_drops_findings() {
     )
     .expect("write detector");
     std::fs::write(
-        dir.path().join("planted.txt"),
+        dir.path().join(".env.planted"),
         "token = demo_secret_ABCD1234\n",
     )
     .expect("write fixture");
@@ -1723,7 +1733,7 @@ fn config_detector_min_confidence_floor_drops_findings() {
         )
     };
 
-    // Baseline: the custom detector emits the planted token at confidence 0.5.
+    // Baseline: the dotenv role lifts the custom detector's score to 0.6.
     let (out_base, _e, before) = run("");
     assert_eq!(
         before,
@@ -1731,18 +1741,18 @@ fn config_detector_min_confidence_floor_drops_findings() {
         "baseline finding must fire; stdout={out_base}"
     );
     assert!(
-        out_base.contains("\"confidence\":0.5"),
+        out_base.contains("\"evidence_score\":0.6"),
         "fixture must stay below the high floor so this test proves filtering; stdout={out_base}"
     );
 
-    let (out_hi, _e, code_hi) = run("[detector.demo-only]\nmin_confidence = 0.6\n");
+    let (out_hi, _e, code_hi) = run("[detector.demo-only]\nmin_confidence = 0.61\n");
     assert_eq!(
         code_hi,
         Some(0),
         "a per-detector min_confidence floor above the finding confidence must suppress it; stdout={out_hi}"
     );
 
-    let (_out_lo, _e, code_lo) = run("[detector.demo-only]\nmin_confidence = 0.4\n");
+    let (_out_lo, _e, code_lo) = run("[detector.demo-only]\nmin_confidence = 0.59\n");
     assert_eq!(
         code_lo,
         Some(1),
@@ -1750,7 +1760,7 @@ fn config_detector_min_confidence_floor_drops_findings() {
     );
 
     // Lowering override: the detector now self-declares a floor above the
-    // finding's 0.5 score. The operator's 0.4 override must be compiled into the
+    // finding's 0.6 score. The operator's 0.59 override must be compiled into the
     // active detector policy before scanning; applying it only after the engine
     // would be too late because the 0.8 detector floor would already drop the
     // candidate.
@@ -1780,7 +1790,7 @@ fn config_detector_min_confidence_floor_drops_findings() {
         "the detector's own 0.8 floor must suppress its 0.5 finding; stdout={out_self}\nstderr={err_self}"
     );
     let (out_lowered, err_lowered, code_lowered) =
-        run("[detector.demo-only]\nmin_confidence = 0.4\n");
+        run("[detector.demo-only]\nmin_confidence = 0.59\n");
     assert_eq!(
         code_lowered,
         Some(1),
@@ -1904,7 +1914,7 @@ fn precision_mode_keeps_strong_drops_weak() {
         "the weak finding span must start at the planted password value"
     );
     let weak_confidence = weak
-        .get("confidence")
+        .get("evidence_score")
         .and_then(|v| v.as_f64())
         .expect("weak finding confidence");
     assert!(

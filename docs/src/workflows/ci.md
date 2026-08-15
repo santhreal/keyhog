@@ -51,11 +51,13 @@ git commit -m "chore: add KeyHog baseline"
 keyhog scan . --baseline .keyhog-baseline.json --format json-envelope --output keyhog.json
 ```
 
-Exit `0` means no new findings. Exit `1` means a credential is present that the
-baseline does not list. Exit `13` means the scan could not cover its input; a
-baseline never suppresses that, so do not read it as clean. Keep `keyhog.json`
-on every outcome. The [generic shell wrapper](#generic-shell) is the portable
-way to retain the report and the exact exit code together.
+Exit `0` means no new finding blocks the active evidence policy. Exit `1` means
+a blocking credential is present that the baseline does not list. Review-tier
+findings remain visible under the default policy; select `paranoid` to block
+them. Exit `13` means the scan could not cover its input; a baseline never
+suppresses that, so do not read it as complete. Keep `keyhog.json` on every
+outcome. The [generic shell wrapper](#generic-shell) is the portable way to
+retain the report and the exact exit code together.
 
 A scan that reads zero source bytes exits `13` with a `scan covered nothing`
 gap row, so an `--exclude-paths` glob that matches everything, a container
@@ -330,6 +332,7 @@ CI that can run a POSIX shell:
 #!/bin/sh
 set -eu
 
+printf '%s\n' '{"schema_version":{"major":2,"minor":0},"scan_status":"failed","coverage_gap_summary":[],"findings":[]}' > keyhog.json
 scan_status=0
 keyhog scan . --format json-envelope --output keyhog.json \
   2>keyhog.stderr || scan_status=$?

@@ -6,7 +6,7 @@
 //! This file is DISTINCT from `regression_cli_diff_baseline_depth.rs`, which
 //! drives the standalone `keyhog diff <before> <after>` subcommand over two
 //! prebuilt baseline JSON docs. Here we drive the SCAN-time baseline pipeline:
-//!   * `--create-baseline PATH` snapshots current findings to a v1 JSON file and
+//!   * `--create-baseline PATH` snapshots current findings to a v2 JSON file and
 //!     exits 0 without emitting a findings report (orchestrator/run.rs returns
 //!     early);
 //!   * `--baseline PATH` suppresses any finding whose `(detector_id,
@@ -143,15 +143,15 @@ fn baseline_detectors(v: &serde_json::Value) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------
-// --create-baseline, writes a v1 file, exits 0, records the identity pair
+// --create-baseline, writes a v2 file, exits 0, records identity and evidence
 // ---------------------------------------------------------------------------
 
-/// Scanning a single planted PAT with `--create-baseline` writes a version-1
-/// document with exactly one entry carrying the detector id, and exits 0 (the
-/// create path returns before the findings report / findings exit code).
+/// Scanning a single planted PAT with `--create-baseline` writes a version-2
+/// document with one evidence-bearing detector entry and exits `0`. The create
+/// path returns before finding-report exit classification.
 #[test]
-fn create_baseline_writes_v1_one_entry_and_exits_zero() {
-    let (_d, f) = file_with("secrets.env", &format!("{PAT}\n"));
+fn create_baseline_writes_v2_one_entry_and_exits_zero() {
+    let (_d, f) = file_with(".env.secrets", &format!("{PAT}\n"));
     let base = _d.path().join("baseline.json");
     let (code, _out, err) = scan(&f, &["--create-baseline", base.to_str().unwrap()]);
     assert_eq!(
@@ -163,8 +163,8 @@ fn create_baseline_writes_v1_one_entry_and_exits_zero() {
     let v = read_baseline(&base);
     assert_eq!(
         v["version"].as_u64(),
-        Some(1),
-        "a created baseline must be version 1; got {v}"
+        Some(2),
+        "a created baseline must be version 2; got {v}"
     );
     let entries = v["entries"].as_array().expect("entries array");
     assert_eq!(entries.len(), 1, "exactly one PAT → one entry; got {v}");
@@ -254,7 +254,7 @@ fn create_baseline_with_dead_verification_writes_snapshot_and_exits_zero() {
 /// (the baseline-specific spelling documented in baseline.rs::baseline_hash_key).
 #[test]
 fn create_baseline_hash_is_sha256_prefixed_64_hex() {
-    let (_d, f) = file_with("secrets.env", &format!("{PAT}\n"));
+    let (_d, f) = file_with(".env.secrets", &format!("{PAT}\n"));
     let base = _d.path().join("baseline.json");
     let (code, _o, _e) = scan(&f, &["--create-baseline", base.to_str().unwrap()]);
     assert_eq!(code, Some(0));
@@ -332,7 +332,7 @@ fn create_baseline_multi_entry_sorted_by_detector_id() {
 /// entries → no findings exit code).
 #[test]
 fn baseline_suppresses_known_finding_exit_zero_empty_report() {
-    let (_d, f) = file_with("secrets.env", &format!("{PAT}\n"));
+    let (_d, f) = file_with(".env.secrets", &format!("{PAT}\n"));
     let base = _d.path().join("baseline.json");
     let (c0, _o, _e) = scan(&f, &["--create-baseline", base.to_str().unwrap()]);
     assert_eq!(c0, Some(0));
@@ -370,7 +370,7 @@ fn empty_baseline_surfaces_finding_exit_one() {
         "a clean scan produces a zero-entry baseline; got {v0}"
     );
 
-    let (_pd, pf) = file_with("secrets.env", &format!("{PAT}\n"));
+    let (_pd, pf) = file_with(".env.secrets", &format!("{PAT}\n"));
     let (code, out, err) = scan(
         &pf,
         &["--baseline", base.to_str().unwrap(), "--format", "json"],
@@ -480,7 +480,7 @@ fn baseline_suppression_is_path_independent() {
 /// already acknowledged (exit 0) with the entry count unchanged (dedup).
 #[test]
 fn update_baseline_creates_then_dedups_on_rerun() {
-    let (_d, f) = file_with("secrets.env", &format!("{PAT}\n"));
+    let (_d, f) = file_with(".env.secrets", &format!("{PAT}\n"));
     let base = _d.path().join("evolving-baseline.json");
     assert!(!base.exists(), "baseline must not pre-exist");
 
@@ -558,7 +558,7 @@ fn update_baseline_grows_and_preserves_existing() {
 /// `--create-baseline` hint (it must NOT silently scan without suppression).
 #[test]
 fn baseline_findings_report_fails_closed_exit_two() {
-    let (_d, f) = file_with("secrets.env", &format!("{PAT}\n"));
+    let (_d, f) = file_with(".env.secrets", &format!("{PAT}\n"));
     let bad = _d.path().join("findings-report.json");
     std::fs::write(
         &bad,
@@ -583,7 +583,7 @@ fn baseline_findings_report_fails_closed_exit_two() {
 /// expected version numbers.
 #[test]
 fn baseline_unsupported_version_fails_closed_exit_two() {
-    let (_d, f) = file_with("secrets.env", &format!("{PAT}\n"));
+    let (_d, f) = file_with(".env.secrets", &format!("{PAT}\n"));
     let bad = _d.path().join("v999-baseline.json");
     std::fs::write(&bad, r#"{"version": 999, "created": "t", "entries": []}"#).expect("write v999");
 
@@ -603,7 +603,7 @@ fn baseline_unsupported_version_fails_closed_exit_two() {
 /// `--baseline X --create-baseline Y` is a usage error → clap exit 2.
 #[test]
 fn baseline_and_create_baseline_conflict_exit_two() {
-    let (_d, f) = file_with("secrets.env", &format!("{PAT}\n"));
+    let (_d, f) = file_with(".env.secrets", &format!("{PAT}\n"));
     let (code, _out, err) = scan(&f, &["--baseline", "b.json", "--create-baseline", "c.json"]);
     assert_eq!(
         code,
@@ -625,7 +625,7 @@ fn baseline_and_create_baseline_conflict_exit_two() {
 /// value GitHub code-scanning dedups alerts on across runs).
 #[test]
 fn sarif_fingerprint_stable_across_two_runs() {
-    let (_d, f) = file_with("secrets.env", &format!("{PAT}\n"));
+    let (_d, f) = file_with(".env.secrets", &format!("{PAT}\n"));
 
     let fp_of = |path: &Path| -> String {
         let (_c, out, _e) = scan(path, &["--format", "sarif"]);
@@ -655,7 +655,7 @@ fn sarif_fingerprint_stable_across_two_runs() {
 /// surfaces describe the exact same credential hash and must never drift.
 #[test]
 fn sarif_fingerprint_equals_baseline_hash_body() {
-    let (_d, f) = file_with("secrets.env", &format!("{PAT}\n"));
+    let (_d, f) = file_with(".env.secrets", &format!("{PAT}\n"));
 
     // Baseline surface: sha256:-prefixed hex.
     let base = _d.path().join("baseline.json");

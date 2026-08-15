@@ -325,6 +325,7 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
             show_secrets: false,
             no_suppress_test_fixtures: false,
             hide_client_safe: false,
+            evidence_policy: crate::args::EvidencePolicy::Default,
         },
         verify: ResolvedVerifyPolicy::disabled(),
     }

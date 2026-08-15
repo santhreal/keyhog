@@ -12,10 +12,11 @@ The main subcommand. Scans one or more `PATH` roots (default: current
 directory) and emits findings. Pass several roots in a single run
 (`keyhog scan src/ tests/ config/`) and each is walked as its own source;
 a root nested inside another is folded into its covering parent (announced
-on stderr) so no subtree is scanned twice. Exit code: `0` clean, `1` findings
-present, `2` user error, `3` system error, `10` live credential, `11` scanner
-panic, `12` selected or required GPU unavailable, `13` requested source failed
-or coverage incomplete.
+on stderr) so no subtree is scanned twice. Exit code: `0` means no finding
+blocks the active evidence policy, `1` means at least one finding blocks,
+`2` user error, `3` system error, `10` live credential, `11` scanner panic,
+`12` selected or required GPU unavailable, and `13` requested source failure
+or incomplete coverage.
 
 <!-- keyhog-generated: cli-reference command="scan" -->
 | Argument | Value | Default | Description |
@@ -59,6 +60,7 @@ or coverage incomplete.
 | `--entropy-bpe-max-bytes-per-token` | `RATIO` |  | BPE "rare-not-random" suppression bound in bytes-per-token (default: 2.2). A surviving entropy/generic candidate whose cl100k_base bytes-per-token is above this is treated as word-like (dotted API paths, prose) and dropped. Lower = more aggressive suppression (higher precision, lower recall); a large value effectively disables the gate |
 | `--entropy-source-files` |  |  | Enable entropy scanning in source code files |
 | `--entropy-threshold` | `BITS` |  | Entropy threshold in bits per byte (default: 4.5) |
+| `--evidence-policy` | `POLICY` |  | Finding evidence tiers that produce a non-zero CI exit. `default` blocks `likely` and `confirmed`; `paranoid` also blocks `review`. Findings remain visible under either policy Possible values: `default`, `paranoid`. |
 | `--exclude-paths` | `PATH...` |  | Explicit paths or glob patterns to exclude from scanning |
 | `--fast` |  |  | Fast mode: pattern matching only. No decode, no entropy, no ML scoring. Maximum speed. A preset is a BASE: it seeds defaults, then compatible explicit knobs override it (e.g. `--fast --decode-depth 2` re-enables shallow decode on top of the fast base). Entropy-only knobs conflict because fast mode disables entropy, so accepting them would create a no-op flag |
 | `--format` | `FORMAT` | `text` | Output format. `json` is a bare findings array for pipelines; prefer `json-envelope` for scan status, coverage gaps, and backend recoveries in one document (KH-1435 / KH-1474) Possible values: `text`, `json`, `json-envelope`, `jsonl`, `jsonl-envelope`, `sarif`, `csv`, `github-annotations`, `gitlab-sast`, `html`, `junit`. |
@@ -244,6 +246,7 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--entropy-bpe-max-bytes-per-token` | `RATIO` |  | BPE "rare-not-random" suppression bound in bytes-per-token (default: 2.2). A surviving entropy/generic candidate whose cl100k_base bytes-per-token is above this is treated as word-like (dotted API paths, prose) and dropped. Lower = more aggressive suppression (higher precision, lower recall); a large value effectively disables the gate |
 | `--entropy-source-files` |  |  | Enable entropy scanning in source code files |
 | `--entropy-threshold` | `BITS` |  | Entropy threshold in bits per byte (default: 4.5) |
+| `--evidence-policy` | `POLICY` |  | Finding evidence tiers that produce a non-zero CI exit. `default` blocks `likely` and `confirmed`; `paranoid` also blocks `review`. Findings remain visible under either policy Possible values: `default`, `paranoid`. |
 | `--exclude-paths` | `PATH...` |  | Explicit paths or glob patterns to exclude from scanning |
 | `--fast` |  |  | Fast mode: pattern matching only. No decode, no entropy, no ML scoring. Maximum speed. A preset is a BASE: it seeds defaults, then compatible explicit knobs override it (e.g. `--fast --decode-depth 2` re-enables shallow decode on top of the fast base). Entropy-only knobs conflict because fast mode disables entropy, so accepting them would create a no-op flag |
 | `--format` | `FORMAT` | `text` | Output format. `json` is a bare findings array for pipelines; prefer `json-envelope` for scan status, coverage gaps, and backend recoveries in one document (KH-1435 / KH-1474) Possible values: `text`, `json`, `json-envelope`, `jsonl`, `jsonl-envelope`, `sarif`, `csv`, `github-annotations`, `gitlab-sast`, `html`, `junit`. |

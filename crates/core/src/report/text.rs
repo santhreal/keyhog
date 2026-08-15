@@ -146,28 +146,29 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
         let severity_str = report_style::severity_label(finding.severity, self.color);
         let verified = report_style::verification_label(&finding.verification, self.color);
         let location = format_location(&finding.location);
-        // `confidence` is a public field, so a library-constructed finding could
-        // carry an out-of-range or NaN score. Sanitize ONCE into [0,1] and derive
-        // both the bar fill and the percent from it, so they can never disagree
-        // (e.g. a full bar rendered "150%", or a NaN percent). NaN -> 0, matching
-        // the scanner's `finalize_confidence` (clamp alone does not sanitize NaN).
-        let confidence_value = finding.confidence.unwrap_or(0.0); // LAW10: no confidence score -> empty bar; display only, finding still printed
-        let display_conf = if confidence_value.is_finite() {
-            confidence_value.clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        const BAR_WIDTH: usize = 6;
-        let filled = ((display_conf * BAR_WIDTH as f64) as usize).min(BAR_WIDTH);
-        let bar = format!("{}{}", "■".repeat(filled), "□".repeat(BAR_WIDTH - filled));
-        let confidence = format!(
-            "{} {}",
-            report_style::confidence_bar(&bar, display_conf, self.color),
-            report_style::dim(
-                &format!("{:>3}%", (display_conf * 100.0) as u32),
-                self.color,
-            )
-        );
+        // `evidence_score` is optional and public. Omit an unavailable score;
+        // sanitize a present library-provided value into [0, 1] before display.
+        let evidence_score = finding
+            .evidence_score
+            .map(|value| {
+                let display_score = if value.is_finite() {
+                    value.clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                const BAR_WIDTH: usize = 6;
+                let filled = ((display_score * BAR_WIDTH as f64) as usize).min(BAR_WIDTH);
+                let bar = format!("{}{}", "■".repeat(filled), "□".repeat(BAR_WIDTH - filled));
+                format!(
+                    "  {} {}",
+                    report_style::confidence_bar(&bar, display_score, self.color),
+                    report_style::dim(
+                        &format!("{:>3}%", (display_score * 100.0) as u32),
+                        self.color,
+                    )
+                )
+            })
+            .unwrap_or_default();
 
         // Severity color for the box border
         let border_ansi = report_style::severity_border_style(finding.severity);
@@ -203,7 +204,7 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
             location,
         )?;
 
-        // Confidence + verification
+        // Evidence verdict + optional score + verification
         let verify_suffix = if verified.is_empty() {
             String::new()
         } else {
@@ -211,10 +212,12 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
         };
         writeln!(
             self.writer,
-            "  {} {} {}{}",
+            "  {} {} {}/{}{}{}",
             report_style::paint("│", border_ansi, self.color),
-            report_style::dim("Confidence:", self.color),
-            confidence,
+            report_style::dim("Evidence:  ", self.color),
+            finding.evidence.tier().as_str(),
+            finding.evidence.reason_code().as_str(),
+            evidence_score,
             verify_suffix,
         )?;
 
@@ -526,20 +529,20 @@ fn render_correlations(correlations: &[CorrelatedCredential], color: bool) -> St
             report_style::dim(correlation.kind.as_str(), color),
             sanitize_terminal(&correlation.title),
         );
-        let confidence = match (
-            correlation.confidence,
-            correlation.strongest_member_confidence,
+        let evidence_score = match (
+            correlation.evidence_score,
+            correlation.strongest_member_evidence_score,
         ) {
             (Some(lifted), Some(member)) => {
-                format!("confidence {lifted:.2} (strongest member {member:.2})")
+                format!("evidence score {lifted:.2} (strongest member {member:.2})")
             }
-            _ => "confidence unscored".to_string(),
+            _ => "evidence score unscored".to_string(),
         };
         let _ = writeln!(
             // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
             out,
             "      {}",
-            report_style::dim(&confidence, color)
+            report_style::dim(&evidence_score, color)
         );
         let _ = writeln!(
             // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.

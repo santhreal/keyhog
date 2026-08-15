@@ -53,7 +53,7 @@ fn serve_proxy_once(body: &'static str) -> (String, std::thread::JoinHandle<()>)
         let mut request = [0_u8; 4_096];
         let read = stream.read(&mut request).expect("read endpoint request");
         assert!(
-            String::from_utf8_lossy(&request[..read]).contains("/secret.env HTTP/1."),
+            String::from_utf8_lossy(&request[..read]).contains("/.env.secret HTTP/1."),
             "unexpected endpoint request: {}",
             String::from_utf8_lossy(&request[..read])
         );
@@ -74,7 +74,7 @@ fn mass_daemon_directory_scan_reports_exact_finding_location() {
     let guard = DaemonGuard::start_mass();
     let work = TempDir::new().expect("work dir");
     std::fs::write(work.path().join("clean.txt"), "service=example\n").expect("clean fixture");
-    let secret = work.path().join("secret.env");
+    let secret = work.path().join(".env.secret");
     std::fs::write(&secret, aws_fixture()).expect("secret fixture");
 
     let output = scan_json(
@@ -132,7 +132,7 @@ fn mass_daemon_incremental_skips_clean_files_and_replays_secret_files() {
         .join(cache.path().file_name().expect("cache directory name"))
         .join("merkle.idx");
     std::fs::write(work.path().join("clean.txt"), "service=example\n").expect("clean fixture");
-    std::fs::write(work.path().join("secret.env"), aws_fixture()).expect("secret fixture");
+    std::fs::write(work.path().join(".env.secret"), aws_fixture()).expect("secret fixture");
     let root = work.path().to_str().expect("utf-8 work path");
     let cache_arg = relative_cache_path.to_str().expect("utf-8 cache path");
 
@@ -381,7 +381,7 @@ fn mass_gpu_primary_contract_fails_closed_on_cpu_worker() {
 fn assert_mass_gpu_primary_backend(backend: &'static str) {
     let guard = DaemonGuard::start_mass_gpu_primary_with_backend(backend);
     let work = TempDir::new().expect("work dir");
-    let secret = work.path().join("secret.env");
+    let secret = work.path().join(".env.secret");
     std::fs::write(&secret, aws_fixture()).expect("secret fixture");
 
     let output = scan_json(
@@ -444,7 +444,7 @@ fn mass_gpu_primary_contract_accepts_full_wgpu_execution() {
 fn mass_mode_rejects_warm_only_daemon_without_fallback() {
     let guard = DaemonGuard::start();
     let work = TempDir::new().expect("work dir");
-    std::fs::write(work.path().join("secret.env"), aws_fixture()).expect("secret fixture");
+    std::fs::write(work.path().join(".env.secret"), aws_fixture()).expect("secret fixture");
 
     let output = scan_json(
         &guard,
@@ -495,7 +495,7 @@ fn mass_daemon_stdin_success_uses_protected_chunk_transport() {
 fn mass_daemon_endpoint_success_uses_protected_chunk_transport() {
     let guard = DaemonGuard::start_mass();
     let work = TempDir::new().expect("work dir");
-    let url = "http://93.184.216.34/secret.env";
+    let url = "http://93.184.216.34/.env.secret";
     let (proxy, server) = serve_proxy_once(aws_fixture());
 
     let output = scan_json(
@@ -545,7 +545,7 @@ fn mass_daemon_endpoint_failure_preserves_coverage_error() {
             "scan",
             "--daemon=mass",
             "--url",
-            "http://127.0.0.1:9/secret.env",
+            "http://127.0.0.1:9/.env.secret",
             "--format",
             "json-envelope",
         ],

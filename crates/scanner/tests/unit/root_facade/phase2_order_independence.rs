@@ -140,6 +140,7 @@ fn tied_match(offset: usize) -> RawMatch {
         },
         entropy: None,
         confidence: Some(0.5),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

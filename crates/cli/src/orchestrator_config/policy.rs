@@ -20,6 +20,7 @@ pub(crate) struct ResolvedReportPolicy {
     pub(crate) show_secrets: bool,
     pub(crate) no_suppress_test_fixtures: bool,
     pub(crate) hide_client_safe: bool,
+    pub(crate) evidence_policy: crate::args::EvidencePolicy,
 }
 
 impl ResolvedReportPolicy {
@@ -33,6 +34,7 @@ impl ResolvedReportPolicy {
             show_secrets: args.show_secrets,
             no_suppress_test_fixtures: args.no_suppress_test_fixtures,
             hide_client_safe: args.hide_client_safe,
+            evidence_policy: args.evidence_policy.unwrap_or_default(),
         }
     }
 }

@@ -426,6 +426,12 @@ impl CompiledScanner {
         let provenance = crate::candidate_provenance::CandidateProvenance::named(
             entry.detector_index,
             entry.pattern_index,
+        )
+        .with_named_evidence(
+            &detector_plan.semantic,
+            is_generic,
+            checksum_decision.is_proven_valid(),
+            !companions.is_empty(),
         );
 
         match policy_result {
@@ -458,7 +464,7 @@ impl CompiledScanner {
                 let provenance = scan_state
                     .source_semantic_evidence(chunk, source_offset, credential)
                     .map_or(provenance, |evidence| {
-                        provenance.with_source_semantics(evidence)
+                        provenance.with_source_semantics(evidence, Some(&detector_plan.semantic))
                     });
                 let raw_match = build_raw_match(
                     execution_policy.severity,
@@ -505,7 +511,7 @@ impl CompiledScanner {
                 let provenance = scan_state
                     .source_semantic_evidence(chunk, source_offset, credential)
                     .map_or(provenance, |evidence| {
-                        provenance.with_source_semantics(evidence)
+                        provenance.with_source_semantics(evidence, Some(&detector_plan.semantic))
                     });
                 let pending_raw_match = crate::pipeline::build_pending_raw_match(
                     execution_policy.severity,

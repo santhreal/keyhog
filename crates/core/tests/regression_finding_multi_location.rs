@@ -101,6 +101,7 @@ fn raw_named(
         location,
         entropy: None,
         confidence,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

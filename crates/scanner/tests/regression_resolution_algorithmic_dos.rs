@@ -67,6 +67,7 @@ fn at(detector_id: &str, file: &str, offset: usize, width: usize, line: usize) -
         },
         entropy: None,
         confidence: Some(0.5),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

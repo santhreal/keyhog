@@ -19,7 +19,7 @@ fn scan_rejects_expired_keyhogignore_policy() {
     )
     .expect("write expired allowlist");
     std::fs::write(
-        dir.path().join("secret.env"),
+        dir.path().join(".env.secret"),
         concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
     )
     .expect("write fixture");

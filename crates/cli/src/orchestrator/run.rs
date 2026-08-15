@@ -66,7 +66,7 @@ pub(super) struct ScanOutcome {
     pub(super) autoroute_calibration: bool,
     pub(super) scanner_panicked: bool,
     pub(super) has_live_credentials: bool,
-    pub(super) has_new_entries: bool,
+    pub(super) has_blocking_findings: bool,
     pub(super) incremental_cache_failed: bool,
     pub(super) source_coverage_incomplete: bool,
     /// A requested source produced ZERO chunks and errored: not a gap in the
@@ -104,7 +104,7 @@ pub(super) fn resolve_scan_exit(outcome: ScanOutcome) -> u8 {
         EXIT_SCANNER_PANIC
     } else if outcome.has_live_credentials {
         EXIT_LIVE_CREDENTIALS
-    } else if outcome.has_new_entries {
+    } else if outcome.has_blocking_findings {
         EXIT_FINDINGS
     } else if outcome.autoroute_calibration {
         if outcome.autoroute_persist_failed {
@@ -1578,13 +1578,13 @@ impl ScanOrchestrator {
             || baseline_coverage_failed
             || total_source_failure;
 
-        if let Some(ref path) = self.args.create_baseline {
+        if let Some(path) = &self.args.create_baseline {
             if baseline_untrustworthy {
                 let exit = resolve_scan_exit(ScanOutcome {
                     autoroute_calibration: false,
                     scanner_panicked,
                     has_live_credentials: false,
-                    has_new_entries: false,
+                    has_blocking_findings: false,
                     incremental_cache_failed,
                     source_coverage_incomplete: baseline_coverage_failed,
                     total_source_failure,
@@ -1650,13 +1650,13 @@ impl ScanOrchestrator {
             return Ok(std::process::ExitCode::SUCCESS);
         }
 
-        let (report_findings, has_new_entries) = if let Some(ref path) = self.args.update_baseline {
+        let report_findings = if let Some(path) = &self.args.update_baseline {
             if baseline_untrustworthy {
                 let exit = resolve_scan_exit(ScanOutcome {
                     autoroute_calibration: false,
                     scanner_panicked,
                     has_live_credentials: false,
-                    has_new_entries: false,
+                    has_blocking_findings: false,
                     incremental_cache_failed,
                     source_coverage_incomplete: baseline_coverage_failed,
                     total_source_failure,
@@ -1691,7 +1691,6 @@ impl ScanOrchestrator {
                 Baseline::empty()
             };
             let keep = baseline.new_finding_mask(&findings);
-            let had_new = keep.iter().any(|keep| *keep);
             let new_count = keep.iter().filter(|keep| **keep).count();
             baseline.merge(&findings);
             baseline.save(path)?;
@@ -1703,23 +1702,26 @@ impl ScanOrchestrator {
                 );
             }
             Baseline::retain_mask(&mut findings, &keep);
-            (findings, had_new)
-        } else if let Some(ref path) = self.args.baseline {
+            findings
+        } else if let Some(path) = &self.args.baseline {
             let baseline = Baseline::load(path)?;
             let pre_baseline_count = findings.len();
             baseline.retain_new(&mut findings);
             let suppressed_count = pre_baseline_count - findings.len();
-            let has_new = !findings.is_empty();
             if show_progress && suppressed_count > 0 {
                 eprintln!("\n  Suppressed {} baseline finding(s)", suppressed_count);
             }
-            (findings, has_new)
+            findings
         } else {
-            let has_findings = !findings.is_empty();
-            (findings, has_findings)
+            findings
         };
 
-        let has_live_credentials = scan_exit_code(&report_findings) == EXIT_LIVE_CREDENTIALS;
+        let exit_class = scan_exit_code(
+            &report_findings,
+            self.effective_config.report.evidence_policy.is_paranoid(),
+        );
+        let has_live_credentials = exit_class == EXIT_LIVE_CREDENTIALS;
+        let has_blocking_findings = exit_class == EXIT_FINDINGS;
 
         // `--stream`: emit one redacted `[stream]` preview per REPORTED finding.
         // Wired to the resolved report stream (post filter_and_resolve /
@@ -1835,7 +1837,7 @@ impl ScanOrchestrator {
             autoroute_calibration: self.args.autoroute_calibrate,
             scanner_panicked,
             has_live_credentials,
-            has_new_entries,
+            has_blocking_findings,
             incremental_cache_failed,
             source_coverage_incomplete,
             total_source_failure,
@@ -1876,27 +1878,30 @@ impl ScanOrchestrator {
     }
 }
 
-/// Pure exit-code mapping for the *reported* findings set: the single source of
-/// truth for the "live credentials found" scan exit signal.
+/// Pure exit-code mapping for the reported finding set.
 ///
-/// Returns [`EXIT_LIVE_CREDENTIALS`] (10) when ANY reported finding was
-/// confirmed [`VerificationResult::Live`] by the verifier, else [`EXIT_SUCCESS`]
-/// (0). Every other verification state: `Skipped` (the default when `--verify`
-/// is off), `Dead`, `Revoked`, `RateLimited`, `Error(..)`, `Unverifiable`: is
-/// NOT live and does not raise the code here (a dead/unverified finding is exit
-/// 1, decided by the caller's findings branch). A single `Live` anywhere in the
-/// set trips 10 even when it is mixed with non-live findings.
+/// Live verification takes precedence and returns
+/// [`EXIT_LIVE_CREDENTIALS`] (10). Otherwise, confirmed and likely evidence
+/// return [`EXIT_FINDINGS`] (1) under the default policy. Review evidence
+/// remains visible but returns [`EXIT_SUCCESS`] (0), unless `paranoid` is true.
 ///
-/// Keeping this a pure `&[VerifiedFinding] -> u8` function (rather than an
-/// inline `.any(..)` in `run()`) makes the live-credential exit contract unit
-/// testable without spawning a scan, and gives the code exactly one definitional
-/// home.
-pub(crate) fn scan_exit_code(findings: &[VerifiedFinding]) -> u8 {
+/// Verification states other than `Live` do not independently change the exit
+/// code. Their scanner evidence still applies, so a dead or skipped finding can
+/// block when its tier is confirmed or likely.
+///
+/// Keeping this mapping pure gives daemon and one-shot reporting one
+/// definitional source for identical exit semantics.
+pub(crate) fn scan_exit_code(findings: &[VerifiedFinding], paranoid: bool) -> u8 {
     if findings
         .iter()
-        .any(|f| matches!(f.verification, VerificationResult::Live))
+        .any(|finding| matches!(finding.verification, VerificationResult::Live))
     {
         EXIT_LIVE_CREDENTIALS
+    } else if findings
+        .iter()
+        .any(|finding| finding.evidence.tier().blocks(paranoid))
+    {
+        EXIT_FINDINGS
     } else {
         EXIT_SUCCESS
     }

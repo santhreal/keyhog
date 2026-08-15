@@ -65,6 +65,7 @@ fn raw(&(det, cred, sev, conf, offset, line): &Spec) -> RawMatch {
         },
         entropy: None,
         confidence: conf,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

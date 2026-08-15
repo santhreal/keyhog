@@ -338,6 +338,7 @@ fn canonical_match_credentials_use_zeroizing_sensitive_string() {
         },
         entropy: Some(4.5),
         confidence: Some(0.95),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     assert_sensitive_string(&raw.credential);
 

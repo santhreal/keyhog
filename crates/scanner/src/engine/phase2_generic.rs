@@ -474,12 +474,13 @@ impl CompiledScanner {
                 };
                 let line_number = absolute_line(chunk.metadata.base_line, mapped_line);
                 let provenance =
-                    crate::candidate_provenance::CandidateProvenance::generic_assignment();
+                    crate::candidate_provenance::CandidateProvenance::generic_assignment()
+                        .with_checksum_proof(checksum_decision.is_proven_valid());
                 let enrich_provenance = |scan_state: &mut ScanState| {
                     scan_state
                         .source_semantic_evidence(chunk, source_offset, value)
                         .map_or(provenance, |evidence| {
-                            provenance.with_source_semantics(evidence)
+                            provenance.with_source_semantics(evidence, None)
                         })
                 };
                 let build_raw = |scan_state: &mut ScanState, confidence| {

@@ -69,7 +69,8 @@ fn verified_finding(hash_byte: u8) -> VerifiedFinding {
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
         entropy: None,
-        confidence: None,
+        evidence_score: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -120,6 +121,7 @@ fn inline_fixture(dir: &Path) -> (std::path::PathBuf, Chunk, RawMatch) {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     (path, chunk, m)
 }

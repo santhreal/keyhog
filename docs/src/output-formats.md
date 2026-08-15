@@ -10,13 +10,13 @@ self-contained report page, and `junit` emits a JUnit XML test-report
 (one `<testcase>` per finding) for CI systems that ingest JUnit.
 
 Every renderer receives the same completed scan report. Its common metadata
-(version, timestamps, duration, targets, source bytes, source chunks, and detector count) is
-owned by the core `ScanReport` model, so an output format cannot accidentally
-invent a second scan clock or target list. Formats keep their established
-schemas: HTML displays the full metadata panel, GitLab SAST projects the scan
-times required by its schema, and finding-only formats preserve their stable
-finding shape. JSON-envelope, JSONL-envelope, and HTML artifacts also include
-`resolved_scan`: a versioned object with the selected `preset`, sorted
+(version, timestamps, duration, targets, source bytes, source chunks, and
+detector count) is owned by the core `ScanReport` model, so an output format
+cannot accidentally invent a second scan clock or target list. Each format
+retains its owned projection: HTML displays the full metadata panel, GitLab
+SAST projects the scan times required by its schema, and finding-only formats
+omit scan-wide state. JSON-envelope, JSONL-envelope, and HTML artifacts also
+include a versioned `resolved_scan` object with the selected `preset`, sorted
 `effective` detection values, and an `overrides` list. This is the authoritative
 machine-diffable record of what `default`, `fast`, `deep`, or `precision` meant
 for that run; it includes compatible refinements such as
@@ -50,8 +50,8 @@ artifact. JSON-envelope, JSONL-envelope, HTML, and the CSV preamble carry
 `runs[].properties["keyhog.backend.recoveries"]`; GitLab SAST uses
 `scan.keyhog_backend_recoveries`; JUnit adds `keyhog.backend.recovery` suite
 properties; GitHub annotations emit a warning with recovered bytes and the
-repair command. Plain `json` and `jsonl` retain their stable finding-only
-schemas and receive the same recovery warning on stderr as text.
+repair command. Plain `json` and `jsonl` remain finding-only and receive the
+same recovery warning on stderr as text.
 Each metadata projection retains the failed backend, recovery backend,
 recovered byte count, and `keyhog calibrate-autoroute` remediation.
 
@@ -64,13 +64,19 @@ CSV, JUnit, GitLab SAST, and GitHub annotations use a deterministic redacted
 summary. An empty object means the detector did not produce companion evidence,
 not that companion matching was disabled.
 
+Every finding format exposes the exact canonical evidence tier and reason code.
+`confirmed` identifies intrinsic or live proof, `likely` identifies strong
+vendor-specific shape in a credential-bearing role, and `review` identifies a
+candidate that needs human judgment. The optional `evidence_score` supplements
+that verdict when the detection path measured a score; it never replaces the
+tier or reason.
+
 `entropy` is an optional Shannon bits-per-byte measurement. It is present only
 when the detection path measured entropy; an omitted field means that path did
 not produce entropy evidence. JSON, JSONL, and HTML expose it as a numeric
 field; SARIF exposes it as a result property; text, JUnit, GitLab SAST, and
-GitHub annotations render it only when measured. It is independent of
-`confidence`, which combines entropy with detector, context, shape, and
-verification evidence.
+GitHub annotations render it only when measured. It is independent of the
+optional `evidence_score`.
 
 ## `--format text` (default)
 
@@ -81,8 +87,8 @@ and screenshots. Colors auto-detect TTY; pipe through `cat` (or set
 ```text
   ┌    CRITICAL ─── Stripe Secret Key
   │ Secret:     sk_l...p7dc
-  │ Location:   src/config/staging.env:14
-  │ Confidence: ■■■■■■ 100%
+  │ Location:   src/config/.env.staging:14
+  │ Evidence:   likely/vendor-pattern  ■■■■■■ 100%
   │ Action:     Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.
   │ Docs:       https://docs.stripe.com/keys#roll-api-key
   └─────────────────────────────────────────────
@@ -91,19 +97,19 @@ and screenshots. Colors auto-detect TTY; pipe through `cat` (or set
   1 secret found · 1 unverified
 ```
 
-Each finding is a severity-colored box: the header carries the severity
-and detector name, then `Secret:` (the credential redacted to its first
-and last few characters), `Location:` (`file:line:offset`), a
-`Confidence:` bar, and an `Action:`/`Docs:` remediation hint. Verified
-runs add the liveness state and commit/author rows when known. The
+Each finding is a severity-colored box: the header carries the severity and
+detector name, then `Secret:` (the credential redacted to its first and last
+few characters), `Location:` (`file:line:offset`), `Evidence:` with the exact
+tier/reason and optional score bar, and an `Action:`/`Docs:` remediation hint.
+Verified runs add the liveness state and commit/author rows when known. The
 `Results` footer joins the counts with ` · `.
 
 ## `--format json`
 
-Legacy JSON array retained for compatibility with existing consumers. Every
-finding has all required documented fields present; optional fields are omitted
-only when their value is unavailable. Use `--format json-envelope` for a
-versioned root object with schema identity and scan metadata.
+Bare JSON array for simple pipelines. Every finding has all required documented
+fields present; optional fields are omitted only when their value is
+unavailable. Use `--format json-envelope` for a versioned root object with
+schema identity and scan metadata.
 
 The following is one complete finding object. The values are synthetic. The
 credential is already redacted, and the hash is a non-secret example value.
@@ -119,7 +125,7 @@ credential is already redacted, and the hash is a non-secret example value.
   "companions_redacted": {},
   "location": {
     "source": "filesystem",
-    "file_path": "src/config/staging.env",
+    "file_path": "src/config/.env.staging",
     "line": 14,
     "offset": 218,
     "commit": null,
@@ -129,7 +135,19 @@ credential is already redacted, and the hash is a non-secret example value.
   "verification": "skipped",
   "metadata": {},
   "additional_locations": [],
-  "confidence": 1.0,
+  "evidence": {
+    "tier": "likely",
+    "reason_code": "vendor-pattern",
+    "provenance": {
+      "schema_version": 1,
+      "detector_digest": "0123456789abcdef",
+      "pattern_index": 0,
+      "candidate_channel": "pattern",
+      "source_role": "environment-assignment-value",
+      "context_class": "vendor-pattern"
+    }
+  },
+  "evidence_score": 1.0,
   "remediation": {
     "action": "Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.",
     "revoke_url": "https://docs.stripe.com/keys#roll-api-key",
@@ -142,6 +160,16 @@ Optional fields such as `entropy` are absent when they were not measured.
 Location members are present and use `null` when the value is unknown. A
 verification transport failure is encoded as an externally tagged object, for
 example `"verification":{"error":"timeout: the endpoint did not respond within the verification deadline. Fix: raise the verification timeout with --timeout, or check network egress / proxy reachability to the credential's host"}`.
+
+`evidence.provenance` is secret-safe. The detector-corpus digest and pattern
+ordinal bind the exact detector pattern. The candidate channel, source role,
+and context class bind the evidence used before optional live verification.
+Unsupported scanner context retains its producer identity and uses the
+`unsupported-context` context class. Caller-created findings use the
+`unattributed` channel with no detector digest or pattern ordinal.
+Cross-detector grouping retains the strongest evidence reason while keeping
+provenance owned by the detector named in `detector_id`; folded detectors remain
+listed in `cross_detector.*` companions.
 
 Do not enable `--show-secrets` when stdout or `--output` is retained by CI,
 uploaded as an artifact, or sent to another process. That option deliberately
@@ -180,11 +208,11 @@ omitted only for library-created reports that have no resolved CLI scan policy.
 
 ### Cross-file correlation
 
-Schema minor `9` adds an optional `correlations` array after `findings`. It is
-present only when the scan ran with `--correlate`; without the flag the key is
-absent, not empty, and the rest of the report is unchanged. Correlation never
-adds, drops, reorders, or edits a finding, so a `--correlate` run and a default
-run produce the same `findings` array.
+Report schema 2.0 carries an optional `correlations` array after `findings`. It
+is present only when the scan ran with `--correlate`; without the flag the key
+is absent, not empty, and the rest of the report is unchanged. Correlation
+never adds, drops, reorders, or edits a finding, so a `--correlate` run and a
+default run produce the same `findings` array.
 
 Each entry joins several findings into one credential risk:
 
@@ -192,10 +220,10 @@ Each entry joins several findings into one credential risk:
 | --- | --- |
 | `kind` | `value_reuse` (one credential digest at several file paths, crossing detector boundaries) or `split_composite` (a provider credential whose halves are separate detectors placed in different files of one directory) |
 | `severity` | Strongest member severity, raised to the composite's declared severity when the policy declares a higher one |
-| `confidence` | Strongest member confidence lifted by the policy bonus, clamped to the configured ceiling |
-| `strongest_member_confidence` | What the best single member scored before the lift, so the added evidence is auditable |
+| `evidence_score` | Strongest member evidence score lifted by the policy bonus, clamped to the configured ceiling |
+| `strongest_member_evidence_score` | What the best single member scored before the lift, so the added evidence is auditable |
 | `scope` | Directory the composite parts share; absent for `value_reuse`, which is scan-wide |
-| `members` | Contributing findings with `detector_id`, `credential_hash`, `role`, and the locations inside the scope |
+| `members` | Contributing findings with `detector_id`, `credential_hash`, `role`, optional `evidence_score`, and the locations inside the scope |
 | `locations` | Union of every member location, sorted by path then line |
 | `impact` | What the correlation means operationally |
 
@@ -213,7 +241,7 @@ shares a file is left to the detector's own companion match.
 
 ```sh
 keyhog scan . --correlate --format json-envelope \
-  | jq '.correlations[] | {kind, severity, confidence, title, files: .file_count}'
+  | jq '.correlations[] | {kind, severity, evidence_score, title, files: .file_count}'
 ```
 
 `--format text` renders the same groups as a `Correlated credentials` block
@@ -226,15 +254,15 @@ Do not derive scan completeness from the process exit code:
 
 | Reported result | Process exit |
 | --- | --- |
-| No findings and complete input | `0` |
-| Findings, with no finding verified `live` | `1` |
+| No finding blocks the active evidence policy and input is complete | `0` |
+| At least one finding blocks, with no finding verified `live` | `1` |
 | At least one reported finding verified `live` | `10` |
-| No findings and incomplete input coverage | `13` |
+| No finding blocks and input coverage is incomplete | `13` |
 
 A scanner panic exits `11`, a required or explicitly selected GPU that is
-unavailable exits `12`, and Ctrl-C exits `130`. Findings take precedence over
-an input-coverage failure in process-exit selection. A partial scan with
-findings can therefore exit `1` or `10`. Its envelope still says
+unavailable exits `12`, and Ctrl-C exits `130`. Blocking and live findings take
+precedence over an input-coverage failure in process-exit selection. A partial
+scan with such findings can therefore exit `1` or `10`. Its envelope still says
 `"scan_status":"partial"`. This is why detached consumers must inspect
 `scan_status` and `coverage_gap_summary`.
 
@@ -283,11 +311,11 @@ The `companions_redacted`, `remediation`,
 `metadata`, and `additional_locations` columns contain deterministic JSON
 objects or arrays. Metadata keys are sorted before serialization, and duplicate
 locations retain their complete source, path, line, offset, commit, author, and
-date fields. `entropy` is a numeric bits-per-byte column; it is empty when the
-detection path did not measure entropy. Every textual cell is escaped with RFC 4180 quoting plus
-spreadsheet-formula neutralization. An unavailable confidence score remains an
-empty cell; remediation is still emitted so a CSV artifact never loses the
-canonical action guidance.
+date fields. `evidence_tier` and `evidence_reason_code` are required textual
+columns. `evidence_score` and `entropy` are numeric columns that remain empty
+when the detection path did not measure them. Every textual cell is escaped
+with RFC 4180 quoting plus spreadsheet-formula neutralization; remediation is
+still emitted so a CSV artifact never loses the canonical action guidance.
 
 ### Finding-field losslessness
 
@@ -296,13 +324,15 @@ finding model. The other formats are deliberate projections:
 
 | Format | Finding fields retained | Scan-wide state |
 | --- | --- | --- |
-| `json-envelope` / `jsonl-envelope` | Every `VerifiedFinding` field, including metadata, remediation, and duplicate locations | `scan_status` and `coverage_gap_summary` |
-| `csv` | All 20 documented columns, with metadata and duplicate locations encoded as JSON | Metadata preamble before the header |
-| `sarif` | Detector identity, redacted credential/hash, verification, confidence, entropy, metadata, companions, primary and additional locations | Run properties and coverage notifications |
+| `json` / `jsonl` | Every `VerifiedFinding` field, including evidence, metadata, remediation, and duplicate locations | None |
+| `json-envelope` / `jsonl-envelope` | Every `VerifiedFinding` field, including evidence, metadata, remediation, and duplicate locations | `scan_status` and `coverage_gap_summary` |
+| `csv` | All 22 documented columns, with metadata and duplicate locations encoded as JSON | Metadata preamble before the header |
+| `sarif` | Detector identity, redacted credential/hash, verification, evidence tier/reason, optional evidence score and entropy, metadata, companions, primary and additional locations | Run properties and coverage notifications |
 | `html` | Complete redacted findings plus the full report metadata object | Status and coverage panel |
-| `junit` | Human-readable detector, service, severity, location, hash, verification, confidence, entropy, and companions in CDATA | Suite properties |
-| `gitlab-sast` | GitLab schema fields plus redacted credential/hash, service, companions, and entropy details | Schema-native `scan.status` plus `scan.keyhog_scan_status` |
-| `github-annotations` | Redacted detector, location, severity, and verification message | Coverage warning annotation when partial |
+| `junit` | Human-readable detector, service, severity, location, hash, verification, evidence tier/reason, optional evidence score, entropy, and companions in CDATA | Suite properties |
+| `gitlab-sast` | GitLab schema fields plus redacted credential/hash, service, evidence tier/reason, optional evidence score, companions, and entropy details | Schema-native `scan.status` plus `scan.keyhog_scan_status` |
+| `github-annotations` | Redacted detector, location, severity, verification, evidence tier/reason, and optional evidence score | Coverage warning annotation when partial |
+| `text` | Human-readable detector, severity, redacted credential, location, exact evidence tier/reason, optional evidence score, verification, and remediation | Coverage warnings and result summary |
 
 Fields not listed for a projection are intentionally unavailable in that
 format; they must not be inferred from stderr or the process exit code.
@@ -318,8 +348,9 @@ status=$?
 test "$status" -eq 0 -o "$status" -eq 1 -o "$status" -eq 10
 ```
 
-The file remains available when findings make KeyHog exit `1` or `10`. Do not
-write a command chain that uploads the file only after an exit-zero scan.
+The file remains available when blocking or live findings make KeyHog exit `1`
+or `10`. Do not write a command chain that uploads the file only after an
+exit-zero scan.
 
 The important machine fields have this shape. The values are synthetic and the
 message contains only the redacted credential:
@@ -334,13 +365,23 @@ message contains only the redacted credential:
       "message": {"text": "stripe secret detected: sk_l...p7dc"},
       "locations": [{
         "physicalLocation": {
-          "artifactLocation": {"uri": "src/config/staging.env"},
+          "artifactLocation": {"uri": "src/config/.env.staging"},
           "region": {"startLine": 14, "charOffset": 218}
         }
       }],
       "properties": {
         "verification": "skipped",
-        "confidence": 1.0,
+        "evidence_tier": "likely",
+        "evidence_reason_code": "vendor-pattern",
+        "evidence_provenance": {
+          "schema_version": 1,
+          "detector_digest": "0123456789abcdef",
+          "pattern_index": 0,
+          "candidate_channel": "pattern",
+          "source_role": "environment-assignment-value",
+          "context_class": "vendor-pattern"
+        },
+        "evidence_score": 1.0,
         "cwe": "CWE-798",
         "owasp": "A07:2021",
         "remediation.action": "Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key."
@@ -398,10 +439,11 @@ without uploading SARIF:
 keyhog scan . --format github-annotations
 ```
 
-Critical and high findings render as `error` annotations, medium and
-low as `warning`, and info as `notice`. Each annotation carries the file,
-line, title, detector, service, redacted credential, verification state,
-and confidence when available. The plaintext credential is not emitted.
+Critical and high findings render as `error` annotations, medium and low as
+`warning`, and info as `notice`. Each annotation carries the file, line, title,
+detector, service, redacted credential, verification state, exact evidence
+tier and reason code, and optional evidence score. The plaintext credential is
+not emitted.
 When source coverage is incomplete, the formatter also emits one terminal
 `::warning` notice with deterministic reason/count pairs, so the GitHub job log
 shows the incomplete state even when there are no findings. CLI output always
@@ -518,8 +560,9 @@ test "$status" -ne 10
 ```
 
 The first `jq` rejects incomplete input. The second emits only live findings.
-The final command enforces the documented live-credential exit. Adjust the
-finding policy explicitly if exit `1` is also a failure in your environment.
+The final command enforces the documented live-credential exit while permitting
+exit `1`. Select `default` or `paranoid` evidence policy to control which
+non-live finding tiers produce exit `1`.
 
 ## Findings-only output
 

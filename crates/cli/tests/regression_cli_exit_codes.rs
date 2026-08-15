@@ -133,7 +133,7 @@ fn planted_valid_token_exits_findings_one() {
 fn planted_unverified_token_never_exits_live_ten() {
     // Without `--verify` the finding is verification=Skipped, so the live path
     // (exit 10) must NOT fire (a found-but-unverified secret is exit 1, not 10).
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={PLANTED}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={PLANTED}\n"));
     let (code, _out, err) = scan(&path, &["--format", "json"]);
     assert_ne!(
         code,

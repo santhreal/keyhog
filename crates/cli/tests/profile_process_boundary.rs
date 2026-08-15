@@ -22,7 +22,7 @@ fn detectors() -> PathBuf {
 #[test]
 fn explicit_profile_covers_most_of_whole_process_wall() {
     let temporary = TempDir::new().expect("create profile boundary fixture");
-    let input = temporary.path().join("secret.env");
+    let input = temporary.path().join(".env.secret");
     let output = temporary.path().join("result.json");
     let profile = temporary.path().join("profile.json");
     std::fs::write(

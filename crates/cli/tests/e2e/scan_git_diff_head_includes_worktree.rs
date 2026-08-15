@@ -27,9 +27,9 @@ fn scan_git_diff_head_includes_uncommitted_worktree_changes() {
         .expect("git config name");
 
     std::fs::write(repo.join("clean.txt"), "ok\n").unwrap();
-    std::fs::write(repo.join("secret.env"), "SAFE=1\n").unwrap();
+    std::fs::write(repo.join(".env.secret"), "SAFE=1\n").unwrap();
     std::process::Command::new("git")
-        .args(["add", "clean.txt", "secret.env"])
+        .args(["add", "clean.txt", ".env.secret"])
         .current_dir(repo)
         .status()
         .expect("git add");
@@ -40,7 +40,7 @@ fn scan_git_diff_head_includes_uncommitted_worktree_changes() {
         .expect("git commit");
 
     std::fs::write(
-        repo.join("secret.env"),
+        repo.join(".env.secret"),
         "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
     )
     .unwrap();
@@ -80,7 +80,7 @@ fn scan_git_diff_head_includes_uncommitted_worktree_changes() {
     assert!(
         arr[0]["location"]["file_path"]
             .as_str()
-            .is_some_and(|p| p.ends_with("secret.env")),
-        "finding must cite secret.env; got {stdout}"
+            .is_some_and(|p| p.ends_with(".env.secret")),
+        "finding must cite .env.secret; got {stdout}"
     );
 }

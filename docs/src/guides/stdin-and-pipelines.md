@@ -264,8 +264,8 @@ jq -e '.metadata.source_bytes_scanned > 0' keyhog.json \
   || { echo "keyhog scanned nothing; the producer failed" >&2; exit 1; }
 
 case "$rc" in
-  0)  echo "clean over $(jq '.metadata.source_bytes_scanned' keyhog.json) bytes" ;;
-  1)  echo "findings"; exit 1 ;;
+  0)  echo "no policy-blocking finding over $(jq '.metadata.source_bytes_scanned' keyhog.json) bytes" ;;
+  1)  echo "blocking findings"; exit 1 ;;
   10) echo "live credential"; exit 1 ;;
   13) echo "coverage incomplete"; exit 1 ;;
   *)  echo "keyhog failed: exit $rc"; exit 1 ;;

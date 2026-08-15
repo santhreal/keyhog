@@ -13,7 +13,7 @@
 //!     is NOT leaked into human text;
 //!   * the redacted secret, and `file:line` (and path-only when the line is
 //!     unknown), render on their labeled lines with exact spacing;
-//!   * the confidence bar glyphs + percentage are exact;
+//!   * the evidence tier/reason and optional score bar glyphs + percentage are exact;
 //!   * the `Results` roll-up counts findings EXACTLY, with singular/plural and
 //!     the live / dead(=Dead∪Revoked) / unverified split;
 //!   * a clean scan renders the honest "No secrets detected in the scanned
@@ -41,7 +41,7 @@ use keyhog_core::{
 const ESC: char = '\u{1b}';
 
 /// Build a finding with an explicit detector id/name, severity, redacted form,
-/// verification, confidence and a filesystem `path:line` location.
+/// verification, optional evidence score, and a filesystem `path:line` location.
 fn finding(
     detector_id: &'static str,
     detector_name: &'static str,
@@ -50,7 +50,7 @@ fn finding(
     redacted: &'static str,
     verification: VerificationResult,
     line: Option<usize>,
-    confidence: Option<f64>,
+    evidence_score: Option<f64>,
 ) -> VerifiedFinding {
     VerifiedFinding {
         detector_id: detector_id.into(),
@@ -73,7 +73,8 @@ fn finding(
         metadata: HashMap::new(),
         additional_locations: vec![],
         entropy: None,
-        confidence,
+        evidence_score,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -213,26 +214,25 @@ fn text_location_path_only_when_line_unknown() {
     );
 }
 
-/// Positive: confidence 0.9 fills 5 of 6 bar cells and prints `90%`.
+/// Positive: evidence score 0.9 fills 5 of 6 bar cells and prints `90%`.
 #[test]
-fn text_confidence_bar_and_percent_for_high_confidence() {
+fn text_evidence_score_bar_and_percent() {
     let text = render_text(&[aws_high()]);
     assert!(
         text.contains("■■■■■□"),
-        "confidence 0.9 must fill 5/6 bar cells, got:\n{text}"
+        "evidence score 0.9 must fill 5/6 bar cells, got:\n{text}"
     );
     assert!(
         text.contains("90%"),
-        "confidence 0.9 must render '90%', got:\n{text}"
+        "evidence score 0.9 must render '90%', got:\n{text}"
     );
 }
 
-/// Adversarial: `confidence` is a public field, so a library-constructed finding
-/// can carry an OUT-OF-RANGE score. The reporter sanitizes into [0,1] so the bar
-/// and percent agree and never render ">100%". Derived from `report/text.rs`:
-/// `display_conf = clamp(0,1)`, `filled = (display_conf*6).min(6)`.
+/// Adversarial: `evidence_score` is a public field, so a library-constructed
+/// finding can carry an out-of-range score. The reporter sanitizes into [0,1]
+/// so the bar and percent agree and never render ">100%".
 #[test]
-fn text_confidence_over_one_clamps_to_full_bar_and_100_percent() {
+fn text_evidence_score_over_one_clamps_to_full_bar_and_100_percent() {
     let f = finding(
         "aws-access-key",
         "AWS Access Key",
@@ -246,11 +246,11 @@ fn text_confidence_over_one_clamps_to_full_bar_and_100_percent() {
     let text = render_text(&[f]);
     assert!(
         text.contains("■■■■■■"),
-        "over-range confidence must fill all 6 cells, got:\n{text}"
+        "over-range evidence score must fill all 6 cells, got:\n{text}"
     );
     assert!(
         text.contains("100%"),
-        "over-range confidence must clamp to '100%', got:\n{text}"
+        "over-range evidence score must clamp to '100%', got:\n{text}"
     );
     assert!(
         !text.contains("150%") && !text.contains("101%"),
@@ -258,12 +258,11 @@ fn text_confidence_over_one_clamps_to_full_bar_and_100_percent() {
     );
 }
 
-/// Adversarial: a NaN confidence (public field, no scanner sanitize) renders as
-/// `0%` and an empty bar, never a `NaN` glyph, matching the scanner's
-/// `finalize_confidence` NaN -> minimum. `f64::clamp` alone does NOT sanitize
-/// NaN, so the reporter guards `is_finite()` explicitly.
+/// Adversarial: a present NaN evidence score renders as `0%` and an empty bar,
+/// never a `NaN` glyph. `f64::clamp` alone does not sanitize NaN, so the
+/// reporter guards `is_finite()` explicitly.
 #[test]
-fn text_confidence_nan_renders_zero_percent_empty_bar() {
+fn text_evidence_score_nan_renders_zero_percent_empty_bar() {
     let f = finding(
         "aws-access-key",
         "AWS Access Key",
@@ -277,11 +276,11 @@ fn text_confidence_nan_renders_zero_percent_empty_bar() {
     let text = render_text(&[f]);
     assert!(
         text.contains("□□□□□□"),
-        "NaN confidence must render a fully empty 6-cell bar, got:\n{text}"
+        "NaN evidence score must render a fully empty 6-cell bar, got:\n{text}"
     );
     assert!(
         text.contains("0%"),
-        "NaN confidence must render '0%', got:\n{text}"
+        "NaN evidence score must render '0%', got:\n{text}"
     );
     assert!(
         !text.to_lowercase().contains("nan"),
@@ -289,10 +288,10 @@ fn text_confidence_nan_renders_zero_percent_empty_bar() {
     );
 }
 
-/// Boundary: absent confidence renders an empty bar and `0%` (LAW10: the
-/// finding is still printed with a display-only zeroed bar, never dropped).
+/// Boundary: an absent evidence score is omitted rather than represented as a
+/// measured zero. The exact evidence tier and reason remain visible.
 #[test]
-fn text_confidence_absent_renders_empty_bar_zero_percent() {
+fn text_absent_evidence_score_is_omitted() {
     let f = finding(
         "aws-access-key",
         "AWS Access Key",
@@ -305,17 +304,17 @@ fn text_confidence_absent_renders_empty_bar_zero_percent() {
     );
     let text = render_text(&[f]);
     assert!(
-        text.contains("□□□□□□"),
-        "absent confidence must render a fully-empty bar, got:\n{text}"
+        text.contains("Evidence:   review/unattributed"),
+        "the exact verdict must remain visible without a score, got:\n{text}"
     );
     assert!(
-        text.contains("0%"),
-        "absent confidence must render '0%', got:\n{text}"
+        !text.contains("□□□□□□") && !text.contains("0%"),
+        "an absent evidence score must not be invented as zero, got:\n{text}"
     );
 }
 
 /// Positive: a Live finding appends the `(LIVE)` verification suffix on the
-/// Confidence line.
+/// Evidence line.
 #[test]
 fn text_live_finding_shows_live_suffix() {
     let f = finding(

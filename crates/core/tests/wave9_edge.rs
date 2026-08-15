@@ -42,6 +42,7 @@ fn raw(cred: &str) -> RawMatch {
         location: loc(),
         entropy: None,
         confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 w9_edge!(w9_kh_01, {

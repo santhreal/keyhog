@@ -29,7 +29,8 @@ fn sample_finding() -> VerifiedFinding {
         metadata: HashMap::new(),
         additional_locations: vec![],
         entropy: None,
-        confidence: Some(0.75),
+        evidence_score: Some(0.75),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

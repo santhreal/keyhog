@@ -2,8 +2,9 @@ use crate::candidate_provenance::{CandidateChannel, CandidateProvenance};
 use crate::compiler::compiler_build::build_compile_state;
 use crate::scan_state::ScanState;
 use keyhog_core::{
-    Chunk, ChunkMetadata, CompanionMap, DetectorSpec, MatchLocation, PatternSpec, RawMatch,
-    SemanticSourceRole, Severity,
+    AnchorSemanticRole, Chunk, ChunkMetadata, CompanionMap, DetectorSemanticPolicySpec,
+    DetectorSpec, EvidenceReasonCode, EvidenceTier, MatchLocation, PatternSpec, RawMatch,
+    RequiredSemanticEvidence, SemanticSourceRole, Severity,
 };
 use std::sync::Arc;
 
@@ -27,6 +28,7 @@ fn raw_match(confidence: f64, credential: &'static str, offset: usize) -> RawMat
         },
         entropy: Some(4.5),
         confidence: Some(confidence),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -45,11 +47,11 @@ fn detector(patterns: Vec<PatternSpec>) -> DetectorSpec {
     }
 }
 
-/// WHY: candidate provenance is an internal sidecar. Heap ordering, identity
-/// deduplication, capacity, and public `RawMatch` output must remain byte-for-byte
-/// governed by the pre-existing `RawMatch` contract.
+/// WHY: the evidence model exposes the sidecar verdict while retaining every
+/// pre-existing heap, identity, capacity, and non-evidence `RawMatch` field.
+/// Attributed and compatibility insertion must differ only in exact evidence.
 #[test]
-fn provenance_sidecar_does_not_change_heap_or_public_output() {
+fn provenance_sidecar_sets_only_the_public_evidence_verdict() {
     let low = raw_match(0.1, "low", 1);
     let high = raw_match(0.9, "high", 2);
 
@@ -64,13 +66,52 @@ fn provenance_sidecar_does_not_change_heap_or_public_output() {
     let mut public = ScanState::default();
     public.push_unattributed_match(low, 1);
     public.push_unattributed_match(high, 1);
+    let public = public.into_matches(0);
+    assert_eq!(
+        public[0].evidence.reason_code(),
+        EvidenceReasonCode::Unattributed
+    );
+
+    let mut expected = public;
+    expected[0].evidence = CandidateProvenance::named(0, 1).evidence(0);
     assert_eq!(
         retained
             .into_iter()
-            .map(crate::scan_state::AttributedRawMatch::into_raw)
+            .map(|matched| matched.into_raw(0))
             .collect::<Vec<_>>(),
-        public.into_matches()
+        expected
     );
+}
+
+/// WHY: multiple patterns may produce the same raw identity in different backend
+/// orders. The retained public provenance must always belong to the strongest
+/// evidence, with a stable pattern ordinal tiebreak.
+#[test]
+fn duplicate_pattern_routes_choose_strongest_exact_provenance_deterministically() {
+    for reverse in [false, true] {
+        let weak = CandidateProvenance::named(0, 9);
+        let strong = CandidateProvenance::named(0, 3).with_checksum_proof(true);
+        let routes = if reverse {
+            [strong, weak]
+        } else {
+            [weak, strong]
+        };
+        let mut state = ScanState::default();
+        for provenance in routes {
+            state.push_match_with_provenance(raw_match(0.8, "same", 1), provenance, 8);
+        }
+        let findings = state.into_matches(0x0123_4567_89ab_cdef);
+        assert_eq!(findings.len(), 1);
+        let evidence = findings[0].evidence;
+        assert_eq!(evidence.reason_code(), EvidenceReasonCode::ChecksumValid);
+        let provenance = evidence.provenance();
+        assert_eq!(provenance.detector_digest(), Some(0x0123_4567_89ab_cdef));
+        assert_eq!(provenance.pattern_index(), Some(3));
+        assert_eq!(
+            provenance.candidate_channel(),
+            keyhog_core::FindingCandidateChannel::Pattern
+        );
+    }
 }
 
 /// WHY: the same candidate can be proven by multiple routes. When the existing
@@ -280,7 +321,7 @@ fn source_semantics_are_explicit_and_well_formed() {
         start + "CFGPROV_UNIT_123456".len(),
     )
     .expect("structured source evidence");
-    let parsed = CandidateProvenance::named(7, 11).with_source_semantics(evidence);
+    let parsed = CandidateProvenance::named(7, 11).with_source_semantics(evidence, None);
     assert_eq!(
         parsed.source_role(),
         SemanticSourceRole::StructuredAssignmentValue
@@ -296,6 +337,145 @@ fn source_semantics_are_explicit_and_well_formed() {
     );
 }
 
+fn semantic_policy(
+    anchor_role: AnchorSemanticRole,
+    allowed_source_roles: Vec<SemanticSourceRole>,
+    required_evidence: Vec<RequiredSemanticEvidence>,
+) -> DetectorSemanticPolicySpec {
+    DetectorSemanticPolicySpec {
+        anchor_role,
+        allowed_source_roles,
+        required_evidence,
+        ..Default::default()
+    }
+}
+
+fn parsed_source_role(role: SemanticSourceRole) -> crate::source_semantics::SourceSemanticEvidence {
+    crate::source_semantics::SourceSemanticEvidence::parsed(
+        role,
+        crate::source_semantics::SourceSpan::new(4, 12),
+        crate::source_semantics::SourceSpan::new(0, 16),
+    )
+}
+
+/// WHY: evidence policy is detector-owned and every proof requirement reaches
+/// this choke point. Missing proof must fail to review while intrinsic proof
+/// remains confirmed even in ambiguous source context.
+#[test]
+fn named_evidence_reason_precedence_is_fail_closed() {
+    let exact = semantic_policy(
+        AnchorSemanticRole::ExactKey,
+        vec![SemanticSourceRole::StructuredAssignmentValue],
+        Vec::new(),
+    );
+    let supported = CandidateProvenance::named(0, 0)
+        .with_named_evidence(&exact, false, false, false)
+        .with_source_semantics(
+            parsed_source_role(SemanticSourceRole::StructuredAssignmentValue),
+            Some(&exact),
+        )
+        .evidence(0);
+    assert_eq!(supported.reason_code(), EvidenceReasonCode::VendorPattern);
+    assert_eq!(supported.tier(), EvidenceTier::Likely);
+
+    let mismatched = CandidateProvenance::named(0, 0)
+        .with_named_evidence(&exact, false, false, false)
+        .with_source_semantics(
+            parsed_source_role(SemanticSourceRole::StringLiteral),
+            Some(&exact),
+        )
+        .evidence(0);
+    assert_eq!(
+        mismatched.reason_code(),
+        EvidenceReasonCode::SourceRoleMismatch
+    );
+
+    let weak = semantic_policy(AnchorSemanticRole::WeakContext, Vec::new(), Vec::new());
+    assert_eq!(
+        CandidateProvenance::named(0, 0)
+            .with_named_evidence(&weak, false, false, false)
+            .evidence(0)
+            .reason_code(),
+        EvidenceReasonCode::WeakAnchor
+    );
+    assert_eq!(
+        CandidateProvenance::named(0, 0)
+            .with_named_evidence(&exact, true, false, false)
+            .evidence(0)
+            .reason_code(),
+        EvidenceReasonCode::GenericDetector
+    );
+
+    for requirement in [
+        RequiredSemanticEvidence::Checksum,
+        RequiredSemanticEvidence::RequiredCompanion,
+        RequiredSemanticEvidence::PrivateKeyCompanion,
+        RequiredSemanticEvidence::LiveVerification,
+        RequiredSemanticEvidence::StructuralGrammar,
+    ] {
+        let policy = semantic_policy(AnchorSemanticRole::ExactKey, Vec::new(), vec![requirement]);
+        assert_eq!(
+            CandidateProvenance::named(0, 0)
+                .with_named_evidence(&policy, false, false, false)
+                .evidence(0)
+                .reason_code(),
+            EvidenceReasonCode::RequiredEvidenceMissing,
+            "{requirement:?} must fail closed without proof"
+        );
+    }
+
+    let checksum = semantic_policy(
+        AnchorSemanticRole::ExactKey,
+        Vec::new(),
+        vec![RequiredSemanticEvidence::Checksum],
+    );
+    let confirmed = CandidateProvenance::named(0, 0)
+        .with_named_evidence(&checksum, false, true, false)
+        .with_source_semantics(
+            parsed_source_role(SemanticSourceRole::TestFixture),
+            Some(&checksum),
+        )
+        .evidence(0);
+    assert_eq!(confirmed.reason_code(), EvidenceReasonCode::ChecksumValid);
+    assert_eq!(confirmed.tier(), EvidenceTier::Confirmed);
+
+    let companion = semantic_policy(
+        AnchorSemanticRole::CompanionBound,
+        Vec::new(),
+        vec![RequiredSemanticEvidence::RequiredCompanion],
+    );
+    assert_eq!(
+        CandidateProvenance::named(0, 0)
+            .with_named_evidence(&companion, false, false, true)
+            .evidence(0)
+            .reason_code(),
+        EvidenceReasonCode::RequiredCompanion
+    );
+}
+
+/// WHY: synthetic discovery lanes have no detector pattern from which to infer
+/// provider evidence. Their explicit review reasons must survive construction.
+#[test]
+fn synthetic_channels_emit_exact_review_reasons() {
+    assert_eq!(
+        CandidateProvenance::generic_assignment()
+            .evidence(0)
+            .reason_code(),
+        EvidenceReasonCode::GenericAssignment
+    );
+    #[cfg(feature = "entropy")]
+    assert_eq!(
+        CandidateProvenance::entropy().evidence(0).reason_code(),
+        EvidenceReasonCode::EntropyOnly
+    );
+    assert_eq!(
+        CandidateProvenance::unattributed()
+            .evidence(0)
+            .reason_code(),
+        EvidenceReasonCode::Unattributed
+    );
+}
+
 /// WHY: provenance is diagnostic metadata only. Its debug form must contain no
 /// credential or source bytes that could leak a scanned secret.
 #[test]
@@ -303,7 +483,7 @@ fn provenance_debug_representation_is_secret_free() {
     let rendered = format!("{:?}", CandidateProvenance::named(7, 11));
     assert_eq!(
         rendered,
-        "CandidateProvenance { detector_index: 7, pattern_index: 11, channel: NamedPattern, source_role: Unknown, parser_confidence: Abstained }"
+        "CandidateProvenance { detector_index: 7, pattern_index: 11, channel: NamedPattern, source_role: Unknown, parser_confidence: Abstained, evidence_reason: UnsupportedContext }"
     );
     assert!(!rendered.contains("credential"));
 }

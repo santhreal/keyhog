@@ -58,6 +58,7 @@ fn rm(
         },
         entropy: None,
         confidence: Some(conf),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

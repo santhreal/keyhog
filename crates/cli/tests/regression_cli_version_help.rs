@@ -283,7 +283,7 @@ fn help_documents_version_and_help_option_flags() {
 }
 
 /// The generated `EXIT CODES:` block (from `exit_codes::help()`) is appended to
-/// `--help`, with the exact success row `  0   Success (no secrets found)`.
+/// `--help` with the exact evidence-policy success row.
 #[test]
 fn help_carries_exit_codes_block_with_success_row() {
     let (code, stdout, _e) = run(&["--help"]);
@@ -293,7 +293,7 @@ fn help_carries_exit_codes_block_with_success_row() {
         "--help must carry the EXIT CODES block; got:\n{stdout}"
     );
     assert!(
-        stdout.contains("  0   Success (no secrets found)"),
+        stdout.contains("  0   Success (no finding blocks the active evidence policy)"),
         "--help EXIT CODES must contain the exact code-0 row; got:\n{stdout}"
     );
     // The user-error row must state exit 2, the same code the negative-twin

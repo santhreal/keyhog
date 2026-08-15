@@ -147,7 +147,7 @@ fn empty_file_exits_thirteen_incomplete_coverage() {
 #[test]
 fn planted_aws_key_exits_one() {
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let (stdout, stderr, code) = scan_in_process(&path, &["--format", "json"]);
     // run.rs tail: has_new_entries && !live && !panicked -> ExitCode::from(1).
     assert_eq!(
@@ -168,7 +168,7 @@ fn finding_verification_is_skipped_without_verify_flag() {
     // Without --verify, no live HTTP probe runs, so verification must be
     // "Skipped" and the exit code stays at 1 (never 10).
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let (stdout, _stderr, code) = scan_in_process(&path, &["--format", "json"]);
     assert_eq!(code, Some(1), "unverified findings must exit 1, never 10");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("stdout is JSON");
@@ -330,7 +330,7 @@ fn lockdown_verify_exits_two_with_message() {
     // "lockdown mode forbids --verify". This bail happens BEFORE any
     // protections apply, so the exit is deterministic on every host.
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let (combined, code) = lockdown_scan(&path, &["--verify", "--format", "json"]);
     assert_eq!(
         code,
@@ -349,7 +349,7 @@ fn lockdown_show_secrets_exits_two_with_message() {
     // This is the "no plaintext" half of the lockdown contract and is
     // refused BEFORE apply_lockdown_protections, so credentials never print.
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let (combined, code) = lockdown_scan(&path, &["--show-secrets", "--format", "json"]);
     assert_eq!(
         code,
@@ -368,7 +368,7 @@ fn lockdown_show_secrets_never_prints_the_plaintext_key() {
     // credential must not reach stdout/stderr. The bail fires before scanning,
     // so the literal AKIA value can never appear in output.
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let (combined, code) = lockdown_scan(&path, &["--show-secrets", "--format", "json"]);
     assert_eq!(code, Some(2), "must fail closed; output={combined}");
     let plaintext = concat!("AKIA", "QYLPMN5HFIQR7XYA");
@@ -531,7 +531,7 @@ fn lockdown_findings_still_exit_one_when_protections_engage() {
     // under a clean lockdown run is still exit 1. If protections can't engage
     // the run fails closed (2). It must never be 0 with a finding present.
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let (combined, code) = lockdown_scan(&path, &["--format", "json"]);
     assert!(
         code == Some(1) || code == Some(2),
@@ -551,7 +551,7 @@ fn explicit_daemon_with_lockdown_fails_loud_not_fallback() {
     // must reject the request loudly instead of silently substituting an
     // in-process scan.
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let home = TempDir::new().expect("home tempdir");
     let p = path.to_str().expect("utf-8 path");
 
@@ -605,7 +605,7 @@ fn explicit_daemon_with_show_secrets_fails_loud_not_fallback() {
     // `--show-secrets` is a daemon-forbidden route. With explicit `--daemon`,
     // the product contract is a loud refusal, not a hidden in-process scan.
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let runtime = TempDir::new().expect("runtime");
     let p = path.to_str().expect("utf-8 path");
     let out = Command::new(binary())
@@ -653,7 +653,7 @@ fn explicit_daemon_with_show_secrets_fails_loud_not_fallback() {
 fn require_gpu_and_no_gpu_flags_conflict() {
     // The invalid contradiction is rejected by clap before routing or scanning.
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let out = Command::new(binary())
         .args([
             "scan",
@@ -691,7 +691,7 @@ fn require_gpu_exit_twelve_diagnostic_names_the_flag() {
     }
     // run.rs prints `keyhog: <diagnostic>` to stderr; the diagnostic string
     // must name --require-gpu so the operator knows which gate fired.
-    let (_g, path) = fixture("leak.env", &aws_key_line());
+    let (_g, path) = fixture(".env.leak", &aws_key_line());
     let out = Command::new(binary())
         .args(["scan", "--daemon=off", "--require-gpu", &line_path(&path)])
         .output()
@@ -743,7 +743,7 @@ fn require_gpu_does_not_print_findings_on_fail_closed() {
     // ever computed or printed. With --format json, stdout must NOT contain a
     // findings array; the run never reached report_findings.
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let out = Command::new(binary())
         .args([
             "scan",
@@ -773,7 +773,7 @@ fn no_require_gpu_policy_scans_normally_on_cpu() {
     // planted key, the run must reach the finding-present branch (exit 1), not
     // the require-GPU exit 12.
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let out = Command::new(binary())
         .args([
             "scan",
@@ -801,7 +801,7 @@ fn gpu_config_off_scans_normally_on_cpu() {
     // TOML `gpu = "off"` is the persistent CPU policy. A planted-key scan must
     // reach the finding-present branch (exit 1), not the require-GPU exit 12.
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let (_cfg_guard, cfg) = config_fixture("keyhog.toml", "[system]\ngpu = \"off\"\n");
     let out = Command::new(binary())
         .args([
@@ -898,7 +898,7 @@ fn exit_code_is_deterministic_across_repeated_clean_runs() {
 #[test]
 fn exit_code_is_deterministic_across_repeated_leak_runs() {
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     for i in 0..5 {
         let (_o, _e, code) = scan_in_process(&path, &["--format", "json"]);
         assert_eq!(code, Some(1), "leak run #{i} must exit 1 every time");
@@ -912,7 +912,7 @@ fn severity_filter_does_not_change_exit_when_findings_remain() {
     // filter must still exit 1. (AWS access keys are HIGH/CRITICAL severity,
     // so the filter keeps them.)
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let (_o, stderr, code) = scan_in_process(&path, &["--format", "json", "--severity", "high"]);
     assert_eq!(
         code,
@@ -939,7 +939,7 @@ fn min_confidence_one_point_zero_can_suppress_to_exit_zero() {
     // suppressed the run exits 0; if a finding clears 1.0 it exits 1. Either
     // way it must never crash and must be one of {0,1}.
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let (_o, stderr, code) =
         scan_in_process(&path, &["--format", "json", "--min-confidence", "1.0"]);
     assert!(
@@ -955,7 +955,7 @@ fn create_baseline_exits_zero_even_with_findings() {
     // run returns ExitCode::SUCCESS *unconditionally*, before the findings
     // exit-code logic. So a leak + --create-baseline exits 0, not 1.
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let bdir = TempDir::new().expect("baseline dir");
     let bpath = bdir.path().join("baseline.json");
     let out = Command::new(binary())
@@ -992,7 +992,7 @@ fn baseline_suppressing_all_findings_exits_zero() {
     // baseline; if none are new, has_new is false -> exit 0. Create a baseline
     // from the leak, then scan the same leak against it: all suppressed -> 0.
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let bdir = TempDir::new().expect("baseline dir");
     let bpath = bdir.path().join("baseline.json");
 
@@ -1046,7 +1046,7 @@ fn baseline_forbidden_daemon_route_fails_loud_not_fallback() {
     // explicit daemon request must be rejected loudly instead of replaced with
     // a hidden in-process scan.
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let bdir = TempDir::new().expect("baseline dir");
     let bpath = bdir.path().join("baseline.json");
     let runtime = TempDir::new().expect("runtime");
@@ -1247,7 +1247,7 @@ fn benign_runs_never_return_system_or_panic_exit_codes() {
         "clean scan must not return system/panic codes; got {clean_code:?}"
     );
 
-    let (_gl, leak) = fixture("leak.env", &aws_key_line());
+    let (_gl, leak) = fixture(".env.leak", &aws_key_line());
     let (_lo, _le, leak_code) = scan_in_process(&leak, &["--format", "json"]);
     assert!(
         leak_code != Some(3) && leak_code != Some(11),
@@ -1263,7 +1263,7 @@ fn live_credentials_exit_code_constant_is_ten_not_one() {
     // unverified planted key is exactly 1 and NOT 10, so the two classes are
     // observably distinct in the binary's behavior.
     let line = aws_key_line();
-    let (_g, path) = fixture("leak.env", &line);
+    let (_g, path) = fixture(".env.leak", &line);
     let (_o, _e, code) = scan_in_process(&path, &["--format", "json"]);
     assert_eq!(code, Some(1), "unverified finding is exit 1");
     assert_ne!(

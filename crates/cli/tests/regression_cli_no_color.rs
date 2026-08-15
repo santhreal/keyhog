@@ -157,7 +157,7 @@ fn detector_ids(stdout: &[u8]) -> Vec<String> {
 #[test]
 fn no_color_text_scan_stdout_has_no_escape_and_concrete_summary() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let out = scan(home.path(), &path, Color::NoColorOne, None);
 
@@ -194,7 +194,7 @@ fn no_color_text_scan_stdout_has_no_escape_and_concrete_summary() {
 #[test]
 fn no_color_text_summary_is_exact_joined_token() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let out = scan(home.path(), &path, Color::NoColorOne, None);
     assert_eq!(out.code, Some(1));
@@ -216,7 +216,7 @@ fn no_color_text_summary_is_exact_joined_token() {
 #[test]
 fn default_env_piped_text_scan_is_also_plain() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let out = scan(home.path(), &path, Color::Removed, None);
 
@@ -236,7 +236,7 @@ fn default_env_piped_text_scan_is_also_plain() {
 #[test]
 fn no_color_toggle_yields_byte_identical_text_stdout() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let with_nc = scan(home.path(), &path, Color::NoColorOne, None);
     let without_nc = scan(home.path(), &path, Color::Removed, None);
@@ -270,7 +270,7 @@ fn no_color_toggle_yields_byte_identical_text_stdout() {
 #[test]
 fn no_color_empty_value_piped_is_byte_identical_to_no_color_one() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let one = scan(home.path(), &path, Color::NoColorOne, None);
     let empty = scan(home.path(), &path, Color::NoColorEmpty, None);
@@ -299,7 +299,7 @@ fn no_color_empty_value_piped_is_byte_identical_to_no_color_one() {
 #[test]
 fn text_report_redacts_raw_token_but_keeps_secret_label() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let out = scan(home.path(), &path, Color::NoColorOne, None);
     assert_eq!(out.code, Some(1));
@@ -328,7 +328,7 @@ fn text_report_redacts_raw_token_but_keeps_secret_label() {
 #[test]
 fn text_report_next_steps_render_plain() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let out = scan(home.path(), &path, Color::NoColorOne, None);
     assert_eq!(out.code, Some(1));
@@ -410,7 +410,7 @@ fn two_secrets_render_plural_summary_plain() {
 #[test]
 fn json_scan_is_plain_toggle_stable_and_has_exact_detector() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let with_nc = scan(home.path(), &path, Color::NoColorOne, Some("json"));
     let without_nc = scan(home.path(), &path, Color::Removed, Some("json"));
@@ -502,7 +502,7 @@ fn scan_stderr_has_no_escape_across_toggle() {
 #[test]
 fn bad_backend_value_exits_two_with_plain_stderr_both_modes() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     // Deliberately invalid backend so clap rejects it before any scan runs.
     let run = |color: Color| -> Out {

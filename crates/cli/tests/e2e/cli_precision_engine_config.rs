@@ -209,7 +209,10 @@ fn precision_mode_clamps_embedded_detector_floor_to_0_85() {
     let default: serde_json::Value = serde_json::from_str(&default_out).expect("default JSON");
     assert!(default.as_array().expect("array").iter().any(|finding| {
         finding.get("detector_id").and_then(|value| value.as_str()) == Some("abuseipdb-api-key")
-            && finding.get("confidence").and_then(|value| value.as_f64()) == Some(0.795)
+            && finding
+                .get("evidence_score")
+                .and_then(|value| value.as_f64())
+                == Some(0.795)
     }));
 
     let (prec_out, _e, prec_code) = scan_with_args(fixture, &["--precision", "--format", "json"]);

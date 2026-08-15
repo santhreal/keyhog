@@ -81,6 +81,7 @@ fn raw_named(
         location,
         entropy: None,
         confidence,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -121,6 +122,7 @@ fn deduped(
         additional_locations: additional,
         entropy: None,
         confidence: Some(confidence),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

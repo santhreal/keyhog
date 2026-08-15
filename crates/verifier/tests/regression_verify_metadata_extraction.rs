@@ -343,5 +343,6 @@ fn report_group() -> DedupedMatch {
         companions: HashMap::new(),
         entropy: None,
         confidence: Some(1.0),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }

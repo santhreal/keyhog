@@ -526,8 +526,8 @@ function renderTable(findings, isInitial) {
     const commitStr = finding.location.commit ? escapeHtml(finding.location.commit) : 'none';
     const authorStr = finding.location.author ? escapeHtml(finding.location.author) : 'none';
     const dateStr = finding.location.date ? escapeHtml(finding.location.date) : 'none';
-    const confidenceStr = (finding.confidence != null && Number.isFinite(finding.confidence))
-      ? `${Math.round(finding.confidence * 100)}%` : 'none';
+    const evidenceScoreStr = (finding.evidence_score != null && Number.isFinite(finding.evidence_score))
+      ? `${Math.round(finding.evidence_score * 100)}%` : 'none';
 
     // Format companion strings
     let metadataItems = '';
@@ -554,7 +554,9 @@ function renderTable(findings, isInitial) {
               </div>
               <div class="details-item"><span class="details-lbl">Credential Hash:</span><span class="details-val">${escapeHtml(finding.credential_hash)}</span><button class="copy-btn" type="button" onclick="copyFrom(this)" aria-label="Copy credential hash to clipboard">Copy</button></div>
               <div class="details-item"><span class="details-lbl">Verification:</span><span class="details-val">${escapeHtml(verificationLabel(finding.verification))}${verificationIsUnattempted(finding.verification) ? ' <span class="verify-note">, not attempted; treat as potentially live</span>' : ''}</span></div>
-              <div class="details-item"><span class="details-lbl">Confidence:</span><span class="details-val">${confidenceStr}</span></div>
+              <div class="details-item"><span class="details-lbl">Evidence Tier:</span><span class="details-val">${escapeHtml(finding.evidence.tier)}</span></div>
+              <div class="details-item"><span class="details-lbl">Evidence Reason:</span><span class="details-val">${escapeHtml(finding.evidence.reason_code)}</span></div>
+              <div class="details-item"><span class="details-lbl">Evidence Score:</span><span class="details-val">${evidenceScoreStr}</span></div>
             </div>
           </div>
           <div class="details-block">

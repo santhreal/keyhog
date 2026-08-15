@@ -256,6 +256,7 @@ fn inline_suppression_happy() {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     assert_eq!(API.filter_inline_suppressions(vec![m]).len(), 1);
 }

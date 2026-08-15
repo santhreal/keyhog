@@ -27,7 +27,8 @@ fn finding_with_hostile_path(path: &str) -> VerifiedFinding {
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
         entropy: None,
-        confidence: Some(0.5),
+        evidence_score: Some(0.5),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

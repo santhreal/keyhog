@@ -37,8 +37,8 @@ fn incomplete_verification_never_becomes_inactive() {
 fn artifact_removal_is_scanned_redacted_and_unknown_without_verification() {
     const CREDENTIAL: &str = "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";
     let dir = TempDir::new().expect("tempdir");
-    let before = dir.path().join("before.env");
-    let after = dir.path().join("after.env");
+    let before = dir.path().join(".env.before");
+    let after = dir.path().join(".env.after");
     std::fs::write(&before, format!("GH_TOKEN={CREDENTIAL}\n")).expect("write before");
     std::fs::write(&after, "GH_TOKEN=rotated-out-of-source\n").expect("write after");
 
@@ -88,8 +88,8 @@ fn verification_timeout_requires_removed_verification() {
         .args([
             "diff",
             "--artifacts",
-            "before.env",
-            "after.env",
+            ".env.before",
+            ".env.after",
             "--verify-timeout",
             "1",
         ])
@@ -103,8 +103,8 @@ fn verification_timeout_requires_removed_verification() {
 #[test]
 fn zero_artifact_read_cap_fails_before_scanning() {
     let dir = TempDir::new().expect("tempdir");
-    let before = dir.path().join("before.env");
-    let after = dir.path().join("after.env");
+    let before = dir.path().join(".env.before");
+    let after = dir.path().join(".env.after");
     std::fs::write(&before, "VALUE=before\n").expect("write before");
     std::fs::write(&after, "VALUE=after\n").expect("write after");
 
@@ -141,8 +141,8 @@ regex = 'khv_[A-Za-z0-9]{20}'
 "#,
     )
     .expect("write detector");
-    let before = dir.path().join("before.env");
-    let after = dir.path().join("after.env");
+    let before = dir.path().join(".env.before");
+    let after = dir.path().join(".env.after");
     std::fs::write(&before, "NO_SECRET=present\n").expect("write before");
     std::fs::write(&after, "NO_SECRET=present\n").expect("write after");
 
@@ -194,8 +194,8 @@ status = 200
 "#,
     )
     .expect("write detector");
-    let before = dir.path().join("before.env");
-    let after = dir.path().join("after.env");
+    let before = dir.path().join(".env.before");
+    let after = dir.path().join(".env.after");
     std::fs::write(&before, format!("REMOVED_TOKEN={CREDENTIAL}\n")).expect("write before");
     std::fs::write(&after, "REMOVED_TOKEN=gone\n").expect("write after");
 

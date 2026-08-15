@@ -51,7 +51,7 @@ fn binary() -> PathBuf {
 /// guard must stay bound in the caller so the file outlives the scan.
 fn planted_fixture() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("leak.env");
+    let path = dir.path().join(".env.leak");
     std::fs::write(&path, format!("GITHUB_TOKEN={PLANTED}\n")).expect("write fixture");
     (dir, path)
 }

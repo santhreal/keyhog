@@ -58,7 +58,8 @@ fn finding_with(
         metadata: HashMap::new(),
         additional_locations: additional,
         entropy: None,
-        confidence: None,
+        evidence_score: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

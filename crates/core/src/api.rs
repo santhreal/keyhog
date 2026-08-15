@@ -31,6 +31,9 @@ pub use crate::credential::{Credential, SensitiveString};
 pub use crate::dedup::*;
 pub use crate::display::strip_windows_verbatim_prefix;
 pub use crate::encoding::decode_standard_base64;
+pub use crate::evidence::{
+    EvidenceReasonCode, EvidenceTier, EvidenceVerdict, FindingCandidateChannel, FindingProvenance,
+};
 pub use crate::finding::*;
 pub use crate::hardening::{
     apply_protections, apply_protections_with_persistence_paths, HardeningReport,

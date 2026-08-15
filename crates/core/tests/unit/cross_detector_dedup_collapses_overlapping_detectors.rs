@@ -23,6 +23,7 @@ fn make_deduped(detector: &str, service: &str, conf: f64) -> DedupedMatch {
         additional_locations: Vec::new(),
         entropy: None,
         confidence: Some(conf),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

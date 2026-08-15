@@ -89,7 +89,7 @@ fn assert_exited_by_code(output: &Output, context: &str) {
 fn dir_with_fixture() -> TempDir {
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(
-        dir.path().join("secret.env"),
+        dir.path().join(".env.secret"),
         concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
     )
     .expect("write fixture");

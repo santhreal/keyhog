@@ -51,7 +51,7 @@ fn secret_line(index: usize) -> String {
 /// scan duration: tests that must finish inside the daemon's shutdown grace
 /// period ask for fewer.
 fn many_secrets_file(dir: &Path, findings: usize) -> std::path::PathBuf {
-    let path = dir.join("many-secrets.env");
+    let path = dir.join(".env.many-secrets");
     let mut body = String::new();
     for index in 0..findings {
         body.push_str(&secret_line(index));
@@ -221,7 +221,7 @@ fn one_abandoning_client_does_not_break_a_concurrent_client() {
     let socket = daemon.socket();
     let fixture_dir = tempfile::TempDir::new().expect("fixture dir");
     let big = many_secrets_file(fixture_dir.path(), OVERSIZED_RESPONSE_FINDINGS);
-    let small = fixture_dir.path().join("small.env");
+    let small = fixture_dir.path().join(".env.small");
     std::fs::write(&small, secret_line(4242)).expect("write small fixture");
 
     let mut survivor = hello(&socket);
@@ -253,12 +253,12 @@ fn scan_path_refuses_anything_but_a_regular_file() {
     let mut daemon = DaemonGuard::start_cpu();
     let socket = daemon.socket();
     let fixture_dir = tempfile::TempDir::new().expect("fixture dir");
-    let regular = fixture_dir.path().join("real.env");
+    let regular = fixture_dir.path().join(".env.real");
     std::fs::write(&regular, secret_line(7)).expect("write regular fixture");
     let directory = fixture_dir.path().join("tree");
     std::fs::create_dir(&directory).expect("create directory fixture");
-    std::fs::write(directory.join("inner.env"), secret_line(8)).expect("write inner fixture");
-    let link = fixture_dir.path().join("link.env");
+    std::fs::write(directory.join(".env.inner"), secret_line(8)).expect("write inner fixture");
+    let link = fixture_dir.path().join(".env.link");
     std::os::unix::fs::symlink(&regular, &link).expect("create symlink fixture");
 
     let mut stream = hello(&socket);

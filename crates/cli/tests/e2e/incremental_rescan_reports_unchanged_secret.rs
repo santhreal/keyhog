@@ -16,7 +16,7 @@ use tempfile::TempDir;
 fn incremental_rescan_still_reports_secret_in_unchanged_file() {
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(
-        dir.path().join("config.env"),
+        dir.path().join(".env.config"),
         "TOKEN=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\n",
     )
     .expect("write secret file");
@@ -166,7 +166,7 @@ fn incremental_cache_persist_failure_is_visible_and_nonzero_on_clean_scan() {
 fn incremental_cache_persist_failure_with_findings_keeps_finding_exit_and_warning() {
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(
-        dir.path().join("config.env"),
+        dir.path().join(".env.config"),
         "TOKEN=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\n",
     )
     .expect("write secret file");

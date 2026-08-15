@@ -314,7 +314,7 @@ fn quiet_watch_stderr_is_empty_even_with_findings() {
 #[test]
 fn quiet_watch_redacts_credential_never_leaks_full_key() {
     let dir = TempDir::new().expect("tempdir");
-    let file = dir.path().join("leak.env");
+    let file = dir.path().join(".env.leak");
     let (mut child, out, _err) = spawn_watch(dir.path(), true);
 
     let found = plant_until_found(&file, 1, &out, Duration::from_secs(20));

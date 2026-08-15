@@ -28,7 +28,8 @@ fn verified_finding(detector: &str, path: Option<&str>) -> VerifiedFinding {
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
         entropy: None,
-        confidence: None,
+        evidence_score: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

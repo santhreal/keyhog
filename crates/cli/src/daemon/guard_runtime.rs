@@ -17,6 +17,7 @@ use keyhog_core::guard_state::{
     GuardRootRecord, GuardRootState, GuardTransition,
 };
 use keyhog_core::guard_store::{HotAttestationIndex, RootRegistry};
+use keyhog_core::RawMatch;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -45,14 +46,37 @@ pub struct GuardTransaction {
     pub bytes_hit: u64,
     /// Findings count across all scanned blobs.
     pub findings_count: u64,
+    /// Findings that block the default evidence policy.
+    pub blocking_findings_count: u64,
+    /// Exact finalized findings retained for the terminal protected receipt.
+    pub reported_findings: Vec<RawMatch>,
     /// Coverage gaps count.
     pub coverage_gaps: u64,
     /// Objects skipped (deletions, symlinks, submodules).
     pub objects_skipped: u64,
     /// When the transaction started.
     pub started_at: Instant,
-    /// Policy identity short digest used for attestation lookup.
-    pub policy_short_digest: String,
+    /// Policy identity bound to this transaction.
+    pub policy_identity: GuardPolicyIdentity,
+    /// Staged source paths grouped by object OID.
+    pub source_paths_by_oid: HashMap<String, Vec<String>>,
+}
+
+/// Minimal owned context needed to scan one streamed blob.
+pub struct GuardBlobContext {
+    pub repo_path: String,
+    pub hash_algorithm: GitHashAlgorithm,
+    pub policy_identity: GuardPolicyIdentity,
+    pub source_paths: Vec<String>,
+}
+
+/// Minimal snapshot needed to validate a finish request without cloning the
+/// transaction's path index or accounting vectors.
+pub struct GuardFinishContext {
+    pub repo_path: String,
+    pub index_fingerprint: String,
+    pub required_blob_count: u64,
+    pub scanned_blob_count: u64,
 }
 
 /// Live guard runtime state held by the daemon.
@@ -313,25 +337,51 @@ impl GuardRuntime {
         id
     }
 
-    /// Get a reference to an in-flight transaction.
-    pub fn get_transaction(&self, id: u64) -> Option<GuardTransaction> {
-        self.transactions.lock().get(&id).map(|t| GuardTransaction {
-            transaction_id: t.transaction_id,
-            repo_path: t.repo_path.clone(),
-            index_fingerprint: t.index_fingerprint.clone(),
-            hash_algorithm: t.hash_algorithm,
-            clean_hits: t.clean_hits.clone(),
-            required_blob_oids: t.required_blob_oids.clone(),
-            scanned_oids: t.scanned_oids.clone(),
-            bytes_scanned: t.bytes_scanned,
-            bytes_requested: t.bytes_requested,
-            bytes_hit: t.bytes_hit,
-            findings_count: t.findings_count,
-            coverage_gaps: t.coverage_gaps,
-            objects_skipped: t.objects_skipped,
-            started_at: t.started_at,
-            policy_short_digest: t.policy_short_digest.clone(),
+    /// Return the bounded context for one required blob without cloning the
+    /// transaction's complete staged-path index.
+    pub fn blob_context(&self, id: u64, oid: &str) -> Result<GuardBlobContext, String> {
+        let txns = self.transactions.lock();
+        let txn = txns
+            .get(&id)
+            .ok_or_else(|| format!("transaction {} not found", id))?;
+        if !txn
+            .required_blob_oids
+            .iter()
+            .any(|required| required == oid)
+        {
+            return Err(format!(
+                "transaction {}: blob {} was not in the required set",
+                id, oid
+            ));
+        }
+        if txn.scanned_oids.iter().any(|scanned| scanned == oid) {
+            return Err(format!("transaction {}: blob {} already scanned", id, oid));
+        }
+        let source_paths = txn.source_paths_by_oid.get(oid).cloned().ok_or_else(|| {
+            format!(
+                "transaction {}: blob {} has no staged source paths",
+                id, oid
+            )
+        })?;
+        Ok(GuardBlobContext {
+            repo_path: txn.repo_path.clone(),
+            hash_algorithm: txn.hash_algorithm,
+            policy_identity: txn.policy_identity.clone(),
+            source_paths,
         })
+    }
+
+    /// Snapshot only the fields required to validate a finish request.
+    pub fn finish_context(&self, id: u64) -> Option<GuardFinishContext> {
+        self.transactions
+            .lock()
+            .get(&id)
+            .map(|txn| GuardFinishContext {
+                repo_path: txn.repo_path.clone(),
+                index_fingerprint: txn.index_fingerprint.clone(),
+                required_blob_count: txn.required_blob_oids.len() as u64,
+                scanned_blob_count: txn.scanned_oids.len() as u64,
+            })
     }
 
     /// Record a scanned blob result in a transaction.
@@ -340,19 +390,31 @@ impl GuardRuntime {
         txn_id: u64,
         oid: &str,
         bytes: u64,
-        findings: u64,
+        reported_findings: Vec<RawMatch>,
+        blocking_findings: u64,
     ) -> Result<(), String> {
+        let findings = reported_findings.len() as u64;
+        if blocking_findings > findings {
+            return Err(format!(
+                "transaction {}: default-policy blocking findings {} exceed total {}",
+                txn_id, blocking_findings, findings
+            ));
+        }
         let mut txns = self.transactions.lock();
         let txn = txns
             .get_mut(&txn_id)
             .ok_or_else(|| format!("transaction {} not found", txn_id))?;
-        if !txn.required_blob_oids.contains(&oid.to_string()) {
+        if !txn
+            .required_blob_oids
+            .iter()
+            .any(|required| required == oid)
+        {
             return Err(format!(
                 "transaction {}: blob {} was not in the required set",
                 txn_id, oid
             ));
         }
-        if txn.scanned_oids.contains(&oid.to_string()) {
+        if txn.scanned_oids.iter().any(|scanned| scanned == oid) {
             return Err(format!(
                 "transaction {}: blob {} already scanned",
                 txn_id, oid
@@ -361,6 +423,8 @@ impl GuardRuntime {
         txn.scanned_oids.push(oid.to_string());
         txn.bytes_scanned += bytes;
         txn.findings_count += findings;
+        txn.blocking_findings_count += blocking_findings;
+        txn.reported_findings.extend(reported_findings);
         self.touch_activity();
         Ok(())
     }
@@ -374,13 +438,17 @@ impl GuardRuntime {
         let txn = txns
             .get_mut(&txn_id)
             .ok_or_else(|| format!("transaction {} not found", txn_id))?;
-        if !txn.required_blob_oids.contains(&oid.to_string()) {
+        if !txn
+            .required_blob_oids
+            .iter()
+            .any(|required| required == oid)
+        {
             return Err(format!(
                 "transaction {}: blob {} was not in the required set",
                 txn_id, oid
             ));
         }
-        if txn.scanned_oids.contains(&oid.to_string()) {
+        if txn.scanned_oids.iter().any(|scanned| scanned == oid) {
             return Err(format!(
                 "transaction {}: blob {} already scanned",
                 txn_id, oid
@@ -392,10 +460,23 @@ impl GuardRuntime {
         self.touch_activity();
         Ok(())
     }
-    /// Finish a transaction and return its final state. Removes it
-    /// from the in-flight map.
-    pub fn finish_transaction(&self, txn_id: u64) -> Option<GuardTransaction> {
-        self.transactions.lock().remove(&txn_id)
+    /// Finish a transaction only after the caller validates its terminal wire
+    /// representation. A failed validation leaves the transaction available
+    /// for a corrected finish request.
+    pub fn finish_transaction_if<F>(
+        &self,
+        txn_id: u64,
+        validate: F,
+    ) -> Result<Option<GuardTransaction>, String>
+    where
+        F: FnOnce(&GuardTransaction) -> Result<(), String>,
+    {
+        let mut transactions = self.transactions.lock();
+        let Some(transaction) = transactions.get(&txn_id) else {
+            return Ok(None);
+        };
+        validate(transaction)?;
+        Ok(transactions.remove(&txn_id))
     }
 
     /// Remove transactions older than `TRANSACTION_TIMEOUT_SECS`.

@@ -47,7 +47,7 @@ fn scan_with_format(content: &str, fmt: &str) -> (String, String, Option<i32>) {
     // Neutral filename + extension: no `test`/`fixture`/`example` token in
     // the path, so the test-path confidence down-weighting does not fire
     // and a genuine AKIA key reports at full strength.
-    let path = dir.path().join("planted.env");
+    let path = dir.path().join(".env.planted");
     std::fs::write(&path, content).expect("write fixture");
 
     let output = Command::new(binary())
@@ -109,7 +109,7 @@ fn csv_content_lines(output: &str) -> Vec<&str> {
 /// progress noise can leak in, unlike stdout).
 fn scan_to_output_file(content: &str, fmt: &str) -> (String, Option<i32>) {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("planted.env");
+    let path = dir.path().join(".env.planted");
     std::fs::write(&path, content).expect("write fixture");
     let out = dir.path().join("report.out");
 
@@ -246,7 +246,7 @@ fn json_empty_corpus_is_exact_empty_array() {
         "clean json scan must exit 0; stderr={stderr}"
     );
     let value: serde_json::Value = serde_json::from_str(&stdout).expect("empty JSON parses");
-    assert_eq!(value["schema_version"]["major"], 1);
+    assert_eq!(value["schema_version"]["major"], 2);
     assert!(json_findings(&value).is_empty());
 }
 
@@ -371,7 +371,7 @@ fn json_output_file_clean_is_exact_empty_array() {
     let (bytes, code) = scan_to_output_file(CLEAN_FIXTURE, "json-envelope");
     assert_eq!(code, Some(0));
     let value: serde_json::Value = serde_json::from_str(&bytes).expect("JSON output parses");
-    assert_eq!(value["schema_version"]["major"], 1);
+    assert_eq!(value["schema_version"]["major"], 2);
     assert!(json_findings(&value).is_empty());
 }
 
@@ -396,7 +396,7 @@ fn jsonl_empty_corpus_is_empty_output() {
     );
     let header: serde_json::Value = serde_json::from_str(lines[0]).expect("header parses");
     assert_eq!(header["record_type"], "header");
-    assert_eq!(header["schema_version"]["major"], 1);
+    assert_eq!(header["schema_version"]["major"], 2);
     let summary: serde_json::Value = serde_json::from_str(lines[1]).expect("summary parses");
     assert_eq!(summary["record_type"], "summary");
     assert_eq!(summary["status"], "complete");
@@ -621,8 +621,8 @@ fn sarif_rules_carry_code_scanning_severity_props() {
 // ---------------------------------------------------------------------------
 
 /// The CSV metadata preamble and header are written unconditionally, so the
-/// exact 20-column header appears even on an EMPTY corpus.
-const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations";
+/// exact 22-column header appears even on an EMPTY corpus.
+const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,evidence_tier,evidence_reason_code,evidence_score,entropy,remediation,metadata,additional_locations";
 
 #[test]
 fn csv_empty_corpus_is_header_only() {
@@ -1364,7 +1364,7 @@ fn empty_file_exits_thirteen_for_every_format() {
 #[test]
 fn unknown_format_value_is_clap_usage_error() {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("planted.env");
+    let path = dir.path().join(".env.planted");
     std::fs::write(&path, CLEAN_FIXTURE).expect("write fixture");
     let output = Command::new(binary())
         .arg("scan")
@@ -1388,7 +1388,7 @@ fn unknown_format_value_is_clap_usage_error() {
 #[test]
 fn default_format_is_text() {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("planted.env");
+    let path = dir.path().join(".env.planted");
     std::fs::write(&path, CLEAN_FIXTURE).expect("write fixture");
     let output = Command::new(binary())
         .arg("scan")
@@ -1422,7 +1422,7 @@ fn default_format_is_text() {
 #[test]
 fn format_value_is_case_sensitive() {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("planted.env");
+    let path = dir.path().join(".env.planted");
     std::fs::write(&path, CLEAN_FIXTURE).expect("write fixture");
     let output = Command::new(binary())
         .arg("scan")

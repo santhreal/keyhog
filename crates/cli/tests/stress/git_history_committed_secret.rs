@@ -25,12 +25,12 @@ fn git_history_committed_secret_exit_one() {
         .expect("git config name");
 
     std::fs::write(
-        repo.join("history.env"),
+        repo.join(".env.history"),
         "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
     )
     .unwrap();
     std::process::Command::new("git")
-        .args(["add", "history.env"])
+        .args(["add", ".env.history"])
         .current_dir(repo)
         .status()
         .expect("git add");
@@ -39,7 +39,7 @@ fn git_history_committed_secret_exit_one() {
         .current_dir(repo)
         .status()
         .expect("git commit");
-    std::fs::write(repo.join("history.env"), "clean\n").unwrap();
+    std::fs::write(repo.join(".env.history"), "clean\n").unwrap();
 
     let output = Command::new(binary())
         .args([
@@ -68,7 +68,7 @@ fn git_history_committed_secret_exit_one() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("history.env"),
-        "finding must cite history.env; stdout={stdout}"
+        stdout.contains(".env.history"),
+        "finding must cite .env.history; stdout={stdout}"
     );
 }

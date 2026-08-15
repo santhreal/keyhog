@@ -28,6 +28,7 @@ fn raw_match(i: usize) -> RawMatch {
         },
         entropy: Some(4.2),
         confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

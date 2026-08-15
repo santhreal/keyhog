@@ -59,7 +59,8 @@ fn finding_opt_path(
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
         entropy: None,
-        confidence: Some(0.9),
+        evidence_score: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

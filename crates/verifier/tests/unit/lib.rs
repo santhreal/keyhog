@@ -91,6 +91,7 @@ async fn test_verify_all_logic() {
         },
         entropy: None,
         confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
 
     let group = dedup_matches(vec![m], &DedupScope::Credential)

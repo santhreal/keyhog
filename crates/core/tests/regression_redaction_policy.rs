@@ -58,6 +58,7 @@ fn raw_match(credential: &str, companions: HashMap<String, String>) -> RawMatch 
         location: loc(),
         entropy: Some(4.5),
         confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -222,7 +223,7 @@ fn to_redacted_preserves_hash_severity_and_scores_exactly() {
     assert_eq!(red.severity, Severity::Critical);
     assert_eq!(&*red.detector_id, "aws-access-key");
     assert_eq!(red.entropy, Some(4.5));
-    assert_eq!(red.confidence, Some(0.9));
+    assert_eq!(red.evidence_score, Some(0.9));
     assert_eq!(red.location.line, Some(7));
     assert_eq!(red.location.offset, 42);
 }

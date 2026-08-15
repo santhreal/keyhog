@@ -36,7 +36,8 @@ fn reporter_trait_can_be_implemented() {
         metadata: HashMap::new(),
         additional_locations: vec![],
         entropy: None,
-        confidence: None,
+        evidence_score: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     reporter.report(&finding).unwrap();
     reporter.finish().unwrap();

@@ -55,7 +55,8 @@ fn finding(severity: Severity, detector_id: &str, file_path: &str) -> VerifiedFi
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
         entropy: None,
-        confidence: None,
+        evidence_score: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

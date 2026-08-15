@@ -50,7 +50,7 @@ const CRED_HASH: &str = "7b85310a29300230c865bc48ca1836f15b81bd50ac85e8c0785e814
 /// The complete set of top-level keys a finding object may carry. `confidence`
 /// is optional (skipped when the ML score is None on ML-less builds); every
 /// other key is required.
-const REQUIRED_KEYS: [&str; 12] = [
+const REQUIRED_KEYS: [&str; 13] = [
     "detector_id",
     "detector_name",
     "service",
@@ -62,9 +62,10 @@ const REQUIRED_KEYS: [&str; 12] = [
     "verification",
     "metadata",
     "additional_locations",
+    "evidence",
     "remediation",
 ];
-const OPTIONAL_KEYS: [&str; 2] = ["confidence", "entropy"];
+const OPTIONAL_KEYS: [&str; 2] = ["evidence_score", "entropy"];
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
@@ -115,7 +116,7 @@ fn run_json(path: &PathBuf) -> (Option<i32>, String, String) {
 /// Parse the versioned envelope and return its findings array.
 fn findings_array(out: &str) -> Vec<serde_json::Value> {
     let value: serde_json::Value = serde_json::from_str(out).expect("json stdout must parse");
-    assert_eq!(value["schema_version"]["major"], 1);
+    assert_eq!(value["schema_version"]["major"], 2);
     value["findings"]
         .as_array()
         .expect("findings must be an array")
@@ -360,21 +361,21 @@ fn metadata_empty_object_and_additional_locations_empty_array() {
     assert_eq!(extra.len(), 0, "additional_locations must be empty");
 }
 
-/// confidence, when present, is a JSON number in the unit interval (0, 1].
-/// It is an ML score that varies by build, so it is range-checked rather than
-/// pinned (keeping the test host-independent).
+/// evidence_score, when present, is a JSON number in the unit interval (0, 1].
+/// It is a supplementary ML score that varies by build, so it is range-checked
+/// rather than pinned.
 #[test]
-fn confidence_when_present_is_in_unit_interval() {
+fn evidence_score_when_present_is_in_unit_interval() {
     let (_dir, path) = leak_fixture();
     let (_c, out, _e) = run_json(&path);
     let obj = single_finding(&out);
-    if let Some(conf) = obj.get("confidence") {
+    if let Some(conf) = obj.get("evidence_score") {
         let c = conf
             .as_f64()
-            .expect("confidence must be a JSON number when present");
+            .expect("evidence_score must be a JSON number when present");
         assert!(
             c > 0.0 && c <= 1.0,
-            "confidence must lie in (0, 1], got {c}"
+            "evidence_score must lie in (0, 1], got {c}"
         );
     }
 }
@@ -411,6 +412,6 @@ fn clean_scan_is_exactly_empty_array_exit_zero() {
     let (code, out, err) = run_json(&path);
     assert_eq!(code, Some(0), "clean scan must exit 0; stderr={err}");
     let v: serde_json::Value = serde_json::from_str(&out).expect("empty json parses");
-    assert_eq!(v["schema_version"]["major"], 1);
+    assert_eq!(v["schema_version"]["major"], 2);
     assert!(v["findings"].as_array().is_some_and(Vec::is_empty));
 }

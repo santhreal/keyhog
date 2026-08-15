@@ -50,7 +50,7 @@ fn daemon_docs_do_not_claim_forced_daemon_fallback() {
 #[test]
 fn forced_daemon_rejects_directory_without_in_process_fallback() {
     let work = TempDir::new().expect("work dir");
-    std::fs::write(work.path().join("leak.env"), aws_key_line()).expect("write fixture");
+    std::fs::write(work.path().join(".env.leak"), aws_key_line()).expect("write fixture");
     let runtime = TempDir::new().expect("isolated runtime");
 
     let out = Command::new(binary())
@@ -112,7 +112,7 @@ fn forced_daemon_missing_file_reports_path_inspection_error() {
 fn forced_daemon_rejects_unenforceable_policy_without_in_process_fallback() {
     let work = TempDir::new().expect("work dir");
     let secret = aws_key();
-    let path = work.path().join("leak.env");
+    let path = work.path().join(".env.leak");
     std::fs::write(&path, format!("AWS_ACCESS_KEY_ID = \"{secret}\"\n")).expect("write fixture");
     let runtime = TempDir::new().expect("isolated runtime");
 
@@ -143,7 +143,7 @@ fn forced_daemon_rejects_unenforceable_policy_without_in_process_fallback() {
 #[test]
 fn forced_daemon_rejects_per_detector_confidence_policy() {
     let work = TempDir::new().expect("work dir");
-    let path = work.path().join("leak.env");
+    let path = work.path().join(".env.leak");
     std::fs::write(&path, aws_key_line()).expect("write fixture");
     std::fs::write(
         work.path().join(".keyhog.toml"),
@@ -181,7 +181,7 @@ fn forced_daemon_rejects_per_detector_confidence_policy() {
 #[test]
 fn forced_daemon_rejects_overlay_detector_corpus() {
     let work = TempDir::new().expect("work dir");
-    let path = work.path().join("leak.env");
+    let path = work.path().join(".env.leak");
     std::fs::write(&path, aws_key_line()).expect("write fixture");
     let detectors = work.path().join("custom-detectors");
     std::fs::create_dir(&detectors).expect("create detector directory");
@@ -225,7 +225,7 @@ fn forced_daemon_rejects_overlay_detector_corpus() {
 #[test]
 fn forced_daemon_rejects_multiple_primary_sources() {
     let work = TempDir::new().expect("work dir");
-    let path = work.path().join("leak.env");
+    let path = work.path().join(".env.leak");
     std::fs::write(&path, aws_key_line()).expect("write fixture");
     let runtime = TempDir::new().expect("isolated runtime");
 
@@ -261,7 +261,7 @@ fn forced_daemon_rejects_multiple_primary_sources() {
 #[test]
 fn forced_daemon_rejects_scan_mode_flags() {
     let work = TempDir::new().expect("work dir");
-    let path = work.path().join("leak.env");
+    let path = work.path().join(".env.leak");
     std::fs::write(&path, aws_key_line()).expect("write fixture");
     let runtime = TempDir::new().expect("isolated runtime");
 
@@ -288,7 +288,7 @@ fn forced_daemon_rejects_scan_mode_flags() {
 #[test]
 fn forced_daemon_rejects_backend_routing_flags() {
     let work = TempDir::new().expect("work dir");
-    let path = work.path().join("leak.env");
+    let path = work.path().join(".env.leak");
     std::fs::write(&path, aws_key_line()).expect("write fixture");
     let runtime = TempDir::new().expect("isolated runtime");
 
@@ -337,7 +337,7 @@ fn forced_daemon_rejects_backend_routing_flags() {
 #[test]
 fn forced_daemon_rejects_matcher_cache_override() {
     let work = TempDir::new().expect("work dir");
-    let path = work.path().join("leak.env");
+    let path = work.path().join(".env.leak");
     std::fs::write(&path, aws_key_line()).expect("write fixture");
     let runtime = TempDir::new().expect("isolated runtime");
     let matcher_cache = TempDir::new().expect("matcher cache");
@@ -381,7 +381,7 @@ fn forced_daemon_rejects_matcher_cache_override() {
 #[test]
 fn forced_daemon_allows_matcher_cache_off() {
     let work = TempDir::new().expect("work dir");
-    let path = work.path().join("leak.env");
+    let path = work.path().join(".env.leak");
     std::fs::write(&path, aws_key_line()).expect("write fixture");
     let runtime = TempDir::new().expect("isolated runtime");
 
@@ -413,7 +413,7 @@ fn forced_daemon_allows_matcher_cache_off() {
 #[test]
 fn explicit_auto_stale_daemon_socket_surfaces_in_process_route() {
     let work = TempDir::new().expect("work dir");
-    let path = work.path().join("leak.env");
+    let path = work.path().join(".env.leak");
     std::fs::write(&path, aws_key_line()).expect("write fixture");
     let runtime = TempDir::new().expect("isolated runtime");
     std::fs::write(runtime.path().join("keyhog.sock"), b"stale socket path")
@@ -476,7 +476,7 @@ fn forced_daemon_scan_path_expands_har_base64_response() {
 fn automatic_daemon_does_not_rescan_after_report_failure() {
     let daemon = DaemonGuard::start();
     let work = TempDir::new().expect("work dir");
-    let path = work.path().join("leak.env");
+    let path = work.path().join(".env.leak");
     std::fs::write(&path, aws_key_line()).expect("write fixture");
 
     let out = Command::new(binary())

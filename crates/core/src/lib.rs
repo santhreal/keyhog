@@ -49,6 +49,7 @@ mod detector_file_io;
 mod display;
 /// Shared standard Base64 decode (wire / K8s), bounded for DoS safety.
 mod encoding;
+mod evidence;
 mod finding;
 /// Git-LFS pointer recognition, shared by the scanner (oid suppression) and
 /// sources (unscanned-blob coverage gap).

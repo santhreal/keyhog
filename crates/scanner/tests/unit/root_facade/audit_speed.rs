@@ -237,5 +237,6 @@ fn demo_window_match(offset: usize) -> RawMatch {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }

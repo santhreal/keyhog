@@ -206,10 +206,10 @@ test "$status" -eq 0 -o "$status" -eq 1 -o "$status" -eq 10
 ```
 
 The `jq` check rejects malformed-HAR fallback and other coverage gaps. Exit `0`
-means complete input with no findings. Exit `1` means findings without a live
-verification result. Exit `10` means at least one live finding. A no-finding
-source failure exits `13`. Findings take precedence, so a partial report can
-still exit `1` or `10`.
+means no finding blocks the active evidence policy. Exit `1` means a finding
+blocks without a live verification result. Exit `10` means at least one live
+finding. A source failure with no blocking finding exits `13`. Blocking
+findings take precedence, so a partial report can still exit `1` or `10`.
 
 ## Headers, bodies, and URL parameters
 
@@ -239,11 +239,11 @@ destination, or redirect-policy failure means some requested bytes were not
 scanned. KeyHog records the reason as a coverage gap and makes metadata-bearing
 artifacts `partial`.
 
-When there are no findings, incomplete source coverage exits `13` and stderr
-says KeyHog is not reporting the scan as clean. When findings exist, exit `1`
-or `10` takes precedence. Consume the artifact's `scan_status` and
-`coverage_gap_summary`; never use a zero finding count or the process exit alone
-as a completeness signal.
+When no finding blocks the active evidence policy, incomplete source coverage
+exits `13` and stderr says KeyHog is not reporting the scan as complete. A
+blocking or live finding takes exit `1` or `10` precedence. Consume the
+artifact's `scan_status` and `coverage_gap_summary`; never use a finding count
+or process exit alone as a completeness signal.
 
 ## Unsupported Wire Features
 

@@ -487,7 +487,7 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
                 file_path,
                 m.location.line,
                 m.severity,
-                m.confidence,
+                m.evidence_score,
                 &m.credential_redacted,
             )
             .with_context(|| format!("write scan-system finding for {file_path}"))?;

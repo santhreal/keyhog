@@ -156,6 +156,7 @@ pub(crate) fn build_raw_match(
         },
         entropy: Some(ent),
         confidence: Some(confidence),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -259,5 +260,6 @@ pub(crate) fn build_synthetic_raw_match(
         },
         entropy,
         confidence: Some(confidence),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }

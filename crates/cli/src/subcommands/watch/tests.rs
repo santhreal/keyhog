@@ -26,6 +26,7 @@ fn finding(hash_byte: u8, source: &str, path: &str) -> keyhog_core::RawMatch {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

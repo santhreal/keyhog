@@ -12,8 +12,8 @@
 //! (`crates/core/src/report/github_annotations.rs`). The existing unit test
 //! only exercises the `error` level, a single escaping case, and the empty
 //! report. Below we lock the two OTHER severity levels (`warning`/`notice`),
-//! the optional-field branches (missing file / missing line / no confidence),
-//! the full first-line byte contract, and the data-vs-property escaping split.
+//! the optional-field branches (missing file / missing line / no evidence
+//! score), the full first-line byte contract, and the escaping split.
 //!
 //! Every assertion is a specific value: an exact string, an exact substring,
 //! an exact level token, or an exact line count. No bare non-empty checks.
@@ -39,7 +39,7 @@ fn finding_with(
     file_path: Option<&'static str>,
     line: Option<usize>,
     verification: VerificationResult,
-    confidence: Option<f64>,
+    evidence_score: Option<f64>,
     hash_byte: u8,
 ) -> VerifiedFinding {
     VerifiedFinding {
@@ -63,13 +63,14 @@ fn finding_with(
         metadata: HashMap::new(),
         additional_locations: vec![],
         entropy: None,
-        confidence,
+        evidence_score,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
-/// Canonical High finding at `config/app.env:12`, live-verified, confidence
-/// 0.875. Matches the fixture the existing unit test uses so the exact-byte
-/// contract here is directly comparable.
+/// Canonical High finding at `config/app.env:12`, live-verified, with evidence
+/// score 0.875. Matches the fixture the existing unit test uses so the exact
+/// byte contract here is directly comparable.
 fn canonical_high() -> VerifiedFinding {
     finding_with(
         "aws-access-key",
@@ -99,7 +100,7 @@ fn render(findings: &[VerifiedFinding]) -> String {
 /// The single canonical finding renders to EXACTLY one workflow-command line,
 /// byte for byte, terminated by a newline. This pins property order
 /// (file,line,title), the `::` data delimiter, message field order, and the
-/// `{:.3}` confidence format all at once.
+/// `{:.3}` evidence-score format all at once.
 #[test]
 fn canonical_finding_exact_annotation_bytes() {
     let out = render(std::slice::from_ref(&canonical_high()));
@@ -107,7 +108,7 @@ fn canonical_finding_exact_annotation_bytes() {
         out,
         "::error file=config/app.env,line=12,title=keyhog high aws-access-key::\
 AWS Access Key detector=aws-access-key service=aws redacted=AKIA...7XYA \
-verification=live confidence=0.875\n"
+verification=live evidence_tier=review evidence_reason_code=unattributed evidence_score=0.875\n"
     );
 }
 
@@ -296,10 +297,10 @@ fn missing_file_and_line_leaves_only_title_property() {
     );
 }
 
-/// When confidence is `None`, the message carries NO ` confidence=` suffix and
-/// ends right after the verification token.
+/// When `evidence_score` is `None`, the message still carries the required
+/// exact tier and reason, with no numeric score suffix.
 #[test]
-fn absent_confidence_omits_confidence_suffix() {
+fn absent_evidence_score_omits_only_score_suffix() {
     let f = finding_with(
         "id",
         "Name",
@@ -314,19 +315,18 @@ fn absent_confidence_omits_confidence_suffix() {
     );
     let out = render(std::slice::from_ref(&f));
     assert!(
-        !out.contains("confidence="),
-        "no confidence field for a finding without a confidence score: {out:?}"
+        !out.contains("evidence_score="),
+        "no score field for a finding without an evidence score: {out:?}"
     );
     assert!(
-        out.ends_with("verification=dead\n"),
-        "message must end at the verification token when confidence is absent: {out:?}"
+        out.ends_with("verification=dead evidence_tier=review evidence_reason_code=unattributed\n"),
+        "message must retain the exact verdict when the score is absent: {out:?}"
     );
 }
 
-/// Confidence is formatted with exactly three decimals, rounding half-to-even
-/// per Rust's float formatting (`0.12345 -> 0.123`, `0.87650 -> 0.876`).
+/// Evidence score is formatted with exactly three decimals.
 #[test]
-fn confidence_formats_to_three_decimals() {
+fn evidence_score_formats_to_three_decimals() {
     let low = finding_with(
         "id",
         "Name",
@@ -340,8 +340,8 @@ fn confidence_formats_to_three_decimals() {
         0x09,
     );
     assert!(
-        render(std::slice::from_ref(&low)).contains("confidence=0.123\n"),
-        "0.12345 must render as confidence=0.123"
+        render(std::slice::from_ref(&low)).contains("evidence_score=0.123\n"),
+        "0.12345 must render as evidence_score=0.123"
     );
 
     let round_up = finding_with(
@@ -357,8 +357,8 @@ fn confidence_formats_to_three_decimals() {
         0x0A,
     );
     assert!(
-        render(std::slice::from_ref(&round_up)).contains("confidence=0.457\n"),
-        "0.4567 must render as confidence=0.457"
+        render(std::slice::from_ref(&round_up)).contains("evidence_score=0.457\n"),
+        "0.4567 must render as evidence_score=0.457"
     );
 }
 
@@ -420,7 +420,9 @@ fn command_data_escapes_percent_cr_lf_but_keeps_colon_and_comma() {
     );
     // Error verification text has its CR/LF percent-escaped, keeping one line.
     assert!(
-        out.contains("verification=error: a%0D%0Ab\n"),
+        out.contains(
+            "verification=error: a%0D%0Ab evidence_tier=review evidence_reason_code=unattributed\n"
+        ),
         "verification error text must escape CR and LF in data: {out:?}"
     );
     assert_eq!(

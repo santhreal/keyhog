@@ -171,6 +171,7 @@ fn dedup_suppresses_same_file_same_line_additional_location() {
         },
         entropy: Some(4.5),
         confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     let alias = RawMatch {
         location: MatchLocation {

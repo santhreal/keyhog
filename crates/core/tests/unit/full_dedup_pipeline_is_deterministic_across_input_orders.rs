@@ -25,6 +25,7 @@ fn make_raw(detector: &str, credential: &str, conf: f64) -> RawMatch {
         },
         entropy: Some(4.0),
         confidence: Some(conf),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

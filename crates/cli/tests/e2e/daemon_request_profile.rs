@@ -200,7 +200,7 @@ fn concurrent_profiled_daemon_scans_get_distinct_request_ids() {
 fn mass_daemon_profile_renders_per_batch_request_profiles() {
     let daemon = DaemonGuard::start_mass();
     let work = tempfile::TempDir::new().expect("work dir");
-    let fixture = work.path().join("leak.env");
+    let fixture = work.path().join(".env.leak");
     std::fs::write(&fixture, aws_key_line()).expect("write fixture");
 
     let out = Command::new(binary())

@@ -77,6 +77,7 @@ fn raw_match(detector_id: &str) -> RawMatch {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

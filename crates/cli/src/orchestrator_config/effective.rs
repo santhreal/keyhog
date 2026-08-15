@@ -99,6 +99,10 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     ));
     out.push_str(&format!("dedup = {}\n", resolved.report.dedup));
     out.push_str(&format!(
+        "evidence_policy = {}\n",
+        resolved.report.evidence_policy
+    ));
+    out.push_str(&format!(
         "show_secrets = {}\n",
         resolved.report.show_secrets
     ));
@@ -690,6 +694,10 @@ pub(crate) fn profiling_resolved_config_digest(resolved: &ResolvedScanConfig) ->
     let severity = report.severity.as_ref().map(ToString::to_string);
     h.field_option_str("report.severity", severity.as_deref());
     h.field_str("report.dedup", &report.dedup.to_string());
+    h.field_str(
+        "report.evidence_policy",
+        &report.evidence_policy.to_string(),
+    );
     h.field_bool("report.verify", report.verify);
     h.field_bool("report.lockdown", report.lockdown);
     h.field_bool("report.show_secrets", report.show_secrets);

@@ -143,9 +143,9 @@ impl serde::Serialize for HtmlFinding<'_> {
             &finding.service,
             finding.severity,
         );
-        let mut field_count = 12;
+        let mut field_count = 13;
         field_count += usize::from(finding.entropy.is_some());
-        field_count += usize::from(finding.confidence.is_some());
+        field_count += usize::from(finding.evidence_score.is_some());
         let mut state = serializer.serialize_struct("VerifiedFinding", field_count)?;
         state.serialize_field("detector_id", finding.detector_id.as_ref())?;
         state.serialize_field("detector_name", finding.detector_name.as_ref())?;
@@ -164,6 +164,7 @@ impl serde::Serialize for HtmlFinding<'_> {
         state.serialize_field("companions_redacted", &sorted_companions)?;
         state.serialize_field("location", &finding.location)?;
         state.serialize_field("verification", &HtmlVerification(&finding.verification))?;
+        state.serialize_field("evidence", &finding.evidence)?;
         let sorted_metadata: BTreeMap<&str, &str> = finding
             .metadata
             .iter()
@@ -174,8 +175,8 @@ impl serde::Serialize for HtmlFinding<'_> {
         if let Some(entropy) = finding.entropy {
             state.serialize_field("entropy", &entropy)?;
         }
-        if let Some(confidence) = finding.confidence {
-            state.serialize_field("confidence", &confidence)?;
+        if let Some(evidence_score) = finding.evidence_score {
+            state.serialize_field("evidence_score", &evidence_score)?;
         }
         state.serialize_field("remediation", &remediation)?;
         state.end()

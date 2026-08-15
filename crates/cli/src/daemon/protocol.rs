@@ -79,7 +79,11 @@ use std::collections::BTreeMap;
 /// * v14 - lets daemon-local filesystem scans consume and publish spec-bound
 ///   Merkle state, carry trusted skip evidence, and stream bounded batches
 ///   after one drain request.
-pub(crate) const WIRE_VERSION: u32 = 14;
+/// * v15 - raw scanner findings carry a validated evidence verdict. Guard
+///   receipts carry exact protected findings and the default-policy blocking
+///   count so daemon, staged-guard, and one-shot scans preserve finding output
+///   and evidence-policy exits.
+pub(crate) const WIRE_VERSION: u32 = 15;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -445,8 +449,13 @@ pub(crate) enum Response {
         bytes_hit: u64,
         /// Total bytes scanned.
         bytes_scanned: u64,
-        /// Number of unsuppressed findings (without secret values).
+        /// Number of unsuppressed findings.
         findings_count: u64,
+        /// Exact findings carried through the protected daemon transport.
+        #[serde(with = "protected_raw_matches")]
+        findings: Vec<RawMatch>,
+        /// Findings that block the default evidence policy.
+        blocking_findings_count: u64,
         /// Number of coverage gaps.
         coverage_gaps: u64,
         /// Terminal root state label.
@@ -529,6 +538,89 @@ pub(crate) enum Response {
         /// All registered roots, each with path, mode, and state.
         roots: Vec<GuardListEntry>,
     },
+}
+
+/// Borrowed fields used to prove a guard receipt fits one protocol frame before
+/// the transaction is consumed.
+pub(crate) struct GuardCommitReceiptWireFields<'a> {
+    pub objects_requested: u64,
+    pub objects_hit: u64,
+    pub objects_scanned: u64,
+    pub objects_skipped: u64,
+    pub bytes_requested: u64,
+    pub bytes_hit: u64,
+    pub bytes_scanned: u64,
+    pub findings_count: u64,
+    pub findings: &'a [RawMatch],
+    pub blocking_findings_count: u64,
+    pub coverage_gaps: u64,
+    pub terminal_state: &'a str,
+    pub terminal_sequence: u64,
+}
+
+/// Return the exact JSON body length for a protected guard receipt without
+/// allocating a second findings payload.
+pub(crate) fn guard_commit_receipt_wire_len(
+    fields: GuardCommitReceiptWireFields<'_>,
+) -> serde_json::Result<usize> {
+    #[derive(Serialize)]
+    #[serde(tag = "kind", rename_all = "snake_case")]
+    enum BorrowedResponse<'a> {
+        GuardCommitReceipt {
+            objects_requested: u64,
+            objects_hit: u64,
+            objects_scanned: u64,
+            objects_skipped: u64,
+            bytes_requested: u64,
+            bytes_hit: u64,
+            bytes_scanned: u64,
+            findings_count: u64,
+            #[serde(with = "protected_raw_matches")]
+            findings: &'a [RawMatch],
+            blocking_findings_count: u64,
+            coverage_gaps: u64,
+            terminal_state: &'a str,
+            terminal_sequence: u64,
+        },
+    }
+
+    #[derive(Default)]
+    struct ByteCounter(usize);
+
+    impl std::io::Write for ByteCounter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self
+                .0
+                .checked_add(bytes.len())
+                .ok_or_else(|| std::io::Error::other("guard receipt length overflow"))?;
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let mut counter = ByteCounter::default();
+    serde_json::to_writer(
+        &mut counter,
+        &BorrowedResponse::GuardCommitReceipt {
+            objects_requested: fields.objects_requested,
+            objects_hit: fields.objects_hit,
+            objects_scanned: fields.objects_scanned,
+            objects_skipped: fields.objects_skipped,
+            bytes_requested: fields.bytes_requested,
+            bytes_hit: fields.bytes_hit,
+            bytes_scanned: fields.bytes_scanned,
+            findings_count: fields.findings_count,
+            findings: fields.findings,
+            blocking_findings_count: fields.blocking_findings_count,
+            coverage_gaps: fields.coverage_gaps,
+            terminal_state: fields.terminal_state,
+            terminal_sequence: fields.terminal_sequence,
+        },
+    )?;
+    Ok(counter.0)
 }
 
 /// One entry in the staged manifest sent over the wire in
@@ -807,6 +899,7 @@ mod protected_raw_matches {
         entropy: Option<f64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         confidence: Option<f64>,
+        evidence: keyhog_core::EvidenceVerdict,
     }
 
     #[derive(Deserialize)]
@@ -822,6 +915,7 @@ mod protected_raw_matches {
         location: MatchLocation,
         entropy: Option<f64>,
         confidence: Option<f64>,
+        evidence: keyhog_core::EvidenceVerdict,
     }
 
     impl From<DaemonRawMatchOwned> for RawMatch {
@@ -841,6 +935,7 @@ mod protected_raw_matches {
                 location: wire.location,
                 entropy: wire.entropy,
                 confidence: wire.confidence,
+                evidence: wire.evidence,
             }
         }
     }
@@ -862,6 +957,7 @@ mod protected_raw_matches {
                 location: &raw_match.location,
                 entropy: raw_match.entropy,
                 confidence: raw_match.confidence,
+                evidence: raw_match.evidence,
             })?;
         }
         sequence.end()

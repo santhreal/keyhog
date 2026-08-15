@@ -1,15 +1,9 @@
-//! Regression suite for the CLI scan exit-code contract, focused on the
-//! `EXIT_LIVE_CREDENTIALS` (10) wiring.
+//! Regression suite for evidence-policy and live-verification scan exits.
 //!
-//! Background: `run()` maps the *reported* findings set to a process exit code.
-//! The pure decision "any reported finding is `VerificationResult::Live` → 10,
-//! else 0" is factored into `orchestrator::scan_exit_code`, reached here through
-//! the `crate::testing` facade (`CliTestApi::scan_exit_code`). Unit-testing the
-//! pure helper pins the live-vs-not-live boundary for EVERY verification state
-//! without spawning a scan or needing a live provider; a handful of real-binary
-//! e2e cases pin the surrounding documented codes (clean → 0, findings → 1,
-//! bad flag/path → 2, doctor → 0) so a regression that collapses two exit
-//! classes is caught end to end.
+//! Default policy blocks `likely` and `confirmed`, while explicit paranoid
+//! policy also blocks `review`. A live credential always uses exit 10. The pure
+//! decision helper is exercised through `CliTestApi`; real-binary cases pin the
+//! surrounding clean, finding, usage-error, and doctor exits.
 //!
 //! Every assertion pins an EXACT `u8` code, an EXACT `Option<i32>` process exit
 //! code, or an EXACT documented help string (never a shape (Law 6)).
@@ -28,8 +22,8 @@ use tempfile::TempDir;
 const EXIT_SUCCESS: u8 = 0;
 const EXIT_LIVE: u8 = 10;
 
-/// Build a `VerifiedFinding` carrying the given verification state. Only
-/// `verification` matters to `scan_exit_code`; the rest is fixed, valid filler.
+/// Build a finding with caller-selected verification and review evidence.
+/// Tests that exercise blocking tiers replace the verdict explicitly.
 fn finding(verification: V) -> VerifiedFinding {
     VerifiedFinding {
         detector_id: Arc::from("github-classic-pat"),
@@ -41,7 +35,7 @@ fn finding(verification: V) -> VerifiedFinding {
         companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
-            file_path: Some(Arc::from("leak.env")),
+            file_path: Some(Arc::from(".env.leak")),
             line: Some(1),
             offset: 0,
             commit: None,
@@ -52,18 +46,53 @@ fn finding(verification: V) -> VerifiedFinding {
         metadata: std::collections::HashMap::new(),
         additional_locations: Vec::new(),
         entropy: None,
-        confidence: Some(0.9),
+        evidence_score: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
 // ---------------------------------------------------------------------------
-// PURE HELPER: scan_exit_code(findings) -> u8
+// PURE HELPER: scan_exit_code(findings, policy) -> u8
 // ---------------------------------------------------------------------------
 
 #[test]
 fn empty_findings_yield_success_code() {
     // A clean scan reports nothing → no live credential → 0.
     assert_eq!(API.scan_exit_code(&[]), EXIT_SUCCESS);
+}
+#[test]
+fn likely_finding_blocks_default_policy() {
+    let mut likely = finding(V::Skipped);
+    likely.evidence =
+        keyhog_core::EvidenceVerdict::from_reason(keyhog_core::EvidenceReasonCode::VendorPattern);
+    assert_eq!(
+        API.scan_exit_code_with_policy(&[likely], false),
+        keyhog::exit_codes::EXIT_FINDINGS
+    );
+}
+
+#[test]
+fn confirmed_finding_blocks_default_policy_without_live_verification() {
+    let mut confirmed = finding(V::Skipped);
+    confirmed.evidence =
+        keyhog_core::EvidenceVerdict::from_reason(keyhog_core::EvidenceReasonCode::ChecksumValid);
+    assert_eq!(
+        API.scan_exit_code_with_policy(&[confirmed], false),
+        keyhog::exit_codes::EXIT_FINDINGS
+    );
+}
+
+#[test]
+fn review_finding_is_visible_but_blocks_only_paranoid_policy() {
+    let findings = [finding(V::Skipped)];
+    assert_eq!(
+        API.scan_exit_code_with_policy(&findings, false),
+        EXIT_SUCCESS
+    );
+    assert_eq!(
+        API.scan_exit_code_with_policy(&findings, true),
+        keyhog::exit_codes::EXIT_FINDINGS
+    );
 }
 
 #[test]
@@ -74,9 +103,8 @@ fn single_live_finding_yields_ten() {
 
 #[test]
 fn skipped_finding_yields_success_not_live() {
-    // `Skipped` is the DEFAULT state when `--verify` is off: a found-but-not-
-    // verified secret must NEVER be reported as a live credential (that is the
-    // findings=exit-1 case, decided by the caller, not this helper).
+    // `Skipped` is the default state when `--verify` is off. Verification does
+    // not invent a live result or override this fixture's review evidence.
     let findings = [finding(V::Skipped)];
     assert_eq!(API.scan_exit_code(&findings), EXIT_SUCCESS);
 }
@@ -208,12 +236,13 @@ fn binary() -> PathBuf {
 /// itself a self-scan tripwire. Fires `github-classic-pat` at confidence 0.9.
 const PLANTED: &str = concat!("ghp_", "1234567890123456789012345678902PDSiF");
 
-/// Run `keyhog scan --daemon=off --backend simd <extra…> <path>` hermetically.
+/// Run `keyhog scan --daemon=off --backend cpu <extra…> <path>` without ambient
+/// backend selection or autoroute calibration.
 fn scan(path: &Path, extra: &[&str]) -> (Option<i32>, String) {
     let mut cmd = Command::new(binary());
     cmd.args(["scan", "--daemon=off"]);
     if !extra.contains(&"--backend") {
-        cmd.args(["--backend", "simd"]);
+        cmd.args(["--backend", "cpu"]);
     }
     cmd.args(extra);
     cmd.arg(path);
@@ -239,7 +268,7 @@ fn e2e_planted_unverified_finding_exits_one_never_ten() {
     // A found-but-unverified secret (no `--verify`) is verification=Skipped, so
     // the live-credential path must NOT fire: exit 1 (findings), not 10.
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("leak.env");
+    let path = dir.path().join(".env.leak");
     std::fs::write(&path, format!("GITHUB_TOKEN={PLANTED}\n")).expect("write planted");
     let (code, stderr) = scan(&path, &["--format", "json"]);
     assert_eq!(
@@ -280,14 +309,22 @@ fn e2e_invalid_backend_exits_two() {
 
 #[test]
 fn e2e_doctor_exits_zero_on_healthy_host() {
-    let output = Command::new(binary())
+    let root = TempDir::new().expect("isolated doctor environment");
+    let executable = binary();
+    let executable_dir = executable.parent().expect("binary has parent directory");
+    let output = Command::new(&executable)
         .arg("doctor")
+        .args(["--autoroute-cache", "off"])
+        .env("HOME", root.path())
+        .env("XDG_CACHE_HOME", root.path().join("cache"))
+        .env("PATH", executable_dir)
         .output()
         .expect("run keyhog doctor");
     assert_eq!(
         output.status.code(),
         Some(0),
-        "doctor must exit 0 on a healthy host; stdout:\n{}",
-        String::from_utf8_lossy(&output.stdout)
+        "doctor must exit 0 in an isolated healthy environment; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
     );
 }

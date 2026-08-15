@@ -33,7 +33,9 @@ pub use maintenance::{
     BackendArgs, CompileExecutionPacksArgs, CompletionArgs, DoctorArgs, RepairArgs, UninstallArgs,
     UpdateArgs,
 };
-pub use scan::{CliDedupScope, DaemonMode, DetectorMode, OutputFormat, ScanArgs, SeverityFilter};
+pub use scan::{
+    CliDedupScope, DaemonMode, DetectorMode, EvidencePolicy, OutputFormat, ScanArgs, SeverityFilter,
+};
 pub use scan_system::{parse_space_bytes, ScanSystemArgs};
 pub use watch::WatchArgs;
 pub use watch::DEFAULT_WATCH_MAX_CONSECUTIVE_SCAN_FAILURES;

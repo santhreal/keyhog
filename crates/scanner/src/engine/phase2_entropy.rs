@@ -389,12 +389,13 @@ impl CompiledScanner {
                 );
                 continue;
             }
-            let provenance = crate::candidate_provenance::CandidateProvenance::entropy();
+            let provenance = crate::candidate_provenance::CandidateProvenance::entropy()
+                .with_checksum_proof(checksum_decision.is_proven_valid());
             let enrich_provenance = |scan_state: &mut ScanState| {
                 scan_state
                     .source_semantic_evidence(chunk, source_offset, &entropy_match.value)
                     .map_or(provenance, |evidence| {
-                        provenance.with_source_semantics(evidence)
+                        provenance.with_source_semantics(evidence, None)
                     })
             };
             let build_raw_match = |scan_state: &mut ScanState, report_conf| {

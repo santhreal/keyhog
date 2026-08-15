@@ -77,18 +77,18 @@ keyhog guard remove /path/to/repo
 |---|---|
 | `stopped` | The root is registered but not actively guarded. |
 | `indexing` | A baseline reconciliation is in progress. |
-| `current` | The root is clean and up to date. |
+| `current` | Coverage is complete and no finding blocks the default evidence policy. Review-tier findings remain visible without blocking this state. |
 | `dirty` | Filesystem events were observed but not yet reconciled. |
-| `blocked` | Unsuppressed findings were detected. The root is not clean. |
-| `degraded` | Coverage is incomplete. The guard cannot prove the root is clean. |
+| `blocked` | A likely or confirmed finding blocks the default evidence policy. The root is not clean. |
+| `degraded` | Coverage is incomplete and no default-policy blocker takes precedence. The guard cannot prove the root is clean. |
 | `stale-policy` | The daemon's detector corpus, suppression, or configuration changed. Existing attestations are invalid. |
 
 ## Exit codes
 
 | Code | Condition |
 |---|---|
-| 0 | The root is `current`. |
-| 1 | The root is `blocked` or has unsuppressed findings. |
+| 0 | The root is `current`, or a staged scan has only review-tier findings under the default evidence policy. |
+| 1 | The root is `blocked`, or a staged scan contains a finding that blocks its selected evidence policy. |
 | 13 | The root is `dirty`, `stopped`, `indexing`, `degraded`, or `stale-policy`. |
 
 ## Scanner residency
@@ -111,8 +111,12 @@ reconciliation bounds.
 
 When a commit transaction scans a blob and finds no unsuppressed secrets, the
 daemon records a clean attestation keyed by the blob's Git OID, hash algorithm,
-and policy identity digest. Future transactions that reference the same blob
-under the same policy skip the payload scan entirely.
+policy identity digest, and exact sorted staged source-path set. Future
+transactions skip the payload scan only when all four inputs match. Adding an
+alias or moving the blob between source roles invalidates the attestation.
+
+The source-path set is hashed into the attestation identity. Persisted policy
+identity data does not contain plaintext staged paths.
 
 A policy identity change (new detectors, new suppression rules, new
 configuration) invalidates all existing attestations and transitions active
