@@ -5,6 +5,7 @@ use crate::types::LazyRegex;
 fn compiled_pattern(detector_index: usize) -> CompiledPattern {
     CompiledPattern {
         detector_index,
+        pattern_index: 0,
         regex: LazyRegex::plain("secret_[A-Za-z0-9]{16}"),
         group: None,
         client_safe: false,

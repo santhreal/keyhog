@@ -30,27 +30,24 @@ async fn test_ssrf_integer_ips() {
         ..Default::default()
     };
     let engine = VerificationEngine::new(&[spec], VerifyConfig::default()).unwrap();
-    let group = DedupedMatch {
-        detector_id: Arc::from("ssrf1"),
-        detector_name: Arc::from("ssrf"),
-        service: Arc::from("test"),
-        severity: Severity::Critical,
-        credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32].into(),
-        primary_location: MatchLocation {
-            source: Arc::from(""),
-            file_path: None,
-            line: None,
-            offset: 0,
-            commit: None,
-            author: None,
-            date: None,
-        },
-        additional_locations: vec![],
-        companions: HashMap::new(),
-        entropy: None,
-        confidence: None,
-    };
+    let group = DedupedMatch { detector_id: Arc::from("ssrf1"),
+    detector_name: Arc::from("ssrf"),
+    service: Arc::from("test"),
+    severity: Severity::Critical,
+    credential: keyhog_core::SensitiveString::from("secret"),
+    credential_hash: [0u8; 32].into(),
+    primary_location: MatchLocation {
+        source: Arc::from(""),
+        file_path: None,
+        line: None,
+        offset: 0,
+        commit: None,
+        author: None,
+        date: None,
+    },
+    additional_locations: vec![],
+    companions: HashMap::new(),
+    entropy: None, confidence: None, evidence: keyhog_core::EvidenceVerdict::review_unattributed() };
     let findings = engine.verify_all(vec![group]).await;
     match &findings[0].verification {
         VerificationResult::Error(e) => {
@@ -110,27 +107,24 @@ async fn test_ssrf_integer_ips() {
             ..Default::default()
         };
         let engine = VerificationEngine::new(&[spec], VerifyConfig::default()).unwrap();
-        let group = DedupedMatch {
-            detector_id: Arc::from("ssrf"),
-            detector_name: Arc::from("ssrf"),
-            service: Arc::from("test"),
-            severity: Severity::Critical,
-            credential: keyhog_core::SensitiveString::from("secret"),
-            credential_hash: [0u8; 32].into(),
-            primary_location: MatchLocation {
-                source: Arc::from(""),
-                file_path: None,
-                line: None,
-                offset: 0,
-                commit: None,
-                author: None,
-                date: None,
-            },
-            additional_locations: vec![],
-            companions: HashMap::new(),
-            entropy: None,
-            confidence: None,
-        };
+        let group = DedupedMatch { detector_id: Arc::from("ssrf"),
+        detector_name: Arc::from("ssrf"),
+        service: Arc::from("test"),
+        severity: Severity::Critical,
+        credential: keyhog_core::SensitiveString::from("secret"),
+        credential_hash: [0u8; 32].into(),
+        primary_location: MatchLocation {
+            source: Arc::from(""),
+            file_path: None,
+            line: None,
+            offset: 0,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        additional_locations: vec![],
+        companions: HashMap::new(),
+        entropy: None, confidence: None, evidence: keyhog_core::EvidenceVerdict::review_unattributed() };
         let findings = engine.verify_all(vec![group]).await;
         match &findings[0].verification {
             VerificationResult::Error(e) => {
@@ -199,27 +193,24 @@ async fn test_ssrf_malformed_urls() {
             ..Default::default()
         };
         let engine = VerificationEngine::new(&[spec], VerifyConfig::default()).unwrap();
-        let group = DedupedMatch {
-            detector_id: Arc::from("ssrf_malformed"),
-            detector_name: Arc::from("ssrf"),
-            service: Arc::from("test"),
-            severity: Severity::Critical,
-            credential: keyhog_core::SensitiveString::from("secret"),
-            credential_hash: [0u8; 32].into(),
-            primary_location: MatchLocation {
-                source: Arc::from(""),
-                file_path: None,
-                line: None,
-                offset: 0,
-                commit: None,
-                author: None,
-                date: None,
-            },
-            additional_locations: vec![],
-            companions: HashMap::new(),
-            entropy: None,
-            confidence: None,
-        };
+        let group = DedupedMatch { detector_id: Arc::from("ssrf_malformed"),
+        detector_name: Arc::from("ssrf"),
+        service: Arc::from("test"),
+        severity: Severity::Critical,
+        credential: keyhog_core::SensitiveString::from("secret"),
+        credential_hash: [0u8; 32].into(),
+        primary_location: MatchLocation {
+            source: Arc::from(""),
+            file_path: None,
+            line: None,
+            offset: 0,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        additional_locations: vec![],
+        companions: HashMap::new(),
+        entropy: None, confidence: None, evidence: keyhog_core::EvidenceVerdict::review_unattributed() };
         let findings = engine.verify_all(vec![group]).await;
         match &findings[0].verification {
             VerificationResult::Error(e) => {
@@ -277,27 +268,24 @@ async fn test_ssrf_blocks_link_local_and_metadata_hosts() {
             ..Default::default()
         };
         let engine = VerificationEngine::new(&[spec], VerifyConfig::default()).unwrap();
-        let group = DedupedMatch {
-            detector_id: Arc::from("ssrf-block"),
-            detector_name: Arc::from("ssrf"),
-            service: Arc::from("test"),
-            severity: Severity::Critical,
-            credential: keyhog_core::SensitiveString::from("secret"),
-            credential_hash: [0u8; 32].into(),
-            primary_location: MatchLocation {
-                source: Arc::from(""),
-                file_path: None,
-                line: None,
-                offset: 0,
-                commit: None,
-                author: None,
-                date: None,
-            },
-            additional_locations: vec![],
-            companions: HashMap::new(),
-            entropy: None,
-            confidence: None,
-        };
+        let group = DedupedMatch { detector_id: Arc::from("ssrf-block"),
+        detector_name: Arc::from("ssrf"),
+        service: Arc::from("test"),
+        severity: Severity::Critical,
+        credential: keyhog_core::SensitiveString::from("secret"),
+        credential_hash: [0u8; 32].into(),
+        primary_location: MatchLocation {
+            source: Arc::from(""),
+            file_path: None,
+            line: None,
+            offset: 0,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        additional_locations: vec![],
+        companions: HashMap::new(),
+        entropy: None, confidence: None, evidence: keyhog_core::EvidenceVerdict::review_unattributed() };
         let findings = engine.verify_all(vec![group]).await;
         match &findings[0].verification {
             VerificationResult::Error(e) => {
@@ -340,27 +328,24 @@ async fn test_ssrf_domain_allowlist_blocks_attacker_host() {
         ..Default::default()
     };
     let engine = VerificationEngine::new(&[spec], VerifyConfig::default()).unwrap();
-    let group = DedupedMatch {
-        detector_id: Arc::from("ssrf-allow"),
-        detector_name: Arc::from("ssrf"),
-        service: Arc::from("test"),
-        severity: Severity::Critical,
-        credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32].into(),
-        primary_location: MatchLocation {
-            source: Arc::from(""),
-            file_path: None,
-            line: None,
-            offset: 0,
-            commit: None,
-            author: None,
-            date: None,
-        },
-        additional_locations: vec![],
-        companions: HashMap::new(),
-        entropy: None,
-        confidence: None,
-    };
+    let group = DedupedMatch { detector_id: Arc::from("ssrf-allow"),
+    detector_name: Arc::from("ssrf"),
+    service: Arc::from("test"),
+    severity: Severity::Critical,
+    credential: keyhog_core::SensitiveString::from("secret"),
+    credential_hash: [0u8; 32].into(),
+    primary_location: MatchLocation {
+        source: Arc::from(""),
+        file_path: None,
+        line: None,
+        offset: 0,
+        commit: None,
+        author: None,
+        date: None,
+    },
+    additional_locations: vec![],
+    companions: HashMap::new(),
+    entropy: None, confidence: None, evidence: keyhog_core::EvidenceVerdict::review_unattributed() };
     let findings = engine.verify_all(vec![group]).await;
     match &findings[0].verification {
         VerificationResult::Error(e) => {

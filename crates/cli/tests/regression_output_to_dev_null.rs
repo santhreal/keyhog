@@ -30,7 +30,7 @@ const PLANTED: &str = "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";
 #[test]
 fn scan_output_to_dev_null_succeeds_and_reports_findings_exit_code() {
     let dir = TempDir::new().expect("tempdir");
-    let leak = dir.path().join("leak.env");
+    let leak = dir.path().join(".env.leak");
     std::fs::write(&leak, format!("GITHUB_TOKEN={PLANTED}\n")).expect("write fixture");
 
     let output = Command::new(binary())

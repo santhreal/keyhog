@@ -55,7 +55,7 @@ fn html_emits_doctype_and_embeds_raw_findings() {
     assert_eq!(finding.severity, keyhog_core::Severity::High);
     assert_eq!(finding.credential_redacted.as_ref(), "AKIA...7XYA");
     assert_eq!(finding.verification, keyhog_core::VerificationResult::Live);
-    assert_eq!(finding.confidence, Some(0.875));
+    assert_eq!(finding.evidence_score, Some(0.875));
 }
 
 #[test]

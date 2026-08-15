@@ -49,6 +49,7 @@ mod detector_file_io;
 mod display;
 /// Shared standard Base64 decode (wire / K8s), bounded for DoS safety.
 mod encoding;
+mod evidence;
 mod finding;
 /// Git-LFS pointer recognition, shared by the scanner (oid suppression) and
 /// sources (unscanned-blob coverage gap).
@@ -75,6 +76,8 @@ mod spec;
 mod state_file;
 /// Shared paired performance statistics used by release gates and routing evidence.
 pub mod timing;
+/// Versioned redacted triage contracts and derived feedback artifacts.
+pub mod triage;
 /// Verification-domain policy shared by detector validation and the network
 /// verifier.
 pub mod verification_domain;
@@ -203,13 +206,16 @@ pub fn load_embedded_detectors_or_fail() -> Result<Vec<DetectorSpec>, SpecError>
 fn parse_embedded_detector(name: &str, toml_content: &str) -> Result<DetectorSpec, String> {
     let file =
         toml::from_str::<DetectorFile>(toml_content).map_err(|error| format!("{name}: {error}"))?;
-    let errors: Vec<String> = spec::validate_detector(&file.detector)
-        .into_iter()
-        .filter_map(|issue| match issue {
-            spec::QualityIssue::Error(error) => Some(error),
-            spec::QualityIssue::Warning(_) => None,
-        })
-        .collect();
+    let errors: Vec<String> = spec::validate_detector_for_corpus_schema(
+        &file.detector,
+        spec::DETECTOR_CORPUS_SCHEMA_VERSION,
+    )
+    .into_iter()
+    .filter_map(|issue| match issue {
+        spec::QualityIssue::Error(error) => Some(error),
+        spec::QualityIssue::Warning(_) => None,
+    })
+    .collect();
     if errors.is_empty() {
         Ok(file.detector)
     } else {
@@ -241,6 +247,9 @@ pub fn embedded_detector_specs() -> &'static [DetectorSpec] {
         });
     &SPECS
 }
+
+/// Suffix attached to findings reconstructed from bounded source fragments.
+pub const REASSEMBLED_DETECTOR_SUFFIX: &str = ":reassembled";
 
 /// Canonical `id → DetectorSpec` lookup over the embedded corpus, built EXACTLY
 /// ONCE.

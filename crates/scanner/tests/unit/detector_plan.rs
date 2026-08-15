@@ -1,5 +1,5 @@
 #[test]
-fn unified_plan_preserves_every_detector_local_compilation_owner() {
+fn unified_plan_preserves_every_detector_local_owner_and_semantic_policy() {
     let detectors = keyhog_core::embedded_detector_specs();
     let state = crate::compiler::build_compile_state(detectors)
         .expect("embedded detector compile state must build");
@@ -62,6 +62,12 @@ fn unified_plan_preserves_every_detector_local_compilation_owner() {
         assert_eq!(plan.metadata.0.as_ref(), detector.id);
         assert_eq!(plan.metadata.1.as_ref(), detector.name);
         assert_eq!(plan.metadata.2.as_ref(), detector.service);
+        assert_eq!(
+            plan.semantic,
+            detector.semantic_policy(),
+            "compiled detector plan must retain semantic policy for {}",
+            detector.id
+        );
         assert_eq!(
             plans.resolution_identity_ptr(&detector.id),
             Some(plan.metadata.0.as_ptr()),
@@ -143,6 +149,61 @@ fn unified_plan_preserves_every_detector_local_compilation_owner() {
             );
         }
     }
+}
+
+#[test]
+fn execution_pack_hydration_preserves_detector_semantic_policy() {
+    let detector = keyhog_core::DetectorSpec {
+        id: "semantic-plan-fixture".into(),
+        name: "Semantic plan fixture".into(),
+        service: "test".into(),
+        capture_role: keyhog_core::CaptureSemanticRole::AssignmentValue,
+        anchor_role: keyhog_core::AnchorSemanticRole::ExactKey,
+        allowed_source_roles: vec![
+            keyhog_core::SemanticSourceRole::StructuredAssignmentValue,
+            keyhog_core::SemanticSourceRole::EnvironmentAssignmentValue,
+        ],
+        required_evidence: vec![
+            keyhog_core::RequiredSemanticEvidence::Checksum,
+            keyhog_core::RequiredSemanticEvidence::RequiredCompanion,
+        ],
+        ..crate::testing::named_detector_fixture_defaults()
+    };
+    let detectors = [detector.clone()];
+    let source = super::compiled_detector_plans(&detectors);
+    let expected = source.get(0).semantic.clone();
+
+    let ir = crate::execution_pack::CanonicalDetectorExecutionIr::compile(&detectors)
+        .expect("semantic detector IR must compile");
+    let section = crate::execution_pack::CompiledDetectorPlanSection::compile(&ir)
+        .expect("semantic detector plan section must compile");
+    let interner = crate::static_intern::StaticInterner::from_detector_strings([
+        detector.id.as_str(),
+        detector.name.as_str(),
+        detector.service.as_str(),
+    ]);
+    let mut builder = crate::detector_plan::StreamingCompiledDetectorPlansBuilder::with_capacity(1);
+    crate::execution_pack::CompiledDetectorPlanSection::stream_records(
+        section.as_bytes(),
+        ir.digest(),
+        |_, record| {
+            builder
+                .push(record, Vec::new(), &interner)
+                .map_err(crate::execution_pack::ExecutionPackError::InvalidPack)
+        },
+    )
+    .expect("semantic detector plan must stream and hydrate");
+    let hydrated = builder
+        .finish(
+            &interner,
+            std::sync::Arc::new(
+                crate::decode::CompiledDecoderPlan::snapshot()
+                    .expect("decoder registry must compile"),
+            ),
+        )
+        .expect("hydrated semantic detector plan must finalize");
+
+    assert_eq!(hydrated.get(0).semantic, expected);
 }
 
 #[test]

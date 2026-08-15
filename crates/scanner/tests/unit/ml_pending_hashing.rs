@@ -15,6 +15,14 @@ const CREDENTIAL: &str = "kh-1229-emitted-secret-7F3kQ9mP";
 const EXPECTED_SHA256: &str = "d53330c0e381c1aac0a115579cbd881b63a433f07b25002749d27f557104fd47";
 
 fn pending_candidate(offset: usize, min_confidence_floor: f64) -> MlPendingMatch {
+    pending_candidate_for_pattern(offset, min_confidence_floor, 0)
+}
+
+fn pending_candidate_for_pattern(
+    offset: usize,
+    min_confidence_floor: f64,
+    pattern_index: u32,
+) -> MlPendingMatch {
     let confidence = keyhog_core::detector_spec_by_id("datadog-api-key")
         .and_then(|detector| detector.match_confidence)
         .expect("embedded Datadog confidence policy");
@@ -44,6 +52,7 @@ fn pending_candidate(offset: usize, min_confidence_floor: f64) -> MlPendingMatch
         9,
         4.25,
         &mut state,
+        crate::candidate_provenance::CandidateProvenance::named(0, pattern_index),
         false,
     );
     MlPendingMatch::detector_candidate(
@@ -63,6 +72,47 @@ fn pending_candidate(offset: usize, min_confidence_floor: f64) -> MlPendingMatch
         crate::checksum::ChecksumConfidenceDecision::not_applicable(),
         ActiveMlMode::Authoritative,
     )
+}
+fn enqueue_pending(state: &mut ScanState, pending: MlPendingMatch) -> bool {
+    let pending_raw_match = pending.pending_raw_match;
+    state.push_detector_ml_pending(
+        pending_raw_match,
+        pending.heuristic_conf,
+        pending.code_context,
+        pending.context_multiplier,
+        pending.context_suppression_threshold,
+        pending.post_match,
+        pending.ml_features,
+        pending.ml_weight,
+        pending.min_confidence_floor,
+        pending.is_named_detector,
+        pending.is_generic_detector,
+        pending.allow_canonical_hex_key,
+        pending.allow_encoded_text_lift,
+        pending.checksum,
+        pending.ml_mode,
+    )
+}
+
+/// WHY: the pending index must key the full producer provenance. A/B/A at the
+/// same public identity must deduplicate the repeated A without overwriting B.
+#[test]
+fn pending_index_retains_two_exact_provenance_identities_across_a_b_a() {
+    let mut state = ScanState::default();
+    assert!(enqueue_pending(
+        &mut state,
+        pending_candidate_for_pattern(11, 0.4, 0),
+    ));
+    assert!(enqueue_pending(
+        &mut state,
+        pending_candidate_for_pattern(11, 0.4, 1),
+    ));
+    assert!(!enqueue_pending(
+        &mut state,
+        pending_candidate_for_pattern(11, 0.4, 0),
+    ));
+    assert_eq!(state.ml_pending.len(), 2);
+    assert_eq!(state.accepted_ml_events, 2);
 }
 
 /// Regression KH-1229: a positive final ML verdict must materialize exactly one

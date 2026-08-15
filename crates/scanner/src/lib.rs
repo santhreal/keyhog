@@ -77,8 +77,12 @@ mod assignment_keyword_matcher;
 pub(crate) mod assignment_keywords;
 /// Offline AWS account-ID recovery from an access-key ID (no network/verify).
 pub mod aws;
+/// Secret-safe candidate producer and pattern provenance.
+pub(crate) mod candidate_provenance;
 /// Service-specific credential checksum validation (GitHub, npm, Slack, etc.).
 pub mod checksum;
+/// Candidate-bounded source-code semantic roles.
+pub(crate) mod code_semantics;
 /// Compiled scanner construction and lifecycle implementation.
 mod compiled_scanner;
 /// Detector compilation into high-performance matching structures.
@@ -107,6 +111,8 @@ pub(crate) mod detector_key_material_policy;
 pub(crate) mod detector_ml_policy;
 /// Unified detector-indexed runtime plan compiled from detector TOMLs.
 pub(crate) mod detector_plan;
+/// Candidate-bounded documentation, roff, and shell semantic roles.
+pub(crate) mod documentation_semantics;
 /// Core scan execution engine.
 pub(crate) mod engine;
 /// Shannon entropy analysis for secret detection.
@@ -138,6 +144,10 @@ pub mod matcher_artifact_cache;
 pub mod ml_scorer;
 /// Multiline secret reassembly logic.
 pub(crate) mod multiline;
+#[cfg(feature = "ml")]
+pub(crate) mod pattern_calibration;
+#[cfg(feature = "ml")]
+mod pattern_calibration_contract;
 /// Pure phase-two regex truncation and UTF-8 focus boundaries.
 pub(crate) mod phase2_truncate;
 pub(crate) mod placeholder_words;
@@ -185,6 +195,8 @@ pub(crate) mod pipeline;
 /// Prefix trie for efficient keyword propagation.
 pub(crate) mod prefix_trie;
 pub(crate) mod probabilistic_gate;
+/// Candidate-bounded typed source-role evidence.
+pub(crate) mod source_semantics;
 pub(crate) mod structured;
 pub(crate) mod suppression;
 /// Per-scan telemetry: always-on counters + opt-in `--dogfood` events.

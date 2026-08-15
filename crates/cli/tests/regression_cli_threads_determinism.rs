@@ -37,31 +37,31 @@ fn build_corpus(dir: &Path) {
     // AWS long-term access key id -> `aws-access-key` (or the
     // simdsieve accelerated path); same literal as e2e_binary.rs.
     std::fs::write(
-        dir.join("a_aws.env"),
+        dir.join(".env.a-aws"),
         concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
     )
-    .expect("write a_aws.env");
+    .expect("write .env.a-aws");
 
     // GitHub PAT -> a github-family detector; valid-checksum literal
     // reused from e2e_binary.rs so the checksum wiring accepts it.
     std::fs::write(
-        dir.join("b_github.env"),
+        dir.join(".env.b-github"),
         concat!(
             "GH_TOKEN = \"ghp_",
             "aBcD1234EFgh5678ijkl9012MNop343hK7n2\"\n"
         ),
     )
-    .expect("write b_github.env");
+    .expect("write .env.b-github");
 
     // AWS Bedrock long-term API key -> `aws-bedrock-api-key`.
     std::fs::write(
-        dir.join("c_bedrock.env"),
+        dir.join(".env.c-bedrock"),
         concat!(
             "AWS_BEARER_TOKEN_BEDROCK=\"ABSKQmVkcm9ja0FQSUtleS",
             "y2J0fajDUXD1efoRCtqKODGGBi8UWr7UJsq2tkhFhx8ZEDEd9hnKHivse0YHShMdeCAbPEOXOxyhkg5cqNGHA1grwAyKC3Y8HDD62wLdl37iKN\"\n",
         ),
     )
-    .expect("write c_bedrock.env");
+    .expect("write .env.c-bedrock");
 
     // Clean file: no credential, contributes zero findings.
     std::fs::write(dir.join("d_clean.txt"), "fn main() { println!(\"hi\"); }\n")

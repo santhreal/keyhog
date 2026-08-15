@@ -225,14 +225,14 @@ pub struct ScanReportMetadata {
     pub detector_count: usize,
 }
 
-/// Current major version for the versioned JSON report envelope.
-pub const JSON_REPORT_SCHEMA_MAJOR: u16 = 1;
-/// Current minor version for the versioned JSON report envelope. Minor 9 adds
-/// the optional `correlations` array and minor 10 the optional
-/// `access_targets` object, each absent unless the producer opted in.
-pub const JSON_REPORT_SCHEMA_MINOR: u16 = 10;
+/// Current major version for the versioned JSON report envelope. Version 2
+/// replaces the ambiguous finding `confidence` field with a required evidence
+/// verdict and optional `evidence_score`.
+pub const JSON_REPORT_SCHEMA_MAJOR: u16 = 2;
+/// Current minor version for the versioned JSON report envelope.
+pub const JSON_REPORT_SCHEMA_MINOR: u16 = 0;
 /// Current minor version for the versioned JSONL stream contract.
-pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 9;
+pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 0;
 
 /// Version marker carried by every versioned JSON report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -260,17 +260,15 @@ pub struct JsonReportEnvelope {
     /// Non-zero source or scanner coverage gaps observed during the scan.
     #[serde(default)]
     pub coverage_gap_summary: Vec<JsonReportCoverageGap>,
-    /// Findings in the same redacted shape used by the legacy array.
+    /// Findings in the same redacted shape used by the bare JSON array.
     pub findings: Vec<VerifiedFinding>,
     /// Cross-file credential correlations, present only when the producer ran
-    /// with correlation enabled. Absent, not empty, otherwise, so a report from
-    /// a default scan is byte-identical to one from before minor 9.
+    /// with correlation enabled. Default scans omit the field.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub correlations: Vec<CorrelatedCredential>,
     /// Access targets ("doors") derived from the findings, present only when
-    /// the producer ran with access-target association enabled. Absent, not
-    /// empty, otherwise, so a report from a default scan is byte-identical to
-    /// one from before minor 10.
+    /// the producer ran with access-target association enabled. Default scans omit
+    /// the field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub access_targets: Option<AccessTargetReport>,
 }
@@ -287,15 +285,20 @@ pub struct JsonReportCoverageGap {
 impl JsonReportEnvelope {
     /// Parse and validate a versioned JSON report.
     pub fn parse(input: &str) -> Result<Self, ReportError> {
-        let report: Self = serde_json::from_str(input)?;
-        if report.schema_version.major != JSON_REPORT_SCHEMA_MAJOR {
+        #[derive(serde::Deserialize)]
+        struct EnvelopeVersion {
+            schema_version: JsonReportSchemaVersion,
+        }
+
+        let version: EnvelopeVersion = serde_json::from_str(input)?;
+        if version.schema_version.major != JSON_REPORT_SCHEMA_MAJOR {
             anyhow::bail!(
                 "unsupported JSON report schema major {}; this reader supports major {}",
-                report.schema_version.major,
+                version.schema_version.major,
                 JSON_REPORT_SCHEMA_MAJOR
             );
         }
-        Ok(report)
+        Ok(serde_json::from_str(input)?)
     }
 }
 

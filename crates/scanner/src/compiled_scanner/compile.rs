@@ -19,6 +19,7 @@ struct PackedVyreProgramSource<'a>(std::marker::PhantomData<&'a [u8]>);
 
 struct PackedDetectorPlanPrelude<'a> {
     detector_ids: Vec<Arc<str>>,
+    detector_pattern_counts: Vec<usize>,
     static_intern: Arc<crate::static_intern::StaticInterner>,
     decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
     detector_ir_digest: [u8; 32],
@@ -264,6 +265,7 @@ impl CompiledScanner {
             )
         })?;
         let mut detector_ids = Vec::new();
+        let mut detector_pattern_counts = Vec::new();
         let mut static_intern =
             crate::static_intern::StaticInternerBuilder::with_capacity(bytes.len() / 1024);
         let header = crate::execution_pack::CompiledDetectorPlanSection::stream_prelude_records(
@@ -272,6 +274,7 @@ impl CompiledScanner {
             |_, record| {
                 let id = static_intern.intern(record.id);
                 detector_ids.push(Arc::clone(&id));
+                detector_pattern_counts.push(record.patterns.len());
                 static_intern.intern(record.name);
                 static_intern.intern(record.service);
                 if let Some(metadata) = record.entropy_fallback {
@@ -288,6 +291,7 @@ impl CompiledScanner {
         .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
         let prelude = PackedDetectorPlanPrelude {
             detector_ids,
+            detector_pattern_counts,
             static_intern: Arc::new(static_intern.finish()),
             decoder_plan: header.decoder_plan,
             detector_ir_digest: header.detector_ir_digest,
@@ -361,12 +365,47 @@ impl CompiledScanner {
         gpu_policy: GpuInitPolicy,
         tuning_config: &ScannerTuningConfig,
     ) -> Result<Self> {
+        use crate::execution_pack::ExecutionPackSectionKind as Section;
+
+        let section_bytes = pack.section(Section::DetectorPlan).ok_or_else(|| {
+            crate::error::ScanError::Config(
+                "execution pack is missing required detector-plan section".to_owned(),
+            )
+        })?;
+        let mut visited = 0usize;
+        let header = crate::execution_pack::CompiledDetectorPlanSection::stream_prelude_records(
+            section_bytes,
+            pack.identity().detector_digest,
+            |index, record| {
+                let detector = detectors.get(index).ok_or_else(|| {
+                    crate::execution_pack::ExecutionPackError::InvalidPack(format!(
+                        "detector-plan record {index} exceeds the shared detector corpus"
+                    ))
+                })?;
+                if record.id != detector.id || record.patterns.len() != detector.patterns.len() {
+                    return Err(crate::execution_pack::ExecutionPackError::InvalidPack(
+                        format!(
+                            "detector-plan record {index} disagrees with the shared detector corpus"
+                        ),
+                    ));
+                }
+                visited += 1;
+                Ok(Arc::from(detector.id.as_str()))
+            },
+        )
+        .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+        if visited != detectors.len() {
+            return Err(crate::error::ScanError::Config(format!(
+                "detector plan contains {visited} records but the shared detector corpus contains {}",
+                detectors.len()
+            )));
+        }
         Self::compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning_inner(
             detectors,
             pack,
             gpu_policy,
             tuning_config,
-            None,
+            Some((header.decoder_plan, header.compiled_plan_digest)),
             None,
         )
     }
@@ -511,6 +550,7 @@ impl CompiledScanner {
                         section(Section::SuppressionPolicy)?,
                         identity.detector_digest,
                         &detector_ids,
+                        &prelude.detector_pattern_counts,
                     )
                 } else {
                     crate::execution_pack::matcher_sections::decode_compile_state_sections_from_ids(
@@ -520,6 +560,7 @@ impl CompiledScanner {
                         section(Section::SuppressionPolicy)?,
                         identity.detector_digest,
                         &detector_ids,
+                        &prelude.detector_pattern_counts,
                     )
                 }
             } else {
@@ -569,7 +610,7 @@ impl CompiledScanner {
         gpu_policy: GpuInitPolicy,
         tuning_config: &ScannerTuningConfig,
         packed_state: Option<CompileState>,
-        mut packed_simd_program: Option<PackedSimdProgram>,
+        packed_simd_program: Option<PackedSimdProgram>,
         packed_vyre_program: Option<PackedVyreProgramSource<'_>>,
         packed_decoder_plan: Option<(Arc<crate::decode::CompiledDecoderPlan>, [u8; 32])>,
         mut packed_detector_plan: Option<PackedDetectorPlanPrelude<'_>>,
@@ -607,8 +648,10 @@ impl CompiledScanner {
         };
         #[cfg(not(feature = "gpu"))]
         let packed_vyre_program_present = packed_vyre_program.is_some();
+        #[cfg(feature = "simd")]
+        let mut packed_simd_program = packed_simd_program;
         #[cfg(not(feature = "simd"))]
-        let (tuning_config, packed_simd_program) = (tuning_config, packed_simd_program);
+        let _ = packed_simd_program;
         let mut state = match packed_state {
             Some(state) => state,
             None => build_compile_state(&detectors)?,

@@ -2,6 +2,10 @@
 
 ## 0.5.75 - 2026-08-14
 
+- Added default and paranoid evidence exit policies. Default blocks `likely` and `confirmed`; paranoid also blocks `review`, without hiding non-blocking findings. Baseline schema 2 stores required evidence and secret-safe candidate provenance and rejects v1 and the removed `status` alias. Daemon wire 15 carries exact evidence plus staged-guard blocking counts, preserving one-shot, daemon, and guard exit semantics.
+- `explain` renders typed detector semantic policies and labels omitted capture and anchor roles as compatibility defaults. Autoroute rejects prior detector-corpus identities with a detector digest mismatch and directs `keyhog calibrate-autoroute`.
+- Detector parse-cache writes and hits reapply the selected corpus schema's validation rules. Schema-5 per-pattern evidence cannot be bypassed by a cache hit, and legacy schema semantics remain valid.
+- Added `keyhog triage` with bounded redacted input, the 16-hex active detector digest and authoritative scanner provenance, distinct create-new runtime-suppression and pattern-feedback outputs, typed scopes, and fail-closed path and symlink validation.
 - Merge remote-tracking branch 'origin/main'.
 
 ## 0.5.74 - 2026-08-14

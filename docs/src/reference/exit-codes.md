@@ -6,8 +6,8 @@ definitions live in `crates/cli/src/exit_codes.rs` and are rendered in
 
 | Exit | Meaning |
 |---|---|
-| `0` | Success. For a normal scan, there are no reportable findings, no incremental-cache failure, and no incomplete source coverage. |
-| `1` | Findings are present, but none were confirmed live. |
+| `0` | Success. No finding blocks the active evidence policy, no incremental-cache failure occurred, and source coverage is complete. Under the default policy, review-tier findings can remain visible. |
+| `1` | At least one finding blocks the active evidence policy, but none were confirmed live. |
 | `2` | User or operator error, including invalid arguments or configuration and operator-correctable I/O. |
 | `3` | System or local environment failure, including other low-level I/O, a fatal daemon service failure, or an explicitly selected SIMD backend failure. |
 | `4` | A maintenance health or self-test command reported an unhealthy state. |
@@ -27,8 +27,8 @@ rc=0
 keyhog scan . --verify || rc=$?
 
 case "$rc" in
-  0)   echo "clean" ;;
-  1)   echo "findings present; none confirmed live" ;;
+  0)   echo "no policy-blocking findings" ;;
+  1)   echo "findings block the active evidence policy" ;;
   10)  echo "live credential confirmed"; exit 1 ;;
   2)   echo "fix arguments, configuration, or operator input"; exit 1 ;;
   3)   echo "repair or retry this runner"; exit 1 ;;
@@ -47,38 +47,40 @@ For a completed normal scan, `resolve_scan_exit` applies this order:
 
 1. scanner panic, `11`;
 2. at least one live credential, `10`;
-3. at least one reportable finding, `1`;
+3. at least one finding that blocks the active evidence policy, `1`;
 4. incremental-cache or autoroute-cache persist failure, `3`;
 5. incomplete source coverage, `13`;
-6. clean success, `0`.
+6. policy success, `0`.
 
-This means a finding from the covered portion remains `1` or `10` even when
-coverage is incomplete. The coverage warning remains visible. Automation must
-not infer complete coverage from a finding code.
+This means a blocking finding from the covered portion remains `1` or `10`
+even when coverage is incomplete. The coverage warning remains visible.
+Automation must not infer complete coverage from a finding code.
 
 Autoroute calibration is a separate scan mode, but it does not hide the scan's
-own result. `keyhog scan . --autoroute-calibrate` still exits `1` when the scan
-reports findings, and `0` only when the scan is clean and the calibration
-succeeded. Calibration publishes only evidence that passed its checks, and an
-inconclusive or failed calibration returns an error instead. This matters
-because the documented first-run command is a calibrating scan: if it swallowed
-the findings exit, a real leak would read as a clean warm-up.
+own result. `keyhog scan . --autoroute-calibrate` still exits `1` when a finding
+blocks the active evidence policy, and `0` only when no finding blocks and the
+calibration succeeded. Calibration publishes only evidence that passed its
+checks, and an inconclusive or failed calibration returns an error instead.
+This matters because the documented first-run command is a calibrating scan: a
+real policy-blocking leak cannot read as a successful warm-up.
 
-## `0`: success
+## `0`: policy success
 
-A normal scan returns `0` only when it can make a clean claim under the active
-policy. A source or expansion gap prevents a zero-finding scan from returning
-`0`.
+A normal scan returns `0` only when it can make a successful claim under the
+active evidence policy. The default policy keeps `review` findings visible
+without blocking; `--evidence-policy paranoid` makes them block. A source or
+expansion gap prevents a zero-blocking-finding scan from returning `0`.
 
 Maintenance subcommands also use `0` for their successful state. For example,
 `update --check` returns `0` when the installed version is current.
 
-## `1`: findings, none confirmed live
+## `1`: findings block the active policy
 
-Exit `1` covers findings that are unverified, skipped, or verified inactive
-(`dead` or `revoked`). A verification network error remains a per-finding
-`verification-error`; it does not become exit `2`. If findings remain and none
-is confirmed live, the scan returns `1`.
+The default evidence policy blocks `likely` and `confirmed`. Paranoid policy
+also blocks `review`. Verification states other than `live` do not override the
+scanner evidence verdict, so skipped, dead, revoked, and verification-error
+findings can still return `1` when their tier blocks. A live finding returns
+`10`.
 
 ## `2`: user or operator error
 

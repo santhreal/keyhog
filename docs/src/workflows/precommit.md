@@ -111,8 +111,8 @@ Stderr:
 $ git commit -m "add staging config"
   ┌    CRITICAL ─── Stripe Secret Key
   │ Secret:     sk_l...p7dc
-  │ Location:   src/config/staging.env:14
-  │ Confidence: ■■■■■■ 100%
+  │ Location:   src/config/.env.staging:14
+  │ Evidence:   likely/vendor-pattern  ■■■■■■ 100%
   │ Action:     Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.
   │ Docs:       https://docs.stripe.com/keys#roll-api-key
   └─────────────────────────────────────────────
@@ -124,8 +124,9 @@ $ git commit -m "add staging config"
 ```
 
 The hook runs `exec keyhog scan --fast --git-staged --backend cpu`, so this is
-the ordinary scan report over the staged blobs. Exit `1` means findings and
-aborts the commit. Exit `10` would mean a confirmed live credential, although
+the ordinary scan report over the staged blobs. Exit `1` means a finding blocks
+the default evidence policy and aborts the commit. Exit `10` would mean a
+confirmed live credential, although
 the shipped hook does not enable verification. Every operational nonzero exit
 also aborts the commit because the scan did not complete. Your staged work
 remains intact. You can then:

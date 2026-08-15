@@ -23,6 +23,7 @@ fn dummy_match(file_path: Option<&str>, line: Option<usize>, detector_id: &str) 
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

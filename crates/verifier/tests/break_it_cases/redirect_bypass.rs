@@ -101,27 +101,24 @@ async fn pinned_client_does_not_follow_redirect_to_private_target() {
         },
     )
     .unwrap();
-    let group = DedupedMatch {
-        detector_id: Arc::from("redir_det"),
-        detector_name: Arc::from("redir_det"),
-        service: Arc::from("test"),
-        severity: Severity::Critical,
-        credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32].into(),
-        primary_location: MatchLocation {
-            source: Arc::from("fs"),
-            file_path: Some(Arc::from("test")),
-            line: Some(1),
-            offset: 1,
-            commit: None,
-            author: None,
-            date: None,
-        },
-        additional_locations: vec![],
-        companions: HashMap::new(),
-        entropy: None,
-        confidence: Some(1.0),
-    };
+    let group = DedupedMatch { detector_id: Arc::from("redir_det"),
+    detector_name: Arc::from("redir_det"),
+    service: Arc::from("test"),
+    severity: Severity::Critical,
+    credential: keyhog_core::SensitiveString::from("secret"),
+    credential_hash: [0u8; 32].into(),
+    primary_location: MatchLocation {
+        source: Arc::from("fs"),
+        file_path: Some(Arc::from("test")),
+        line: Some(1),
+        offset: 1,
+        commit: None,
+        author: None,
+        date: None,
+    },
+    additional_locations: vec![],
+    companions: HashMap::new(),
+    entropy: None, confidence: Some(1.0), evidence: keyhog_core::EvidenceVerdict::review_unattributed() };
 
     let findings = engine.verify_all(vec![group]).await;
     assert_eq!(findings.len(), 1);

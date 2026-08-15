@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use keyhog_core::{
-    load_detector_corpus, load_detectors, validate_detector, DetectorSpec, QualityIssue,
+    load_detector_corpus, load_detectors, validate_detector_for_corpus_schema, DetectorSpec,
+    QualityIssue,
 };
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -238,7 +239,7 @@ fn save_detector_cache(
     source_fingerprint: String,
 ) -> std::io::Result<()> {
     for detector in &corpus.specs {
-        let issues = validate_detector(detector);
+        let issues = validate_detector_for_corpus_schema(detector, corpus.schema_version);
         if issues
             .iter()
             .any(|issue| matches!(issue, QualityIssue::Error(_)))
@@ -317,7 +318,7 @@ fn load_detector_cache(
 
     let mut validated = Vec::with_capacity(cache.detectors.len());
     for spec in cache.detectors {
-        let issues = validate_detector(&spec);
+        let issues = validate_detector_for_corpus_schema(&spec, schema_version);
         if issues
             .iter()
             .any(|issue| matches!(issue, QualityIssue::Error(_)))

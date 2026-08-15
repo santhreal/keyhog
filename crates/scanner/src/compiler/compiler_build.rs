@@ -244,6 +244,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                     })?;
                     homoglyph_variants.push(CompiledPattern {
                         detector_index,
+                        pattern_index: compiled.pattern_index,
                         regex: LazyRegex::plain(full_homoglyph_regex),
                         group: pattern.group,
                         client_safe: pattern.client_safe,

@@ -28,12 +28,12 @@
 //!     presence; `--exclude-paths <glob>` suppresses a matching file too.
 //!
 //! Host-independence: every scan forces `--backend cpu`, the always-available
-//! scalar path, so an accelerator is never assumed and the result is identical
-//! on a GPU host and a GPU-less CI runner. The planted AWS access-key IDs are
-//! caught by the literal-anchored `aws-access-key` detector (regex
-//! `(?-i)(AKIA|ASIA)[0-9A-Z]{16}\b`, no checksum) which fires on the CPU path.
-//! `--no-suppress-test-fixtures` guarantees no invented key is silently dropped
-//! by the public-demo-credential suppression list.
+//! scalar path, and uses paranoid evidence policy because this suite tests path
+//! inclusion rather than source-role classification. The planted AWS access-key
+//! IDs are caught by the literal-anchored `aws-access-key` detector (regex
+//! `(?-i)(AKIA|ASIA)[0-9A-Z]{16}\b`, no checksum). `--no-suppress-test-fixtures`
+//! guarantees no invented key is silently dropped by the public-demo-credential
+//! suppression list.
 //!
 //! Truth-law: every assertion pins a concrete value, an exact process exit
 //! code (0 = clean, 1 = unverified findings), an exact AWS-finding count, an
@@ -84,6 +84,8 @@ fn scan(root: &Path, extra: &[&str]) -> (Vec<serde_json::Value>, Option<i32>) {
         .arg("--daemon=off")
         .args(["--backend", "cpu"])
         .arg("--no-suppress-test-fixtures")
+        .arg("--evidence-policy")
+        .arg("paranoid")
         .args(extra)
         .args(["--format", "json"])
         .arg(root)

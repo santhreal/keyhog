@@ -102,6 +102,7 @@ fn build_repeated_credential_group(n: usize) -> Vec<RawMatch> {
             },
             entropy: Some(4.5),
             confidence: Some(0.9),
+            evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
         })
         .collect()
 }

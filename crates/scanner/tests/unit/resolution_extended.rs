@@ -65,6 +65,7 @@ fn make_match_at_offset(
         },
         entropy: None,
         confidence,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

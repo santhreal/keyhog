@@ -29,6 +29,8 @@ fn introspection_uses_the_declared_spec_and_redacts_test_credentials() {
         tests: vec![DetectorTestSpec {
             test_positive: Some("fx_SUPERSECRET012345678".to_string()),
             test_negative: Some("fx_not-a-real-credential".to_string()),
+            pattern_index: None,
+            negative_class: None,
             test_path: None,
         }],
         ..DetectorSpec::default()

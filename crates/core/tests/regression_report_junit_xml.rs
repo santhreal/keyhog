@@ -54,7 +54,8 @@ fn sample_finding() -> VerifiedFinding {
         metadata,
         additional_locations: vec![],
         entropy: None,
-        confidence: Some(0.875),
+        evidence_score: Some(0.875),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -135,7 +136,9 @@ fn cdata_body_lines_are_exact() {
         "Offset:        5",
         "Redacted:      AKIA...7XYA",
         "Verification:  live",
-        "Confidence:    0.875",
+        "Evidence Tier: review",
+        "Evidence Reason: unattributed",
+        "Evidence Score: 0.875",
     ] {
         assert!(
             out.contains(line),
@@ -301,19 +304,20 @@ fn xml_illegal_control_chars_replaced_with_fffd() {
 }
 
 #[test]
-fn confidence_none_omits_confidence_line() {
+fn evidence_score_none_omits_score_line_but_keeps_exact_verdict() {
     let mut finding = sample_finding();
-    finding.confidence = None;
+    finding.evidence_score = None;
     let out = render(&[finding]);
     assert!(
-        !out.contains("Confidence:"),
-        "Confidence line must be absent when confidence is None: {out:?}"
+        !out.contains("Evidence Score:"),
+        "score line must be absent when evidence_score is None: {out:?}"
     );
-    // Twin: a present confidence DOES render.
+    assert!(out.contains("Evidence Tier: review"));
+    assert!(out.contains("Evidence Reason: unattributed"));
     let out_with = render(&[sample_finding()]);
     assert!(
-        out_with.contains("Confidence:    0.875"),
-        "confidence line missing when present: {out_with:?}"
+        out_with.contains("Evidence Score: 0.875"),
+        "evidence score line missing when present: {out_with:?}"
     );
 }
 

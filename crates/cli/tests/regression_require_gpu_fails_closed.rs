@@ -27,7 +27,7 @@ fn binary() -> PathBuf {
 /// The dir guard must stay alive for the scan to see the file.
 fn aws_leak_fixture() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("aws_leak.env");
+    let path = dir.path().join(".env.aws-leak");
     // Split literal so this source file is not itself a self-flagging leak.
     let fixture = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n");
     std::fs::write(&path, fixture).expect("write fixture");

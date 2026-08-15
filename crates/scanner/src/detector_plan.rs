@@ -384,6 +384,7 @@ pub(crate) struct CompiledDetectorPlan {
     pub(crate) metadata: CompiledDetectorMetadata,
     pub(crate) entropy_metadata: Option<CompiledDetectorMetadata>,
     pub(crate) execution: crate::detector_execution_policy::CompiledDetectorExecutionPolicy,
+    pub(crate) semantic: keyhog_core::DetectorSemanticPolicySpec,
     match_confidence_index: u16,
     pub(crate) key_material: crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
     sparse_policy_index: Option<std::num::NonZeroU16>,
@@ -1036,6 +1037,7 @@ fn compile_detector_plan(
             })
             .transpose()?,
         execution,
+        semantic: detector.semantic_policy(),
         match_confidence_index: intern_confidence_policy(
             confidence_policies,
             crate::confidence::policy::CompiledMatchConfidencePolicy::compile(detector)?,
@@ -1113,6 +1115,7 @@ fn hydrate_detector_plan(
             })
             .transpose()?,
         execution,
+        semantic: detector.semantic.clone(),
         match_confidence_index: intern_confidence_policy(
             confidence_policies,
             crate::confidence::policy::CompiledMatchConfidencePolicy::hydrate(

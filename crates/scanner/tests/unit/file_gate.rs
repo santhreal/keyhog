@@ -1189,6 +1189,7 @@ fn resolution_happy() {
         },
         entropy: None,
         confidence: Some(0.5),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     assert_eq!(resolve_matches(vec![m]).len(), 1);
 }

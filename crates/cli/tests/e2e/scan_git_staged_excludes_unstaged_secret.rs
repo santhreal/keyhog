@@ -39,7 +39,7 @@ fn scan_git_staged_excludes_unstaged_secret() {
         .status()
         .expect("git commit");
     std::fs::write(
-        repo.join("secret.env"),
+        repo.join(".env.secret"),
         "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
     )
     .unwrap();

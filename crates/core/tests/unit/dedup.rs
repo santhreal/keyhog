@@ -21,6 +21,7 @@ fn sample_match(id: &str, cred: &str, path: &str) -> RawMatch {
         },
         entropy: None,
         confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

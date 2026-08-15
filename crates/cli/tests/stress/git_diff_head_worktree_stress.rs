@@ -37,7 +37,7 @@ fn git_diff_head_worktree_secret_exit_one() {
         .expect("git commit");
 
     std::fs::write(
-        repo.join("worktree.env"),
+        repo.join(".env.worktree"),
         "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
     )
     .unwrap();

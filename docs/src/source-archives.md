@@ -82,11 +82,11 @@ output are bounded. Formats with compression-ratio metadata also apply a ratio
 guard.
 
 Rejected, encrypted, corrupt, unreadable, oversized, or budget-truncated input
-is not treated as clean. KeyHog reports the uncovered member or archive on
-stderr and records a coverage gap in the envelope. With no findings, incomplete
-coverage exits `13`. If the covered portion has findings, exit `1`, or exit `10`
-for a confirmed live credential, takes precedence. The coverage warning and
-`scan_status = "partial"` remain in the report.
+is not treated as complete. KeyHog reports the uncovered member or archive on
+stderr and records a coverage gap in the envelope. With no blocking finding,
+incomplete coverage exits `13`. A blocking finding in the covered portion takes
+exit `1`, or a confirmed live credential takes exit `10`. The coverage warning
+and `scan_status = "partial"` remain in the report.
 
 Do not raise `--max-file-size` merely to make exit `13` disappear. Raise it only
 when you trust the input and the runner has enough memory. Otherwise isolate the

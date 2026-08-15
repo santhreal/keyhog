@@ -241,6 +241,6 @@ reports a successful `SKIP` when no physical GPU is present. `backend
 multi-backend calibration.
 
 `keyhog doctor` exits `0` when the installed binary is healthy and `4` when a
-health check fails. `keyhog scan .` exits `0` for a clean scan and `1` when it
-reports findings. Continue with [Your first scan](./first-scan.md) to exercise a
-safe synthetic finding.
+health check fails. `keyhog scan .` exits `0` when no finding blocks the active
+evidence policy and `1` when at least one finding blocks. Continue with
+[Your first scan](./first-scan.md) to exercise a safe synthetic finding.

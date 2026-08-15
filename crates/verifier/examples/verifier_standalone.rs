@@ -43,6 +43,7 @@ async fn main() -> Result<(), keyhog_verifier::VerifyError> {
             },
             entropy: None,
             confidence: Some(0.95),
+            evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
         }],
         &DedupScope::Credential,
     );

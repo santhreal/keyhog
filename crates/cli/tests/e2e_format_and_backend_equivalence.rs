@@ -42,7 +42,7 @@ const PLANTED: &str = "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";
 
 fn fixture() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("leak.env");
+    let path = dir.path().join(".env.leak");
     std::fs::write(&path, format!("GITHUB_TOKEN={PLANTED}\n")).expect("write fixture");
     (dir, path)
 }

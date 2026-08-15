@@ -51,8 +51,8 @@ returns exactly one process exit code:
 
 | Exit code | Meaning |
 |-----------|---------|
-| `0` | No reportable findings and no failing source-coverage condition. Advisory skip gaps can still make the structured report `partial`; inspect its reasons before claiming the skipped content was clean. |
-| `1` | Findings are present, but none were confirmed live; skipped, unverified, dead, and revoked credentials use this verdict |
+| `0` | No finding blocks the active evidence policy and no failing source-coverage condition occurred. Under the default policy, review-tier findings remain visible without blocking. |
+| `1` | At least one finding blocks the active evidence policy, but none were confirmed live. The default blocks `likely` and `confirmed`; `--evidence-policy paranoid` also blocks `review`. |
 | `2` | User error, such as a bad flag or config, a missing or unreadable path, a missing baseline, detector-load failure, or invalid autoroute calibration |
 | `3` | Local system failure, such as low-level I/O, a fatal daemon failure, or an unavailable selected SIMD/Hyperscan backend |
 | `10` | At least one credential was confirmed live under `--verify` |
@@ -61,13 +61,12 @@ returns exactly one process exit code:
 | `13` | A requested source failed or failing input coverage was incomplete, and no finding outcome took precedence. |
 | `130` | You interrupted the scan with Ctrl-C/SIGINT |
 
-`keyhog scan --help` prints the same canonical table. A scan with findings exits
-nonzero by design, so CI does not need `grep`, `jq`, or exit-code arithmetic.
-When several conditions apply, a scanner panic takes precedence over findings,
-a confirmed-live finding takes precedence over other findings, and findings
-take precedence over a later cache or source-coverage failure. Read the
-coverage warning and structured `scan_status` before treating partial output as
-complete.
+`keyhog scan --help` prints the same canonical table. CI does not need `grep`,
+`jq`, or exit-code arithmetic. When several conditions apply, a scanner panic
+takes precedence over findings, a confirmed-live finding takes precedence over
+other findings, and a blocking finding takes precedence over a later cache or
+source-coverage failure. Read the coverage warning and structured `scan_status`
+before treating partial output as complete.
 
 ## What you get out of it
 
@@ -77,7 +76,7 @@ Findings go to stdout as redacted boxes followed by a summary:
 ┌    CRITICAL ─── GitHub Classic PAT
 │ Secret:     ghp_...K7n2
 │ Location:   /tmp/keyhog-first-scan/demo.env:1
-│ Confidence: ■■■■■■ 100%
+│ Evidence:   likely/vendor-pattern  ■■■■■■ 100%
 └─────────────────────────────────────────────
 
 ━━━ Results ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -85,8 +84,9 @@ Findings go to stdout as redacted boxes followed by a summary:
 ```
 
 Each finding gives you the detector, the redacted credential, the location,
-the confidence when it was measured, and remediation guidance. Use `--output`
-to write the report to a file instead of stdout.
+the exact evidence tier and reason code, an optional evidence score, and
+remediation guidance. Use `--output` to write the report to a file instead of
+stdout.
 
 Add `--progress` when you need to see which engine ran the scan. It writes a
 banner to stderr before the findings:
@@ -97,7 +97,7 @@ banner to stderr before the findings:
     v0.5.75 · secret scanner · 926 detectors
     by santh
 
-  ⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 926 detectors (5799 patterns) io_uring | backend=simd-regex | gpu=none
+  ⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 926 detectors (5803 patterns) io_uring | backend=simd-regex | gpu=none
 ```
 
 The banner reports this host's CPU and GPU labels, the scanner engine, the
@@ -135,24 +135,24 @@ needed.
 
 The output is a versioned envelope. `schema_version.major` selects the
 incompatible schema generation; consumers must reject an unsupported major.
-Minor revisions are additive, so a reader that understands major `1` may
+Minor revisions are additive, so a reader that understands major `2` may
 accept a newer minor and ignore fields it does not know. The optional
 `metadata` object identifies the scan; `coverage_gap_summary` preserves any
 source or scanner coverage gaps; `findings` contains the redacted finding
-objects. `entropy` and `confidence` are included when the detection
-path measured them; otherwise they are omitted. A present entropy value is
-Shannon bits-per-byte evidence, not a confidence score and not a claim that
-entropy alone caused the finding.
-Minor `9` adds the optional `correlations` array, emitted only when the scan
-ran with [`--correlate`](./reference/cli.md); the key is absent, not empty,
-otherwise. See [Output formats](./output-formats.md#cross-file-correlation).
+objects. Every finding has a canonical `evidence` object with exact `tier` and
+`reason_code`. `entropy` and `evidence_score` are included only when measured.
+A present entropy value is Shannon bits-per-byte evidence, not an evidence
+score and not a claim that entropy alone caused the finding. The optional
+`correlations` array is emitted only when the scan ran with
+[`--correlate`](./reference/cli.md); the key is absent, not empty, otherwise.
+See [Output formats](./output-formats.md#cross-file-correlation).
 The `source_bytes_scanned` and `source_chunks_scanned` counters are the exact
 workload consumed by the scanner, so an importer can calculate throughput from
 the artifact without scraping console progress.
 
 ```json
 {
-  "schema_version": {"major": 1, "minor": 10},
+  "schema_version": {"major": 2, "minor": 0},
   "scan_status": "success",
   "metadata": {
     "scan_id": "0123456789abcdef0123456789abcdef",
@@ -188,7 +188,7 @@ the artifact without scraping console progress.
       "companions_redacted": {},
       "location": {
         "source":    "filesystem",
-        "file_path": "src/config/staging.env",
+        "file_path": "src/config/.env.staging",
         "line":      14,
         "offset":    12,
         "commit":    null,
@@ -198,8 +198,20 @@ the artifact without scraping console progress.
       "verification": "skipped",
       "metadata": {},
       "additional_locations": [],
+      "evidence": {
+        "tier": "likely",
+        "reason_code": "vendor-pattern",
+        "provenance": {
+          "schema_version": 1,
+          "detector_digest": "0123456789abcdef",
+          "pattern_index": 0,
+          "candidate_channel": "pattern",
+          "source_role": "environment-assignment-value",
+          "context_class": "vendor-pattern"
+        }
+      },
       "entropy": 4.5,
-      "confidence": 1.0,
+      "evidence_score": 1.0,
       "remediation": {
         "action":     "Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.",
         "revoke_url":  "https://docs.stripe.com/keys#roll-api-key",

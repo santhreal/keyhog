@@ -71,7 +71,8 @@ fn finding(detector_id: &str, name: &str, service: &str, severity: Severity) -> 
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
         entropy: None,
-        confidence: Some(0.99),
+        evidence_score: Some(0.99),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

@@ -8,7 +8,7 @@
 //!   lifecycle: parse → build config → drive sources → scan → report).
 //! - **Argument surface**: [`args`] (clap definitions), [`value_parsers`]
 //!   (typed flag parsing), [`path_validation`].
-//! - **Subcommands**: [`subcommands`] (scan, explain, detectors, diff,
+//! - **Subcommands**: [`subcommands`] (scan, triage, explain, detectors, diff,
 //!   calibrate, completion, …); long-running modes in [`daemon`].
 //! - **Scan orchestration**: [`orchestrator`] (fan-out, progress, deadlines),
 //!   [`orchestrator_config`] (resolve `--fast`/`--deep`/`--precision`/flag
@@ -474,6 +474,7 @@ pub async fn cli_main() -> ExitCode {
             subcommands::explain::run(args).map(|()| ExitCode::SUCCESS)
         }
         Some(args::Command::Diff(args)) => subcommands::diff::run(args).await,
+        Some(args::Command::Triage(args)) => subcommands::triage::run(args),
         Some(args::Command::Calibrate(args)) => {
             subcommands::calibrate::run(args).map(|()| ExitCode::SUCCESS)
         }

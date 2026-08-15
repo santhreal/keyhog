@@ -65,6 +65,11 @@ pub fn pattern_regex_strs(scanner: &crate::CompiledScanner) -> Vec<&str> {
     scanner.pattern_regex_strs()
 }
 
+/// Canonical literal prefixes used by production pattern routing.
+pub fn pattern_literal_prefixes(regex: &str) -> Vec<String> {
+    crate::compiler::compiler_prefix::extract_literal_prefixes(regex)
+}
+
 /// Production scan-window ceiling used by behavioral tests that must force the
 /// real windowed path without duplicating its tuning constant.
 pub fn max_scan_chunk_bytes() -> usize {
@@ -213,6 +218,7 @@ pub fn match_priority_for_test(
         },
         entropy: None,
         confidence,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     crate::resolution::match_priority(&m)
 }
@@ -652,6 +658,171 @@ pub fn structured_max_traversal_depth_for_test() -> usize {
     crate::structured::parsers::MAX_STRUCTURED_TRAVERSAL_DEPTH
 }
 
+/// Secret-safe source semantic evidence returned by integration facades.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceSemanticEvidenceForTest {
+    /// Classified semantic role.
+    pub role: &'static str,
+    /// Parser confidence attached to the role.
+    pub confidence: &'static str,
+    /// Exact candidate byte span in the source.
+    pub candidate_span: (usize, usize),
+    /// Exact owning value byte span in the source.
+    pub value_span: (usize, usize),
+    /// Borrowed key-path segment spans represented as byte ranges.
+    pub key_path_spans: Vec<(usize, usize)>,
+}
+
+fn source_semantic_evidence_for_test(
+    evidence: crate::source_semantics::SourceSemanticEvidence,
+) -> SourceSemanticEvidenceForTest {
+    SourceSemanticEvidenceForTest {
+        role: evidence.role.as_str(),
+        confidence: evidence.confidence.as_str(),
+        candidate_span: (evidence.candidate_span.start, evidence.candidate_span.end),
+        value_span: (evidence.value_span.start, evidence.value_span.end),
+        key_path_spans: evidence
+            .key_path()
+            .map(|span| (span.start, span.end))
+            .collect(),
+    }
+}
+
+/// Classify one candidate through the production structured-source semantic
+/// extractor without exposing candidate bytes in the evidence record.
+pub fn classify_structured_source_candidate_for_test(
+    text: &str,
+    path: &str,
+    candidate_start: usize,
+    candidate_end: usize,
+) -> Option<SourceSemanticEvidenceForTest> {
+    let evidence = crate::source_semantics::classify_structured_candidate(
+        text,
+        Some(path),
+        candidate_start,
+        candidate_end,
+    )?;
+    Some(source_semantic_evidence_for_test(evidence))
+}
+
+/// Return the production per-candidate semantic parser byte budget.
+pub fn structured_source_semantic_window_bytes_for_test() -> usize {
+    crate::source_semantics::MAX_SEMANTIC_WINDOW_BYTES
+}
+
+/// Classify one exact source-code candidate through the production Rust,
+/// JavaScript/TypeScript, or Python lexical-role index.
+pub fn classify_code_source_candidate_for_test(
+    text: &str,
+    path: &str,
+    candidate_start: usize,
+    candidate_end: usize,
+) -> Option<SourceSemanticEvidenceForTest> {
+    if text.get(candidate_start..candidate_end).is_none() || candidate_start >= candidate_end {
+        return None;
+    }
+    let evidence = crate::code_semantics::build_code_source_index(text, path)?.classify(
+        crate::source_semantics::SourceSpan::new(candidate_start, candidate_end),
+    )?;
+    Some(source_semantic_evidence_for_test(evidence))
+}
+
+/// Return the production source-code semantic parser byte budget.
+pub fn code_source_semantic_window_bytes_for_test() -> usize {
+    crate::code_semantics::MAX_CODE_SOURCE_BYTES
+}
+
+/// Classify one exact candidate through the production source-format dispatcher.
+pub fn classify_candidate_source_semantics_for_test(
+    text: &str,
+    path: &str,
+    candidate_start: usize,
+    candidate_end: usize,
+) -> Option<SourceSemanticEvidenceForTest> {
+    if text.get(candidate_start..candidate_end).is_none() || candidate_start >= candidate_end {
+        return None;
+    }
+    let evidence =
+        crate::source_semantics::build_candidate_source_index(text, Some(path))?.classify(
+            crate::source_semantics::SourceSpan::new(candidate_start, candidate_end),
+        )?;
+    Some(source_semantic_evidence_for_test(evidence))
+}
+
+/// Return the production documentation and shell semantic parser byte budget.
+pub fn document_source_semantic_window_bytes_for_test() -> usize {
+    crate::documentation_semantics::MAX_DOCUMENT_SOURCE_BYTES
+}
+
+/// Secret-safe source-role sidecar retained on one emitted candidate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CandidateSourceRoleForTest {
+    /// Detector identity that emitted the candidate.
+    pub detector_id: String,
+    /// Retained source role.
+    pub role: &'static str,
+    /// Retained parser confidence.
+    pub confidence: &'static str,
+}
+
+/// Run the production phase-2 emission path and return only secret-safe source
+/// role evidence retained on each attributed candidate.
+pub fn candidate_source_roles_for_test(
+    detectors: Vec<keyhog_core::DetectorSpec>,
+    chunk: &keyhog_core::Chunk,
+) -> Result<Vec<CandidateSourceRoleForTest>, String> {
+    candidate_source_roles_and_cache_for_test(detectors, chunk).map(|(roles, _)| roles)
+}
+
+/// Run the production phase-2 path and report whether structured parsing was
+/// initialized. This pins that synchronous suppression remains parser-free.
+pub fn candidate_source_roles_and_cache_for_test(
+    detectors: Vec<keyhog_core::DetectorSpec>,
+    chunk: &keyhog_core::Chunk,
+) -> Result<(Vec<CandidateSourceRoleForTest>, bool), String> {
+    let scanner = crate::CompiledScanner::compile(detectors).map_err(|error| error.to_string())?;
+    let (matches, cache_built) = scanner
+        .debug_scan_phase2_with_provenance_and_cache_state(chunk)
+        .map_err(|error| error.to_string())?;
+    let roles = matches
+        .into_iter()
+        .map(|matched| CandidateSourceRoleForTest {
+            detector_id: matched.detector_id.to_string(),
+            role: matched.provenance.source_role().as_str(),
+            confidence: matched.provenance.parser_confidence().as_str(),
+        })
+        .collect();
+    Ok((roles, cache_built))
+}
+
+/// Run the production phase-2 emission path with an explicit scanner config.
+pub fn candidate_source_roles_with_config_for_test(
+    detectors: Vec<keyhog_core::DetectorSpec>,
+    chunk: &keyhog_core::Chunk,
+    config: crate::ScannerConfig,
+) -> Result<Vec<CandidateSourceRoleForTest>, String> {
+    let scanner = crate::CompiledScanner::compile(detectors)
+        .map_err(|error| error.to_string())?
+        .with_config(config);
+    collect_candidate_source_roles(&scanner, chunk)
+}
+
+fn collect_candidate_source_roles(
+    scanner: &crate::CompiledScanner,
+    chunk: &keyhog_core::Chunk,
+) -> Result<Vec<CandidateSourceRoleForTest>, String> {
+    Ok(scanner
+        .debug_scan_phase2_with_provenance(chunk)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .map(|matched| CandidateSourceRoleForTest {
+            detector_id: matched.detector_id.to_string(),
+            role: matched.provenance.source_role().as_str(),
+            confidence: matched.provenance.parser_confidence().as_str(),
+        })
+        .collect())
+}
+
 /// (multiline::config) the concatenation-marker predicates, exposed to pin the
 /// marker recognition + both-scan indicator routing externally.
 #[cfg(feature = "multiline")]
@@ -998,6 +1169,26 @@ pub fn ml_weights_total_f32_count() -> usize {
 /// production weights pass the fail-closed parse.
 pub fn ml_weights_embedded_bytes() -> &'static [u8] {
     crate::ml_scorer::ml_weights::WEIGHTS
+}
+#[cfg(feature = "ml")]
+pub fn pattern_calibration_key_for_test(
+    raw: &str,
+    detector_digest: u64,
+    detector_id: &str,
+    pattern_index: u32,
+    candidate_channel: &str,
+    source_role: &str,
+    context_class: &str,
+) -> Result<bool, String> {
+    crate::pattern_calibration::evaluate_artifact_key(
+        raw,
+        detector_digest,
+        detector_id,
+        pattern_index,
+        candidate_channel,
+        source_role,
+        context_class,
+    )
 }
 
 /// `reject_oversized_window_chunk`: the windowed-scan hard-skip backstop, true
@@ -3451,9 +3642,9 @@ pub fn scan_state_drain(
 ) -> Vec<keyhog_core::RawMatch> {
     let mut state = crate::scan_state::ScanState::default();
     for m in matches {
-        state.push_match(m, limit);
+        state.push_unattributed_match(m, limit);
     }
-    state.into_matches()
+    state.into_matches(0)
 }
 
 #[cfg(feature = "entropy")]
@@ -3464,10 +3655,10 @@ pub fn scan_state_lazy_duplicate_probe_for_test() -> (bool, bool, Vec<keyhog_cor
 
     const LIMIT: usize = 2;
     let mut state = crate::scan_state::ScanState::default();
-    state.push_match(raw_match(0.50), LIMIT);
+    state.push_unattributed_match(raw_match(0.50), LIMIT);
 
     let mut worse_built = false;
-    state.push_match_lazy(
+    state.push_unattributed_match_lazy(
         crate::scan_state::RawMatchPriority {
             confidence: Some(0.10),
             severity: keyhog_core::Severity::High,
@@ -3484,7 +3675,7 @@ pub fn scan_state_lazy_duplicate_probe_for_test() -> (bool, bool, Vec<keyhog_cor
     );
 
     let mut better_built = false;
-    state.push_match_lazy(
+    state.push_unattributed_match_lazy(
         crate::scan_state::RawMatchPriority {
             confidence: Some(0.90),
             severity: keyhog_core::Severity::High,
@@ -3500,7 +3691,7 @@ pub fn scan_state_lazy_duplicate_probe_for_test() -> (bool, bool, Vec<keyhog_cor
         },
     );
 
-    (worse_built, better_built, state.into_matches())
+    (worse_built, better_built, state.into_matches(0))
 }
 
 #[cfg(feature = "entropy")]
@@ -3508,10 +3699,10 @@ pub fn scan_state_lazy_overestimated_priority_probe_for_test() -> (bool, Vec<key
 {
     const LIMIT: usize = 1;
     let mut state = crate::scan_state::ScanState::default();
-    state.push_match(scan_state_probe_match("retained", 7, 0.90), LIMIT);
+    state.push_unattributed_match(scan_state_probe_match("retained", 7, 0.90), LIMIT);
 
     let mut built = false;
-    state.push_match_lazy(
+    state.push_unattributed_match_lazy(
         crate::scan_state::RawMatchPriority {
             confidence: Some(0.99),
             severity: keyhog_core::Severity::High,
@@ -3527,7 +3718,7 @@ pub fn scan_state_lazy_overestimated_priority_probe_for_test() -> (bool, Vec<key
         },
     );
 
-    (built, state.into_matches())
+    (built, state.into_matches(0))
 }
 
 #[cfg(feature = "entropy")]
@@ -3536,10 +3727,10 @@ pub fn scan_state_lazy_identity_tiebreak_probe_for_test() -> (bool, Vec<keyhog_c
     let mut state = crate::scan_state::ScanState::default();
     let mut retained = scan_state_probe_match("duplicate", 7, 0.50);
     retained.detector_name = std::sync::Arc::from("Zulu detector");
-    state.push_match(retained, LIMIT);
+    state.push_unattributed_match(retained, LIMIT);
 
     let mut built = false;
-    state.push_match_lazy(
+    state.push_unattributed_match_lazy(
         crate::scan_state::RawMatchPriority {
             confidence: Some(0.50),
             severity: keyhog_core::Severity::High,
@@ -3557,7 +3748,7 @@ pub fn scan_state_lazy_identity_tiebreak_probe_for_test() -> (bool, Vec<keyhog_c
         },
     );
 
-    (built, state.into_matches())
+    (built, state.into_matches(0))
 }
 
 #[cfg(feature = "entropy")]
@@ -3585,6 +3776,7 @@ fn scan_state_probe_match(
         },
         entropy: None,
         confidence: Some(confidence),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -3596,9 +3788,9 @@ pub(crate) fn scan_state_drain_with_static_intern(
     let interner = std::sync::Arc::new(crate::static_intern::StaticInterner::default());
     let mut state = crate::scan_state::ScanState::with_static_intern(interner);
     for m in matches {
-        state.push_match(m, limit);
+        state.push_unattributed_match(m, limit);
     }
-    state.into_matches()
+    state.into_matches(0)
 }
 
 #[derive(Clone)]
@@ -3639,6 +3831,7 @@ impl LazyRegexProbe {
 pub(crate) fn phase2_keyword_index_summary(regex: &str, keywords: Vec<String>) -> (bool, usize) {
     let pattern = crate::types::CompiledPattern {
         detector_index: 0,
+        pattern_index: 0,
         regex: crate::types::LazyRegex::detector(regex),
         group: None,
         client_safe: false,
@@ -3859,7 +4052,39 @@ impl crate::engine::CompiledScanner {
             self.default_execution_route(),
         )
         .expect("phase-2 diagnostic scan");
-        scan_state.into_matches()
+        scan_state.into_matches(0)
+    }
+}
+
+impl crate::engine::CompiledScanner {
+    pub(crate) fn debug_scan_phase2_with_provenance(
+        &self,
+        chunk: &keyhog_core::Chunk,
+    ) -> Result<Vec<crate::scan_state::AttributedRawMatch>, crate::error::ScanError> {
+        self.debug_scan_phase2_with_provenance_and_cache_state(chunk)
+            .map(|(matches, _)| matches)
+    }
+
+    pub(crate) fn debug_scan_phase2_with_provenance_and_cache_state(
+        &self,
+        chunk: &keyhog_core::Chunk,
+    ) -> Result<(Vec<crate::scan_state::AttributedRawMatch>, bool), crate::error::ScanError> {
+        let prepared = self.prepare_chunk(chunk);
+        let line_index = prepared.line_index();
+        let mut scan_state =
+            crate::scan_state::ScanState::with_static_intern(self.static_intern.clone());
+        self.scan_phase2_patterns(
+            &prepared.preprocessed,
+            line_index,
+            prepared.chunk,
+            &mut scan_state,
+            None,
+            None,
+            None,
+            self.default_execution_route(),
+        )?;
+        let cache_built = scan_state.has_source_semantic_cache();
+        Ok((scan_state.into_attributed_matches(), cache_built))
     }
 }
 

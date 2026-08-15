@@ -2,8 +2,8 @@
 
 KeyHog has several execution engines for the same compiled detector policy.
 Changing a backend may change performance, startup cost, and hardware use; it
-must not change findings, locations, confidence, suppression, verification, or
-output ordering.
+must not change findings, locations, internal confidence, evidence verdicts,
+suppression, verification, or output ordering.
 
 For the repository map, dependency direction, and bytes-to-finding pipeline,
 see [Architecture](./architecture.md).
@@ -142,10 +142,11 @@ zeroized without discarding the warmed host allocation.
 
 Calibration compares the complete `RawMatch` identity: chunk index; detector
 id, name, service, and severity; exact credential, stored-hash, and companion
-identity; source, file, line, offset, commit, author, and date; entropy and
-confidence. A candidate is rejected if any field or finding multiplicity
-differs from the Hyperscan reference, if repeated reference trials are
-inconsistent, or if required GPU timing evidence is invalid. Diagnostics name
+identity; source, file, line, offset, commit, author, and date; entropy,
+internal confidence, evidence tier, and evidence reason. A candidate is rejected
+if any field or finding multiplicity differs from the Hyperscan reference, if
+repeated reference trials are inconsistent, or if required GPU timing evidence
+is invalid. Diagnostics name
 only the differing fields and occurrence counts. They never emit raw
 values or deterministic value fingerprints. Normal automatic scans do not
 benchmark or silently replace a rejected backend.

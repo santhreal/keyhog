@@ -492,6 +492,10 @@ fn never_match_sentinel() -> Arc<Regex> {
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledPattern {
     pub detector_index: usize,
+    /// Zero-based ordinal in the owning detector's canonical `patterns` list.
+    /// Generated routing variants retain the originating ordinal, so backend
+    /// choice and homoglyph expansion cannot change candidate provenance.
+    pub pattern_index: u32,
     pub regex: LazyRegex,
     pub group: Option<usize>,
     /// Mirrors `PatternSpec::client_safe` for the compiled side. A

@@ -1,4 +1,6 @@
+import hashlib
 import json
+import pathlib
 import types
 
 import numpy as np
@@ -199,6 +201,10 @@ def test_load_real_corpus_requires_explicit_class_detector_and_source_file(
             "detector_id": "generic-api-key",
             "candidate_channel": "pattern",
             "source_file": "repo/a.py",
+            "pattern_index": 0,
+            "source_role": "structured-assignment-value",
+            "context_class": "vendor-pattern",
+            "detector_digest": "0123456789abcdef",
         }) + "\n",
         encoding="utf-8",
     )
@@ -213,13 +219,345 @@ def test_load_real_corpus_requires_explicit_class_detector_and_source_file(
         "compute_feature_matrix",
         fake_feature_dump,
     )
-    X, y, classes, detectors, files = train_classifier.load_real_corpus(str(corpus), 42)
+    X, y, classes, detectors, files, identities = train_classifier.load_real_corpus(
+        str(corpus), 42
+    )
 
     assert X.shape == (1, 42)
     assert y.tolist() == [1.0]
     assert classes == ["authentication-key"]
     assert detectors == ["generic-api-key"]
     assert files == ["repo/a.py"]
+    assert identities == [{
+        "detector_id": "generic-api-key",
+        "pattern_index": 0,
+        "candidate_channel": "pattern",
+        "source_role": "structured-assignment-value",
+        "context_class": "vendor-pattern",
+        "detector_digest": "0123456789abcdef",
+    }]
+
+
+def test_load_real_corpus_consumes_secret_safe_versioned_features(
+    tmp_path,
+    monkeypatch,
+):
+    features = [index / 100.0 for index in range(55)]
+    record = {
+        "schema_version": "keyhog-ml-feature-corpus-v1",
+        "feature_schema_sha256": "ab" * 32,
+        "features": features,
+        "label": 1,
+        "kind": "real-creddata-pos",
+        "class": "authentication-key",
+        "detector_id": "generic-api-key",
+        "candidate_channel": "pattern",
+        "source_file": "repo/a.py",
+        "pattern_index": 0,
+        "source_role": "structured-assignment-value",
+        "context_class": "vendor-pattern",
+        "detector_digest": "0123456789abcdef",
+    }
+    corpus = tmp_path / "real.jsonl"
+    corpus.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    monkeypatch.setattr(
+        train_classifier.rust_features,
+        "quantized_schema_digest",
+        lambda: "ab" * 32,
+    )
+
+    X, y, classes, detectors, files, identities = train_classifier.load_real_corpus(
+        str(corpus),
+        55,
+    )
+
+    np.testing.assert_allclose(X[0], np.asarray(features, dtype=np.float32))
+    assert y.tolist() == [1.0]
+    assert classes == ["authentication-key"]
+    assert detectors == ["generic-api-key"]
+    assert files == ["repo/a.py"]
+    assert identities[0]["pattern_index"] == 0
+
+
+@pytest.mark.parametrize("unsafe_field", ("text", "context"))
+def test_versioned_feature_corpus_rejects_plaintext_fields(unsafe_field, monkeypatch):
+    record = {
+        "schema_version": "keyhog-ml-feature-corpus-v1",
+        "feature_schema_sha256": "ab" * 32,
+        "features": [0.0] * 55,
+        unsafe_field: "plaintext-must-not-persist",
+    }
+    monkeypatch.setattr(
+        train_classifier.rust_features,
+        "quantized_schema_digest",
+        lambda: "ab" * 32,
+    )
+    with pytest.raises(ValueError, match="plaintext text or context"):
+        train_classifier.rust_features.compute_feature_matrix(
+            [record],
+            ((), (), (), ()),
+            55,
+        )
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ("pattern_index", "source_role", "context_class", "detector_digest"),
+)
+def test_load_real_corpus_rejects_incomplete_calibration_identity(
+    tmp_path,
+    monkeypatch,
+    missing,
+):
+    record = {
+        "text": "secret",
+        "context": "api_key = secret",
+        "label": 1,
+        "kind": "real-creddata-pos",
+        "class": "authentication-key",
+        "detector_id": "generic-api-key",
+        "candidate_channel": "pattern",
+        "source_file": "repo/a.py",
+        "pattern_index": 0,
+        "source_role": "structured-assignment-value",
+        "context_class": "vendor-pattern",
+        "detector_digest": "0123456789abcdef",
+    }
+    del record[missing]
+    corpus = tmp_path / "real.jsonl"
+    corpus.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    monkeypatch.setattr(
+        train_classifier.rust_features,
+        "compute_feature_matrix",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("feature dump must not run")
+        ),
+    )
+    with pytest.raises(ValueError, match=missing):
+        train_classifier.load_real_corpus(str(corpus), 55)
+
+
+def test_contract_training_rows_abstain_from_pattern_calibration():
+    assert train_classifier.calibration_identity(
+        "contracts.jsonl",
+        1,
+        {
+            "source_file": "contract:generic-password",
+            "candidate_channel": "pattern",
+        },
+    ) is None
+
+@pytest.mark.parametrize("channel", ("generic-assignment", "entropy"))
+def test_non_pattern_training_rows_abstain_from_pattern_calibration(channel):
+    assert train_classifier.calibration_identity(
+        "real.jsonl",
+        1,
+        {
+            "source_file": "repo/a.env",
+            "candidate_channel": channel,
+            "pattern_index": None,
+        },
+    ) is None
+
+
+def _calibration_identity(pattern=3, role="structured-assignment-value", context="vendor-pattern"):
+    return {
+        "detector_id": "fixture-detector",
+        "pattern_index": pattern,
+        "candidate_channel": "pattern",
+        "source_role": role,
+        "context_class": context,
+        "detector_digest": "0123456789abcdef",
+    }
+
+
+def test_pattern_calibration_artifact_has_exact_secret_free_key_and_required_metrics():
+    identities = [_calibration_identity() for _ in range(4)]
+    artifact = train_classifier.build_pattern_calibration_artifact(
+        "moe-v1-0123456789abcdef",
+        "0123456789abcdef",
+        np.asarray([0.99, 0.98, 0.01, 0.02]),
+        np.asarray([0.99, 0.98, 0.01, 0.02]),
+        np.asarray([1, 1, 0, 0]),
+        identities,
+    )
+
+    assert artifact["schema_version"] == 1
+    assert (
+        artifact["identity_schema"]
+        == train_classifier.PATTERN_CALIBRATION_IDENTITY_SCHEMA
+    )
+    embedded = json.loads(
+        (
+            train_classifier.REPO_ROOT
+            / "crates/scanner/src/pattern_calibration.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert embedded["schema_version"] == artifact["schema_version"]
+    assert embedded["identity_schema"] == artifact["identity_schema"]
+    assert len(artifact["entries"]) == 1
+    entry = artifact["entries"][0]
+    assert {
+        key: entry[key]
+        for key in (
+            "detector_id",
+            "pattern_index",
+            "candidate_channel",
+            "source_role",
+            "context_class",
+        )
+    } == {
+        key: identities[0][key]
+        for key in (
+            "detector_id",
+            "pattern_index",
+            "candidate_channel",
+            "source_role",
+            "context_class",
+        )
+    }
+    assert set(entry["metrics"]) == {
+        "f1",
+        "precision",
+        "recall",
+        "recall_at_blocking_floor",
+        "brier_score",
+        "ece",
+        "positive_support",
+        "negative_support",
+    }
+    def field_names(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                yield key
+                yield from field_names(child)
+        elif isinstance(value, list):
+            for child in value:
+                yield from field_names(child)
+
+    forbidden = {"text", "context", "credential", "value", "source_file"}
+    assert forbidden.isdisjoint(field_names(artifact))
+    assert "context_class" in set(field_names(artifact))
+
+
+def test_pattern_calibration_separates_unsupported_exact_keys_and_missing_classes():
+    identities = [
+        _calibration_identity(),
+        _calibration_identity(pattern=4),
+        _calibration_identity(role="string-literal"),
+        _calibration_identity(context="test-fixture"),
+    ]
+    entries = train_classifier.pattern_calibration_entries(
+        np.asarray([0.99, 0.99, 0.01, 0.01]),
+        np.asarray([0.99, 0.99, 0.01, 0.01]),
+        np.asarray([1, 1, 0, 0]),
+        identities,
+    )
+
+    assert len(entries) == 4
+    assert all(
+        entry["metrics"]["positive_support"] == 0
+        or entry["metrics"]["negative_support"] == 0
+        for entry in entries
+    )
+
+
+def test_pattern_calibration_rejects_float_quantized_verdict_drift():
+    identities = [_calibration_identity() for _ in range(4)]
+    with pytest.raises(ValueError, match="float/quantized verdict parity"):
+        train_classifier.pattern_calibration_entries(
+            np.asarray([0.99, 0.98, 0.01, 0.02]),
+            np.asarray([0.49, 0.98, 0.01, 0.02]),
+            np.asarray([1, 1, 0, 0]),
+            identities,
+        )
+
+
+def test_pattern_calibration_metrics_expose_recall_brier_and_ece_regressions():
+    identities = [_calibration_identity() for _ in range(4)]
+    entries = train_classifier.pattern_calibration_entries(
+        np.asarray([0.39, 0.99, 0.90, 0.90]),
+        np.asarray([0.39, 0.99, 0.90, 0.90]),
+        np.asarray([1, 1, 0, 0]),
+        identities,
+    )
+    metrics = entries[0]["metrics"]
+    assert metrics["recall_at_blocking_floor"] == 0.5
+    assert metrics["brier_score"] > 0.25
+    assert metrics["ece"] > 0.1
+
+@pytest.mark.parametrize(
+    ("probs", "labels", "bins"),
+    (
+        (np.zeros((2, 2)), np.zeros((2, 2)), 10),
+        (np.zeros(2), np.zeros(2), 10.5),
+        (np.zeros(2), np.zeros(2), True),
+    ),
+)
+def test_expected_calibration_error_rejects_non_vector_or_non_integer_bins(
+    probs,
+    labels,
+    bins,
+):
+    with pytest.raises(ValueError, match="one-dimensional.*integer bins"):
+        train_classifier.expected_calibration_error(probs, labels, bins)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("minimum_positive_support", 2.5),
+        ("minimum_negative_support", "2"),
+        ("minimum_positive_support", True),
+        ("minimum_negative_support", 2**64),
+        ("maximum_ece", "0.1"),
+        ("blocking_score", True),
+    ),
+)
+def test_pattern_calibration_rejects_non_serving_floor_types(field, value):
+    floors = dict(train_classifier.PATTERN_CALIBRATION_DEFAULT_FLOORS)
+    floors[field] = value
+    with pytest.raises(ValueError, match="calibration .* floors"):
+        train_classifier.build_pattern_calibration_artifact(
+            "moe-v1-0123456789abcdef",
+            None,
+            np.asarray([]),
+            np.asarray([]),
+            np.asarray([]),
+            [],
+            floors,
+        )
+
+def test_quantized_rust_scorer_reopens_closed_artifact_and_deletes_it(
+    tmp_path,
+    monkeypatch,
+):
+    observed = {}
+
+    def fake_run(args, **_kwargs):
+        artifact = pathlib.Path(args[-1])
+        observed["path"] = artifact
+        assert artifact.read_bytes() == b"quantized-artifact"
+        return types.SimpleNamespace(returncode=0, stdout=b"32768\n", stderr=b"")
+
+    monkeypatch.setattr(
+        train_classifier.rust_features,
+        "_dump_features_command",
+        lambda: (["fake-dump-features"], tmp_path),
+    )
+    monkeypatch.setattr(
+        train_classifier.rust_features.subprocess,
+        "run",
+        fake_run,
+    )
+
+    scores = train_classifier.rust_features.score_quantized_features(
+        b"quantized-artifact",
+        np.zeros((1, train_classifier.rust_features.NUM_FEATURES), dtype=np.float32),
+    )
+
+    assert scores.shape == (1,)
+    assert not observed["path"].exists()
 
 
 def test_real_eval_reports_per_class_truth():
@@ -608,4 +946,104 @@ def test_real_corpus_model_card_requires_six_scanner_differential(tmp_path):
                 "per_class": {"generic": {"n_pos": 1}},
                 "per_detector": {"generic": {"n_pos": 1}},
             },
+        )
+
+
+def test_pattern_calibration_model_card_summary_is_honest_when_abstaining():
+    artifact = train_classifier.build_pattern_calibration_artifact(
+        "moe-v1-0123456789abcdef",
+        None,
+        np.asarray([]),
+        np.asarray([]),
+        np.asarray([]),
+        [],
+    )
+
+    summary = train_classifier.pattern_calibration_model_card_summary(artifact)
+
+    assert summary["status"] == "abstaining"
+    assert summary["entry_count"] == 0
+    assert summary["eligible_entry_count"] == 0
+    assert summary["aggregate_metrics"] == {
+        "positive_support": 0,
+        "negative_support": 0,
+        "minimum_recall": None,
+        "minimum_recall_at_blocking_floor": None,
+        "maximum_brier_score": None,
+        "maximum_ece": None,
+    }
+    assert summary["artifact_sha256"] == hashlib.sha256(
+        train_classifier.serialize_pattern_calibration_artifact(artifact)
+    ).hexdigest()
+
+
+def test_pattern_calibration_model_card_summary_aggregates_without_key_payloads():
+    identities = [_calibration_identity() for _ in range(4)]
+    artifact = train_classifier.build_pattern_calibration_artifact(
+        "moe-v1-0123456789abcdef",
+        "0123456789abcdef",
+        np.asarray([0.99, 0.98, 0.01, 0.02]),
+        np.asarray([0.99, 0.98, 0.01, 0.02]),
+        np.asarray([1.0, 1.0, 0.0, 0.0]),
+        identities,
+    )
+
+    summary = train_classifier.pattern_calibration_model_card_summary(artifact)
+    serialized = json.dumps(summary, sort_keys=True)
+
+    assert summary["status"] == "calibrated"
+    assert summary["entry_count"] == 1
+    assert summary["eligible_entry_count"] == 1
+    assert summary["aggregate_metrics"]["positive_support"] == 2
+    assert summary["aggregate_metrics"]["negative_support"] == 2
+    for unsafe_identity in (
+        "fixture-detector",
+        "structured-assignment-value",
+        "vendor-pattern",
+    ):
+        assert unsafe_identity not in serialized
+
+def test_pattern_calibration_summary_abstains_when_all_entries_are_ineligible():
+    artifact = train_classifier.build_pattern_calibration_artifact(
+        "moe-v1-0123456789abcdef",
+        "0123456789abcdef",
+        np.asarray([0.99, 0.01]),
+        np.asarray([0.99, 0.01]),
+        np.asarray([1.0, 0.0]),
+        [_calibration_identity(), _calibration_identity()],
+    )
+
+    summary = train_classifier.pattern_calibration_model_card_summary(artifact)
+
+    assert summary["entry_count"] == 1
+    assert summary["eligible_entry_count"] == 0
+    assert summary["status"] == "abstaining"
+
+
+def test_pattern_calibration_summary_rejects_duplicate_exact_keys():
+    artifact = train_classifier.build_pattern_calibration_artifact(
+        "moe-v1-0123456789abcdef",
+        "0123456789abcdef",
+        np.asarray([0.99, 0.98, 0.01, 0.02]),
+        np.asarray([0.99, 0.98, 0.01, 0.02]),
+        np.asarray([1.0, 1.0, 0.0, 0.0]),
+        [_calibration_identity() for _ in range(4)],
+    )
+    artifact["entries"].append(json.loads(json.dumps(artifact["entries"][0])))
+
+    with pytest.raises(ValueError, match="duplicate exact key"):
+        train_classifier.pattern_calibration_model_card_summary(artifact)
+
+
+def test_pattern_calibration_entry_bound_is_shared_by_trainer_and_summary(monkeypatch):
+    monkeypatch.setattr(train_classifier, "PATTERN_CALIBRATION_MAX_ENTRIES", 0)
+    identities = [_calibration_identity() for _ in range(2)]
+    with pytest.raises(ValueError, match="exceeds 0 exact keys"):
+        train_classifier.build_pattern_calibration_artifact(
+            "moe-v1-0123456789abcdef",
+            "0123456789abcdef",
+            np.asarray([0.99, 0.01]),
+            np.asarray([0.99, 0.01]),
+            np.asarray([1.0, 0.0]),
+            identities,
         )

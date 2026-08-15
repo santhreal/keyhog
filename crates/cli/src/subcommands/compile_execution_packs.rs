@@ -420,6 +420,9 @@ fn canonical_findings(findings: &[RawMatch]) -> Result<Vec<u8>> {
             "location": finding.location,
             "entropy_bits": finding.entropy.map(f64::to_bits),
             "confidence_bits": finding.confidence.map(f64::to_bits),
+            "evidence_tier": finding.evidence.tier().as_str(),
+            "evidence_reason_code": finding.evidence.reason_code().as_str(),
+            "evidence_provenance": finding.evidence.provenance(),
         });
         rows.push(serde_json::to_vec(&row).context("serializing redacted pack parity finding")?);
     }

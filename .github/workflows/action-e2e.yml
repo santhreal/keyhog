@@ -31,7 +31,7 @@ on:
       version:
         description: 'Published crates.io version the composite must install exactly.'
         required: true
-        default: '0.5.70'
+        default: '0.5.75'
         type: string
 
 concurrency:
@@ -40,7 +40,7 @@ concurrency:
 
 env:
   CC: ""
-  KEYHOG_ACTION_E2E_VERSION: ${{ inputs.version || '0.5.70' }}
+  KEYHOG_ACTION_E2E_VERSION: ${{ inputs.version || '0.5.75' }}
 jobs:
 
   action-contract:
@@ -383,6 +383,7 @@ jobs:
           verify: 'false'
           upload-sarif: 'false'
           fail-on-findings: 'true'
+          evidence-policy: paranoid
           analysis-category: e2e-${{ matrix.platform }}-findings
 
       - name: Invoke nested composite with precision finding policy from published crates.io release
@@ -400,6 +401,7 @@ jobs:
           verify: 'false'
           upload-sarif: 'false'
           fail-on-findings: 'true'
+          evidence-policy: paranoid
           analysis-category: e2e-${{ matrix.platform }}-findings
 
       - name: Assert findings failure receipt and SARIF

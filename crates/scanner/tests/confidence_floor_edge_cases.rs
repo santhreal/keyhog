@@ -37,6 +37,7 @@ fn make_match(
         },
         entropy: None,
         confidence,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

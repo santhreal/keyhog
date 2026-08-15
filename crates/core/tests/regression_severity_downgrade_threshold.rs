@@ -58,7 +58,8 @@ fn finding_with(severity: Severity, file: &str) -> VerifiedFinding {
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
         entropy: None,
-        confidence: None,
+        evidence_score: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

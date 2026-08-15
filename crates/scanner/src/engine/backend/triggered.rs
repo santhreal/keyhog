@@ -34,9 +34,9 @@ impl CompiledScanner {
             let mut scan_state = scan_state;
             let _g = profile::span(keyhog_profile::Stage::MachineLearning);
             self.apply_ml_batch_scores(&mut scan_state, backend, deadline)?;
-            return Ok(scan_state.into_matches());
+            return Ok(scan_state.into_matches(self.detector_digest));
         }
-        Ok(scan_state.into_matches())
+        Ok(scan_state.into_matches(self.detector_digest))
     }
 
     pub(crate) fn scan_prepared_state_with_triggered(

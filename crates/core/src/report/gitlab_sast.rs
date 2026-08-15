@@ -176,6 +176,10 @@ struct GitlabDetails<'a> {
     service: GitlabTextDetail<'a>,
     credential_hash: GitlabTextDetail<'a>,
     companions: GitlabTextDetail<'a>,
+    evidence_tier: GitlabTextDetail<'a>,
+    evidence_reason_code: GitlabTextDetail<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    evidence_score: Option<GitlabTextDetail<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     entropy: Option<GitlabTextDetail<'a>>,
 }
@@ -254,6 +258,11 @@ fn vulnerability_object(finding: &VerifiedFinding) -> Result<GitlabVulnerability
             detail_type: "text",
             value: Cow::Owned(format!("{entropy:.3} bits/byte")),
         });
+    let evidence_score = finding.evidence_score.map(|score| GitlabTextDetail {
+        name: "Evidence score",
+        detail_type: "text",
+        value: Cow::Owned(format!("{score:.3}")),
+    });
 
     Ok(GitlabVulnerability {
         id,
@@ -294,6 +303,17 @@ fn vulnerability_object(finding: &VerifiedFinding) -> Result<GitlabVulnerability
                 detail_type: "text",
                 value: Cow::Owned(companions),
             },
+            evidence_tier: GitlabTextDetail {
+                name: "Evidence tier",
+                detail_type: "text",
+                value: Cow::Borrowed(finding.evidence.tier().as_str()),
+            },
+            evidence_reason_code: GitlabTextDetail {
+                name: "Evidence reason code",
+                detail_type: "text",
+                value: Cow::Borrowed(finding.evidence.reason_code().as_str()),
+            },
+            evidence_score,
             entropy,
         },
     })

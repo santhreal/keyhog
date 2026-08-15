@@ -15,6 +15,7 @@ fn scan(dir: &TempDir, format: &str, input: &Path) -> (PathBuf, PathBuf, Output)
     let output = Command::new(binary())
         .args([
             "scan",
+            "--daemon=off",
             "--backend",
             "cpu",
             "--no-verify",
@@ -74,7 +75,7 @@ fn source_receipt_binds_all_action_formats_and_exact_counts() {
     }
 
     let dir = TempDir::new().expect("finding tempdir");
-    let input = dir.path().join("secret.env");
+    let input = dir.path().join(".env.secret");
     fs::write(&input, "AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\n").expect("finding input");
     let (report, receipt, scan) = scan(&dir, "json", &input);
     assert_eq!(
@@ -91,6 +92,71 @@ fn source_receipt_binds_all_action_formats_and_exact_counts() {
         String::from_utf8_lossy(&verified.stderr)
     );
     assert_eq!(verified.stdout, b"1\n");
+}
+
+/// A review-tier finding can produce scanner exit `0`; the authenticated
+/// receipt must retain its nonzero finding count without inventing a failure.
+#[test]
+fn receipt_accepts_visible_review_finding_with_policy_success_exit() {
+    let dir = TempDir::new().expect("review tempdir");
+    let input = dir.path().join("review.txt");
+    let token = concat!(
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+    );
+    fs::write(&input, format!("ABUSEIPDB_API_KEY={token}\n")).expect("review input");
+    let (report, receipt, scan) = scan(&dir, "json", &input);
+    assert_eq!(
+        scan.status.code(),
+        Some(0),
+        "unsupported source context must remain review-tier and non-blocking: {}",
+        String::from_utf8_lossy(&scan.stderr)
+    );
+    let verified = verify(&report, &receipt, "json", 0);
+    assert_eq!(
+        verified.status.code(),
+        Some(0),
+        "review receipt verify: {}",
+        String::from_utf8_lossy(&verified.stderr)
+    );
+    assert_eq!(verified.stdout, b"1\n");
+}
+
+/// WHY: a report can contain visible review findings while an independent
+/// cache failure or scanner panic owns the terminal exit. Receipt verification
+/// must preserve that fail-closed exit instead of replacing it with an internal
+/// contradiction.
+#[test]
+fn receipt_accepts_failure_exit_with_visible_review_findings() {
+    let dir = TempDir::new().expect("failure receipt tempdir");
+    let input = dir.path().join("review.txt");
+    let token = concat!(
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+    );
+    fs::write(&input, format!("ABUSEIPDB_API_KEY={token}\n")).expect("review input");
+    let (report, receipt, scan) = scan(&dir, "json", &input);
+    assert_eq!(scan.status.code(), Some(0));
+    let success_receipt = fs::read_to_string(&receipt).expect("read success receipt");
+
+    for (exit, status) in [(3, "success"), (11, "partial")] {
+        let body = success_receipt
+            .replace("scan-status=success", &format!("scan-status={status}"))
+            .replace("exit-code=0", &format!("exit-code={exit}"));
+        fs::write(&receipt, body).expect("write failure receipt");
+        let verified = verify(&report, &receipt, "json", exit);
+        assert_eq!(
+            verified.status.code(),
+            Some(0),
+            "exit {exit}: {}",
+            String::from_utf8_lossy(&verified.stderr)
+        );
+        assert_eq!(verified.stdout, b"1\n");
+    }
 }
 
 /// Report or receipt tampering, uppercase/noncanonical digests, and any
@@ -120,7 +186,7 @@ fn receipt_verifier_rejects_tampering_and_semantic_contradictions() {
         ),
         (
             "count",
-            original_receipt.replace("findings=0", "findings=1"),
+            original_receipt.replace("findings=0", "findings=01"),
             "json",
             0,
         ),
@@ -170,11 +236,11 @@ fn advisory_partial_receipts_preserve_scan_outcome_exits() {
     ] {
         let root = TempDir::new().expect("scan root");
         let artifacts = TempDir::new().expect("artifact root");
-        fs::write(root.path().join("visible.txt"), visible).expect("visible fixture");
+        fs::write(root.path().join(".env.visible"), visible).expect("visible fixture");
         let excluded = root.path().join(".cache");
         fs::create_dir(&excluded).expect("default-excluded directory");
         fs::write(
-            excluded.join("ignored.env"),
+            excluded.join(".env.ignored"),
             "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n",
         )
         .expect("excluded fixture");
@@ -229,7 +295,7 @@ fn advisory_partial_receipts_preserve_scan_outcome_exits() {
             &contradictory,
             body.replace(
                 &format!("findings={expected_count}"),
-                &format!("findings={}", usize::from(expected_count == 0)),
+                &format!("findings=0{expected_count}"),
             ),
         )
         .expect("contradictory partial receipt");

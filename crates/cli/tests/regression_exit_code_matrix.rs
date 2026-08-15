@@ -111,7 +111,7 @@ fn clean_scan_cpu_fallback_alias_also_exits_zero() {
 #[test]
 fn planted_secret_cpu_backend_exits_one() {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("leak.env");
+    let path = dir.path().join(".env.leak");
     std::fs::write(&path, format!("GITHUB_TOKEN={PLANTED}\n")).expect("write planted");
     let (code, _stdout, stderr) = scan(&path, &["--format", "json"]);
     assert_eq!(
@@ -126,7 +126,7 @@ fn planted_secret_without_verify_never_exits_ten() {
     // Guard the two-class collapse: without `--verify` the finding is
     // verification=Skipped, so the live-credentials code (10) must NOT fire.
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("leak.env");
+    let path = dir.path().join(".env.leak");
     std::fs::write(&path, format!("token = \"{PLANTED}\"\n")).expect("write planted");
     let (code, _stdout, stderr) = scan(&path, &["--format", "json"]);
     assert_eq!(
@@ -356,7 +356,7 @@ fn success_and_findings_codes_are_distinct() {
     std::fs::write(&clean, "just some prose, no secrets\n").expect("write clean");
     let (clean_code, _o1, e1) = scan(&clean, &["--format", "json"]);
 
-    let leak = dir.path().join("leak.env");
+    let leak = dir.path().join(".env.leak");
     std::fs::write(&leak, format!("API={PLANTED}\n")).expect("write leak");
     let (leak_code, _o2, e2) = scan(&leak, &["--format", "json"]);
 

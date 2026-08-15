@@ -96,6 +96,7 @@ A dash means that layer intentionally has no surface.
 | GPU batch input limit | VRAM-adaptive (128 MiB to 1 GiB) | `[scan].gpu_batch_input_limit` | `--gpu-batch-input-limit` | Sets the CLI coalesced-batch and per-dispatch byte budget and is clamped to 128 MiB through 1 GiB. The pipeline can lower it further to keep its in-flight batches within host RAM headroom. A stricter backend ceiling still wins. Larger literal-presence requests shard between chunks and split an oversized chunk into overlap-preserving physical windows while retaining one logical result row. Retired MegaScan spellings are rejected. |
 | Severity floor | (all) | `[scan].severity` | `--severity` | Minimum severity to report: info/client-safe/low/medium/high/critical. |
 | Output format | `text` | `[scan].format` | `--format` | text/json/json-envelope/jsonl/jsonl-envelope/sarif/csv/github-annotations/gitlab-sast/html/junit. |
+| Evidence exit policy | `default` | `[scan].evidence_policy` | `--evidence-policy` | `default` blocks `likely` and `confirmed` findings while leaving `review` findings visible; `paranoid` also blocks `review`. The policy changes exit status, not report retention. |
 | Show secrets | off | `show_secrets` | `--show-secrets` | Print plaintext credentials. **Never enable in CI/logs.** |
 | Incremental cache | off | `[scan].incremental` / `[scan].incremental_cache` | `--incremental` / `--incremental-cache` | BLAKE3 Merkle skip-cache. Trusted clean-file hits count as complete coverage. A run containing only unchanged files skips backend routing and scanner dispatch startup. |
 | Hyperscan cache dir | platform cache dir | `[system].cache_dir` | `--cache-dir` | Compiled-database cache directory. Must be an absolute user-owned path under the home directory or per-user keyhog temp cache root. |
@@ -330,13 +331,14 @@ the embedded corpus.
 ### `[scan]`
 
 The canonical owner for scan execution and reporting policy. This includes
-`severity`, `min_confidence`, `ml_threshold`, `decode_depth`, entropy policy,
-`format`, `exclude`, worker and fused-pipeline sizing, chunk timeout, dedup,
-incremental scanning, and the GPU batch-input limit.
+`severity`, `evidence_policy`, `min_confidence`, `ml_threshold`, `decode_depth`,
+entropy policy, `format`, `exclude`, worker and fused-pipeline sizing, chunk
+timeout, dedup, incremental scanning, and the GPU batch-input limit.
 
 ```toml
 [scan]
 severity = "high"
+evidence_policy = "default" # use "paranoid" to block review-tier findings
 min_confidence = 0.40       # raise toward 0.85 for fewer false positives
 decode_depth = 10           # 1-10, same ceiling as --decode-depth
 exclude = ["**/test/fixtures/**", "vendor/"]

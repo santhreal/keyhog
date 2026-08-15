@@ -63,6 +63,7 @@ fn raw(
         location,
         entropy: None,
         confidence,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

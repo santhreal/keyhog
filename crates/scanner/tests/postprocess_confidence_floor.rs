@@ -32,6 +32,7 @@ fn make_match(detector_id: &str, detector_name: &str, service: &str, confidence:
         },
         entropy: None,
         confidence: Some(confidence),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

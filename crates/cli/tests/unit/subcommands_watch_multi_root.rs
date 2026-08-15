@@ -255,7 +255,7 @@ fn file_root_rejected_as_not_a_directory() {
 fn dir_plus_unrelated_file_rejected_on_the_file() {
     let dir = TempDir::new().expect("tempdir dir");
     let other = TempDir::new().expect("tempdir other");
-    let file = other.path().join("config.env");
+    let file = other.path().join(".env.config");
     std::fs::write(&file, b"PASSWORD=hunter2\n").expect("write file");
     // The file is NOT nested under `dir`, so it survives folding and must then
     // be rejected by the directory-only constraint (no silent drop, Law 10).
@@ -264,7 +264,7 @@ fn dir_plus_unrelated_file_rejected_on_the_file() {
         .expect_err("a non-directory among the roots must reject the whole watch");
     let msg = format!("{err:#}");
     assert!(
-        msg.contains("is not a directory") && msg.contains("config.env"),
+        msg.contains("is not a directory") && msg.contains(".env.config"),
         "the rejection must name the offending file root; got: {msg}"
     );
 }

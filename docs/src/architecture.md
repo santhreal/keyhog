@@ -530,6 +530,14 @@ a rebuild, which is why `--verify` rebuilds before benching. The adjacent
 and gate metrics; `build.rs` refuses a card/weights mismatch and embeds the
 summary shown by `keyhog --version`.
 
+Model-driven confidence reductions require an entry in
+`crates/scanner/src/pattern_calibration.json` for the exact detector corpus
+digest, detector ID, pattern index, candidate channel, source role, and
+pre-verification context. Each entry carries positive and negative held-out
+support, recall at the blocking floor, Brier score, and expected calibration
+error. Missing, stale, unsupported, or under-supported entries abstain. Generic
+assignment and entropy channels cannot use pattern calibration.
+
 Scanner construction also compiles the detector-conditioned feature facts used
 by that model, including service identity, verifier and companion presence,
 generic/structural classification, phase-2 ownership, and entropy family.

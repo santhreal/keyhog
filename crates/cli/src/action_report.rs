@@ -1,11 +1,11 @@
 //! Source-of-truth receipts binding an Action finding count to exact report bytes.
 
-use crate::args::{ActionReportVerifyArgs, OutputFormat, ScanArgs};
+use crate::args::{ActionReportFormat, ActionReportVerifyArgs, OutputFormat, ScanArgs};
 use anyhow::{bail, Context, Result};
 use keyhog_core::ScanCompletionStatus;
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -127,8 +127,67 @@ pub(crate) fn verify(args: ActionReportVerifyArgs) -> Result<ExitCode> {
     if actual_sha != expected_sha {
         bail!("Action report SHA-256 changed after scan");
     }
+    let parsed_findings = report_finding_count(&args.report, &args.format, findings)?;
+    if parsed_findings != findings {
+        bail!("Action report finding count {parsed_findings} contradicts receipt count {findings}");
+    }
     println!("{findings}");
     Ok(ExitCode::SUCCESS)
+}
+
+fn report_finding_count(
+    path: &Path,
+    format: &ActionReportFormat,
+    text_count: usize,
+) -> Result<usize> {
+    match format {
+        ActionReportFormat::Json => {
+            let value: serde_json::Value =
+                serde_json::from_reader(BufReader::new(open_regular(path)?))
+                    .context("parsing Action JSON report")?;
+            value
+                .as_array()
+                .map(Vec::len)
+                .context("Action JSON report must be a top-level findings array")
+        }
+        ActionReportFormat::Jsonl => {
+            let mut count = 0usize;
+            for line in BufReader::new(open_regular(path)?).lines() {
+                let line = line.context("reading Action JSONL report")?;
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let value: serde_json::Value =
+                    serde_json::from_str(&line).context("parsing Action JSONL finding")?;
+                if !value.is_object() {
+                    bail!("Action JSONL report rows must be finding objects");
+                }
+                count = count
+                    .checked_add(1)
+                    .context("Action JSONL finding count overflow")?;
+            }
+            Ok(count)
+        }
+        ActionReportFormat::Sarif => {
+            #[derive(serde::Deserialize)]
+            struct Sarif {
+                runs: Vec<Run>,
+            }
+            #[derive(serde::Deserialize)]
+            struct Run {
+                results: Vec<serde::de::IgnoredAny>,
+            }
+
+            let sarif: Sarif = serde_json::from_reader(BufReader::new(open_regular(path)?))
+                .context("parsing Action SARIF report")?;
+            sarif.runs.into_iter().try_fold(0usize, |total, run| {
+                total
+                    .checked_add(run.results.len())
+                    .context("Action SARIF finding count overflow")
+            })
+        }
+        ActionReportFormat::Text => Ok(text_count),
+    }
 }
 
 fn field<'a>(line: &'a str, name: &str) -> Result<&'a str> {
@@ -152,9 +211,9 @@ fn parse_decimal(value: &str, name: &str) -> Result<usize> {
 
 fn validate_semantics(findings: usize, exit_code: u8, status: &str) -> Result<()> {
     match (exit_code, status, findings) {
-        (0, "success" | "complete_after_recovery" | "partial", 0) => Ok(()),
+        (0 | 3, "success" | "complete_after_recovery" | "partial", _) => Ok(()),
         (1 | 10, "success" | "complete_after_recovery" | "partial", 1..) => Ok(()),
-        (13, "partial", _) => Ok(()),
+        (11 | 13, "partial", _) => Ok(()),
         _ => bail!("Action receipt count/status/exit semantics contradict: findings={findings}, status={status}, exit={exit_code}"),
     }
 }

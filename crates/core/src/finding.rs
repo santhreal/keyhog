@@ -1,5 +1,4 @@
-//! Scanner findings: the output type for detected secrets with location,
-//! confidence, detector metadata, and optional verification status.
+//! Scanner findings: raw matches and evidence-bearing, report-safe verdicts.
 
 // Debt bucket: 16 public items predating the crate floor raising `missing_docs`
 // to `warn`. Public output schema; remove once each carries a doc line.
@@ -11,7 +10,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use crate::{SensitiveString, Severity};
+use crate::{EvidenceReasonCode, EvidenceVerdict, SensitiveString, Severity};
 
 /// SHA-256 digest of a credential.
 ///
@@ -185,6 +184,8 @@ pub struct RawMatch {
     /// Confidence score (0.0 - 1.0). NaN-sanitized at construction.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f64>,
+    /// Deterministic evidence verdict carried through deduplication and verification.
+    pub evidence: EvidenceVerdict,
 }
 
 impl RawMatch {
@@ -218,6 +219,7 @@ impl PartialEq for RawMatch {
             && self.location == other.location
             && opt_f64_total_eq(self.entropy, other.entropy)
             && opt_f64_total_eq(self.confidence, other.confidence)
+            && self.evidence == other.evidence
     }
 }
 
@@ -248,6 +250,7 @@ impl std::fmt::Debug for RawMatch {
             .field("location", &self.location)
             .field("entropy", &self.entropy)
             .field("confidence", &self.confidence)
+            .field("evidence", &self.evidence)
             .finish()
     }
 }
@@ -385,6 +388,10 @@ impl Ord for RawMatch {
             .then_with(|| self.location.date.cmp(&other.location.date))
             .then_with(|| opt_f64_total_cmp(self.entropy, other.entropy))
             .then_with(|| opt_f64_total_cmp(self.confidence, other.confidence))
+            .then_with(|| {
+                (other.evidence.reason_code() as u8).cmp(&(self.evidence.reason_code() as u8))
+            })
+            .then_with(|| self.evidence.provenance().cmp(&other.evidence.provenance()))
     }
 }
 
@@ -452,9 +459,11 @@ pub struct VerifiedFinding {
     /// Shannon entropy measured by the detection path, when available.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entropy: Option<f64>,
-    /// Confidence score (0.0 - 1.0) combining entropy, keyword proximity, file type, etc.
+    /// Uncalibrated evidence score (0.0 - 1.0) retained for ranking and diagnostics.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub confidence: Option<f64>,
+    pub evidence_score: Option<f64>,
+    /// Deterministic verdict and stable reason code for this finding.
+    pub evidence: EvidenceVerdict,
 }
 
 impl VerifiedFinding {
@@ -469,6 +478,13 @@ impl VerifiedFinding {
         verification: VerificationResult,
         metadata: HashMap<String, String>,
     ) -> Self {
+        let evidence = if matches!(verification, VerificationResult::Live) {
+            group
+                .evidence
+                .with_reason(EvidenceReasonCode::LiveVerification)
+        } else {
+            group.evidence
+        };
         Self {
             detector_id: group.detector_id,
             detector_name: group.detector_name,
@@ -482,7 +498,8 @@ impl VerifiedFinding {
             metadata,
             additional_locations: group.additional_locations,
             entropy: group.entropy,
-            confidence: group.confidence,
+            evidence_score: group.confidence,
+            evidence,
         }
     }
 }
@@ -494,11 +511,11 @@ impl Serialize for VerifiedFinding {
     {
         let remediation =
             crate::auto_fix::remediation_for(&self.detector_id, &self.service, self.severity);
-        let mut field_count = 12;
+        let mut field_count = 13;
         if self.entropy.is_some() {
             field_count += 1;
         }
-        if self.confidence.is_some() {
+        if self.evidence_score.is_some() {
             field_count += 1;
         }
         let mut state = serializer.serialize_struct("VerifiedFinding", field_count)?;
@@ -523,11 +540,12 @@ impl Serialize for VerifiedFinding {
             .collect();
         state.serialize_field("metadata", &sorted_metadata)?;
         state.serialize_field("additional_locations", &self.additional_locations)?;
+        state.serialize_field("evidence", &self.evidence)?;
         if let Some(entropy) = self.entropy {
             state.serialize_field("entropy", &entropy)?;
         }
-        if let Some(confidence) = self.confidence {
-            state.serialize_field("confidence", &confidence)?;
+        if let Some(evidence_score) = self.evidence_score {
+            state.serialize_field("evidence_score", &evidence_score)?;
         }
         state.serialize_field("remediation", &remediation)?;
         state.end()
@@ -582,7 +600,8 @@ impl RawMatch {
             companions_redacted: redact_companions(&self.companions),
             location: self.location.clone(),
             entropy: self.entropy,
-            confidence: self.confidence,
+            evidence_score: self.confidence,
+            evidence: self.evidence,
         }
     }
 }
@@ -620,8 +639,11 @@ pub struct RedactedFinding {
     pub location: MatchLocation,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entropy: Option<f64>,
+    /// Optional uncalibrated score retained beside the categorical verdict.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub confidence: Option<f64>,
+    pub evidence_score: Option<f64>,
+    /// Deterministic evidence verdict for this redacted match.
+    pub evidence: EvidenceVerdict,
 }
 
 /// Lower-case hex of digest bytes. The only place the hex string is materialized

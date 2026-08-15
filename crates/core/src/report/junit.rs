@@ -131,10 +131,10 @@ fn write_testcase<W: Write>(writer: &mut W, finding: &VerifiedFinding) -> Result
         format!("{}:{}:{}", file_path_str, line_str, finding.detector_id)
     };
 
-    let confidence_str = finding
-        .confidence
-        .map(|c| c.to_string())
-        .unwrap_or_default(); // LAW10: optional confidence -> empty cell; finding still emitted
+    let evidence_score_str = finding
+        .evidence_score
+        .map(|score| score.to_string())
+        .unwrap_or_default(); // LAW10: optional evidence score -> empty cell; finding still emitted
     let verification_str = super::style::verification_token(&finding.verification).into_owned();
 
     writeln!(
@@ -199,6 +199,16 @@ fn write_testcase<W: Write>(writer: &mut W, finding: &VerifiedFinding) -> Result
         crate::hex_encode(finding.credential_hash)
     )?;
     writeln!(writer, "Verification:  {}", escape_cdata(&verification_str))?;
+    writeln!(
+        writer,
+        "Evidence Tier: {}",
+        finding.evidence.tier().as_str()
+    )?;
+    writeln!(
+        writer,
+        "Evidence Reason: {}",
+        finding.evidence.reason_code().as_str()
+    )?;
     if !finding.companions_redacted.is_empty() {
         writeln!(
             writer,
@@ -206,8 +216,8 @@ fn write_testcase<W: Write>(writer: &mut W, finding: &VerifiedFinding) -> Result
             escape_cdata(&super::companions_json(finding)?)
         )?;
     }
-    if !confidence_str.is_empty() {
-        writeln!(writer, "Confidence:    {}", confidence_str)?;
+    if !evidence_score_str.is_empty() {
+        writeln!(writer, "Evidence Score: {}", evidence_score_str)?;
     }
     if let Some(entropy) = finding.entropy.filter(|entropy| entropy.is_finite()) {
         writeln!(writer, "Entropy:       {:.3} bits/byte", entropy)?;

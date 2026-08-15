@@ -312,6 +312,7 @@ impl CompiledScanner {
                 entropy_match.offset,
                 &entropy_match.value,
             );
+
             let Some(offset) = absolute_offset(chunk.metadata.base_offset, source_offset) else {
                 continue;
             };
@@ -388,6 +389,15 @@ impl CompiledScanner {
                 );
                 continue;
             }
+            let provenance = crate::candidate_provenance::CandidateProvenance::entropy()
+                .with_checksum_proof(checksum_decision.is_proven_valid());
+            let enrich_provenance = |scan_state: &mut ScanState| {
+                scan_state
+                    .source_semantic_evidence(chunk, source_offset, &entropy_match.value)
+                    .map_or(provenance, |evidence| {
+                        provenance.with_source_semantics(evidence, None)
+                    })
+            };
             let build_raw_match = |scan_state: &mut ScanState, report_conf| {
                 // Clone metadata only for candidates that need an owned RawMatch.
                 let detector_id = Arc::clone(&metadata.0);
@@ -458,6 +468,7 @@ impl CompiledScanner {
                     policy.features,
                     crate::ml_scorer::MlCandidateChannel::Entropy,
                 );
+                let provenance = enrich_provenance(scan_state);
                 let pending_raw_match = crate::pipeline::build_pending_synthetic_raw_match(
                     (
                         Arc::clone(&metadata.0),
@@ -471,6 +482,7 @@ impl CompiledScanner {
                     Some(line_number),
                     Some(entropy_match.entropy),
                     scan_state,
+                    provenance,
                 );
                 scan_state.push_entropy_ml_pending(
                     pending_raw_match,
@@ -514,7 +526,8 @@ impl CompiledScanner {
             ) else {
                 continue;
             };
-            scan_state.push_match_lazy(
+            let provenance = enrich_provenance(scan_state);
+            scan_state.push_match_lazy_with_provenance(
                 crate::types::RawMatchPriority {
                     confidence: Some(report_conf),
                     severity: keyhog_core::Severity::High,
@@ -523,6 +536,7 @@ impl CompiledScanner {
                     offset,
                     line: Some(line_number),
                 },
+                provenance,
                 self.config.max_matches_per_chunk,
                 |scan_state| build_raw_match(scan_state, report_conf),
             );

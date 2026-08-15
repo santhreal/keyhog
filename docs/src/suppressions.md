@@ -161,6 +161,58 @@ Choose a surface by scope:
 | Findings that predate adoption | Baseline | Path rules for the whole legacy tree |
 | A detector that is not applicable to the repository | `[detector.<id>] enabled = false` | A large list of per-file rules |
 
+### Triage artifacts
+
+`keyhog triage` imports a redacted finding envelope and creates two different
+artifacts. `--suppressions` contains dismissed decisions for the `exact`,
+`path`, and `repository` scopes. `--pattern-feedback` contains validated
+training observations. A `pattern-feedback-only` decision appears only in
+training feedback and can never become runtime suppression.
+
+The envelope and both outputs have independent version fields. Each record
+carries a finding hash, a stable detector ID, the exact public
+`evidence.provenance` object from the scanner, a bounded context digest, a typed
+reason, and one scope. Provenance binds the 16-hex active detector digest,
+nullable pattern index, candidate channel, source role, context class, and the
+channel-specific detector owner. A reported `:reassembled` suffix resolves to
+the same embedded detector; every other synthetic suffix fails closed.
+Path and repository scopes carry BLAKE3 identities. None of these files accepts
+a credential value, context text, filesystem path, repository URL, or free-form
+reason.
+
+```json
+{
+  "version": 1,
+  "detector_digest": "0123456789abcdef",
+  "records": [{
+    "finding_hash": "blake3:<64-lowercase-hex>",
+    "detector_id": "<stable-detector-id>",
+    "provenance": {
+      "schema_version": 1,
+      "detector_digest": "0123456789abcdef",
+      "pattern_index": 0,
+      "candidate_channel": "pattern",
+      "source_role": "standalone-token",
+      "context_class": "unsupported-context"
+    },
+    "context_digest": "blake3:<64-lowercase-hex>",
+    "disposition": "dismissed",
+    "reason": "false-positive",
+    "scope": {
+      "path": {
+        "path_hash": "blake3:<64-lowercase-hex>"
+      }
+    }
+  }]
+}
+```
+
+The command accepts only the detector corpus built into the running binary.
+Stale detector or pattern identities, unknown fields, malformed digests,
+version mismatches, excessive input, symbolic links, and existing output files
+fail without publishing either output. See
+[`keyhog triage`](./reference/cli.md#keyhog-triage).
+
 ### `.keyhogignore`: one condition per line
 
 Create `.keyhogignore` at the scan root. Each non-comment line suppresses by
@@ -330,18 +382,34 @@ one takes part in matching.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "created": "2026-08-04T09:12:33.104882731+00:00",
   "entries": [
     {
       "detector_id": "github-classic-pat",
       "credential_hash": "sha256:94b9b7f8b35f61bbec1125726f7a794010497975d7f69ce6d0dcb43b7a5913db",
       "file_path": "/home/dev/service/app.env",
-      "line": 1
+      "line": 1,
+      "evidence": {
+        "tier": "likely",
+        "reason_code": "vendor-pattern",
+        "provenance": {
+          "schema_version": 1,
+          "detector_digest": "0123456789abcdef",
+          "pattern_index": 0,
+          "candidate_channel": "pattern",
+          "source_role": "environment-assignment-value",
+          "context_class": "vendor-pattern"
+        }
+      }
     }
   ]
 }
 ```
+
+Baseline schema 2 records the finding's required evidence verdict and
+schema-1 candidate provenance. Schema 1 baselines and entries without exact
+evidence provenance are rejected; regenerate them before scanning.
 
 That key decides every outcome:
 
@@ -371,11 +439,11 @@ developer's checkout directory.
 keyhog scan . --update-baseline .keyhog-baseline.json
 ```
 
-The scan prints each new finding and exits `1`, exactly as `--baseline` does.
-Updating the file does not change the exit code. Run this locally once you have
-reviewed the findings and decided to accept them, then commit the result. Never
-run it in CI: a job that rewrites its own baseline accepts every secret it
-finds.
+The scan prints each new finding and applies the active evidence policy, exactly
+as `--baseline` does. Updating the file does not change the exit code. Run this
+locally once you have reviewed the findings and decided to accept them, then
+commit the result. Never run it in CI: a job that rewrites its own baseline
+accepts every secret it finds.
 
 KeyHog never removes an entry. After you rotate a credential, delete its entry
 by hand or regenerate the file with `--create-baseline`. A stale entry keeps
@@ -409,7 +477,8 @@ changes matter. Run `keyhog diff --help` for every option.
 - It does not exclude bytes from scanning. Use a `path:` rule in
   `.keyhogignore` when a tree should not be read at all.
 - It does not suppress a coverage gap. A scan with unreadable or truncated
-  input still reports the gap, and a gap with no findings still exits `13`.
+  input still reports the gap, and a gap with no blocking finding still exits
+  `13`.
 - It is not a shared allowlist. Matching ignores the path, so one file would
   work across several repositories, and that is exactly the problem: one team's
   accepted credential would silently pass another team's gate. Keep one

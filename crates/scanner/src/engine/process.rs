@@ -423,6 +423,17 @@ impl CompiledScanner {
             self.config.min_confidence,
         );
 
+        let provenance = crate::candidate_provenance::CandidateProvenance::named(
+            entry.detector_index,
+            entry.pattern_index,
+        )
+        .with_named_evidence(
+            &detector_plan.semantic,
+            is_generic,
+            checksum_decision.is_proven_valid(),
+            !companions.is_empty(),
+        );
+
         match policy_result {
             MlScoreResult::Final(policy_conf) => {
                 let Some(report_conf) = crate::adjudicate::finalize_report_candidate(
@@ -450,6 +461,11 @@ impl CompiledScanner {
                 };
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
+                let provenance = scan_state
+                    .source_semantic_evidence(chunk, source_offset, credential)
+                    .map_or(provenance, |evidence| {
+                        provenance.with_source_semantics(evidence, Some(&detector_plan.semantic))
+                    });
                 let raw_match = build_raw_match(
                     execution_policy.severity,
                     detector_plan.cloned_metadata(),
@@ -463,7 +479,11 @@ impl CompiledScanner {
                     scan_state,
                     entry.client_safe,
                 );
-                if scan_state.push_match(raw_match, self.config.max_matches_per_chunk) {
+                if scan_state.push_match_with_provenance(
+                    raw_match,
+                    provenance,
+                    self.config.max_matches_per_chunk,
+                ) {
                     crate::telemetry::record_match_found();
                 }
             }
@@ -474,8 +494,6 @@ impl CompiledScanner {
                 context_multiplier,
                 mode,
             } => {
-                let source_offset =
-                    preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
                 let ml_features = crate::types::ml_features_for_candidate(
                     data,
                     line_index,
@@ -488,6 +506,13 @@ impl CompiledScanner {
                     detector_ml_policy.features,
                     crate::ml_scorer::MlCandidateChannel::Pattern,
                 );
+                let source_offset =
+                    preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
+                let provenance = scan_state
+                    .source_semantic_evidence(chunk, source_offset, credential)
+                    .map_or(provenance, |evidence| {
+                        provenance.with_source_semantics(evidence, Some(&detector_plan.semantic))
+                    });
                 let pending_raw_match = crate::pipeline::build_pending_raw_match(
                     execution_policy.severity,
                     detector_plan.cloned_metadata(),
@@ -498,6 +523,7 @@ impl CompiledScanner {
                     line,
                     entropy,
                     scan_state,
+                    provenance,
                     entry.client_safe,
                 );
                 if scan_state.push_detector_ml_pending(

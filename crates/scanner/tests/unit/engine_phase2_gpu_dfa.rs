@@ -22,6 +22,7 @@ fn test_pattern_with_shape(
     };
     CompiledPattern {
         detector_index,
+        pattern_index: 0,
         regex,
         group: None,
         client_safe: false,

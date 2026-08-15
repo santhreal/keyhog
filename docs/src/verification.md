@@ -25,19 +25,20 @@ and `--oob-timeout` controls callback observation waits. On the command line,
 timeout, concurrency, and request-rate controls require `--verify`; TOML may
 store their defaults for runs that explicitly enable verification.
 
-The text reporter renders each finding as a bordered box. With
-`--verify`, the verification verdict is appended to the `Confidence:`
-line in parentheses: `(LIVE)` for an active credential, `(dead)` for
-one the provider rejected, `(revoked)`, `(limited)` (rate-limited), or
-`(error)`. A `dead` or `revoked` credential is downgraded one severity
-tier (see the table below), so its box header drops accordingly
-(`CRITICAL` → `HIGH`).
+The text reporter renders each finding as a bordered box. With `--verify`, the
+verification verdict is appended to the `Evidence:` line in parentheses:
+`(LIVE)` for an active credential, `(dead)` for one the provider rejected,
+`(revoked)`, `(limited)` (rate-limited), or `(error)`. Live verification also
+upgrades the evidence verdict to `confirmed/live-verification`. Dead, revoked,
+and other non-live outcomes retain the scanner's evidence verdict. A `dead` or
+`revoked` credential is downgraded one severity tier (see the table below), so
+its box header drops accordingly (`CRITICAL` → `HIGH`).
 
 ```text
   ┌    CRITICAL ─── Stripe Secret Key
   │ Secret:     sk_l...p7dc
   │ Location:   src/config/staging.env:14
-  │ Confidence: ■■■■■■ 100%  (LIVE)
+  │ Evidence:   confirmed/live-verification  ■■■■■■ 100%  (LIVE)
   │ Action:     Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.
   │ Docs:       https://docs.stripe.com/keys#roll-api-key
   └─────────────────────────────────────────────
@@ -45,7 +46,7 @@ tier (see the table below), so its box header drops accordingly
   ┌        HIGH ─── Stripe Secret Key
   │ Secret:     sk_l...ab12
   │ Location:   src/old/legacy.env:8
-  │ Confidence: ■■■■■■ 100%  (dead)
+  │ Evidence:   likely/vendor-pattern  ■■■■■■ 100%  (dead)
   │ Action:     Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.
   │ Docs:       https://docs.stripe.com/keys#roll-api-key
   └─────────────────────────────────────────────
@@ -183,9 +184,9 @@ own audit and access-control tools.
 
 ## Severity shift on verification
 
-The verdict is the lowercase `VerificationResult` variant (the JSON
-value; the text reporter prints the same word upper/lower-cased in the
-`Confidence:` line's `(...)` suffix).
+The verification result is the lowercase `VerificationResult` variant in JSON;
+the text reporter prints the corresponding label in the `Evidence:` line's
+`(...)` suffix.
 
 | Verification result | Severity action                                  |
 |---------------------|--------------------------------------------------|

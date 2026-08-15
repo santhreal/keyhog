@@ -473,6 +473,16 @@ impl CompiledScanner {
                     continue;
                 };
                 let line_number = absolute_line(chunk.metadata.base_line, mapped_line);
+                let provenance =
+                    crate::candidate_provenance::CandidateProvenance::generic_assignment()
+                        .with_checksum_proof(checksum_decision.is_proven_valid());
+                let enrich_provenance = |scan_state: &mut ScanState| {
+                    scan_state
+                        .source_semantic_evidence(chunk, source_offset, value)
+                        .map_or(provenance, |evidence| {
+                            provenance.with_source_semantics(evidence, None)
+                        })
+                };
                 let build_raw = |scan_state: &mut ScanState, confidence| {
                     crate::pipeline::build_synthetic_raw_match(
                         (
@@ -512,6 +522,7 @@ impl CompiledScanner {
                         ml_policy.features,
                         crate::ml_scorer::MlCandidateChannel::Pattern,
                     );
+                    let provenance = enrich_provenance(scan_state);
                     let pending_raw_match = crate::pipeline::build_pending_synthetic_raw_match(
                         (
                             Arc::clone(&metadata.0),
@@ -525,6 +536,7 @@ impl CompiledScanner {
                         Some(line_number),
                         Some(entropy),
                         scan_state,
+                        provenance,
                     );
                     let inserted = scan_state.push_detector_ml_pending(
                         pending_raw_match,
@@ -572,8 +584,13 @@ impl CompiledScanner {
                 ) else {
                     continue;
                 };
+                let provenance = enrich_provenance(scan_state);
                 let raw = build_raw(scan_state, report_conf);
-                scan_state.push_match(raw, self.config.max_matches_per_chunk);
+                scan_state.push_match_with_provenance(
+                    raw,
+                    provenance,
+                    self.config.max_matches_per_chunk,
+                );
                 metrics::record_emit();
             }
         }

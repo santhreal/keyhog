@@ -31,6 +31,7 @@ pub fn deduped_match() -> DedupedMatch {
         companions: HashMap::new(),
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

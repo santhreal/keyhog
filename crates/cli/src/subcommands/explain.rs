@@ -344,6 +344,40 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
     };
     println!("  {}Declared detector policy:{}", style.bold, style.reset);
     println!("    kind: {kind}");
+    if d.capture_role.is_unknown() {
+        println!("    capture_role: unknown (compatibility default)");
+    } else {
+        println!("    capture_role: {}", d.capture_role.as_str());
+    }
+    if d.anchor_role.is_unknown() {
+        println!("    anchor_role: unknown (compatibility default)");
+    } else {
+        println!("    anchor_role: {}", d.anchor_role.as_str());
+    }
+    if d.allowed_source_roles.is_empty() {
+        println!("    allowed_source_roles: any (compatibility default)");
+    } else {
+        println!(
+            "    allowed_source_roles: {}",
+            d.allowed_source_roles
+                .iter()
+                .map(|role| role.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    if d.required_evidence.is_empty() {
+        println!("    required_evidence: none");
+    } else {
+        println!(
+            "    required_evidence: {}",
+            d.required_evidence
+                .iter()
+                .map(|evidence| evidence.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
 
     println!(
         "    ml: match_mode={} entropy_mode={} weight={} context_radius_lines={}",

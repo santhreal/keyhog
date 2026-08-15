@@ -58,6 +58,7 @@ fn m(detector: &str, cred: &str, offset: usize, conf: f64, sev: Severity, line: 
         },
         entropy: None,
         confidence: Some(conf),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

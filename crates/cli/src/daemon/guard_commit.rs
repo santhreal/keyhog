@@ -1,6 +1,6 @@
 //! Client-side guard commit transaction: sends the exact staged
 //! manifest to a compatible guard daemon, streams required blob
-//! payloads, validates the receipt, and returns the finding count.
+//! payloads, validates the receipt, and returns protected findings.
 //!
 //! This is the Milestone 1 hook integration. When a compatible guard
 //! daemon is available, `keyhog scan --git-staged` uses this path
@@ -16,6 +16,7 @@ use crate::daemon::client::{self, Client};
 use crate::daemon::protocol::{self, GuardWireManifestEntry, Request, Response};
 use anyhow::{bail, Context, Result};
 use keyhog_core::guard_state::GuardReceipt;
+use keyhog_core::RawMatch;
 use keyhog_sources::{StagedEntryKind, StagedManifest, StagedManifestEntry};
 use std::path::Path;
 
@@ -25,13 +26,10 @@ const MAX_BLOB_BYTES: usize = 8 * 1024 * 1024;
 
 /// Result of a guard commit transaction.
 pub(crate) struct GuardCommitResult {
-    /// Number of unsuppressed findings (after suppression pipeline).
-    pub findings_count: u64,
+    /// Exact unsuppressed findings returned over the protected daemon wire.
+    pub findings: Vec<RawMatch>,
     /// Number of coverage gaps.
     pub coverage_gaps: u64,
-    /// Terminal state label from the daemon.
-    #[allow(dead_code)]
-    pub terminal_state: String,
     /// Whether the index fingerprint changed during the transaction
     /// (concurrent index mutation).
     pub fingerprint_changed: bool,
@@ -192,7 +190,7 @@ async fn run_guard_commit_on_connection(
     };
     let finish_response = conn.round_trip(&finish_request).await?;
 
-    let (receipt, terminal_state_label) = match finish_response {
+    let (receipt, terminal_state_label, blocking_findings_count, findings) = match finish_response {
         Response::GuardCommitReceipt {
             objects_requested,
             objects_hit,
@@ -202,6 +200,8 @@ async fn run_guard_commit_on_connection(
             bytes_hit,
             bytes_scanned,
             findings_count,
+            findings,
+            blocking_findings_count,
             coverage_gaps,
             terminal_state,
             ..
@@ -231,7 +231,7 @@ async fn run_guard_commit_on_connection(
                 },
                 terminal_sequence: 0,
             };
-            (r, label)
+            (r, label, blocking_findings_count, findings)
         }
         Response::Error { message } => {
             bail!("guard commit: daemon rejected finish: {message}");
@@ -246,6 +246,45 @@ async fn run_guard_commit_on_connection(
     if let Err(e) = receipt.validate_conservation() {
         bail!("guard commit: conservation check failed: {e}");
     }
+    if blocking_findings_count > receipt.findings_count {
+        bail!(
+            "guard commit: default-policy blocking finding count {} exceeds total findings {}",
+            blocking_findings_count,
+            receipt.findings_count
+        );
+    }
+    if findings.len() as u64 != receipt.findings_count {
+        bail!(
+            "guard commit: protected finding count {} does not match receipt total {}",
+            findings.len(),
+            receipt.findings_count
+        );
+    }
+    let derived_blocking = findings
+        .iter()
+        .filter(|finding| finding.evidence.tier().blocks(false))
+        .count() as u64;
+    if derived_blocking != blocking_findings_count {
+        bail!(
+            "guard commit: protected findings derive {} default-policy blockers but receipt reports {}",
+            derived_blocking,
+            blocking_findings_count
+        );
+    }
+    let expected_terminal_state = if blocking_findings_count > 0 {
+        "blocked"
+    } else if receipt.coverage_gaps > 0 {
+        "degraded"
+    } else {
+        "current"
+    };
+    if terminal_state_label != expected_terminal_state {
+        bail!(
+            "guard commit: terminal state {} contradicts default-policy findings and coverage; expected {}",
+            terminal_state_label,
+            expected_terminal_state
+        );
+    }
 
     // 7. Reacquire the staged manifest fingerprint. If the index
     //    changed during the transaction, the scanned content may not
@@ -253,9 +292,8 @@ async fn run_guard_commit_on_connection(
     let fingerprint_changed = !manifest.fingerprint_matches(repo_path);
 
     Ok(GuardCommitResult {
-        findings_count: receipt.findings_count,
+        findings,
         coverage_gaps: receipt.coverage_gaps,
-        terminal_state: terminal_state_label,
         fingerprint_changed,
         cache_hits: receipt.objects_hit,
         blobs_scanned: receipt.objects_scanned,

@@ -63,7 +63,7 @@ fn every_documented_preset_resolves_after_calibration() {
 
     let cache = TempDir::new().expect("cache home");
     let work = TempDir::new().expect("workdir");
-    let target = work.path().join("data.env");
+    let target = work.path().join(".env.data");
     std::fs::write(&target, "api_key = \"abcdefghijklmnopqrstuvwx\"\n").unwrap();
 
     // Calibrate every preset into the shared multi-config cache.

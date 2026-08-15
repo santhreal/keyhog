@@ -86,11 +86,11 @@ fn hook_blocks_staged_secret_and_allows_clean_commit() {
 
     // Stage a real secret -> commit MUST be rejected.
     std::fs::write(
-        p.join("leak.env"),
+        p.join(".env.leak"),
         "GH_TOKEN=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\n",
     )
     .unwrap();
-    git(p, &["add", "leak.env"]);
+    git(p, &["add", ".env.leak"]);
     let blocked = Command::new("git")
         .current_dir(p)
         .env("PATH", &path_env)
@@ -108,8 +108,8 @@ fn hook_blocks_staged_secret_and_allows_clean_commit() {
     );
 
     // Replace with a clean file -> commit MUST succeed.
-    git(p, &["rm", "-q", "--cached", "leak.env"]);
-    std::fs::remove_file(p.join("leak.env")).ok();
+    git(p, &["rm", "-q", "--cached", ".env.leak"]);
+    std::fs::remove_file(p.join(".env.leak")).ok();
     std::fs::write(p.join("ok.txt"), "ordinary code, nothing sensitive\n").unwrap();
     git(p, &["add", "ok.txt"]);
     let clean = Command::new("git")
@@ -311,11 +311,11 @@ fn hook_blocks_when_keyhog_not_on_path() {
     // Even with a real staged secret, this test is primarily proving the
     // missing-binary contract: the hook must block before it can claim coverage.
     std::fs::write(
-        p.join("leak.env"),
+        p.join(".env.leak"),
         "GH_TOKEN=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\n",
     )
     .unwrap();
-    git(p, &["add", "leak.env"]);
+    git(p, &["add", ".env.leak"]);
     let out = Command::new("git")
         .current_dir(p)
         .env("PATH", &minimal_path)

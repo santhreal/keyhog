@@ -3599,6 +3599,7 @@ fn autoroute_reference_mismatch_evidence_names_fields_without_values() {
         },
         entropy: Some(4.2),
         confidence: Some(0.99),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     let mut trial_match = reference_match.clone();
     trial_match.credential = "AKIAZZZZZZZZZZZZZZZZ".into();
@@ -3668,6 +3669,7 @@ fn canonical_test_match(
         },
         entropy: Some(4.2),
         confidence: Some(0.99),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

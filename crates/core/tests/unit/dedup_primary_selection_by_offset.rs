@@ -28,6 +28,7 @@ fn make_match(cred: &str, path: &str, line: usize, offset: usize) -> RawMatch {
         },
         entropy: None,
         confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

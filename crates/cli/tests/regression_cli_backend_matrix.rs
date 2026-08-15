@@ -201,7 +201,7 @@ fn assert_accel_matches_cpu_or_fails_closed(home: &Path, path: &Path, b: &str) -
 #[test]
 fn cpu_backend_surfaces_exactly_the_planted_github_pat() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let (code, out, err) = scan(home.path(), &path, Some("cpu"), &[]);
 
@@ -223,7 +223,7 @@ fn simd_backend_surfaces_the_planted_github_pat_or_fails_closed() {
     // (identical to cpu); on a host without the prefilter keyhog fails closed
     // (exit 3) rather than silently degrading. Both are asserted host-agnostic.
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let available = assert_accel_matches_cpu_or_fails_closed(home.path(), &path, "simd");
     if available {
@@ -248,7 +248,7 @@ fn simd_backend_surfaces_the_planted_github_pat_or_fails_closed() {
 #[test]
 fn cpu_and_simd_agree_on_detector_ids_count_and_exit_code() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     // cpu is always available: pin its exact result.
     let (code_cpu, out_cpu, _) = scan(home.path(), &path, Some("cpu"), &[]);
@@ -262,7 +262,7 @@ fn cpu_and_simd_agree_on_detector_ids_count_and_exit_code() {
 #[test]
 fn cpu_and_simd_agree_on_the_credential_hash_set() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let (_c, out_cpu, _) = scan(home.path(), &path, Some("cpu"), &[]);
     let cpu = cred_hashes(&out_cpu);
@@ -288,7 +288,7 @@ fn cpu_and_simd_agree_on_the_credential_hash_set() {
 #[test]
 fn cpu_and_simd_agree_value_for_value_including_location() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let (_c, out_cpu, _) = scan(home.path(), &path, Some("cpu"), &[]);
     let cpu = ordered_findings(&out_cpu);
@@ -320,7 +320,7 @@ fn cpu_and_simd_agree_value_for_value_including_location() {
 #[test]
 fn cpu_fallback_alias_matches_cpu() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let (code_cpu, out_cpu, _) = scan(home.path(), &path, Some("cpu"), &[]);
     let (code_alias, out_alias, _) = scan(home.path(), &path, Some("cpu-fallback"), &[]);
@@ -340,7 +340,7 @@ fn cpu_fallback_alias_matches_cpu() {
 #[test]
 fn simd_regex_alias_matches_simd() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     // `simd-regex` and `simd` are aliases of the SAME engine, so they must give
     // an identical (exit code, finding set) on ANY host, whether that host runs
@@ -442,7 +442,7 @@ fn scalar_alias_is_rejected_by_the_cli_parser_exit_2() {
     // backend spelling. The parser rejects it before routing, so a stale alias
     // cannot silently select the scalar CPU path.
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let (code, _out, err) = scan(home.path(), &path, Some("scalar"), &[]);
 
@@ -464,7 +464,7 @@ fn scalar_alias_is_rejected_by_the_cli_parser_exit_2() {
 #[test]
 fn unknown_backend_value_is_rejected_by_the_cli_parser_exit_2() {
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let (code, _out, err) = scan(home.path(), &path, Some("turbo"), &[]);
 
@@ -485,7 +485,7 @@ fn auto_backend_without_calibration_leaves_input_unscanned() {
     // cache disabled (`--autoroute-cache off`) there is no authenticated
     // decision, so auto must select no backend and report incomplete coverage.
     let home = cache_home();
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let (code, out, err) = scan(
         home.path(),
@@ -553,7 +553,7 @@ fn calibrated_auto_backend_surfaces_the_same_finding_set_as_cpu() {
         String::from_utf8_lossy(&calibrate.stderr)
     );
 
-    let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
+    let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let (code_auto, out_auto, err_auto) = scan(home.path(), &path, Some("auto"), &[]);
     let (_code_cpu, out_cpu, _) = scan(home.path(), &path, Some("cpu"), &[]);

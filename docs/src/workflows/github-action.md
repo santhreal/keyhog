@@ -90,9 +90,12 @@ Then pass the committed file to the Action:
     baseline: .keyhog-baseline.json
 ```
 
-A baseline suppresses findings it already contains. New findings still fail the
-job. Review baseline changes like source changes. Do not regenerate the baseline
-inside CI.
+A baseline suppresses findings it already contains. New `likely` and
+`confirmed` findings fail under the default evidence policy; new `review`
+findings remain visible. Set `evidence-policy: paranoid` to make review-tier
+findings block. The equivalent repository setting is
+`[scan].evidence_policy = "paranoid"` in `.keyhog.toml`. Review baseline changes
+like source changes. Do not regenerate the baseline inside CI.
 
 An entry matches on the detector and the credential value, never on the file
 path. Moving or renaming a baselined file keeps it suppressed, and copying the
@@ -100,9 +103,9 @@ same credential into a new file keeps it suppressed too. See
 [Baselines](../suppressions.md#baselines-suppress-what-already-existed) for the
 complete matching rules and how to retire an entry after rotation.
 
-For an advisory rollout, set `fail-on-findings: 'false'`. Ordinary findings then
-remain visible without blocking the job. A verified-live credential and every
-operational failure still fail.
+For an advisory rollout, set `fail-on-findings: 'false'`. Non-live findings
+that block the active evidence policy then remain visible without blocking the
+job. A verified-live credential and every operational failure still fail.
 
 ```yaml
 - uses: santhreal/keyhog@v0
@@ -204,7 +207,8 @@ even when `fail-on-findings` is `false`.
 | `version` | empty | Scanner release selected by the Action ref. A value pins one canonical final `vX.Y.Z` release. |
 | `upload-sarif` | `'true'` | Uploads Code Scanning results when `format` is `sarif`. The artifact is retained independently. |
 | `analysis-category` | `keyhog` | Stable identity for one report and Code Scanning partition. |
-| `fail-on-findings` | `'true'` | Set to `'false'` to make ordinary findings advisory. |
+| `fail-on-findings` | `'true'` | Fail when the active evidence policy blocks findings. Set to `'false'` to make non-live blocking findings advisory. |
+| `evidence-policy` | `default` | `default` blocks `likely` and `confirmed`; `paranoid` also blocks `review`. Findings remain visible under either policy. |
 | `baseline` | empty | Path to a committed KeyHog baseline. |
 | `backend` | empty | Published refs install the lean `ci` feature and accept empty/`auto` or `cpu`. Branch and commit source refs require `cpu`. Run `simd` or GPU diagnostics with a separately installed self-hosted CLI binary. |
 | `preset` | `default` | Detection policy: `default`, `fast`, `deep`, or `precision`. |
@@ -236,7 +240,7 @@ Give the step an `id` before reading its outputs:
 | Output | Meaning |
 | --- | --- |
 | `findings` | Number of reported findings at or above the severity floor. |
-| `exit-code` | Raw KeyHog exit code. Common results are `0` clean, `1` findings, `10` verified-live findings, and `13` incomplete coverage. |
+| `exit-code` | Raw KeyHog exit code. Common results are `0` policy success, `1` blocking findings, `10` verified-live findings, and `13` incomplete coverage. |
 | `duration-ms` | Wrapper wall-clock scan duration in milliseconds. |
 | `scan-status` | Wrapper state: `success`, `partial`, `cancelled`, or `failed`. |
 | `report-present` | `true` only when the Action published a receipt-verified private report snapshot. |
@@ -275,7 +279,7 @@ source profile with the repository's pinned Rust toolchain and requires
 Treat these states separately:
 
 - `findings > 0` means the scan completed and reported credentials at the chosen
-  severity floor.
+  severity floor. Review-tier findings can coexist with exit `0`.
 - `scan-status: partial` means the report contains a coverage gap. Inspect the
   report and raw `exit-code`; do not treat it as clean.
 - `scan-status: failed` or `report-present: false` means the Action did not

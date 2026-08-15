@@ -56,6 +56,7 @@ fn passthrough_lines_are_sliced_on_demand() {
 fn pattern(regex: &str) -> CompiledPattern {
     CompiledPattern {
         detector_index: 0,
+        pattern_index: 0,
         regex: LazyRegex::detector(regex),
         group: None,
         client_safe: false,

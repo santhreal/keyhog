@@ -69,27 +69,24 @@ async fn test_verify_json_path_exhaustion() {
         },
     )
     .unwrap();
-    let group = DedupedMatch {
-        detector_id: Arc::from("det_json"),
-        detector_name: Arc::from("det_json"),
-        service: Arc::from("test"),
-        severity: Severity::Critical,
-        credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32].into(),
-        primary_location: MatchLocation {
-            source: Arc::from(""),
-            file_path: None,
-            line: None,
-            offset: 0,
-            commit: None,
-            author: None,
-            date: None,
-        },
-        additional_locations: vec![],
-        companions: HashMap::new(),
-        entropy: None,
-        confidence: None,
-    };
+    let group = DedupedMatch { detector_id: Arc::from("det_json"),
+    detector_name: Arc::from("det_json"),
+    service: Arc::from("test"),
+    severity: Severity::Critical,
+    credential: keyhog_core::SensitiveString::from("secret"),
+    credential_hash: [0u8; 32].into(),
+    primary_location: MatchLocation {
+        source: Arc::from(""),
+        file_path: None,
+        line: None,
+        offset: 0,
+        commit: None,
+        author: None,
+        date: None,
+    },
+    additional_locations: vec![],
+    companions: HashMap::new(),
+    entropy: None, confidence: None, evidence: keyhog_core::EvidenceVerdict::review_unattributed() };
 
     // The verifier MUST NOT stack-overflow on a 10k-deep JSON response.
     // The verification path either:
@@ -167,27 +164,24 @@ async fn test_verify_aws_sigv4_empty_keys() {
         },
     )
     .unwrap();
-    let group = DedupedMatch {
-        detector_id: Arc::from("det_aws"),
-        detector_name: Arc::from("det_aws"),
-        service: Arc::from("aws"),
-        severity: Severity::Critical,
-        credential: keyhog_core::SensitiveString::from(""), // empty
-        credential_hash: [0u8; 32].into(),
-        primary_location: MatchLocation {
-            source: Arc::from(""),
-            file_path: None,
-            line: None,
-            offset: 0,
-            commit: None,
-            author: None,
-            date: None,
-        },
-        additional_locations: vec![],
-        companions: HashMap::new(),
-        entropy: None,
-        confidence: None,
-    };
+    let group = DedupedMatch { detector_id: Arc::from("det_aws"),
+    detector_name: Arc::from("det_aws"),
+    service: Arc::from("aws"),
+    severity: Severity::Critical,
+    credential: keyhog_core::SensitiveString::from(""), // empty
+    credential_hash: [0u8; 32].into(),
+    primary_location: MatchLocation {
+        source: Arc::from(""),
+        file_path: None,
+        line: None,
+        offset: 0,
+        commit: None,
+        author: None,
+        date: None,
+    },
+    additional_locations: vec![],
+    companions: HashMap::new(),
+    entropy: None, confidence: None, evidence: keyhog_core::EvidenceVerdict::review_unattributed() };
 
     let findings = engine.verify_all(vec![group]).await;
     assert_eq!(findings.len(), 1);
@@ -245,27 +239,24 @@ async fn test_verify_aws_sigv4_null_bytes() {
     .unwrap();
     let mut comps = HashMap::<Arc<str>, String>::new();
     comps.insert(Arc::from("secret"), "sec\0\0\0ret".repeat(10));
-    let group = DedupedMatch {
-        detector_id: Arc::from("det_aws"),
-        detector_name: Arc::from("det_aws"),
-        service: Arc::from("aws"),
-        severity: Severity::Critical,
-        credential: keyhog_core::SensitiveString::from("AKIA\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"),
-        credential_hash: [0u8; 32].into(),
-        primary_location: MatchLocation {
-            source: Arc::from(""),
-            file_path: None,
-            line: None,
-            offset: 0,
-            commit: None,
-            author: None,
-            date: None,
-        },
-        additional_locations: vec![],
-        companions: comps,
-        entropy: None,
-        confidence: None,
-    };
+    let group = DedupedMatch { detector_id: Arc::from("det_aws"),
+    detector_name: Arc::from("det_aws"),
+    service: Arc::from("aws"),
+    severity: Severity::Critical,
+    credential: keyhog_core::SensitiveString::from("AKIA\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"),
+    credential_hash: [0u8; 32].into(),
+    primary_location: MatchLocation {
+        source: Arc::from(""),
+        file_path: None,
+        line: None,
+        offset: 0,
+        commit: None,
+        author: None,
+        date: None,
+    },
+    additional_locations: vec![],
+    companions: comps,
+    entropy: None, confidence: None, evidence: keyhog_core::EvidenceVerdict::review_unattributed() };
 
     let findings = engine.verify_all(vec![group]).await;
     assert_eq!(findings.len(), 1);
@@ -319,27 +310,24 @@ async fn test_verify_bad_header_templates() {
         },
     )
     .unwrap();
-    let _group = DedupedMatch {
-        detector_id: Arc::from("det_headers"),
-        detector_name: Arc::from("det_headers"),
-        service: Arc::from("test"),
-        severity: Severity::Critical,
-        credential: keyhog_core::SensitiveString::from("val\r\nInjected-Header: 1\r\n\0"),
-        credential_hash: [0u8; 32].into(),
-        primary_location: MatchLocation {
-            source: Arc::from(""),
-            file_path: None,
-            line: None,
-            offset: 0,
-            commit: None,
-            author: None,
-            date: None,
-        },
-        additional_locations: vec![],
-        companions: HashMap::new(),
-        entropy: None,
-        confidence: None,
-    };
+    let _group = DedupedMatch { detector_id: Arc::from("det_headers"),
+    detector_name: Arc::from("det_headers"),
+    service: Arc::from("test"),
+    severity: Severity::Critical,
+    credential: keyhog_core::SensitiveString::from("val\r\nInjected-Header: 1\r\n\0"),
+    credential_hash: [0u8; 32].into(),
+    primary_location: MatchLocation {
+        source: Arc::from(""),
+        file_path: None,
+        line: None,
+        offset: 0,
+        commit: None,
+        author: None,
+        date: None,
+    },
+    additional_locations: vec![],
+    companions: HashMap::new(),
+    entropy: None, confidence: None, evidence: keyhog_core::EvidenceVerdict::review_unattributed() };
 
     let findings = _engine.verify_all(vec![_group]).await;
     assert_eq!(findings.len(), 1);

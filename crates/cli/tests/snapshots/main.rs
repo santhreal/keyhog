@@ -347,15 +347,14 @@ fn normalize(raw: &str, tempdir_root: &Path) -> String {
     out = rewrite_quoted_after(&out, "\"finding_id\":");
     out = rewrite_quoted_after(&out, "\"id\":");
 
-    // 10. Drop keyhog's GPU/CUDA backend-probe diagnostics, then trim trailing
-    //     whitespace. The GPU lines are emitted only when a discrete GPU is
-    //     present but unusable (VRAM exhausted, driver error); they never
-    //     appear on a no-GPU host or CI runner, so they are host/moment noise
-    //     that must not enter a snapshot. Trailing whitespace is dropped to
-    //     avoid editor nits causing drift.
+    // 10. Drop host-state diagnostics for GPU probes and absent installed
+    //     execution packs, then trim trailing whitespace. Snapshots exercise
+    //     output contracts against the embedded corpus; whether the isolated
+    //     cache contains an optional installed pack is not part of that output.
+    //     Trailing whitespace is dropped to avoid editor nits causing drift.
     let trimmed: String = out
         .lines()
-        .filter(|l| !is_gpu_backend_diagnostic(l))
+        .filter(|line| !is_gpu_backend_diagnostic(line) && !is_execution_pack_diagnostic(line))
         .map(|l| l.trim_end_matches([' ', '\t']).to_string())
         .collect::<Vec<_>>()
         .join("\n");
@@ -447,6 +446,13 @@ fn is_gpu_backend_diagnostic(line: &str) -> bool {
         || line.contains("backend unavailable")
         || line.contains("backend acquisition failed")
         || line.contains("DriverError")
+}
+
+/// True only for the installed-pack miss emitted before the scanner uses its
+/// embedded detector corpus. Snapshot cases isolate the cache intentionally, so
+/// this host-state warning is unrelated to the output contract under test.
+fn is_execution_pack_diagnostic(line: &str) -> bool {
+    line.contains("WARN no installed execution-pack generation; parsing embedded detectors")
 }
 
 fn next_char_boundary(s: &str, mut i: usize) -> usize {
@@ -1024,7 +1030,9 @@ fn csv_format_is_valid_and_row_count_matches_findings() {
         "author",
         "date",
         "verification",
-        "confidence",
+        "evidence_tier",
+        "evidence_reason_code",
+        "evidence_score",
         "entropy",
         "remediation",
         "metadata",
@@ -1032,7 +1040,7 @@ fn csv_format_is_valid_and_row_count_matches_findings() {
     ];
     assert_eq!(
         records[0], HEADER,
-        "csv header row is not the promised 20-column schema: {:?}",
+        "csv header row is not the promised 22-column schema: {:?}",
         records[0]
     );
 
@@ -1213,6 +1221,16 @@ fn normalize_rewrites_iso_timestamps() {
     assert_eq!(got, "at <TS> log\n");
     let got = normalize("at 2026-05-29T14:23:45Z log\n", p);
     assert_eq!(got, "at <TS> log\n");
+}
+
+#[test]
+fn normalize_drops_only_the_installed_pack_cache_miss() {
+    let path = Path::new("/nonexistent");
+    let warning = "2026-05-29T14:23:45Z  WARN no installed execution-pack generation; parsing embedded detectors error=missing manifest\n";
+    assert_eq!(normalize(warning, path), "");
+
+    let finding = "WARN finding mentions execution-pack generation in credential context\n";
+    assert_eq!(normalize(finding, path), finding);
 }
 
 #[test]

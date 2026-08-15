@@ -67,6 +67,7 @@ fn offline_group() -> DedupedMatch {
         additional_locations: Vec::new(),
         entropy: None,
         confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

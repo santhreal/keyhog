@@ -106,20 +106,21 @@ fn canonical_matcher_graph_round_trips_deterministically() {
 
 /// WHY: route bytes are an authenticated runtime boundary, so incompatible schemas, backend drift, and valid-JSON index corruption must all fail before scanner construction.
 #[test]
-fn packed_matcher_graph_rejects_version_backend_detector_count_and_index_corruption() {
+fn packed_matcher_graph_rejects_version_backend_detector_count_and_provenance_corruption() {
     let detectors = detectors();
 
     let mut bad_version = sections(&detectors);
     replace_once(
         &mut bad_version.literal_index,
+        b"\"version\":6",
         b"\"version\":5",
-        b"\"version\":9",
     );
-    assert!(bad_version
+    let stale_error = bad_version
         .validate_canonical()
         .expect_err("unknown version must fail")
-        .to_string()
-        .contains("version or backend"));
+        .to_string();
+    assert!(stale_error.contains("version or backend"));
+    assert!(stale_error.contains("rebuild installed execution packs"));
 
     let mut bad_backend = sections(&detectors);
     replace_once(
@@ -144,6 +145,26 @@ fn packed_matcher_graph_rejects_version_backend_detector_count_and_index_corrupt
         .expect_err("detector-count drift must fail")
         .to_string()
         .contains("disagree on detector count"));
+
+    let mut bad_pattern_index = sections(&detectors);
+    replace_once(
+        &mut bad_pattern_index.regex_programs,
+        b"\"pattern_index\":0",
+        b"\"pattern_index\":9",
+    );
+    let error = match CompiledScanner::compile_from_packed_matchers(
+        detectors.clone(),
+        &bad_pattern_index,
+    ) {
+        Ok(_) => panic!("out-of-range source pattern provenance must fail"),
+        Err(error) => error,
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("references source pattern index 9"),
+        "unexpected error: {error}"
+    );
 
     let mut bad_index = sections(&detectors);
     replace_once(

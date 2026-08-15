@@ -40,13 +40,6 @@ description = "Stripe live secret key"
 regex = 'sk_test_[a-zA-Z0-9]{24,}'
 description = "Stripe test secret key"
 
-[[detector.patterns]]
-regex = 'rk_live_[a-zA-Z0-9]{24,}'
-description = "Stripe live restricted key"
-
-[[detector.patterns]]
-regex = 'rk_test_[a-zA-Z0-9]{24,}'
-description = "Stripe test restricted key"
 
 [detector.verify]
 method = "GET"
@@ -69,20 +62,33 @@ follows the same shape.
 Verification success and metadata `json_path` fields use the single rooted
 response-selector grammar documented in [Verification](./verification.md#what-live-means).
 
-Each shipped detector also owns a canonical positive/negative truth pair:
+Each shipped detector owns at least one canonical positive/negative truth pair:
 
 ```toml
 [[detector.tests]]
-test_positive = "STRIPE_SECRET_KEY=sk_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD"
-test_negative = "sk_live_short"
+pattern_index = 0
+test_positive = "SERVICE_PUBLIC_ID=example-production-fixture"
+test_negative = "SERVICE_PUBLIC_ID=short"
+negative_class = "boundary"
+
+[[detector.tests]]
+pattern_index = 1
+test_positive = "SERVICE_LEGACY_ID=example-legacy-fixture"
+test_negative = "SERVICE_LEGACY_ID=short"
+negative_class = "boundary"
+
 ```
 
-These are executable production-path fixtures, not documentation examples.
+Detector test records are executable production-path fixtures, not prose examples.
+`pattern_index` is the zero-based pattern ordinal. `negative_class` is one of
+`boundary`, `identifier`, `prose`, `regex-literal`, or `sibling-prefix`.
 The positive must surface that exact detector id and the negative must leave
-that detector silent. Keeping the pair beside the detector's patterns and
-policy makes a TOML change reviewable and independently tunable without hunting
-through a second registry. Larger adversarial, evasion, performance, and scale
-corpora remain separate because one compact pair cannot prove those contracts.
+that detector silent. An enforcement-capable policy requires one indexed
+positive and named negative per pattern. Compatibility-mode detectors retain
+their detector-level pairs; the deterministic corpus gate supplies an exact
+regex witness for every pattern. Larger adversarial, evasion, performance, and
+scale corpora remain separate because one compact pair cannot prove those
+contracts.
 
 ### Fields
 
@@ -213,6 +219,58 @@ keyword-gated or always-active phase-2 path. `kind = "phase2-generic"` detectors
 require keywords because their assignment/context bridge is the candidate
 source.
 
+`detector.capture_role` declares what the pattern captures. Values are
+`unknown`, `assignment-value`, `token`, `credential-envelope`,
+`private-key-block`, `connection-string`, `url-userinfo`, `header-value`, and
+`command-argument-value`.
+
+`detector.anchor_role` declares the surrounding anchor strength. Values are
+`unknown`, `exact-key`, `distinctive-prefix`, `structured-envelope`,
+`companion-bound`, `weak-context`, and `unanchored`.
+
+`detector.allowed_source_roles` is a list of candidate-bounded source roles.
+Values are `structured-assignment-value`, `environment-assignment-value`,
+`string-literal`, `command-argument-value`, `command-option-declaration`,
+`header-value`, `url-authority-userinfo`, `connection-string`,
+`standalone-token`, `pem-block`, `regex-rule-definition`,
+`identifier-type-member-name`, `prose-documentation`, `test-fixture`, and
+`generated-vendor-material`. The observed source-role enum also contains
+`unknown`, but it is invalid in this declaration. Omit the field when no
+source-role restriction is declared.
+
+Structured source-role extraction runs only for emitted candidates. JSON,
+JSONL, TOML, YAML, dotenv, and INI inputs build at most one 64 KiB source
+index per bounded chunk. Every candidate uses exact candidate/value span lookup
+against that reused index and retains bounded key-path spans. Malformed or
+truncated syntax and unsupported, over-nested, or over-budget input yields
+`unknown` with abstaining parser confidence. Parser
+failure never suppresses a finding. These roles are retained as adjudication
+evidence without changing public `RawMatch` output.
+
+Rust, JavaScript/TypeScript, and Python source-role extraction runs only for
+emitted candidates and accepts at most 64 KiB of source. Exact lexical spans
+distinguish string literals, identifiers, regex definitions, test fixtures,
+command arguments, and command-option declarations. Inline test scopes use
+balanced syntax; test-file ownership uses the scanner's Tier-B path rules.
+Malformed, truncated, unsupported, or over-budget code yields `unknown` with
+abstaining confidence and never suppresses a finding.
+
+Markdown, roff/man, shell script, Dockerfile, and Containerfile extraction is
+candidate-triggered and accepts at most 64 KiB of source. Markdown prose and
+inline code receive `prose-documentation`; shell-language fences use shell
+token roles. Roff option declarations remain distinct from prose. Shell
+tokenization distinguishes environment assignments from command argument
+values. Structured files under detector and rule paths derive regex-definition,
+test-fixture, and prose roles from `rules/structured-source-role-markers.toml`.
+Malformed, truncated, unsupported, or over-budget input yields `unknown` with
+abstaining confidence and never suppresses a finding.
+
+`detector.required_evidence` is a list containing `checksum`,
+`required-companion`, `private-key-companion`, `structural-grammar`, or
+`live-verification`. Omitted semantic fields carry no proof and preserve the
+schema-3 finding policy. Unknown enum spellings, `unknown` source-role entries,
+and duplicate list entries fail corpus validation.
+
 `detector.patterns[]` - one or more regexes. Each carries:
 
 - `regex` - the pattern. Every regex is compiled `case_insensitive`, so
@@ -224,6 +282,12 @@ source.
   load. When an anchor intentionally accepts joined, spaced, underscored, and
   hyphenated words, write `[_\-\s]*` explicitly in that detector. A narrower
   class remains narrow and changes only that detector's digest and behavior.
+
+  Anchor command-line options before the leading dash so a detector cannot
+  restart inside a longer option such as `--add-password`. When providers
+  share a token prefix, separate their issued length grammars and use
+  provider-owned context for the overlapping shape. Record each decision as a
+  `sibling-prefix` or `regex-literal` hard negative.
 - `group` - which capture group is the credential. `0` = whole match,
   `1` = first captured group, etc.
 - `description` - what shape this captures (env var, header, URL, …).
@@ -679,7 +743,7 @@ creates a focused corpus from the repository's shipped Stripe detector:
 mkdir -p "$PWD/.keyhog/detectors"
 cp detectors/stripe-secret-key.toml "$PWD/.keyhog/detectors/"
 cat > "$PWD/.keyhog/detectors/corpus.toml" <<'EOF'
-schema_version = 3
+schema_version = 5
 EOF
 keyhog detectors --detectors "$PWD/.keyhog/detectors" --audit
 ```
@@ -687,14 +751,28 @@ keyhog detectors --detectors "$PWD/.keyhog/detectors" --audit
 Edit the copied TOML only after the audit succeeds. A new detector must declare
 all required policy blocks. Copying only the short `[detector]` and
 `[[detector.patterns]]` example from this chapter does not create a valid
-schema-3 detector.
+schema-5 detector.
 
 Declare the current corpus schema beside the detector files:
 
 ```toml
 # my-detectors/corpus.toml
-schema_version = 3
+schema_version = 5
 ```
+
+Schema 5 adds zero-based `pattern_index` ownership and typed `negative_class`
+values to `[[detector.tests]]`.
+Declaring either field under a schema-1 through schema-4 manifest fails the
+complete corpus load.
+The complete per-pattern evidence gate applies to schema-5 corpora. Schema-4
+semantic policies continue to load without ownership fields that their manifest
+cannot declare.
+
+Schema 4 adds typed `capture_role`, `anchor_role`, `allowed_source_roles`, and
+`required_evidence` declarations. Omission preserves the schema-3 finding
+policy and carries no semantic proof.
+Declaring any of these fields under a schema-1, schema-2, or schema-3 manifest
+fails the complete corpus load.
 
 Schema 3 adds typed companion semantics and cross-detector relations. It also
 keeps the schema-2 requirement that every `[detector.verify.success]` and
@@ -709,16 +787,16 @@ tables written before policy classification are normalized to
 `status_with_error_backstop`: an accepted status is necessary, but a known
 error-shaped response still prevents a live verdict. This is deliberately not
 the more permissive `status_authoritative` policy. New corpora should declare
-schema 3 and serialize every policy rather than relying on legacy
+schema 5 and serialize every policy rather than relying on legacy
 normalization.
 
-Manifest typos, unsupported schema versions, and schema-2 or schema-3 success
-tables with missing policies fail closed. A bounded newer schema declaration
-may be parsed only to produce compatibility diagnostics; a gated load refuses
-the complete corpus rather than skipping fields or detector files it cannot
-interpret. The effective corpus digest binds the normalized schema and
-manifest identity, so legacy, schema-2, and schema-3 corpora cannot share an
-identity merely because their detector fields otherwise match.
+Manifest typos, unsupported schema versions, and schema-2 through schema-5
+success tables with missing policies fail closed. A bounded newer schema
+declaration may be parsed only to produce compatibility diagnostics; a gated
+load refuses the complete corpus rather than skipping fields or detector files
+it cannot interpret. The effective corpus digest binds the normalized schema
+and manifest identity, so legacy and schema-2 through schema-5 corpora cannot
+share an identity merely because their detector fields otherwise match.
 
 Audit a custom corpus directly before scanning with it:
 
@@ -788,7 +866,7 @@ Use a replacement corpus when you want an allowlist of detector files:
 ```sh
 mkdir -p "$PWD/my-detectors"
 cp detectors/stripe-secret-key.toml detectors/aws-*.toml "$PWD/my-detectors/"
-printf 'schema_version = 3\n' > "$PWD/my-detectors/corpus.toml"
+printf 'schema_version = 5\n' > "$PWD/my-detectors/corpus.toml"
 keyhog detectors --detectors "$PWD/my-detectors" --audit
 keyhog scan . --detectors "$PWD/my-detectors" --detectors-mode replace
 ```

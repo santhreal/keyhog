@@ -39,12 +39,12 @@ fn scan_git_diff_main_finds_committed_delta() {
         .status()
         .expect("git commit");
     std::fs::write(
-        repo.join("secret.env"),
+        repo.join(".env.secret"),
         "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
     )
     .unwrap();
     std::process::Command::new("git")
-        .args(["add", "secret.env"])
+        .args(["add", ".env.secret"])
         .current_dir(repo)
         .status()
         .expect("git add");

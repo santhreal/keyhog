@@ -329,6 +329,24 @@ pub(super) fn apply_scan_section(
                 )),
             }
         }
+        if let Some(policy) = &scan.evidence_policy {
+            let parsed = match policy.as_str() {
+                "default" => Some(crate::args::EvidencePolicy::Default),
+                "paranoid" => Some(crate::args::EvidencePolicy::Paranoid),
+                _ => None,
+            };
+            match parsed {
+                Some(policy) if args.evidence_policy.is_none() => {
+                    args.evidence_policy = Some(policy);
+                }
+                Some(_) => {}
+                None => config_errors.push(super::invalid_config_value(
+                    "[scan].evidence_policy",
+                    policy,
+                    &value_enum_expected::<crate::args::EvidencePolicy>(),
+                )),
+            }
+        }
         if args.exclude_paths.is_none() {
             args.exclude_paths = scan.exclude;
         }

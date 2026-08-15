@@ -1,6 +1,8 @@
 use keyhog_core::{
-    validate_detector, AuthSpec, CompanionSpec, DetectorFile, DetectorSpec, PatternSpec,
-    QualityIssue, ScriptEngine, Severity,
+    validate_detector, validate_detector_for_corpus_schema, AnchorSemanticRole, AuthSpec,
+    CaptureSemanticRole, CompanionSpec, DetectorFile, DetectorHardNegativeClass, DetectorSpec,
+    DetectorTestSpec, PatternSpec, QualityIssue, RequiredSemanticEvidence, ScriptEngine,
+    SemanticSourceRole, Severity,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -60,6 +62,443 @@ fn detector_spec_deserialization() {
     assert_eq!(spec.severity, Severity::High);
     assert_eq!(spec.patterns.len(), 1);
     assert_eq!(spec.keywords.len(), 2);
+}
+
+/// WHY: declared semantic fields must remain valid TOML when patterns serialize
+/// as array tables; default-only serialization cannot catch field-order drift.
+#[test]
+fn detector_semantic_roles_are_typed_and_default_to_abstention() {
+    let declared: DetectorFile = toml::from_str(
+        r#"
+        [detector]
+        id = "semantic-role-test"
+        name = "Semantic Role Test"
+        service = "test"
+        severity = "high"
+        ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
+        capture_role = "assignment-value"
+        anchor_role = "exact-key"
+        allowed_source_roles = ["structured-assignment-value", "environment-assignment-value"]
+        required_evidence = ["checksum", "required-companion"]
+
+        [[detector.patterns]]
+        regex = 'demo_[A-Z0-9]{8}'
+        "#,
+    )
+    .expect("known semantic roles must parse");
+    assert_eq!(
+        declared.detector.capture_role,
+        CaptureSemanticRole::AssignmentValue
+    );
+    assert_eq!(declared.detector.anchor_role, AnchorSemanticRole::ExactKey);
+    assert_eq!(
+        declared.detector.allowed_source_roles,
+        [
+            SemanticSourceRole::StructuredAssignmentValue,
+            SemanticSourceRole::EnvironmentAssignmentValue,
+        ]
+    );
+    assert_eq!(
+        declared.detector.required_evidence,
+        [
+            RequiredSemanticEvidence::Checksum,
+            RequiredSemanticEvidence::RequiredCompanion,
+        ]
+    );
+    let serialized =
+        toml::to_string(&declared.detector).expect("declared semantic policy must serialize");
+    let round_trip: DetectorSpec =
+        toml::from_str(&serialized).expect("declared semantic policy must round-trip");
+    assert_eq!(round_trip.capture_role, declared.detector.capture_role);
+    assert_eq!(round_trip.anchor_role, declared.detector.anchor_role);
+    assert_eq!(
+        round_trip.allowed_source_roles,
+        declared.detector.allowed_source_roles
+    );
+    assert_eq!(
+        round_trip.required_evidence,
+        declared.detector.required_evidence
+    );
+
+    let omitted: DetectorFile = toml::from_str(
+        r#"
+        [detector]
+        id = "semantic-role-default"
+        name = "Semantic Role Default"
+        service = "test"
+        severity = "high"
+        ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
+
+        [[detector.patterns]]
+        regex = 'demo_[A-Z0-9]{8}'
+        "#,
+    )
+    .expect("omitted semantic roles must use compatibility defaults");
+    assert_eq!(omitted.detector.capture_role, CaptureSemanticRole::Unknown);
+    assert_eq!(omitted.detector.anchor_role, AnchorSemanticRole::Unknown);
+    assert!(omitted.detector.allowed_source_roles.is_empty());
+    assert!(omitted.detector.required_evidence.is_empty());
+    let serialized =
+        toml::to_string(&omitted.detector).expect("default semantic policy must serialize");
+    for field in [
+        "capture_role",
+        "anchor_role",
+        "allowed_source_roles",
+        "required_evidence",
+    ] {
+        assert!(
+            !serialized.contains(field),
+            "compatibility-default field {field} must not perturb corpus identity"
+        );
+    }
+}
+
+/// WHY: every schema-4 semantic key must fail closed under every older manifest
+/// version instead of acquiring behavior that the declared schema cannot name.
+#[test]
+fn semantic_policy_fields_require_schema_four_manifest() {
+    let declarations = [
+        ("capture_role", r#"capture_role = "unknown""#),
+        ("anchor_role", r#"anchor_role = "unknown""#),
+        (
+            "allowed_source_roles",
+            r#"allowed_source_roles = ["string-literal"]"#,
+        ),
+        ("required_evidence", r#"required_evidence = ["checksum"]"#),
+    ];
+    for schema_version in 1..4 {
+        for (field, declaration) in declarations {
+            let dir = temp_dir(&format!("semantic-schema-{schema_version}-{field}"));
+            fs::write(
+                dir.join("corpus.toml"),
+                format!("schema_version = {schema_version}\n"),
+            )
+            .unwrap();
+            fs::write(
+                dir.join("semantic.toml"),
+                format!(
+                    r#"
+                    [detector]
+                    id = "semantic-schema-version"
+                    name = "Semantic Schema Version"
+                    service = "test"
+                    severity = "high"
+                    ml = {{ match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }}
+                    {declaration}
+
+                    [[detector.patterns]]
+                    regex = 'demo_[A-Z0-9]{{8}}'
+                    "#
+                ),
+            )
+            .unwrap();
+
+            let error = match keyhog_core::load_detectors(&dir) {
+                Ok(_) => {
+                    panic!("schema-{schema_version} corpus must reject schema-4 field {field}")
+                }
+                Err(error) => error,
+            };
+            assert!(
+                error.to_string().contains("require corpus schema 4"),
+                "unexpected schema-{schema_version} result for {field}: {error}"
+            );
+            fs::remove_dir_all(dir).unwrap();
+        }
+    }
+}
+
+/// WHY: the version gate must reject only older manifests; schema 4 must load
+/// and retain every semantic declaration through the production corpus loader.
+#[test]
+fn schema_four_manifest_loads_semantic_policy_fields() {
+    let dir = temp_dir("semantic-schema-four");
+    fs::write(dir.join("corpus.toml"), "schema_version = 4\n").unwrap();
+    let mut detector = valid_detector();
+    detector.capture_role = CaptureSemanticRole::AssignmentValue;
+    detector.anchor_role = AnchorSemanticRole::ExactKey;
+    detector.allowed_source_roles = vec![SemanticSourceRole::StringLiteral];
+    detector.required_evidence = vec![RequiredSemanticEvidence::Checksum];
+    fs::write(
+        dir.join("demo-token.toml"),
+        toml::to_string(&DetectorFile { detector }).unwrap(),
+    )
+    .unwrap();
+
+    let loaded =
+        keyhog_core::load_detectors(&dir).expect("schema-4 corpus must load semantic fields");
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].capture_role, CaptureSemanticRole::AssignmentValue);
+    assert_eq!(loaded[0].anchor_role, AnchorSemanticRole::ExactKey);
+    assert_eq!(
+        loaded[0].allowed_source_roles,
+        [SemanticSourceRole::StringLiteral]
+    );
+    assert_eq!(
+        loaded[0].required_evidence,
+        [RequiredSemanticEvidence::Checksum]
+    );
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn unknown_detector_semantic_roles_fail_schema_parsing() {
+    for declaration in [
+        r#"capture_role = "not-a-capture-role""#,
+        r#"anchor_role = "not-an-anchor-role""#,
+        r#"allowed_source_roles = ["not-a-source-role"]"#,
+        r#"required_evidence = ["not-an-evidence-kind"]"#,
+    ] {
+        let source = format!(
+            r#"
+            [detector]
+            id = "semantic-role-invalid"
+            name = "Semantic Role Invalid"
+            service = "test"
+            severity = "high"
+            ml = {{ match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }}
+            {declaration}
+
+            [[detector.patterns]]
+            regex = 'demo_[A-Z0-9]{{8}}'
+            "#
+        );
+        let error = toml::from_str::<DetectorFile>(&source)
+            .expect_err("unknown semantic role must fail closed");
+        assert!(
+            error.to_string().contains("unknown variant"),
+            "unexpected error for {declaration}: {error}"
+        );
+    }
+}
+
+/// WHY: `unknown` is an observed abstention state, not an allowlist member, and
+/// duplicate declarations must not create identity changes without policy changes.
+#[test]
+fn detector_semantic_policy_rejects_unknown_or_duplicate_declarations() {
+    let mut unknown_source = valid_detector();
+    unknown_source.allowed_source_roles = vec![SemanticSourceRole::Unknown];
+    let issues = validate_detector(&unknown_source);
+    assert!(issues.iter().any(
+        |issue| matches!(issue, QualityIssue::Error(message) if message.contains("cannot contain `unknown`"))
+    ));
+
+    let mut duplicate_source = valid_detector();
+    duplicate_source.allowed_source_roles = vec![
+        SemanticSourceRole::StringLiteral,
+        SemanticSourceRole::StringLiteral,
+    ];
+    let issues = validate_detector(&duplicate_source);
+    assert!(issues.iter().any(
+        |issue| matches!(issue, QualityIssue::Error(message) if message.contains("duplicate role"))
+    ));
+
+    let mut duplicate_evidence = valid_detector();
+    duplicate_evidence.required_evidence = vec![
+        RequiredSemanticEvidence::Checksum,
+        RequiredSemanticEvidence::Checksum,
+    ];
+    let issues = validate_detector(&duplicate_evidence);
+    assert!(issues.iter().any(
+        |issue| matches!(issue, QualityIssue::Error(message) if message.contains("duplicate requirement"))
+    ));
+}
+
+/// WHY: schema-5 semantic enforcement without direct evidence can suppress
+/// every match from an unsupported sibling pattern while detector-level
+/// fixtures stay green. Schema-4 policies must retain their prior validity.
+#[test]
+fn hard_negative_enforcement_requires_indexed_positive_and_named_negative_evidence() {
+    let mut detector = valid_detector();
+    detector.capture_role = CaptureSemanticRole::AssignmentValue;
+    detector.anchor_role = AnchorSemanticRole::ExactKey;
+    detector.allowed_source_roles = vec![SemanticSourceRole::StructuredAssignmentValue];
+
+    let compatibility = validate_detector(&detector);
+    assert!(
+        !compatibility.iter().any(|issue| {
+            matches!(issue, QualityIssue::Error(message) if message.contains("requires direct positive")
+                || message.contains("requires a named direct hard negative"))
+        }),
+        "schema-independent validation must not impose schema-5 evidence: {compatibility:?}"
+    );
+
+    let missing = validate_detector_for_corpus_schema(&detector, 5);
+    assert!(missing.iter().any(
+        |issue| matches!(issue, QualityIssue::Error(message) if message.contains("pattern 0 requires direct positive"))
+    ));
+    assert!(missing.iter().any(
+        |issue| matches!(issue, QualityIssue::Error(message) if message.contains("pattern 0 requires a named direct hard negative"))
+    ));
+
+    detector.tests.push(DetectorTestSpec {
+        test_positive: Some("demo_ABC12345".into()),
+        test_negative: Some("demo_type_member".into()),
+        pattern_index: Some(0),
+        negative_class: Some(DetectorHardNegativeClass::Identifier),
+        test_path: Some("application.toml".into()),
+    });
+    let supported = validate_detector_for_corpus_schema(&detector, 5);
+    assert!(
+        !supported.iter().any(|issue| {
+            matches!(issue, QualityIssue::Error(message) if message.contains("requires direct positive")
+                || message.contains("requires a named direct hard negative"))
+        }),
+        "complete per-pattern evidence must satisfy the semantic gate: {supported:?}"
+    );
+}
+
+/// WHY: hard-negative ownership is part of schema 5, so unknown classes,
+/// unowned evidence, and out-of-range pattern identities must fail closed.
+#[test]
+fn hard_negative_schema_rejects_unknown_classes_and_invalid_ownership() {
+    assert_eq!(
+        keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
+        5,
+        "hard-negative evidence keys require detector corpus schema 5"
+    );
+    let source = r#"
+        [detector]
+        id = "hard-negative-invalid"
+        name = "Hard Negative Invalid"
+        service = "test"
+        severity = "high"
+        ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
+
+        [[detector.patterns]]
+        regex = 'demo_[A-Z0-9]{8}'
+
+        [[detector.tests]]
+        test_negative = "demo_type_member"
+        pattern_index = 0
+        negative_class = "not-a-negative-class"
+    "#;
+    let known = source.replace("not-a-negative-class", "identifier");
+    let parsed =
+        toml::from_str::<DetectorFile>(&known).expect("known hard-negative evidence must parse");
+    assert_eq!(parsed.detector.tests[0].pattern_index, Some(0));
+    assert_eq!(
+        parsed.detector.tests[0].negative_class,
+        Some(DetectorHardNegativeClass::Identifier)
+    );
+    let defaults = toml::to_string(&DetectorTestSpec::default())
+        .expect("default detector test evidence must serialize");
+    assert!(!defaults.contains("pattern_index"));
+    assert!(!defaults.contains("negative_class"));
+    let error = toml::from_str::<DetectorFile>(source)
+        .expect_err("unknown hard-negative class must fail schema parsing");
+    assert!(error.to_string().contains("unknown variant"), "{error}");
+
+    let mut detector = valid_detector();
+    detector.tests.push(DetectorTestSpec {
+        test_positive: None,
+        test_negative: None,
+        pattern_index: Some(9),
+        negative_class: Some(DetectorHardNegativeClass::Boundary),
+        test_path: None,
+    });
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(
+        |issue| matches!(issue, QualityIssue::Error(message) if message.contains("pattern_index 9 is out of range"))
+    ));
+    assert!(issues.iter().any(
+        |issue| matches!(issue, QualityIssue::Error(message) if message.contains("negative_class requires non-empty test_negative"))
+    ));
+    assert!(issues.iter().any(
+        |issue| matches!(issue, QualityIssue::Error(message) if message.contains("pattern_index requires non-empty positive"))
+    ));
+
+    detector.tests[0].pattern_index = None;
+    detector.tests[0].test_negative = Some("demo_type_member".into());
+    let unowned = validate_detector(&detector);
+    assert!(unowned.iter().any(
+        |issue| matches!(issue, QualityIssue::Error(message) if message.contains("negative_class requires pattern_index"))
+    ));
+}
+
+/// WHY: both schema-5 test-evidence keys must fail closed under every older
+/// manifest rather than acquiring ownership semantics the manifest cannot name.
+#[test]
+fn hard_negative_fields_require_schema_five_manifest() {
+    let declarations = [
+        ("pattern_index", "pattern_index = 0"),
+        ("negative_class", r#"negative_class = "identifier""#),
+    ];
+    for schema_version in 1..5 {
+        for (field, declaration) in declarations {
+            let dir = temp_dir(&format!("hard-negative-schema-{schema_version}-{field}"));
+            fs::write(
+                dir.join("corpus.toml"),
+                format!("schema_version = {schema_version}\n"),
+            )
+            .unwrap();
+            fs::write(
+                dir.join("hard-negative.toml"),
+                format!(
+                    r#"
+                    [detector]
+                    id = "hard-negative"
+                    name = "Hard Negative"
+                    service = "test"
+                    severity = "high"
+                    ml = {{ match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }}
+
+                    [[detector.patterns]]
+                    regex = 'demo_[A-Z0-9]{{8}}'
+
+                    [[detector.tests]]
+                    test_negative = "demo_type_member"
+                    {declaration}
+                    "#
+                ),
+            )
+            .unwrap();
+
+            let error = match keyhog_core::load_detectors(&dir) {
+                Ok(_) => {
+                    panic!("schema-{schema_version} corpus must reject schema-5 field {field}")
+                }
+                Err(error) => error,
+            };
+            assert!(
+                error.to_string().contains("require corpus schema 5"),
+                "unexpected schema-{schema_version} result for {field}: {error}"
+            );
+            fs::remove_dir_all(dir).unwrap();
+        }
+    }
+}
+
+/// WHY: schema 5 is the positive boundary; the production loader must retain
+/// both ownership fields after TOML serialization and corpus validation.
+#[test]
+fn schema_five_manifest_loads_hard_negative_fields() {
+    let dir = temp_dir("hard-negative-schema-five");
+    fs::write(dir.join("corpus.toml"), "schema_version = 5\n").unwrap();
+    let mut detector = valid_detector();
+    detector.tests.push(DetectorTestSpec {
+        test_positive: Some("demo_ABC12345".into()),
+        test_negative: Some("demo_type_member".into()),
+        pattern_index: Some(0),
+        negative_class: Some(DetectorHardNegativeClass::Identifier),
+        test_path: Some("application.toml".into()),
+    });
+    fs::write(
+        dir.join("demo-token.toml"),
+        toml::to_string(&DetectorFile { detector }).unwrap(),
+    )
+    .unwrap();
+
+    let loaded =
+        keyhog_core::load_detectors(&dir).expect("schema-5 corpus must load hard-negative fields");
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].tests.len(), 1);
+    assert_eq!(loaded[0].tests[0].pattern_index, Some(0));
+    assert_eq!(
+        loaded[0].tests[0].negative_class,
+        Some(DetectorHardNegativeClass::Identifier)
+    );
+    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]

@@ -76,6 +76,7 @@ fn arb_raw_match() -> impl Strategy<Value = RawMatch> {
             },
             entropy: Some(4.5),
             confidence: Some(conf),
+            evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
         })
 }
 
@@ -375,6 +376,7 @@ fn test_boundary_defensive_dedup_prevents_duplicate_reports() {
         },
         confidence: Some(0.9),
         entropy: Some(4.5),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
 
     // If already seen in chunk results, boundary scanner must NOT duplicate it

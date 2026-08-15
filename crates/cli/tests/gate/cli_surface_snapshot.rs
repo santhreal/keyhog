@@ -3,7 +3,7 @@
 //! silently churn via rename) without a deliberate edit to this file.
 //!
 //! This snapshot flags the concern directly: "scan carries
-//! 76 unconditional flags; the binary exposes 19 subcommands. Surface this large is hard to
+//! 76 unconditional flags; the binary exposes 22 subcommands. Surface this large is hard to
 //! keep coherent, document, and test." This gate makes every addition show up
 //! as a failing test that names exactly what was added/removed, forcing the
 //! author to (a) confirm the new surface is intentional and (b) update the
@@ -42,6 +42,7 @@ const BASE_SUBCOMMANDS: &[&str] = &[
     "repair",
     "scan",
     "scan-system",
+    "triage",
     "uninstall",
     "update",
     "watch",
@@ -58,7 +59,7 @@ fn expected_subcommands() -> BTreeSet<String> {
 }
 
 /// `scan` long-flags that are ALWAYS compiled in (no feature gate). This is the
-/// 76-flag base this snapshot protects; the feature-gated source/verify/binary
+/// 77-flag base this snapshot protects; the feature-gated source/verify/binary
 /// flags are layered on in [`expected_scan_long_flags`] under the SAME `#[cfg]`
 /// gates the real args carry, so a new flag fails this gate until it is added
 /// here (or in the matching cfg block) on purpose. A rename shows up as one
@@ -91,6 +92,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "entropy-bpe-max-bytes-per-token",
     "entropy-source-files",
     "entropy-threshold",
+    "evidence-policy",
     "exclude-paths",
     "fast",
     "format",

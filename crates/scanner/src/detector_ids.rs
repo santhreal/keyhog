@@ -3,7 +3,7 @@
 pub(crate) const GENERIC_PREFIX: &str = "generic-";
 pub(crate) const ENTROPY_PREFIX: &str = "entropy-";
 
-pub(crate) const REASSEMBLED_SUFFIX: &str = ":reassembled";
+pub(crate) const REASSEMBLED_SUFFIX: &str = keyhog_core::REASSEMBLED_DETECTOR_SUFFIX;
 
 #[inline]
 pub(crate) fn policy_detector_id(detector_id: &str) -> &str {

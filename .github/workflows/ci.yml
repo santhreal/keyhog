@@ -108,7 +108,7 @@ jobs:
           if printf 'API_KEY="%s_%s"\n' "$prefix" "$body" \
             | ./target/release-fast/keyhog scan --stdin --no-config \
                 --backend cpu --daemon=off --min-confidence 0.0 \
-                --no-suppress-test-fixtures; then
+                --evidence-policy paranoid --no-suppress-test-fixtures; then
             dogfood_status=0
           else
             dogfood_status=$?
@@ -317,6 +317,11 @@ jobs:
           --test regression_checksum_boundary_no_downgrade
           --test regression_detector_owned_keyword_separators
           --test detector_corpus_coverage_ratchet
+          --test detector_pattern_hard_negative_gates
+          --test regression_observed_detector_class_repairs
+          --test structured_config_source_roles
+          --test source_code_roles
+          --test documentation_command_roles
 
   # Preserve the established required-check name while making it an explicit
   # fail-closed aggregate of the five independent integration lanes.

@@ -28,12 +28,12 @@ fn scan_max_commits_limits_git_history() {
     let repo = dir.path();
     init_git_repo(repo);
     std::fs::write(
-        repo.join("old.env"),
+        repo.join(".env.old"),
         "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
     )
     .unwrap();
     std::process::Command::new("git")
-        .args(["add", "old.env"])
+        .args(["add", ".env.old"])
         .current_dir(repo)
         .status()
         .expect("git add");

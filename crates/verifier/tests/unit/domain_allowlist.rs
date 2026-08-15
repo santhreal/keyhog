@@ -28,6 +28,7 @@ fn verification_group(detector_id: &str) -> DedupedMatch {
         companions: HashMap::new(),
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

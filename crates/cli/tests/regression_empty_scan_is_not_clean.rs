@@ -175,7 +175,7 @@ fn directory_of_only_symlinks_does_not_report_clean() {
     std::fs::write(&outside, "AWS=AKIAJP3GG7XYRIBQXOLA\n").expect("write link target");
     let root = dir.path().join("root");
     std::fs::create_dir(&root).expect("create scan root");
-    std::os::unix::fs::symlink(&outside, root.join("config.env")).expect("create symlink");
+    std::os::unix::fs::symlink(&outside, root.join(".env.config")).expect("create symlink");
 
     let run = scan(&["--format", "json-envelope"], &root);
     let envelope = envelope(&run.stdout);

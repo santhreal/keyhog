@@ -1,7 +1,7 @@
   ┌    CRITICAL ─── AWS Access Key
   │ Secret:     AK...YA
   │ Location:   <TMP>/planted.txt:1
-  │ Confidence: ■■■■■■ 100%
+  │ Evidence:   review/unsupported-context  ■■■■■■ 100%
   │ Entropy:    3.784 bits/byte
   │ account_id: 052310077262
   │ canary_message: AWS canary token (canarytokens.org / Thinkst-style). Do NOT verify: a verification request alerts whoever planted it. See https://trufflesecurity.com/canaries

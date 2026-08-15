@@ -31,6 +31,7 @@ fn make(detector: &str, cred: &str, file: &str, line: usize, conf: Option<f64>) 
         location: loc(file, line, 0),
         entropy: None,
         confidence: conf,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

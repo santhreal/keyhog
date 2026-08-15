@@ -46,8 +46,8 @@ const DETECTOR_NAME: &str = "Slack Bot Token";
 const TOKEN_SHA256: &str = "a8dd917042994f6c6f183c6f0718ab4241065165b299050b51302d3167cc3901";
 /// The redacted credential form the reporter emits for this token.
 const REDACTED: &str = "xoxb...uvwx";
-/// The exact 20-field CSV header the reporter writes (from `CsvReporter::new`).
-const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations";
+/// The exact 22-field CSV header the reporter writes (from `CsvReporter::new`).
+const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,evidence_tier,evidence_reason_code,evidence_score,entropy,remediation,metadata,additional_locations";
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
@@ -235,9 +235,9 @@ fn stdin_json_redacts_credential_and_hashes_exact_bytes() {
         "credential_hash must be sha256 of the exact piped token bytes"
     );
     assert_eq!(
-        obj.get("confidence").and_then(|x| x.as_f64()),
+        obj.get("evidence_score").and_then(|x| x.as_f64()),
         Some(1.0),
-        "the literal-anchored Slack bot token reports confidence 1.0 over stdin"
+        "the literal-anchored Slack bot token reports evidence score 1.0 over stdin"
     );
 }
 

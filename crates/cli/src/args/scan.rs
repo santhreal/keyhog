@@ -72,6 +72,27 @@ impl std::fmt::Display for OutputFormat {
         fmt_value_enum(self, formatter)
     }
 }
+/// Finding tiers that produce a non-zero CI exit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum EvidencePolicy {
+    /// Block confirmed and likely findings; keep review findings visible.
+    #[default]
+    Default,
+    /// Block review findings in addition to confirmed and likely findings.
+    Paranoid,
+}
+
+impl EvidencePolicy {
+    pub const fn is_paranoid(self) -> bool {
+        matches!(self, Self::Paranoid)
+    }
+}
+
+impl std::fmt::Display for EvidencePolicy {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fmt_value_enum(self, formatter)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum CliDedupScope {
@@ -564,6 +585,11 @@ pub struct ScanArgs {
     pub format: OutputFormat,
     #[arg(skip)]
     pub(crate) format_cli_explicit: bool,
+    /// Finding evidence tiers that produce a non-zero CI exit. `default` blocks
+    /// `likely` and `confirmed`; `paranoid` also blocks `review`. Findings
+    /// remain visible under either policy.
+    #[arg(long, value_name = "POLICY", value_enum)]
+    pub evidence_policy: Option<EvidencePolicy>,
 
     /// Show progress bar
     #[arg(long)]

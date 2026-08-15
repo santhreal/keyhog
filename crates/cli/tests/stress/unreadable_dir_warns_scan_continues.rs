@@ -8,7 +8,7 @@ use tempfile::TempDir;
 #[test]
 fn unreadable_dir_warns_scan_continues_exit_one() {
     let dir = TempDir::new().expect("tempdir");
-    let readable = dir.path().join("readable.env");
+    let readable = dir.path().join(".env.readable");
     std::fs::write(&readable, "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n")
         .expect("write readable secret");
     let denied = dir.path().join("denied");

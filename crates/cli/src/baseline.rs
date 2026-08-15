@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
 
-const BASELINE_VERSION: u32 = 1;
+const BASELINE_VERSION: u32 = 2;
 
 /// Canonical baseline serialization of a credential hash: the `sha256:`-prefixed
 /// lowercase-hex form stored in, and matched against, baseline entries. One
@@ -47,13 +47,12 @@ pub(crate) struct Baseline {
 pub(crate) struct BaselineEntry {
     pub detector_id: String,
     pub credential_hash: String,
-    #[serde(default, alias = "path", skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<usize>,
-    /// Legacy v1 input accepted for compatibility; never an active policy.
-    #[serde(rename = "status", default, skip_serializing)]
-    pub(crate) legacy_status: Option<String>,
+    /// Evidence verdict recorded when this finding was acknowledged.
+    pub evidence: keyhog_core::EvidenceVerdict,
 }
 
 fn default_created() -> String {
@@ -92,31 +91,29 @@ impl Baseline {
         let _span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("reading baseline file {}", path.display()))?;
-        let baseline: Baseline = serde_json::from_str(&content).map_err(|e| {
-            // The #1 mistake here is feeding a `scan --format json` FINDINGS
-            // envelope to `diff`, which wants a BASELINE file. The raw serde
-            // error ("invalid type: map, expected u32") sends people chasing a
-            // corruption bug that isn't there - detect the shape and point at
-            // the command that actually produces a baseline.
-            if looks_like_findings_report(&content) {
-                anyhow::anyhow!(
-                    "{p} is not a keyhog baseline file - it looks like a `scan` \
-                     findings report (for example `--format json` output).\n       \
-                     Create a baseline with:  keyhog scan <path> --create-baseline {p}",
-                    p = path.display(),
-                )
-            } else {
-                anyhow::Error::new(e).context(format!("parsing baseline file {}", path.display()))
-            }
-        })?;
-        if baseline.version != BASELINE_VERSION {
+        if looks_like_findings_report(&content) {
+            anyhow::bail!(
+                "{p} is not a keyhog baseline file - it looks like a `scan` \
+                 findings report (for example `--format json` output).\n       \
+                 Create a baseline with:  keyhog scan <path> --create-baseline {p}",
+                p = path.display(),
+            );
+        }
+        #[derive(Deserialize)]
+        struct BaselineVersion {
+            version: u32,
+        }
+        let version: BaselineVersion = serde_json::from_str(&content)
+            .with_context(|| format!("parsing baseline file {}", path.display()))?;
+        if version.version != BASELINE_VERSION {
             anyhow::bail!(
                 "unsupported baseline version {} (expected {})",
-                baseline.version,
+                version.version,
                 BASELINE_VERSION
             );
         }
-        Ok(baseline)
+        serde_json::from_str(&content)
+            .with_context(|| format!("parsing baseline file {}", path.display()))
     }
 
     /// Save the baseline to a JSON file (pretty-printed).
@@ -152,7 +149,7 @@ impl Baseline {
                 credential_hash: baseline_hash_key(&f.credential_hash),
                 file_path: f.location.file_path.as_ref().map(|p| p.to_string()),
                 line: f.location.line,
-                legacy_status: None,
+                evidence: f.evidence,
             })
             .collect();
 
@@ -195,7 +192,7 @@ impl Baseline {
                     credential_hash: key.1,
                     file_path: finding.location.file_path.as_ref().map(|p| p.to_string()),
                     line: finding.location.line,
-                    legacy_status: None,
+                    evidence: finding.evidence,
                 });
             }
         }

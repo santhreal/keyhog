@@ -39,7 +39,9 @@ fn junit_wraps_finding_in_testsuites_with_failure() {
     );
     assert!(out.contains("<![CDATA["));
     assert!(out.contains("Verification:  live"));
-    assert!(out.contains("Confidence:    0.875"));
+    assert!(out.contains("Evidence Tier: review"));
+    assert!(out.contains("Evidence Reason: unattributed"));
+    assert!(out.contains("Evidence Score: 0.875"));
 }
 
 #[test]

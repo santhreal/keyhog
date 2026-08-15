@@ -129,13 +129,13 @@ fn basename(f: &serde_json::Value) -> String {
 }
 
 /// Two sibling tempdirs: dir1 holds a bare GitHub PAT on line 1 of
-/// `leak_a.env`, dir2 holds a bare Slack bot token on line 1 of `leak_b.env`.
+/// `.env.leak-a`, dir2 holds a bare Slack bot token on line 1 of `.env.leak-b`.
 /// Distinct credentials -> two distinct findings, one per root.
 fn two_dirs_distinct() -> (TempDir, TempDir) {
     let d1 = TempDir::new().expect("tempdir 1");
     let d2 = TempDir::new().expect("tempdir 2");
-    std::fs::write(d1.path().join("leak_a.env"), format!("{GITHUB}\n")).expect("write a");
-    std::fs::write(d2.path().join("leak_b.env"), format!("{SLACK}\n")).expect("write b");
+    std::fs::write(d1.path().join(".env.leak-a"), format!("{GITHUB}\n")).expect("write a");
+    std::fs::write(d2.path().join(".env.leak-b"), format!("{SLACK}\n")).expect("write b");
     (d1, d2)
 }
 
@@ -171,8 +171,8 @@ fn both_dirs_surface_distinct_detectors_exit_1() {
 }
 
 /// Each finding names ITS OWN file, on line 1, with source `filesystem`: the
-/// github finding points at `leak_a.env` (dir1) and the slack finding at
-/// `leak_b.env` (dir2); the locations are never crossed.
+/// GitHub finding points at `.env.leak-a` (dir1) and the Slack finding at
+/// `.env.leak-b` (dir2); the locations are never crossed.
 #[test]
 fn each_finding_names_its_own_file_on_line_one() {
     let (d1, d2) = two_dirs_distinct();
@@ -182,7 +182,7 @@ fn each_finding_names_its_own_file_on_line_one() {
     let gh = sole_finding(&v, GITHUB_ID);
     assert_eq!(
         basename(gh),
-        "leak_a.env",
+        ".env.leak-a",
         "github finding names dir1's file"
     );
     assert_eq!(
@@ -199,7 +199,7 @@ fn each_finding_names_its_own_file_on_line_one() {
     let sl = sole_finding(&v, SLACK_ID);
     assert_eq!(
         basename(sl),
-        "leak_b.env",
+        ".env.leak-b",
         "slack finding names dir2's file"
     );
     assert_eq!(
@@ -233,9 +233,9 @@ fn github_finding_exact_identity_fields() {
         "github must redact to {GITHUB_REDACTED}, never the raw token"
     );
     assert_eq!(
-        f["confidence"].as_f64(),
+        f["evidence_score"].as_f64(),
         Some(1.0),
-        "a checksum-valid github PAT on the filesystem path reports confidence 1.0"
+        "a checksum-valid github PAT on the filesystem path reports evidence score 1.0"
     );
     assert_eq!(
         f["verification"].as_str(),
@@ -271,9 +271,9 @@ fn slack_finding_exact_identity_fields() {
         "slack must redact to {SLACK_REDACTED}"
     );
     assert_eq!(
-        f["confidence"].as_f64(),
+        f["evidence_score"].as_f64(),
         Some(1.0),
-        "the literal-anchored Slack bot token in assignment context reports confidence 1.0"
+        "the literal-anchored Slack bot token in assignment context reports evidence score 1.0"
     );
     assert_eq!(
         f["credential_hash"].as_str(),
@@ -419,7 +419,7 @@ fn text_over_two_paths_reports_two_secrets_found() {
         "both detector names must appear; got:\n{combined}"
     );
     assert!(
-        combined.contains("leak_a.env") && combined.contains("leak_b.env"),
+        combined.contains(".env.leak-a") && combined.contains(".env.leak-b"),
         "both roots' file basenames must appear; got:\n{combined}"
     );
 }
@@ -439,11 +439,11 @@ fn secret_on_second_line_reports_exact_line_and_offset() {
     // Line 1 is exactly "harmless-first-line\n" (20 bytes); line 2 opens with
     // "GITHUB_TOKEN=" (13 bytes), so the token begins at absolute offset 33.
     std::fs::write(
-        d1.path().join("nested.env"),
+        d1.path().join(".env.nested"),
         format!("harmless-first-line\nGITHUB_TOKEN={GITHUB}\n"),
     )
     .expect("write nested");
-    std::fs::write(d2.path().join("other.env"), format!("{SLACK}\n")).expect("write other");
+    std::fs::write(d2.path().join(".env.other"), format!("{SLACK}\n")).expect("write other");
 
     let (code, stdout, stderr) = scan_paths(&[d1.path(), d2.path()], "json");
     assert_eq!(code, Some(1), "exit 1; stderr={stderr}");
@@ -459,7 +459,7 @@ fn secret_on_second_line_reports_exact_line_and_offset() {
         Some(33),
         "the token begins at absolute byte offset 33; got {stdout}"
     );
-    assert_eq!(basename(gh), "nested.env");
+    assert_eq!(basename(gh), ".env.nested");
 }
 
 // ---------------------------------------------------------------------------
@@ -472,8 +472,8 @@ fn secret_on_second_line_reports_exact_line_and_offset() {
 fn same_token_in_both_dirs_dedups_to_single_finding() {
     let d1 = TempDir::new().expect("tempdir 1");
     let d2 = TempDir::new().expect("tempdir 2");
-    std::fs::write(d1.path().join("dup_a.env"), format!("A={GITHUB}\n")).expect("write a");
-    std::fs::write(d2.path().join("dup_b.env"), format!("B={GITHUB}\n")).expect("write b");
+    std::fs::write(d1.path().join(".env.dup-a"), format!("A={GITHUB}\n")).expect("write a");
+    std::fs::write(d2.path().join(".env.dup-b"), format!("B={GITHUB}\n")).expect("write b");
 
     let (code, stdout, stderr) = scan_paths(&[d1.path(), d2.path()], "json");
     assert_eq!(code, Some(1), "dedup scan exits 1; stderr={stderr}");
@@ -496,8 +496,8 @@ fn same_token_in_both_dirs_dedups_to_single_finding() {
 fn dedup_records_one_additional_location_covering_both_files() {
     let d1 = TempDir::new().expect("tempdir 1");
     let d2 = TempDir::new().expect("tempdir 2");
-    std::fs::write(d1.path().join("dup_a.env"), format!("A={GITHUB}\n")).expect("write a");
-    std::fs::write(d2.path().join("dup_b.env"), format!("B={GITHUB}\n")).expect("write b");
+    std::fs::write(d1.path().join(".env.dup-a"), format!("A={GITHUB}\n")).expect("write a");
+    std::fs::write(d2.path().join(".env.dup-b"), format!("B={GITHUB}\n")).expect("write b");
 
     let (_code, stdout, _err) = scan_paths(&[d1.path(), d2.path()], "json");
     let v = json_report(&stdout);
@@ -523,7 +523,7 @@ fn dedup_records_one_additional_location_covering_both_files() {
                 .into_owned(),
         );
     }
-    let expected: BTreeSet<String> = ["dup_a.env".to_string(), "dup_b.env".to_string()]
+    let expected: BTreeSet<String> = [".env.dup-a".to_string(), ".env.dup-b".to_string()]
         .into_iter()
         .collect();
     assert_eq!(
@@ -539,8 +539,8 @@ fn dedup_records_one_additional_location_covering_both_files() {
 fn dedup_finding_hash_matches_single_scan_identity() {
     let d1 = TempDir::new().expect("tempdir 1");
     let d2 = TempDir::new().expect("tempdir 2");
-    std::fs::write(d1.path().join("dup_a.env"), format!("A={GITHUB}\n")).expect("write a");
-    std::fs::write(d2.path().join("dup_b.env"), format!("B={GITHUB}\n")).expect("write b");
+    std::fs::write(d1.path().join(".env.dup-a"), format!("A={GITHUB}\n")).expect("write a");
+    std::fs::write(d2.path().join(".env.dup-b"), format!("B={GITHUB}\n")).expect("write b");
 
     let (_c, out_multi, _e) = scan_paths(&[d1.path(), d2.path()], "json");
     let (_c1, out_single, _e1) = scan_paths(&[d1.path()], "json");
@@ -568,7 +568,7 @@ fn dedup_finding_hash_matches_single_scan_identity() {
 #[test]
 fn duplicate_path_argument_does_not_double_count() {
     let d1 = TempDir::new().expect("tempdir 1");
-    std::fs::write(d1.path().join("leak_a.env"), format!("{GITHUB}\n")).expect("write a");
+    std::fs::write(d1.path().join(".env.leak-a"), format!("{GITHUB}\n")).expect("write a");
 
     let (code, stdout, stderr) = scan_paths(&[d1.path(), d1.path()], "json");
     assert_eq!(code, Some(1), "duplicate-arg scan exits 1; stderr={stderr}");
@@ -595,7 +595,7 @@ fn duplicate_path_argument_does_not_double_count() {
 #[test]
 fn nonexistent_second_path_exits_2_and_names_it() {
     let d1 = TempDir::new().expect("tempdir 1");
-    std::fs::write(d1.path().join("leak_a.env"), format!("{GITHUB}\n")).expect("write a");
+    std::fs::write(d1.path().join(".env.leak-a"), format!("{GITHUB}\n")).expect("write a");
     let missing = d1.path().join("keyhog-nonexistent-second-root-xyz");
 
     let (code, _stdout, stderr) = scan_paths(&[d1.path(), &missing], "json");
@@ -620,7 +620,7 @@ fn nonexistent_second_path_exits_2_and_names_it() {
 #[test]
 fn nonexistent_first_path_exits_2_no_report_on_stdout() {
     let d2 = TempDir::new().expect("tempdir 2");
-    std::fs::write(d2.path().join("leak_b.env"), format!("{SLACK}\n")).expect("write b");
+    std::fs::write(d2.path().join(".env.leak-b"), format!("{SLACK}\n")).expect("write b");
     let missing = d2.path().join("keyhog-nonexistent-first-root-xyz");
 
     let (code, stdout, _stderr) = scan_paths(&[&missing, d2.path()], "json");
@@ -649,7 +649,7 @@ fn nonexistent_first_path_exits_2_no_report_on_stdout() {
 #[test]
 fn nonexistent_path_error_gives_fix_guidance() {
     let d1 = TempDir::new().expect("tempdir 1");
-    std::fs::write(d1.path().join("leak_a.env"), format!("{GITHUB}\n")).expect("write a");
+    std::fs::write(d1.path().join(".env.leak-a"), format!("{GITHUB}\n")).expect("write a");
     let missing = d1.path().join("keyhog-typo-root-xyz");
 
     let (code, _stdout, stderr) = scan_paths(&[d1.path(), &missing], "json");

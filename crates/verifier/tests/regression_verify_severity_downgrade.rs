@@ -47,6 +47,7 @@ fn group_with_severity(severity: Severity) -> DedupedMatch {
         additional_locations: vec![],
         entropy: None,
         confidence: Some(0.95),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

@@ -39,6 +39,17 @@ jobs:
         with:
           fetch-depth: 0   # full history for git-source scans
 
+      - name: resolve evidence policy
+        id: evidence-policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f .github/keyhog-strict ]]; then
+            echo 'policy=paranoid' >> "$GITHUB_OUTPUT"
+          else
+            echo 'policy=default' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: scan
         id: keyhog
         uses: ./
@@ -51,9 +62,10 @@ jobs:
           format: sarif
           upload-sarif: 'true'
           fail-on-findings: 'false'
+          evidence-policy: ${{ steps.evidence-policy.outputs.policy }}
 
-      - name: fail on findings (opt-in via .github/keyhog-strict)
-        if: steps.keyhog.outputs.findings != '0'
+      - name: fail on policy-blocking findings (opt-in via .github/keyhog-strict)
+        if: steps.keyhog.outputs.exit-code == '1' || steps.keyhog.outputs.exit-code == '10'
         env:
           ACTION_FINDINGS: ${{ steps.keyhog.outputs.findings }}
           ACTION_EXIT_CODE: ${{ steps.keyhog.outputs.exit-code }}
@@ -76,10 +88,10 @@ jobs:
               exit "$ACTION_EXIT_CODE"
               ;;
           esac
-          echo "keyhog reported $ACTION_FINDINGS finding(s); exit code $ACTION_EXIT_CODE"
+          echo "keyhog policy exit $ACTION_EXIT_CODE with $ACTION_FINDINGS visible finding(s)"
           if [ -f .github/keyhog-strict ]; then
-            echo "  .github/keyhog-strict present - failing CI on findings"
-            exit 1
+            echo "  .github/keyhog-strict selected paranoid policy - failing CI"
+            exit "$ACTION_EXIT_CODE"
           fi
-          echo "  .github/keyhog-strict absent - findings visible in Code Scanning"
-          echo "  (touch .github/keyhog-strict to make findings block CI)"
+          echo "  .github/keyhog-strict absent - default-policy findings remain visible in Code Scanning"
+          echo "  (add .github/keyhog-strict to select paranoid policy and block every tier)"

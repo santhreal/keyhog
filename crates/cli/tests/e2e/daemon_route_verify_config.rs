@@ -8,7 +8,7 @@ use tempfile::TempDir;
 fn forced_daemon_rejects_config_verify_without_connecting() {
     let work = TempDir::new().expect("work dir");
     std::fs::write(work.path().join(".keyhog.toml"), "verify = true\n").expect("write config");
-    let path = work.path().join("leak.env");
+    let path = work.path().join(".env.leak");
     std::fs::write(&path, "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n").expect("write fixture");
     let runtime = TempDir::new().expect("isolated runtime");
 

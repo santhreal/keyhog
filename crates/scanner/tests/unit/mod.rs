@@ -10,6 +10,7 @@ pub mod ascii_ci;
 pub mod base64_byte_predicates;
 pub mod base64_non_padding_equals;
 pub mod bigram_bloom;
+pub mod candidate_provenance;
 pub mod checksum;
 pub mod checksum_extended;
 pub mod compiler_alternation_rewrite_nested_groups;
@@ -156,6 +157,8 @@ pub mod ml_weights_parse;
 pub mod multiline;
 #[cfg(feature = "multiline")]
 pub mod multiline_large_file_keyword_gate;
+#[cfg(feature = "ml")]
+pub mod pattern_calibration;
 #[cfg(feature = "entropy")]
 pub mod phase2_entropy_helpers;
 pub mod phase2_generic_bridge;

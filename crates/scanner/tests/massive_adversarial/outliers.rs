@@ -274,6 +274,7 @@ fn make_raw_match(
         },
         entropy: Some(4.0),
         confidence,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
