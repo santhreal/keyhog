@@ -1,0 +1,39 @@
+{
+  "schema": "keyhog-redacted-repository-evidence-v1",
+  "repository_class_id": "rc-002",
+  "redacted_label": "[redacted:rc-002]",
+  "source_content_sha256": "1222222222222222222222222222222222222222222222222222222222222222",
+  "source_lines": 2000000,
+  "labels": [
+    {
+      "redacted_label": "[redacted:label-0001]",
+      "content_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "outcome": "matched"
+    }
+  ],
+  "canaries": [
+    {
+      "redacted_label": "[redacted:canary-0001]",
+      "content_sha256": "d3f21e0fb85c626b15a09bb7b6f6097e87adc65ba75dc32a689c12ced67fb568",
+      "outcome": "matched"
+    }
+  ],
+  "findings": [
+    {
+      "content_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "redacted_label": "[redacted:label-0001]",
+      "evidence": {
+        "tier": "confirmed",
+        "reason_code": "structural-grammar"
+      }
+    },
+    {
+      "content_sha256": "d3f21e0fb85c626b15a09bb7b6f6097e87adc65ba75dc32a689c12ced67fb568",
+      "redacted_label": "[redacted:canary-0001]",
+      "evidence": {
+        "tier": "confirmed",
+        "reason_code": "required-companion"
+      }
+    }
+  ]
+}

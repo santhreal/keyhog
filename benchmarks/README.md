@@ -170,6 +170,46 @@ finding mismatch fails the command instead of publishing partial evidence.
   tree and an exact recorded HEAD commit. KeyHog validates the snapshot before
   scanning, and result-only gates check workspace identity before scoring.
 
+## Redacted real-repository quality gate
+
+`bench.real_repository_quality` scores repository-class evidence without
+accepting repository names, repository paths, plaintext labels, finding bytes,
+or credentials. `benchmarks/quality/repository-classes.toml` is the complete
+registry. Each class uses an opaque `rc-NNN` ID and its derived
+`[redacted:rc-NNN]` label. Evidence manifests contain only canonical redacted
+label tokens, content SHA-256 digests, line counts, explicit match outcomes,
+and canonical evidence tiers and reasons. Unknown fields fail schema
+validation.
+
+Each class must provide at least one labeled finding and one deterministic
+injected canary. The gate measures non-canary findings per MLOC, default-policy
+blocking false positives, labeled recall, and canary recall. It rejects missing
+or unexpected classes, missing canary outcomes, mismatched label hashes,
+noncanonical tier/reason pairs, and every threshold violation. The required
+class set is loaded from the registry for each run, so adding a class without
+its evidence fails.
+
+Capture and gate with a source-built release candidate:
+
+```bash
+python3 -m bench.real_repository_quality identity \
+  --binary "$KEYHOG_BIN" --output results/real-repository-binary.json
+python3 -m bench.real_repository_quality gate \
+  --registry quality/repository-classes.toml \
+  --evidence-dir quality/synthetic-evidence \
+  --binary "$KEYHOG_BIN" \
+  --identity-receipt results/real-repository-binary.json \
+  --output results/real-repository-quality.json
+```
+
+Run these commands from `benchmarks/`. The identity receipt binds the
+executable SHA-256, source commit, workspace version, and detector-set digest.
+The gate recalculates the identity from the supplied binary and current clean
+source tree. A stale or mismatched receipt fails before scoring. Replace the
+committed synthetic evidence directory with an untracked redacted evidence
+directory for operational measurements. Do not copy repository paths, names,
+plaintext labels, or raw findings into the evidence.
+
 ## Two fairness rules (baked into every corpus)
 
 Both were proven against the live keyhog binary, not assumed:
@@ -244,6 +284,7 @@ benchmarks/
     corpus_integrity.py   manifest and scan-tree digest verification
     leakage_guard.py      provenance and near-duplicate split isolation
     generator_checksums.py shared checksum-valid synthetic-token primitives
+    real_repository_quality.py redacted repository-class quality and binary-freshness gate
     corpora/              mirror · homefield · creddata · ioc-recovery · perf adapters
     scanners/             keyhog (+config matrix) · betterleaks · kingfisher · trufflehog · titus · noseyparker
     runner.py             one (scanner,config,corpus) measurement -> RunResult
@@ -257,6 +298,7 @@ benchmarks/
     homefield/            competitor home-turf harvesters (harvest_betterleaks.py · harvest_kingfisher.py)
     ioc_recovery/         deterministic P0-P12 JavaScript recovery generator
   corpora/                generated data (git-ignored; reproducible through Make targets)
+  quality/                synthetic redacted class registry and evidence examples
   results/<host>/         one RunResult JSON per run (git-ignored; regenerable)
   reports/                generated markdown: leaderboard · perf · recall-gap · category-recall · static-recovery
   baselines/              committed known-good scoreboard anchors (regression history)

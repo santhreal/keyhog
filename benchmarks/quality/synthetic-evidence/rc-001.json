@@ -1,0 +1,47 @@
+{
+  "schema": "keyhog-redacted-repository-evidence-v1",
+  "repository_class_id": "rc-001",
+  "redacted_label": "[redacted:rc-001]",
+  "source_content_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "source_lines": 1000000,
+  "labels": [
+    {
+      "redacted_label": "[redacted:label-0001]",
+      "content_sha256": "2111111111111111111111111111111111111111111111111111111111111111",
+      "outcome": "matched"
+    }
+  ],
+  "canaries": [
+    {
+      "redacted_label": "[redacted:canary-0001]",
+      "content_sha256": "ce4204ab2dc868d23c8d4c8fc9ca9b602cf3c0f1f611a453d3ea7e5855255351",
+      "outcome": "matched"
+    }
+  ],
+  "findings": [
+    {
+      "content_sha256": "2111111111111111111111111111111111111111111111111111111111111111",
+      "redacted_label": "[redacted:label-0001]",
+      "evidence": {
+        "tier": "likely",
+        "reason_code": "vendor-pattern"
+      }
+    },
+    {
+      "content_sha256": "ce4204ab2dc868d23c8d4c8fc9ca9b602cf3c0f1f611a453d3ea7e5855255351",
+      "redacted_label": "[redacted:canary-0001]",
+      "evidence": {
+        "tier": "confirmed",
+        "reason_code": "checksum-valid"
+      }
+    },
+    {
+      "content_sha256": "3111111111111111111111111111111111111111111111111111111111111111",
+      "redacted_label": null,
+      "evidence": {
+        "tier": "review",
+        "reason_code": "documentation"
+      }
+    }
+  ]
+}

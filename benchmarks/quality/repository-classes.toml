@@ -1,0 +1,17 @@
+schema = "keyhog-real-repository-class-registry-v1"
+
+[[repository_class]]
+id = "rc-001"
+redacted_label = "[redacted:rc-001]"
+max_findings_per_mloc = 2.0
+max_blocking_false_positives = 0
+min_recall = 1.0
+min_canary_recall = 1.0
+
+[[repository_class]]
+id = "rc-002"
+redacted_label = "[redacted:rc-002]"
+max_findings_per_mloc = 0.5
+max_blocking_false_positives = 0
+min_recall = 1.0
+min_canary_recall = 1.0
