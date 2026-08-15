@@ -36,8 +36,6 @@ IDENTITY_SCHEMA = "keyhog-current-source-binary-identity-v1"
 REPORT_SCHEMA = "keyhog-real-repository-quality-report-v1"
 MAX_INPUT_BYTES = 4 * 1024 * 1024
 MAX_CLASSES = 64
-MAX_LABELS_PER_CLASS = 100_000
-MAX_FINDINGS_PER_CLASS = 1_000_000
 MAX_NOISE_FINDINGS_PER_MLOC = Decimal("2")
 
 _CLASS_ID_RE = re.compile(r"rc-[0-9]{3}")
@@ -326,12 +324,12 @@ def load_evidence(path: str | pathlib.Path) -> RepositoryEvidence:
     labels_raw = root["labels"]
     canaries_raw = root["canaries"]
     findings_raw = root["findings"]
-    if not isinstance(labels_raw, list) or not labels_raw or len(labels_raw) > MAX_LABELS_PER_CLASS:
+    if not isinstance(labels_raw, list) or not labels_raw:
         raise QualityGateError("repository evidence label count is invalid")
-    if not isinstance(canaries_raw, list) or not canaries_raw or len(canaries_raw) > MAX_LABELS_PER_CLASS:
+    if not isinstance(canaries_raw, list) or not canaries_raw:
         raise QualityGateError("repository evidence canary count is invalid")
-    if not isinstance(findings_raw, list) or len(findings_raw) > MAX_FINDINGS_PER_CLASS:
-        raise QualityGateError("repository evidence finding count is invalid")
+    if not isinstance(findings_raw, list):
+        raise QualityGateError("repository evidence findings must be a list")
 
     labels = tuple(_load_label(value, class_id=class_id, canary=False) for value in labels_raw)
     canaries = tuple(_load_label(value, class_id=class_id, canary=True) for value in canaries_raw)

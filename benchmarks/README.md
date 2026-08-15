@@ -182,12 +182,14 @@ and canonical evidence tiers and reasons. Unknown fields fail schema
 validation.
 
 Each class must provide at least one labeled finding and one deterministic
-injected canary. The gate measures unlabeled findings per MLOC, default-policy
-blocking false positives, labeled recall, and canary recall. It rejects missing
-or unexpected classes, missing canary outcomes, mismatched label hashes,
-noncanonical tier/reason pairs, and every threshold violation. No class may set
-the unlabeled density ceiling above 2.0 findings per MLOC. The required class
-set is loaded from the registry for each run, so adding a class without its
+canary record. Operational capture owns canary injection. The gate validates
+canonical canary identity and recorded outcomes without accepting source bytes.
+It measures unlabeled findings per MLOC, default-policy blocking false
+positives, labeled recall, and canary recall. It rejects missing or unexpected
+classes, missing canary outcomes, mismatched label hashes, noncanonical
+tier/reason pairs, and every threshold violation. No class may set the
+unlabeled density ceiling above 2.0 findings per MLOC. The required class set
+is loaded from the registry for each run, so adding a class without its
 evidence fails.
 
 Capture and gate with a source-built release candidate:
@@ -214,6 +216,8 @@ source tree. A stale or mismatched receipt fails before scoring. Replace the
 committed synthetic evidence directory with an untracked redacted evidence
 directory for operational measurements. Do not copy repository paths, names,
 plaintext labels, or raw findings into the evidence.
+Operational capture also owns the source line count and source-content digest.
+Review both fields when an evidence manifest changes.
 
 ## Two fairness rules (baked into every corpus)
 
