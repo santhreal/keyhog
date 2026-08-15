@@ -157,6 +157,8 @@ pub mod ml_weights_parse;
 pub mod multiline;
 #[cfg(feature = "multiline")]
 pub mod multiline_large_file_keyword_gate;
+#[cfg(feature = "ml")]
+pub mod pattern_calibration;
 #[cfg(feature = "entropy")]
 pub mod phase2_entropy_helpers;
 pub mod phase2_generic_bridge;

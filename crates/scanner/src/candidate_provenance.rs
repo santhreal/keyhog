@@ -20,7 +20,6 @@ pub(crate) enum CandidateChannel {
 ///
 /// The active detector digest binds detector ordering and pattern contents.
 /// Generated homoglyph and backend routing variants retain this same identity.
-#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct PatternRef {
     pub(crate) detector_index: usize,
@@ -217,13 +216,15 @@ impl CandidateProvenance {
         }
     }
 
-    #[cfg(test)]
     pub(crate) const fn channel(self) -> CandidateChannel {
         self.channel
     }
 
     pub(crate) const fn source_role(self) -> keyhog_core::SemanticSourceRole {
         self.source_role
+    }
+    pub(crate) const fn context_class(self) -> keyhog_core::EvidenceReasonCode {
+        self.evidence_reason
     }
 
     pub(crate) const fn parser_confidence(
@@ -236,7 +237,6 @@ impl CandidateProvenance {
         keyhog_core::EvidenceVerdict::from_reason(self.evidence_reason)
     }
 
-    #[cfg(test)]
     pub(crate) const fn pattern(self) -> Option<PatternRef> {
         if matches!(self.channel, CandidateChannel::NamedPattern) {
             Some(PatternRef {

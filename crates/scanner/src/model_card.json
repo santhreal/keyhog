@@ -2,6 +2,32 @@
   "architecture": "moe-v1",
   "feature_count": 55,
   "feature_source": "Rust dump_features serve path",
+  "pattern_calibration": {
+    "aggregate_metrics": {
+      "maximum_brier_score": null,
+      "maximum_ece": null,
+      "minimum_recall": null,
+      "minimum_recall_at_blocking_floor": null,
+      "negative_support": 0,
+      "positive_support": 0
+    },
+    "artifact_sha256": "54b3890a7b2314162f9e0bf3daa894308902e0027393112715b1dd659a5a5c95",
+    "detector_digest": null,
+    "eligible_entry_count": 0,
+    "entry_count": 0,
+    "floors": {
+      "blocking_score": 0.4,
+      "maximum_brier_score": 0.25,
+      "maximum_ece": 0.1,
+      "minimum_negative_support": 2,
+      "minimum_positive_support": 2,
+      "minimum_recall": 1.0
+    },
+    "identity_schema": "detector-corpus-v1:detector-id:pattern-index:candidate-channel:source-role:context-class",
+    "model_version": "moe-v1-246a05b92bec9aa3",
+    "schema_version": 1,
+    "status": "abstaining"
+  },
   "quantized_serving": {
     "artifact_sha256": "deb1119ad8659d003dd42d257e1b1faa08e33815ce43c338d9a5f328062376b3",
     "feature_schema_sha256": "2a8797e64d5f99750e4325a986774868331718b7f06be5acc93bdf55ecc8c5bf",

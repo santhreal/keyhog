@@ -10,23 +10,10 @@ non-secret" from synthetic negatives. Feeding it the real distribution, the
 actual candidates keyhog surfaces, labelled by ground truth, is the
 categorical fix.
 
-For each keyhog finding we emit a corpus record
-`{text, context, label, kind, class, detector_id, candidate_channel}`
-matching `ml/corpus.py`'s schema:
-  - text    : the finding's credential value (what the model scores)
-  - context : the SERVE ml_context: "file:{path}\n{±5-line window}", a
-              byte-mirror of `crate::pipeline::local_context_window(.., line, 5)`
-              + the `file:` prefix, so train == serve.
-  - label   : ground-truth overlap (1 = overlaps a labelled positive secret,
-              0 = on a known file overlapping no positive). `ignore`/template
-              records are dropped (neither class).
-  - kind    : provenance, e.g. `real-creddata-pos` / `real-homefield-neg`.
-  - class   : ground-truth secret category used by per-class retrain gates.
-  - detector_id: keyhog detector that produced the candidate, used by the
-              per-detector model-card breakdown.
-  - candidate_channel: `entropy` for synthetic entropy finding identities,
-              otherwise `pattern`; this is the production channel presented to
-              the detector-conditioned model.
+For each keyhog finding, feature extraction runs in memory and emits a
+versioned feature record. Records contain labels, grouping provenance, exact
+pattern identity, the current feature-schema digest, and numeric serve-path
+features. They never contain the credential value or its source context.
 
 Run:
   python3 ml/harvest_corpus.py --corpora creddata homefield \
@@ -46,6 +33,8 @@ import sys
 from collections import Counter
 
 import detector_policy
+import config_lists
+import rust_features
 
 HERE = pathlib.Path(__file__).resolve().parent
 BENCH = HERE.parent / "benchmarks"
@@ -63,6 +52,102 @@ from bench.score import (  # noqa: E402
 
 # Mirror of crate::types::ML_CONTEXT_RADIUS_LINES.
 ML_CONTEXT_RADIUS_LINES = 5
+EVIDENCE_PROVENANCE_SCHEMA_VERSION = 1
+MAX_DETECTOR_ID_BYTES = 128
+
+
+def _finding_pattern_provenance(finding: dict, context: str) -> dict:
+    evidence = finding.get("evidence")
+    if not isinstance(evidence, dict):
+        raise ValueError(f"{context}: missing authoritative evidence object")
+    provenance = evidence.get("provenance")
+    if not isinstance(provenance, dict):
+        raise ValueError(f"{context}: missing authoritative evidence.provenance")
+    schema_version = provenance.get("schema_version")
+    if isinstance(schema_version, bool) or schema_version != EVIDENCE_PROVENANCE_SCHEMA_VERSION:
+        raise ValueError(f"{context}: stale evidence.provenance schema_version")
+    detector_digest = provenance.get("detector_digest")
+    if (
+        not isinstance(detector_digest, str)
+        or len(detector_digest) != 16
+        or any(ch not in "0123456789abcdef" for ch in detector_digest)
+    ):
+        raise ValueError(
+            f"{context}: evidence.provenance detector_digest must be 16 lowercase hex digits"
+        )
+    pattern_index = provenance.get("pattern_index")
+    if (
+        isinstance(pattern_index, bool)
+        or not isinstance(pattern_index, int)
+        or not 0 <= pattern_index <= 0xFFFFFFFF
+    ):
+        raise ValueError(
+            f"{context}: evidence.provenance pattern_index must be a u32 integer"
+        )
+    candidate_channel = provenance.get("candidate_channel")
+    if candidate_channel != "pattern":
+        raise ValueError(
+            f"{context}: evidence.provenance candidate_channel must be 'pattern'"
+        )
+    source_role = provenance.get("source_role")
+    context_class = provenance.get("context_class")
+    if (
+        not isinstance(source_role, str)
+        or not 0 < len(source_role) <= 64
+        or any(not (ch.isascii() and (ch.islower() or ch == "-")) for ch in source_role)
+    ):
+        raise ValueError(f"{context}: invalid evidence.provenance source_role")
+    if (
+        not isinstance(context_class, str)
+        or not 0 < len(context_class) <= 64
+        or any(not (ch.isascii() and (ch.islower() or ch == "-")) for ch in context_class)
+    ):
+        raise ValueError(f"{context}: invalid evidence.provenance context_class")
+    return {
+        "pattern_index": pattern_index,
+        "candidate_channel": candidate_channel,
+        "detector_digest": detector_digest,
+        "source_role": source_role,
+        "context_class": context_class,
+    }
+
+
+def _secret_safe_feature_records(rows: list[dict]) -> list[dict]:
+    if not rows:
+        return []
+    lists = config_lists.DEFAULT_LISTS
+    matrix = rust_features.compute_feature_matrix(
+        rows,
+        lists,
+        rust_features.NUM_FEATURES,
+    )
+    feature_schema_digest = rust_features.quantized_schema_digest()
+    output = []
+    for record, features in zip(rows, matrix, strict=True):
+        safe = {
+            key: record[key]
+            for key in (
+                "label",
+                "kind",
+                "class",
+                "detector_id",
+                "candidate_channel",
+                "source_file",
+                "pattern_index",
+                "detector_digest",
+                "source_role",
+                "context_class",
+            )
+        }
+        safe.update(
+            {
+                "schema_version": rust_features.FEATURE_CORPUS_SCHEMA_VERSION,
+                "feature_schema_sha256": feature_schema_digest,
+                "features": [float(value) for value in features],
+            }
+        )
+        output.append(safe)
+    return output
 
 
 def serve_context(file_label: str, abs_path: pathlib.Path, line: int) -> str:
@@ -189,6 +274,19 @@ def harvest(corpus_name: str, keyhog_bin: str | None, floor: float) -> list[dict
             continue  # template/placeholder ground truth → neither class
         line = f.get("line") or 0
         detector_id = _finding_detector_id(f, context)
+        if (
+            len(detector_id) > MAX_DETECTOR_ID_BYTES
+            or any(
+                not (ch.isascii() and (ch.islower() or ch.isdigit() or ch == "-"))
+                for ch in detector_id
+            )
+        ):
+            raise ValueError(f"{context}: detector_id is not a bounded lowercase slug")
+        provenance = _finding_pattern_provenance(f, context)
+        detector_policy.validate_candidate_channel(
+            detector_id,
+            provenance["candidate_channel"],
+        )
         out.append(
             {
                 "text": value,
@@ -197,9 +295,9 @@ def harvest(corpus_name: str, keyhog_bin: str | None, floor: float) -> list[dict
                 "kind": f"real-{corpus_name}-{'pos' if label else 'neg'}",
                 "class": secret_class,
                 "detector_id": detector_id,
-                "candidate_channel": detector_policy.candidate_channel(detector_id),
+                **provenance,
                 # provenance for the no-leakage group split downstream
-                "source_file": key,
+                "source_file": str(key),
             }
         )
     print(
@@ -208,7 +306,7 @@ def harvest(corpus_name: str, keyhog_bin: str | None, floor: float) -> list[dict
         f"skipped_no_record={skipped_no_record} skipped_ignore={skipped_ignore}",
         file=sys.stderr,
     )
-    return out
+    return _secret_safe_feature_records(out)
 
 
 def main() -> int:

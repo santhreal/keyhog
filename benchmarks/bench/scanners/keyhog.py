@@ -220,6 +220,8 @@ def _normalize_keyhog(data: object) -> list[Finding]:
                 "detector": detector,
                 "confidence": confidence,
             }
+            if "evidence" in finding:
+                normalized["evidence"] = finding["evidence"]
             key = (
                 normalized["file"],
                 normalized["line"],
@@ -229,6 +231,11 @@ def _normalize_keyhog(data: object) -> list[Finding]:
             )
             if key in output_index:
                 existing = norm[output_index[key]]
+                if existing.get("evidence") != normalized.get("evidence"):
+                    raise RuntimeError(
+                        "keyhog emitted duplicate finding locations with conflicting "
+                        "evidence provenance"
+                    )
                 if confidence is not None and (
                     existing["confidence"] is None
                     or confidence > existing["confidence"]

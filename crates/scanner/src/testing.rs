@@ -1170,6 +1170,26 @@ pub fn ml_weights_total_f32_count() -> usize {
 pub fn ml_weights_embedded_bytes() -> &'static [u8] {
     crate::ml_scorer::ml_weights::WEIGHTS
 }
+#[cfg(feature = "ml")]
+pub fn pattern_calibration_key_for_test(
+    raw: &str,
+    detector_digest: u64,
+    detector_id: &str,
+    pattern_index: u32,
+    candidate_channel: &str,
+    source_role: &str,
+    context_class: &str,
+) -> Result<bool, String> {
+    crate::pattern_calibration::evaluate_artifact_key(
+        raw,
+        detector_digest,
+        detector_id,
+        pattern_index,
+        candidate_channel,
+        source_role,
+        context_class,
+    )
+}
 
 /// `reject_oversized_window_chunk`: the windowed-scan hard-skip backstop, true
 /// only when a chunk exceeds the absolute OOM ceiling (NOT a routine per-chunk

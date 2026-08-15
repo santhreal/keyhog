@@ -108,6 +108,7 @@ impl CompiledScanner {
             ml_conf,
             self.config.scan_comments,
             self.config.penalize_test_paths,
+            crate::pattern_calibration::allows_model_lowering(self.detector_digest, pending),
         )
     }
 
