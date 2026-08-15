@@ -31,6 +31,7 @@ fn sample_match(path: &str, offset: usize) -> RawMatch {
         },
         entropy: None,
         confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

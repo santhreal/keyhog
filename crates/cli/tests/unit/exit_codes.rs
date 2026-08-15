@@ -204,8 +204,8 @@ fn generated_help_is_byte_identical_to_the_documented_block() {
     // the refactor did not change a single character of `--help` output, and any
     // future edit to a description/code is caught here.
     let expected = "EXIT CODES:\n  \
-0   Success (no secrets found)\n  \
-1   Secrets found, none confirmed live (unverified, skipped, or verified-inactive: dead/revoked)\n  \
+0   Success (no finding blocks the active evidence policy)\n  \
+1   Findings block the active evidence policy, none confirmed live\n  \
 2   User error (bad flag/config, missing path/baseline, detector-load failure, invalid autoroute calibration, not-found/permission-denied path)\n  \
 3   System error (local environment failure: low-level I/O, fatal daemon service failure, or selected SIMD/Hyperscan unavailable)\n  \
 4   Health/self-test failure (doctor unhealthy / repair could not restore a working binary / backend --self-test failed)\n  \

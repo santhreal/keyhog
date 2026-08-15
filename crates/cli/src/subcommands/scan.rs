@@ -1533,24 +1533,23 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
         );
     }
 
-    let exit = if findings.is_empty() && fail_gaps > 0 {
+    let finding_exit = crate::orchestrator::scan_exit_code(
+        &findings,
+        args.evidence_policy.unwrap_or_default().is_paranoid(),
+    );
+    let exit = if finding_exit == EXIT_LIVE_CREDENTIALS {
+        EXIT_LIVE_CREDENTIALS
+    } else if finding_exit == EXIT_CREDENTIALS_FOUND {
+        EXIT_CREDENTIALS_FOUND
+    } else if fail_gaps > 0 {
         let palette = crate::style::for_stderr();
         eprintln!(
             "{}: not reporting \"clean\" after incomplete daemon input coverage.",
             crate::style::fail("error", &palette)
         );
         EXIT_SOURCE_FAILED
-    } else if findings.is_empty() {
-        crate::exit_codes::EXIT_SUCCESS
     } else {
-        // Same live-vs-findings precedence as in-process `resolve_scan_exit`
-        // (KH-1379): a Live finding must exit 10, not collapse to exit 1.
-        let code = crate::orchestrator::scan_exit_code(&findings);
-        if code == EXIT_LIVE_CREDENTIALS {
-            EXIT_LIVE_CREDENTIALS
-        } else {
-            EXIT_CREDENTIALS_FOUND
-        }
+        crate::exit_codes::EXIT_SUCCESS
     };
     crate::action_report::write_scan_receipt(
         args,
@@ -1561,9 +1560,9 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
     Ok(ExitCode::from(exit))
 }
 
-/// Finish a guard commit transaction scan. Maps the daemon's
-/// finding count and coverage gaps to the same exit codes as
-/// the in-process and daemon scan paths.
+/// Finish a guard commit transaction scan. Finalizes and reports the exact
+/// protected findings, then applies the same evidence policy and fail-closed
+/// coverage precedence as the in-process and daemon scan paths.
 #[cfg(all(unix, feature = "git"))]
 fn finish_guard_commit_scan(
     result: crate::daemon::guard_commit::GuardCommitResult,
@@ -1581,24 +1580,61 @@ fn finish_guard_commit_scan(
         result.bytes_scanned
     );
 
+    let findings = finalize_for_report(result.findings, args)?;
+    let report_time = chrono::Utc::now();
+    let source_chunks_scanned = usize::try_from(result.blobs_scanned)
+        .context("guard commit blob count exceeds this platform's report capacity")?;
+    let mut report_metadata = crate::reporting::report_metadata_from_scan_run(
+        args,
+        report_time,
+        report_time,
+        0,
+        source_chunks_scanned,
+        result.bytes_scanned,
+        keyhog_core::embedded_detector_count(),
+        None,
+    );
+    if result.coverage_gaps > 0 || result.fingerprint_changed {
+        report_metadata.scan_status = keyhog_core::ScanCompletionStatus::Partial;
+    }
+    crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
+
+    let finding_exit = crate::orchestrator::scan_exit_code(
+        &findings,
+        args.evidence_policy.unwrap_or_default().is_paranoid(),
+    );
+    let policy_blocking_findings = if finding_exit == EXIT_CREDENTIALS_FOUND {
+        findings
+            .iter()
+            .filter(|finding| {
+                finding
+                    .evidence
+                    .tier()
+                    .blocks(args.evidence_policy.unwrap_or_default().is_paranoid())
+            })
+            .count()
+    } else {
+        0
+    };
     let exit = if result.fingerprint_changed {
         eprintln!(
             "{}: guard commit: staged index changed during transaction; the scanned content may not match what is now staged.",
             crate::style::fail("error", &palette)
         );
         EXIT_SOURCE_FAILED
-    } else if result.coverage_gaps > 0 && result.findings_count == 0 {
+    } else if result.coverage_gaps > 0 && policy_blocking_findings == 0 {
         eprintln!(
             "{}: guard commit: {} coverage gap(s); not reporting clean after incomplete coverage.",
             crate::style::fail("error", &palette),
             result.coverage_gaps
         );
         EXIT_SOURCE_FAILED
-    } else if result.findings_count > 0 {
+    } else if policy_blocking_findings > 0 {
         eprintln!(
-            "{}: guard commit: {} unsuppressed finding(s).",
+            "{}: guard commit: {} of {} unsuppressed finding(s) block the active evidence policy.",
             crate::style::fail("error", &palette),
-            result.findings_count
+            policy_blocking_findings,
+            findings.len()
         );
         EXIT_CREDENTIALS_FOUND
     } else {
@@ -1606,9 +1642,11 @@ fn finish_guard_commit_scan(
     };
     crate::action_report::write_scan_receipt(
         args,
-        result.findings_count as usize,
+        findings.len(),
         exit,
-        keyhog_core::ScanCompletionStatus::from_coverage_gaps(result.coverage_gaps > 0),
+        keyhog_core::ScanCompletionStatus::from_coverage_gaps(
+            result.coverage_gaps > 0 || result.fingerprint_changed,
+        ),
     )?;
     Ok(ExitCode::from(exit))
 }

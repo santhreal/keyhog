@@ -10,7 +10,7 @@ fn r5t_diff_before_not_json_exits_two() {
     let before = dir.path().join("before.txt");
     let after = dir.path().join("after.json");
     std::fs::write(&before, "not json").unwrap();
-    std::fs::write(&after, r#"{"version":1,"entries":[]}"#).unwrap();
+    std::fs::write(&after, r#"{"version":2,"entries":[]}"#).unwrap();
     let output = Command::new(binary())
         .args(["diff"])
         .arg(&before)

@@ -29,7 +29,7 @@ fn scan_format_json_empty_corpus_empty_array() {
     let value: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json must be valid");
 
     let object = value.as_object().expect("json format must emit an object");
-    assert_eq!(object["schema_version"]["major"], 1);
+    assert_eq!(object["schema_version"]["major"], 2);
     let arr = object["findings"].as_array().expect("findings array");
     assert!(
         arr.is_empty(),

@@ -9,25 +9,25 @@ use tempfile::TempDir;
 fn keyhogignore_excludes_listed_file_but_scans_siblings() {
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(
-        dir.path().join("ignored.env"),
+        dir.path().join(".env.ignored"),
         "T=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\n",
     )
     .unwrap();
     std::fs::write(
-        dir.path().join("scanned.env"),
+        dir.path().join(".env.scanned"),
         "T=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\n",
     )
     .unwrap();
-    std::fs::write(dir.path().join(".keyhogignore"), "ignored.env\n").unwrap();
+    std::fs::write(dir.path().join(".keyhogignore"), ".env.ignored\n").unwrap();
 
     let out = scan_path(dir.path(), &[]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        !stdout.contains("ignored.env"),
+        !stdout.contains(".env.ignored"),
         "the .keyhogignore'd file must NOT appear in findings; got: {stdout}"
     );
     assert!(
-        stdout.contains("scanned.env"),
+        stdout.contains(".env.scanned"),
         "a non-ignored sibling file MUST still be scanned; got: {stdout}"
     );
 }

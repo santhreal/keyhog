@@ -82,6 +82,7 @@ fn resolution_prefers_specific_detector_over_generic_for_known_prefix() {
             },
             entropy: None,
             confidence,
+            evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
         }
     }
 

@@ -47,6 +47,7 @@ fn deduped(detector: &str, credential: &str, hash: [u8; 32]) -> DedupedMatch {
         additional_locations: Vec::new(),
         entropy: None,
         confidence: Some(0.5),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

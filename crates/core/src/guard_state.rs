@@ -24,6 +24,10 @@ use thiserror::Error;
 /// the durable store layout or the serialized shapes in this module.
 pub const GUARD_SCHEMA_VERSION: u32 = 1;
 
+/// Current finding/report semantics bound into reusable clean attestations.
+/// Version 2 adds canonical evidence verdicts and path-conditioned staged roles.
+pub const GUARD_REPORT_SEMANTICS_VERSION: u32 = 2;
+
 /// Git object hash algorithm supported by the guard.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

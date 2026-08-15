@@ -45,6 +45,7 @@ pub struct BaselineEntry {
     pub credential_hash: String,
     pub file_path: Option<String>,
     pub line: Option<usize>,
+    pub evidence: keyhog_core::EvidenceVerdict,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -452,13 +453,13 @@ pub trait CliTestApi {
         autoroute_calibration: bool,
     ) -> keyhog_scanner::GpuInitPolicy;
     fn scanner_panic_notice_for_test(&self, panicked: bool) -> Option<String>;
-    /// Pure live-credential exit-code mapping over a reported findings set:
-    /// `EXIT_LIVE_CREDENTIALS` (10) if any finding is `VerificationResult::Live`,
-    /// else `EXIT_SUCCESS` (0). Mirrors the exit-code branch in `run()`.
+    /// Pure default evidence-policy exit mapping over reported findings.
     fn scan_exit_code(&self, findings: &[VerifiedFinding]) -> u8;
+    /// Pure explicit evidence-policy exit mapping over reported findings.
+    fn scan_exit_code_with_policy(&self, findings: &[VerifiedFinding], paranoid: bool) -> u8;
     fn resolve_scan_exit_for_test(
         &self,
-        has_new_entries: bool,
+        has_blocking_findings: bool,
         incremental_cache_failed: bool,
         source_coverage_incomplete: bool,
     ) -> u8;
@@ -1381,16 +1382,19 @@ impl CliTestApi for TestApi {
         crate::orchestrator::scanner_panic_notice_for_test(panicked)
     }
     fn scan_exit_code(&self, findings: &[VerifiedFinding]) -> u8 {
-        crate::orchestrator::scan_exit_code(findings)
+        crate::orchestrator::scan_exit_code(findings, false)
+    }
+    fn scan_exit_code_with_policy(&self, findings: &[VerifiedFinding], paranoid: bool) -> u8 {
+        crate::orchestrator::scan_exit_code(findings, paranoid)
     }
     fn resolve_scan_exit_for_test(
         &self,
-        has_new_entries: bool,
+        has_blocking_findings: bool,
         incremental_cache_failed: bool,
         source_coverage_incomplete: bool,
     ) -> u8 {
         crate::orchestrator::resolve_scan_exit_for_test(
-            has_new_entries,
+            has_blocking_findings,
             incremental_cache_failed,
             source_coverage_incomplete,
         )
@@ -1653,6 +1657,7 @@ fn expose_baseline(inner: crate::baseline::Baseline) -> Baseline {
                 credential_hash: entry.credential_hash,
                 file_path: entry.file_path,
                 line: entry.line,
+                evidence: entry.evidence,
             })
             .collect(),
     }
@@ -1671,7 +1676,7 @@ impl Baseline {
                 credential_hash: entry.credential_hash.clone(),
                 file_path: entry.file_path.clone(),
                 line: entry.line,
-                legacy_status: None,
+                evidence: entry.evidence,
             })
             .collect();
         baseline

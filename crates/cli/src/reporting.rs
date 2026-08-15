@@ -230,7 +230,6 @@ fn generated_report_metadata() -> ScanReportMetadata {
     report_metadata_from_times(now, now, None)
 }
 
-#[cfg(test)]
 /// Construct report metadata for scan paths whose corpus is fixed by their
 /// existing protocol (for example the embedded-only daemon route).
 pub(crate) fn report_metadata_from_scan_run(

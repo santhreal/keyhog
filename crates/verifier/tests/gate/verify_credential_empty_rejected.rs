@@ -24,6 +24,7 @@ fn empty_credential_match_has_zero_len_secret() {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     assert!(m.credential.is_empty());
 }

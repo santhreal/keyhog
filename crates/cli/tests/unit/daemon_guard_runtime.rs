@@ -231,13 +231,26 @@ fn scanner_residency_is_active_during_transaction() {
         bytes_requested: 0,
         bytes_hit: 0,
         findings_count: 0,
+        blocking_findings_count: 0,
+        reported_findings: Vec::new(),
         coverage_gaps: 0,
         objects_skipped: 0,
         started_at: Instant::now(),
-        policy_short_digest: "abc".to_string(),
+        policy_identity: test_identity(),
+        source_paths_by_oid: std::collections::HashMap::from([(
+            "oid1".to_string(),
+            vec![".env.secret".to_string()],
+        )]),
     };
     rt.begin_transaction(txn);
     assert_eq!(rt.scanner_residency(), "active");
+    let context = rt.blob_context(1, "oid1").expect("required blob context");
+    assert_eq!(context.source_paths, [".env.secret"]);
+    assert_eq!(context.policy_identity, test_identity());
+    assert!(
+        rt.blob_context(1, "other").is_err(),
+        "unplanned blobs must not acquire scan context"
+    );
     rt.finish_transaction(1);
     assert_eq!(rt.scanner_residency(), "resident");
 }

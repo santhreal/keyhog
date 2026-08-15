@@ -64,6 +64,7 @@ fn build(specs: &[MatchSpec]) -> Vec<RawMatch> {
                 },
                 entropy: None,
                 confidence: Some(conf),
+                evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
             }
         })
         .collect()

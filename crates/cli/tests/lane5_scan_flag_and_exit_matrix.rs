@@ -66,7 +66,7 @@ const FORMATS: &[&str] = &["text", "json", "jsonl", "sarif", "csv", "html", "jun
 
 fn planted_fixture() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("leak.env");
+    let path = dir.path().join(".env.leak");
     std::fs::write(&path, format!("GITHUB_TOKEN={PLANTED}\n")).expect("write fixture");
     (dir, path)
 }
@@ -443,9 +443,9 @@ fn severity_filter_keeps_a_critical_finding_and_a_higher_floor_does_not_drop_a_c
     );
     let v: serde_json::Value = serde_json::from_str(&strict.1).expect("json");
     assert_eq!(
-        v[0]["confidence"].as_f64(),
+        v[0]["evidence_score"].as_f64(),
         Some(1.0),
-        "the surviving finding reports confidence 1.0 at the max floor; got {}",
+        "the surviving finding reports evidence score 1.0 at the max floor; got {}",
         strict.1
     );
 }

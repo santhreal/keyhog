@@ -59,7 +59,8 @@ fn finding(
         metadata: HashMap::new(),
         additional_locations: vec![],
         entropy: None,
-        confidence: Some(0.9),
+        evidence_score: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -156,6 +157,107 @@ fn mixed_four() -> Vec<VerifiedFinding> {
             9,
         ),
     ]
+}
+
+#[test]
+fn every_finding_format_exposes_exact_evidence_tier_and_reason() {
+    let finding = finding(
+        "aws-access-key",
+        "AWS Access Key",
+        "aws",
+        Severity::Critical,
+        "AKIA****WXYZ",
+        VerificationResult::Skipped,
+        0x11,
+        3,
+    );
+    let findings = [finding];
+
+    let assert_json_evidence = |value: &serde_json::Value| {
+        assert_eq!(value["evidence"]["tier"], "review");
+        assert_eq!(value["evidence"]["reason_code"], "unattributed");
+    };
+
+    let json = json_value(&findings);
+    assert_json_evidence(&json[0]);
+
+    let jsonl = render(ReportFormat::Jsonl, &findings);
+    let jsonl_finding: serde_json::Value =
+        serde_json::from_str(jsonl.trim()).expect("JSONL finding parses");
+    assert_json_evidence(&jsonl_finding);
+
+    let envelope: serde_json::Value = serde_json::from_str(&render(
+        ReportFormat::JsonEnvelope {
+            coverage_gap_summary: Vec::new(),
+        },
+        &findings,
+    ))
+    .expect("JSON envelope parses");
+    assert_json_evidence(&envelope["findings"][0]);
+
+    let jsonl_envelope = render(
+        ReportFormat::JsonlEnvelope {
+            coverage_gap_summary: Vec::new(),
+        },
+        &findings,
+    );
+    let jsonl_envelope_finding: serde_json::Value = serde_json::from_str(
+        jsonl_envelope
+            .lines()
+            .nth(1)
+            .expect("JSONL envelope finding record"),
+    )
+    .expect("JSONL envelope finding parses");
+    assert_json_evidence(&jsonl_envelope_finding);
+
+    let sarif = sarif_value(&findings);
+    let sarif_properties = &sarif["runs"][0]["results"][0]["properties"];
+    assert_eq!(sarif_properties["evidence_tier"], "review");
+    assert_eq!(sarif_properties["evidence_reason_code"], "unattributed");
+
+    let csv = render(ReportFormat::Csv, &findings);
+    let mut csv_lines = csv.lines();
+    assert!(csv_lines
+        .next()
+        .expect("CSV header")
+        .contains("evidence_tier,evidence_reason_code,evidence_score"));
+    assert!(csv_lines
+        .next()
+        .expect("CSV finding")
+        .contains(",review,unattributed,0.9,"));
+
+    let annotations = render(ReportFormat::GithubAnnotations, &findings);
+    assert!(annotations.contains("evidence_tier=review evidence_reason_code=unattributed"));
+
+    let gitlab: serde_json::Value = serde_json::from_str(&render(
+        ReportFormat::GitlabSast {
+            scan_started_at: "2026-08-14T00:00:00".to_string(),
+            scan_finished_at: "2026-08-14T00:00:01".to_string(),
+        },
+        &findings,
+    ))
+    .expect("GitLab SAST parses");
+    let details = &gitlab["vulnerabilities"][0]["details"];
+    assert_eq!(details["evidence_tier"]["value"], "review");
+    assert_eq!(details["evidence_reason_code"]["value"], "unattributed");
+
+    let html = render(
+        ReportFormat::Html {
+            skip_summary: Vec::new(),
+            metadata: None,
+        },
+        &findings,
+    );
+    assert!(html.contains(r#""evidence":{"tier":"review","reason_code":"unattributed"}"#));
+    assert!(html.contains("Evidence Tier:"));
+    assert!(html.contains("Evidence Reason:"));
+
+    let junit = render(ReportFormat::Junit, &findings);
+    assert!(junit.contains("Evidence Tier: review"));
+    assert!(junit.contains("Evidence Reason: unattributed"));
+
+    let text = text(&findings);
+    assert!(text.contains("review/unattributed"));
 }
 
 // ---------------------------------------------------------------------------

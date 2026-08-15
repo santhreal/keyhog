@@ -58,29 +58,26 @@ async fn test_verify_long_unicode_surrogates() {
         },
     )
     .unwrap();
-    let group = DedupedMatch {
-        detector_id: Arc::from("det_uni"),
-        detector_name: Arc::from("det_uni"),
-        service: Arc::from("test"),
-        severity: Severity::Critical,
-        credential: keyhog_core::SensitiveString::from(
-            String::from_utf8_lossy(b"secret\xEF\xBF\xBD\xED\xA0\x80\xED\xB0\x80test").into_owned(),
-        ),
-        credential_hash: [0u8; 32].into(),
-        primary_location: MatchLocation {
-            source: Arc::from(""),
-            file_path: None,
-            line: None,
-            offset: 0,
-            commit: None,
-            author: None,
-            date: None,
-        },
-        additional_locations: vec![],
-        companions: HashMap::new(),
-        entropy: None,
-        confidence: None,
-    };
+    let group = DedupedMatch { detector_id: Arc::from("det_uni"),
+    detector_name: Arc::from("det_uni"),
+    service: Arc::from("test"),
+    severity: Severity::Critical,
+    credential: keyhog_core::SensitiveString::from(
+        String::from_utf8_lossy(b"secret\xEF\xBF\xBD\xED\xA0\x80\xED\xB0\x80test").into_owned(),
+    ),
+    credential_hash: [0u8; 32].into(),
+    primary_location: MatchLocation {
+        source: Arc::from(""),
+        file_path: None,
+        line: None,
+        offset: 0,
+        commit: None,
+        author: None,
+        date: None,
+    },
+    additional_locations: vec![],
+    companions: HashMap::new(),
+    entropy: None, confidence: None, evidence: keyhog_core::EvidenceVerdict::review_unattributed() };
 
     let findings = engine.verify_all(vec![group]).await;
     assert_eq!(findings.len(), 1);
@@ -141,6 +138,7 @@ fn test_verify_deeply_nested_interpolations_inner() {
                 companions: comps,
                 entropy: None,
                 confidence: None,
+                evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
             };
 
             let findings = engine.verify_all(vec![group]).await;
@@ -189,27 +187,24 @@ async fn test_verify_duplicate_entries_same_key() {
     .unwrap();
     let mut groups = vec![];
     for _ in 0..10 {
-        groups.push(DedupedMatch {
-            detector_id: Arc::from("det_same"),
-            detector_name: Arc::from("det_same"),
-            service: Arc::from("test"),
-            severity: Severity::Critical,
-            credential: keyhog_core::SensitiveString::from("secret"),
-            credential_hash: [0u8; 32].into(),
-            primary_location: MatchLocation {
-                source: Arc::from(""),
-                file_path: None,
-                line: None,
-                offset: 0,
-                commit: None,
-                author: None,
-                date: None,
-            },
-            additional_locations: vec![],
-            companions: HashMap::new(),
-            entropy: None,
-            confidence: None,
-        });
+        groups.push(DedupedMatch { detector_id: Arc::from("det_same"),
+        detector_name: Arc::from("det_same"),
+        service: Arc::from("test"),
+        severity: Severity::Critical,
+        credential: keyhog_core::SensitiveString::from("secret"),
+        credential_hash: [0u8; 32].into(),
+        primary_location: MatchLocation {
+            source: Arc::from(""),
+            file_path: None,
+            line: None,
+            offset: 0,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        additional_locations: vec![],
+        companions: HashMap::new(),
+        entropy: None, confidence: None, evidence: keyhog_core::EvidenceVerdict::review_unattributed() });
     }
 
     let findings = engine.verify_all(groups).await;

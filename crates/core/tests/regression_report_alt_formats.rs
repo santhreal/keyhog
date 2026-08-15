@@ -54,7 +54,8 @@ fn planted() -> VerifiedFinding {
         metadata: HashMap::new(),
         additional_locations: vec![],
         entropy: None,
-        confidence: Some(0.9),
+        evidence_score: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -284,7 +285,7 @@ fn structured_projection_matrix_preserves_declared_fields() {
         date: None,
     });
     finding.entropy = Some(4.25);
-    finding.confidence = Some(0.875);
+    finding.evidence_score = Some(0.875);
 
     let json: serde_json::Value = serde_json::from_slice(&render(
         ReportFormat::JsonEnvelope {
@@ -299,7 +300,7 @@ fn structured_projection_matrix_preserves_declared_fields() {
         json_finding["additional_locations"][0]["file_path"],
         "history.env"
     );
-    assert_eq!(json_finding["confidence"], 0.875);
+    assert_eq!(json_finding["evidence_score"], 0.875);
     assert_eq!(json_finding["entropy"], 4.25);
 
     let jsonl_lines: Vec<serde_json::Value> = render(
@@ -329,7 +330,7 @@ fn structured_projection_matrix_preserves_declared_fields() {
         result["properties"]["companions_redacted.account"],
         "12...34"
     );
-    assert_eq!(result["properties"]["confidence"], 0.875);
+    assert_eq!(result["properties"]["evidence_score"], 0.875);
     assert_eq!(result["properties"]["entropy"], 4.25);
     assert_eq!(
         result["relatedLocations"][0]["physicalLocation"]["artifactLocation"]["uri"],
@@ -415,7 +416,9 @@ fn junit_planted_finding_cdata_body_fields() {
         "Redacted:      AKIA****".to_string(),
         format!("Hash:          {}", hash_hex()),
         "Verification:  unverifiable".to_string(),
-        "Confidence:    0.9".to_string(),
+        "Evidence Tier: review".to_string(),
+        "Evidence Reason: unattributed".to_string(),
+        "Evidence Score: 0.9".to_string(),
     ] {
         assert!(
             has_line(&out, &expected),

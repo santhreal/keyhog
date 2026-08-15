@@ -595,7 +595,7 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
     let dir = TempDir::new().expect("tempdir");
     let fixture_dir = dir.path().join("tests").join("fixtures");
     std::fs::create_dir_all(&fixture_dir).expect("create fixture dir");
-    let path = fixture_dir.join("planted.env");
+    let path = fixture_dir.join(".env.planted");
     std::fs::write(&path, fixture).expect("write fixture");
 
     let default_out = Command::new(binary())
@@ -644,8 +644,8 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
     let optout_arr = optout_findings.as_array().expect("array");
     assert_eq!(
         optout_out.status.code(),
-        Some(1),
-        "surfacing the opted-out test-path finding must use the findings exit; stderr={}",
+        Some(0),
+        "the opted-out test-path finding remains visible review evidence and does not block the default policy; stderr={}",
         String::from_utf8_lossy(&optout_out.stderr)
     );
     assert_eq!(
@@ -659,6 +659,8 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
         Some("generic-password"),
         "the PASSWORD assignment must stay with its detector-data owner; got {optout_json}"
     );
+    assert_eq!(surfaced["evidence"]["tier"], "review");
+    assert_eq!(surfaced["evidence"]["reason_code"], "test-fixture");
     assert_eq!(
         surfaced.pointer("/location/line").and_then(|v| v.as_u64()),
         Some(1),
@@ -684,7 +686,7 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
         "the report must use keyhog_core::redact's one-character edges for this short credential"
     );
     let confidence = surfaced
-        .get("confidence")
+        .get("evidence_score")
         .and_then(|v| v.as_f64())
         .unwrap_or_default();
     assert!(
@@ -716,7 +718,7 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
 fn demo_secret_aws_example_summary_distinguishes_suppression_from_clean() {
     let fixture = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n";
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("demo-secret.env");
+    let path = dir.path().join(".env.demo-secret");
     std::fs::write(&path, fixture).expect("write fixture");
 
     // --daemon=off to guarantee the in-process orchestrator path is
@@ -890,7 +892,7 @@ fn git_staged_scan_finds_only_staged_secret() {
     init_git_repo(repo_path);
 
     std::fs::write(
-        repo_path.join("staged.env"),
+        repo_path.join(".env.staged"),
         concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
     )
     .unwrap();
@@ -900,7 +902,7 @@ fn git_staged_scan_finds_only_staged_secret() {
     )
     .unwrap();
     Command::new("git")
-        .args(["add", "staged.env"])
+        .args(["add", ".env.staged"])
         .current_dir(repo_path)
         .output()
         .unwrap();
@@ -935,7 +937,7 @@ fn git_staged_scan_finds_only_staged_secret() {
             f.get("location")
                 .and_then(|l| l.get("file_path"))
                 .and_then(|p| p.as_str())
-                .is_some_and(|p| p.ends_with("staged.env"))
+                .is_some_and(|p| p.ends_with(".env.staged"))
         }),
         "must find staged file secret; got {arr:?}"
     );
@@ -1904,7 +1906,7 @@ fn precision_mode_keeps_strong_drops_weak() {
         "the weak finding span must start at the planted password value"
     );
     let weak_confidence = weak
-        .get("confidence")
+        .get("evidence_score")
         .and_then(|v| v.as_f64())
         .expect("weak finding confidence");
     assert!(

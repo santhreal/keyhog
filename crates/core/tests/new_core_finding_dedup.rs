@@ -9,7 +9,8 @@
 
 use keyhog_core::{
     dedup_cross_detector, dedup_matches, hex_encode, redact, CredentialHash, DedupScope,
-    MatchLocation, RawMatch, Severity, VerificationResult, VerifiedFinding,
+    EvidenceReasonCode, EvidenceVerdict, MatchLocation, RawMatch, Severity, VerificationResult,
+    VerifiedFinding,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -58,6 +59,7 @@ fn raw(
         location,
         entropy: None,
         confidence,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -646,6 +648,91 @@ fn dedup_credential_takes_max_confidence() {
     );
 }
 
+/// WHY: one credential may arrive through weak and proof-bearing producers.
+/// Deduplication must be order-independent and must never let a weaker
+/// duplicate erase the strongest operator-facing evidence.
+#[test]
+fn dedup_credential_keeps_strongest_evidence_in_every_input_order() {
+    let make = || {
+        let mut review = raw(
+            "d",
+            "D",
+            "s",
+            Severity::Low,
+            "same",
+            loc("a.env", 1, 0),
+            Some(0.91),
+        );
+        review.evidence = EvidenceVerdict::from_reason(EvidenceReasonCode::Documentation);
+        let mut confirmed = raw(
+            "d",
+            "D",
+            "s",
+            Severity::Low,
+            "same",
+            loc("a.env", 2, 0),
+            Some(0.3),
+        );
+        confirmed.evidence = EvidenceVerdict::from_reason(EvidenceReasonCode::ChecksumValid);
+        (review, confirmed)
+    };
+
+    let (review, confirmed) = make();
+    let forward = dedup_matches(vec![review, confirmed], &DedupScope::Credential);
+    let (review, confirmed) = make();
+    let reverse = dedup_matches(vec![confirmed, review], &DedupScope::Credential);
+    for merged in [&forward[0], &reverse[0]] {
+        assert_eq!(
+            merged.evidence.reason_code(),
+            EvidenceReasonCode::ChecksumValid
+        );
+        assert_eq!(merged.confidence, Some(0.91));
+    }
+}
+
+/// WHY: only a successful live provider response is stronger than scanner
+/// evidence. Other verification outcomes preserve the scanner's exact reason.
+#[test]
+fn verified_finding_upgrades_only_live_verification() {
+    let group = || {
+        dedup_matches(
+            vec![raw(
+                "d",
+                "D",
+                "s",
+                Severity::High,
+                "same",
+                loc("a.env", 1, 0),
+                Some(0.9),
+            )],
+            &DedupScope::Credential,
+        )
+        .remove(0)
+    };
+
+    let live = VerifiedFinding::from_deduped(
+        group(),
+        Severity::High,
+        VerificationResult::Live,
+        HashMap::new(),
+    );
+    assert_eq!(
+        live.evidence.reason_code(),
+        EvidenceReasonCode::LiveVerification
+    );
+
+    let dead = VerifiedFinding::from_deduped(
+        group(),
+        Severity::High,
+        VerificationResult::Dead,
+        HashMap::new(),
+    );
+    assert_eq!(
+        dead.evidence.reason_code(),
+        EvidenceReasonCode::Unattributed
+    );
+}
+
 #[test]
 fn dedup_output_is_deterministic_across_input_order() {
     let mk = || {
@@ -722,7 +809,7 @@ fn cross_detector_folds_same_credential_into_winner() {
     // higher-confidence detector wins; the loser becomes a cross_detector
     // companion. credential_hash is identical => they group.
     let same_cred = "AIzaSyExampleSharedGoogleKey0000";
-    let deduped = vec![
+    let mut deduped = vec![
         {
             let mut d = dedup_matches(
                 vec![raw(
@@ -754,6 +841,8 @@ fn cross_detector_folds_same_credential_into_winner() {
             d.remove(0)
         },
     ];
+    deduped[0].evidence = EvidenceVerdict::from_reason(EvidenceReasonCode::Documentation);
+    deduped[1].evidence = EvidenceVerdict::from_reason(EvidenceReasonCode::ChecksumValid);
     let out = dedup_cross_detector(deduped);
     assert_eq!(
         out.len(),
@@ -773,6 +862,11 @@ fn cross_detector_folds_same_credential_into_winner() {
     assert!(
         folded,
         "loser detector must be folded as cross_detector evidence"
+    );
+    assert_eq!(
+        winner.evidence.reason_code(),
+        EvidenceReasonCode::ChecksumValid,
+        "a lower-score detector's stronger proof must survive grouping"
     );
 }
 
@@ -841,7 +935,8 @@ fn verified_finding_serde_roundtrip() {
         },
         additional_locations: vec![loc("backup.env", 2, 0)],
         entropy: None,
-        confidence: Some(0.99),
+        evidence_score: Some(0.99),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     let json = serde_json::to_string(&vf).unwrap();
     let back: VerifiedFinding = serde_json::from_str(&json).unwrap();
@@ -851,7 +946,7 @@ fn verified_finding_serde_roundtrip() {
     assert_eq!(back.credential_hash, vf.credential_hash);
     assert_eq!(back.metadata.get("account_id").unwrap(), "123456789012");
     assert_eq!(back.additional_locations.len(), 1);
-    assert_eq!(back.confidence, Some(0.99));
+    assert_eq!(back.evidence_score, Some(0.99));
     // Redacted credential present; no plaintext.
     assert!(!json.contains("AKIAIOSFODNN7EXAMPLE"));
 }

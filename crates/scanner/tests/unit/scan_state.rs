@@ -74,6 +74,7 @@ fn raw_match(confidence: f64, credential: &'static str, offset: usize) -> RawMat
         },
         entropy: None,
         confidence: Some(confidence),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

@@ -29,9 +29,9 @@ fn scan_git_diff_path_override_outside_cwd() {
     std::fs::create_dir(&repo).unwrap();
     init_git_repo(&repo);
     std::fs::write(repo.join("clean.txt"), "ok\n").unwrap();
-    std::fs::write(repo.join("secret.env"), "SAFE=1\n").unwrap();
+    std::fs::write(repo.join(".env.secret"), "SAFE=1\n").unwrap();
     std::process::Command::new("git")
-        .args(["add", "clean.txt", "secret.env"])
+        .args(["add", "clean.txt", ".env.secret"])
         .current_dir(&repo)
         .status()
         .expect("git add");
@@ -41,7 +41,7 @@ fn scan_git_diff_path_override_outside_cwd() {
         .status()
         .expect("git commit");
     std::fs::write(
-        repo.join("secret.env"),
+        repo.join(".env.secret"),
         "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
     )
     .unwrap();

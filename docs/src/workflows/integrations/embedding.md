@@ -137,6 +137,7 @@ For another SARIF consumer, write the file directly:
 keyhog scan . --format sarif --output keyhog.sarif
 ```
 
-The command exits `1` on findings and `10` on a verified-live finding. Arrange
-report publication in an always-run or post step, then restore the exact scan
-status. KeyHog tags findings with CWE-798 and OWASP A07:2021.
+The command exits `1` when a finding blocks the active evidence policy and `10`
+on a verified-live finding. Arrange report publication in an always-run or post
+step, then restore the exact scan status. KeyHog tags findings with CWE-798 and
+OWASP A07:2021.

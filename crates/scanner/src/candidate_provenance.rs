@@ -20,6 +20,7 @@ pub(crate) enum CandidateChannel {
 ///
 /// The active detector digest binds detector ordering and pattern contents.
 /// Generated homoglyph and backend routing variants retain this same identity.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct PatternRef {
     pub(crate) detector_index: usize,
@@ -43,6 +44,7 @@ pub(crate) struct CandidateProvenance {
     channel: CandidateChannel,
     source_role: keyhog_core::SemanticSourceRole,
     parser_confidence: crate::source_semantics::SemanticParserConfidence,
+    evidence_reason: keyhog_core::EvidenceReasonCode,
 }
 
 impl CandidateProvenance {
@@ -56,41 +58,166 @@ impl CandidateProvenance {
             channel: CandidateChannel::NamedPattern,
             source_role: keyhog_core::SemanticSourceRole::Unknown,
             parser_confidence: crate::source_semantics::SemanticParserConfidence::Abstained,
+            evidence_reason: keyhog_core::EvidenceReasonCode::UnsupportedContext,
         }
     }
 
-    pub(crate) const fn with_source_semantics(
+    pub(crate) fn with_named_evidence(
+        mut self,
+        semantic: &keyhog_core::DetectorSemanticPolicySpec,
+        generic_detector: bool,
+        checksum_valid: bool,
+        has_companions: bool,
+    ) -> Self {
+        use keyhog_core::{AnchorSemanticRole, EvidenceReasonCode, RequiredSemanticEvidence};
+
+        let mut strongest_proof = checksum_valid.then_some(EvidenceReasonCode::ChecksumValid);
+        let mut missing_required = false;
+        for requirement in &semantic.required_evidence {
+            match requirement {
+                RequiredSemanticEvidence::Checksum => {
+                    if checksum_valid {
+                        strongest_proof = Some(EvidenceReasonCode::ChecksumValid);
+                    } else {
+                        missing_required = true;
+                    }
+                }
+                RequiredSemanticEvidence::RequiredCompanion
+                | RequiredSemanticEvidence::PrivateKeyCompanion => {
+                    if has_companions {
+                        strongest_proof = Some(
+                            strongest_proof
+                                .unwrap_or(EvidenceReasonCode::RequiredCompanion)
+                                .max(EvidenceReasonCode::RequiredCompanion),
+                        );
+                    } else {
+                        missing_required = true;
+                    }
+                }
+                RequiredSemanticEvidence::StructuralGrammar => {
+                    strongest_proof = Some(
+                        strongest_proof
+                            .unwrap_or(EvidenceReasonCode::StructuralGrammar)
+                            .max(EvidenceReasonCode::StructuralGrammar),
+                    );
+                }
+                RequiredSemanticEvidence::LiveVerification => missing_required = true,
+            }
+        }
+        self.evidence_reason = if missing_required {
+            EvidenceReasonCode::RequiredEvidenceMissing
+        } else if let Some(reason) = strongest_proof {
+            reason
+        } else if matches!(
+            semantic.anchor_role,
+            AnchorSemanticRole::WeakContext | AnchorSemanticRole::Unanchored
+        ) {
+            EvidenceReasonCode::WeakAnchor
+        } else if generic_detector {
+            EvidenceReasonCode::GenericDetector
+        } else {
+            EvidenceReasonCode::UnsupportedContext
+        };
+        self
+    }
+
+    pub(crate) const fn with_checksum_proof(mut self, checksum_valid: bool) -> Self {
+        if checksum_valid {
+            self.evidence_reason = keyhog_core::EvidenceReasonCode::ChecksumValid;
+        }
+        self
+    }
+
+    pub(crate) fn with_source_semantics(
         mut self,
         evidence: crate::source_semantics::SourceSemanticEvidence,
+        semantic: Option<&keyhog_core::DetectorSemanticPolicySpec>,
     ) -> Self {
+        use keyhog_core::{EvidenceReasonCode, EvidenceTier, SemanticSourceRole};
+
         self.source_role = evidence.role;
         self.parser_confidence = evidence.confidence;
+        if matches!(self.evidence_reason.tier(), EvidenceTier::Confirmed) {
+            return self;
+        }
+
+        let ambiguous_reason = match evidence.role {
+            SemanticSourceRole::TestFixture => Some(EvidenceReasonCode::TestFixture),
+            SemanticSourceRole::ProseDocumentation => Some(EvidenceReasonCode::Documentation),
+            SemanticSourceRole::RegexRuleDefinition => Some(EvidenceReasonCode::RuleDefinition),
+            SemanticSourceRole::IdentifierTypeMemberName => Some(EvidenceReasonCode::Identifier),
+            SemanticSourceRole::CommandOptionDeclaration => {
+                Some(EvidenceReasonCode::OptionDeclaration)
+            }
+            SemanticSourceRole::GeneratedVendorMaterial => {
+                Some(EvidenceReasonCode::GeneratedMaterial)
+            }
+            SemanticSourceRole::Unknown => Some(EvidenceReasonCode::UnsupportedContext),
+            SemanticSourceRole::StructuredAssignmentValue
+            | SemanticSourceRole::EnvironmentAssignmentValue
+            | SemanticSourceRole::StringLiteral
+            | SemanticSourceRole::CommandArgumentValue
+            | SemanticSourceRole::HeaderValue
+            | SemanticSourceRole::UrlAuthorityUserinfo
+            | SemanticSourceRole::ConnectionString
+            | SemanticSourceRole::StandaloneToken
+            | SemanticSourceRole::PemBlock => None,
+        };
+        if let Some(reason) = ambiguous_reason {
+            self.evidence_reason = reason;
+            return self;
+        }
+
+        if matches!(self.evidence_reason, EvidenceReasonCode::UnsupportedContext) {
+            self.evidence_reason = if semantic.is_some_and(|policy| {
+                !policy.allowed_source_roles.is_empty()
+                    && !policy.allowed_source_roles.contains(&evidence.role)
+            }) {
+                EvidenceReasonCode::SourceRoleMismatch
+            } else {
+                EvidenceReasonCode::VendorPattern
+            };
+        }
         self
     }
 
     pub(crate) const fn generic_assignment() -> Self {
-        Self::channel_only(CandidateChannel::GenericAssignment)
+        Self::channel_only(
+            CandidateChannel::GenericAssignment,
+            keyhog_core::EvidenceReasonCode::GenericAssignment,
+        )
     }
 
     #[cfg(feature = "entropy")]
     pub(crate) const fn entropy() -> Self {
-        Self::channel_only(CandidateChannel::Entropy)
+        Self::channel_only(
+            CandidateChannel::Entropy,
+            keyhog_core::EvidenceReasonCode::EntropyOnly,
+        )
     }
 
     pub(crate) const fn unattributed() -> Self {
-        Self::channel_only(CandidateChannel::Unattributed)
+        Self::channel_only(
+            CandidateChannel::Unattributed,
+            keyhog_core::EvidenceReasonCode::Unattributed,
+        )
     }
 
-    const fn channel_only(channel: CandidateChannel) -> Self {
+    const fn channel_only(
+        channel: CandidateChannel,
+        evidence_reason: keyhog_core::EvidenceReasonCode,
+    ) -> Self {
         Self {
             detector_index: Self::NO_DETECTOR,
             pattern_index: Self::NO_PATTERN,
             channel,
             source_role: keyhog_core::SemanticSourceRole::Unknown,
             parser_confidence: crate::source_semantics::SemanticParserConfidence::Abstained,
+            evidence_reason,
         }
     }
 
+    #[cfg(test)]
     pub(crate) const fn channel(self) -> CandidateChannel {
         self.channel
     }
@@ -105,6 +232,11 @@ impl CandidateProvenance {
         self.parser_confidence
     }
 
+    pub(crate) const fn evidence(self) -> keyhog_core::EvidenceVerdict {
+        keyhog_core::EvidenceVerdict::from_reason(self.evidence_reason)
+    }
+
+    #[cfg(test)]
     pub(crate) const fn pattern(self) -> Option<PatternRef> {
         if matches!(self.channel, CandidateChannel::NamedPattern) {
             Some(PatternRef {

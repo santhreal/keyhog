@@ -81,7 +81,7 @@ fn run(args: &[&str]) -> (Option<i32>, String, String) {
 
 fn scan_file(content: &str, extra: &[&str]) -> (Option<i32>, String, String) {
     let dir = TempDir::new().unwrap();
-    let path = dir.path().join("planted.env");
+    let path = dir.path().join(".env.planted");
     std::fs::write(&path, content).unwrap();
     // This doc-coherence test proves verification flag/output behavior, not
     // autoroute calibration. Use an explicit backend so the test stays

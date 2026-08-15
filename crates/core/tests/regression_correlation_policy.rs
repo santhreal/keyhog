@@ -58,7 +58,8 @@ fn finding(
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
         entropy: None,
-        confidence: Some(confidence),
+        evidence_score: Some(confidence),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -209,9 +210,9 @@ fn value_reuse_groups_one_secret_seen_in_several_files() {
     assert_eq!(group.kind, CorrelationKind::ValueReuse);
     assert_eq!(group.file_count, 2);
     assert_eq!(group.service, "multiple");
-    assert_eq!(group.strongest_member_confidence, Some(0.50));
+    assert_eq!(group.strongest_member_evidence_score, Some(0.50));
     // 0.50 lifted by the Tier-B reuse bonus, below the ceiling.
-    assert_eq!(group.confidence, Some(0.65));
+    assert_eq!(group.evidence_score, Some(0.65));
     assert_eq!(group.members.len(), 2);
     assert!(group
         .members
@@ -228,7 +229,7 @@ fn value_reuse_never_exceeds_the_configured_ceiling() {
     ];
     let correlations = correlate_findings(&findings);
     assert_eq!(correlations.len(), 1);
-    assert_eq!(correlations[0].confidence, Some(1.0));
+    assert_eq!(correlations[0].evidence_score, Some(1.0));
 }
 
 #[test]
@@ -270,8 +271,8 @@ fn composite_reports_a_split_pair_and_lifts_severity_from_tier_b() {
     assert_eq!(group.file_count, 2);
     // Members were `high`; the Tier-B row declares the pair `critical`.
     assert_eq!(group.severity, Severity::Critical);
-    assert_eq!(group.strongest_member_confidence, Some(0.60));
-    assert_confidence(group.confidence, 0.90);
+    assert_eq!(group.strongest_member_evidence_score, Some(0.60));
+    assert_confidence(group.evidence_score, 0.90);
     assert_eq!(group.members.len(), 2);
     assert!(group
         .members

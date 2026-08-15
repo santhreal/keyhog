@@ -219,10 +219,10 @@ printf 'keyhog exit=%s\n' "$rc"
 ```
 
 Corrupt, encrypted, unsafe, oversized, or truncated members produce coverage
-gaps. With no findings, incomplete coverage exits `13`, not `0`. Findings in
-the covered portion take exit `1`, or `10` when verification confirms a live
-credential, while `scan_status` remains `partial`. See
-[source archives](./source-archives.md).
+gaps. With no blocking finding, incomplete coverage exits `13`, not `0`.
+Blocking findings in the covered portion take exit `1`, or `10` when
+verification confirms a live credential, while `scan_status` remains `partial`.
+See [source archives](./source-archives.md).
 
 ## Make the CI loop fast
 
@@ -255,10 +255,11 @@ keyhog scan . --min-confidence 0.5        # raise the reporting confidence floor
 keyhog scan . --exclude-paths vendor,node_modules
 ```
 
-Exit `0` means no findings and no failing source gap. It can still accompany
-advisory skip gaps and `scan_status: partial`, so it is not proof that skipped
-content was clean. Exit `1` means findings above the floor; `10` means at least
-one live credential under `--verify`; and `13` means failing source or coverage
-gaps when no finding outcome took precedence. Findings can therefore exit `1`
-or `10` while `scan_status` remains `partial`. See the full precedence table in
-[exit codes](./reference/exit-codes.md).
+Exit `0` means no finding blocks the active evidence policy and no failing
+source gap occurred. It can still accompany advisory skip gaps and
+`scan_status: partial`, so it is not proof that skipped content was clean. Exit
+`1` means a finding blocks the selected evidence policy; `10` means at least one
+live credential under `--verify`; and `13` means failing source or coverage
+gaps when no blocking finding took precedence. A blocking or live finding can
+therefore exit `1` or `10` while `scan_status` remains `partial`. See the full
+precedence table in [exit codes](./reference/exit-codes.md).

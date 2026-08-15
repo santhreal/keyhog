@@ -148,16 +148,18 @@ fn write_property<W: Write>(
 fn message(finding: &VerifiedFinding) -> Result<String, ReportError> {
     let verification = super::style::verification_token(&finding.verification);
     let mut text = format!(
-        "{} detector={} service={} redacted={} verification={}",
+        "{} detector={} service={} redacted={} verification={} evidence_tier={} evidence_reason_code={}",
         sanitize_terminal(&finding.detector_name),
         sanitize_terminal(&finding.detector_id),
         sanitize_terminal(&finding.service),
         sanitize_terminal(&finding.credential_redacted),
-        verification
+        verification,
+        finding.evidence.tier().as_str(),
+        finding.evidence.reason_code().as_str(),
     );
-    if let Some(confidence) = finding.confidence {
+    if let Some(evidence_score) = finding.evidence_score {
         use std::fmt::Write;
-        if write!(text, " confidence={confidence:.3}").is_err() {
+        if write!(text, " evidence_score={evidence_score:.3}").is_err() {
             unreachable!("formatting into a String cannot fail");
         }
     }

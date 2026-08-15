@@ -20,8 +20,8 @@ $ keyhog scan . --progress
 
   ┌    CRITICAL ─── Stripe Secret Key
   │ Secret:     sk_l...p7dc
-  │ Location:   src/config/staging.env:14
-  │ Confidence: ■■■■■■ 100%
+  │ Location:   src/config/.env.staging:14
+  │ Evidence:   likely/vendor-pattern  ■■■■■■ 100%
   │ Action:     Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.
   │ Docs:       https://docs.stripe.com/keys#roll-api-key
   └─────────────────────────────────────────────
@@ -39,7 +39,7 @@ collections, cloud buckets, URL lists, and local systems. Each finding has:
 
 - a **detector** that fired (`stripe-secret-key`, `aws-access-key`, …)
 - a **location** (file, line, offset, optionally commit hash and author)
-- an **entropy score** + **confidence**
+- an exact **evidence tier and reason code**, plus entropy and evidence score when measured
 - an optional **live verification** result if you pass `--verify`
 
 KeyHog also supports Git provider inventories, S3, GCS, and Azure Blob objects,

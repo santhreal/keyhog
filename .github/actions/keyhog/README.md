@@ -34,17 +34,18 @@ jobs:
           severity: high
 ```
 
-This job scans the working tree and fails on findings at `high` or `critical`
-severity. It also fails on installation, configuration, source coverage,
-backend, and report-publication errors.
+This job scans the working tree and fails when a `high` or `critical` finding
+blocks the active evidence policy. The default blocks `likely` and `confirmed`
+while leaving `review` findings visible. It also fails on installation,
+configuration, source coverage, backend, and report-publication errors.
 
 The default `sarif` report is uploaded to Code Scanning and retained as a
 workflow artifact. Set `upload-sarif: 'false'` when the job cannot grant
 `security-events: write`; the artifact remains enabled. The Action retries one
 failed upload on trusted pushes and same-repository pull requests, then fails
 closed if both attempts fail. Fork PRs can lack `security-events: write`, so
-their upload failure is advisory. Findings and operational failures still fail
-the job.
+their upload failure is advisory. Policy-blocking findings and operational
+failures still fail the job.
 
 The Action accepts one checked-out path. Use the KeyHog CLI directly for Git
 history, reachable blobs, hosted Git organizations, cloud buckets, and report
@@ -61,7 +62,8 @@ formats that the Action does not expose.
 | `version` | empty | Scanner release selected by the Action ref. A value pins one canonical final `vX.Y.Z` release. |
 | `upload-sarif` | `'true'` | Uploads Code Scanning results when `format` is `sarif`. The artifact is retained independently. |
 | `analysis-category` | `keyhog` | Stable identity for one report and Code Scanning partition. |
-| `fail-on-findings` | `'true'` | Set to `'false'` to make ordinary findings advisory. Verified-live credentials and operational errors still fail. |
+| `fail-on-findings` | `'true'` | Fail when the active evidence policy returns blocking findings. Set to `'false'` to make non-live blocking findings advisory. Review-tier findings are already visible and non-blocking under the default policy. Verified-live credentials and operational errors always fail. |
+| `evidence-policy` | `default` | `default` blocks `likely` and `confirmed`; `paranoid` also blocks `review`. Findings remain visible under either policy. |
 | `baseline` | empty | Path to a committed KeyHog baseline. |
 | `backend` | empty | Release refs use calibrated `auto` when empty. Other values are `cpu`, `simd`, `gpu-cuda`, and `gpu-wgpu`. |
 | `preset` | `default` | Detection policy: `default`, `fast`, `deep`, or `precision`. |
@@ -102,7 +104,7 @@ Give the Action step an `id` before reading outputs:
 | Output | Meaning |
 | --- | --- |
 | `findings` | Number of reported findings at or above the severity floor. |
-| `exit-code` | Raw KeyHog exit code. Common results are `0` clean, `1` findings, `10` verified-live findings, and `13` incomplete coverage. |
+| `exit-code` | Raw KeyHog exit code. Common results are `0` policy success, `1` blocking findings, `10` verified-live findings, and `13` incomplete coverage. |
 | `duration-ms` | Wrapper wall-clock scan duration in milliseconds. |
 | `scan-status` | Wrapper state: `success`, `partial`, `cancelled`, or `failed`. |
 | `report-present` | `true` only when the Action published a receipt-verified private report snapshot. |

@@ -157,7 +157,7 @@ fn clean_directory_exits_zero_with_empty_json_array() {
 /// exact detector id, human name, service, and severity token.
 #[test]
 fn planted_json_has_exact_detector_service_and_severity() {
-    let (_dir, path) = planted_dir("leak.env");
+    let (_dir, path) = planted_dir(".env.leak");
     let (code, stdout, stderr) = scan(&path, &["--format", "json"]);
     assert_eq!(code, Some(1), "planted secret must exit 1; stderr={stderr}");
 
@@ -189,7 +189,7 @@ fn planted_json_has_exact_detector_service_and_severity() {
 /// planted in and reports it on line 1 (the token is on the first line).
 #[test]
 fn planted_json_location_names_file_and_reports_line_one() {
-    let (_dir, path) = planted_dir("leak.env");
+    let (_dir, path) = planted_dir(".env.leak");
     let (code, stdout, _stderr) = scan(&path, &["--format", "json"]);
     assert_eq!(code, Some(1));
 
@@ -200,8 +200,8 @@ fn planted_json_location_names_file_and_reports_line_one() {
         .as_str()
         .unwrap_or_else(|| panic!("location.file_path must be a string; got {stdout}"));
     assert!(
-        file_path.ends_with("leak.env"),
-        "location.file_path must name the planted file `leak.env`; got {file_path:?}"
+        file_path.ends_with(".env.leak"),
+        "location.file_path must name the planted file `.env.leak`; got {file_path:?}"
     );
     assert_eq!(
         loc["line"].as_u64(),
@@ -220,7 +220,7 @@ fn planted_json_location_names_file_and_reports_line_one() {
 /// SHA-256 digest.
 #[test]
 fn planted_json_redacts_to_exact_bytes_and_hash_is_64_hex() {
-    let (_dir, path) = planted_dir("leak.env");
+    let (_dir, path) = planted_dir(".env.leak");
     let (code, stdout, _stderr) = scan(&path, &["--format", "json"]);
     assert_eq!(code, Some(1));
 
@@ -257,8 +257,8 @@ fn planted_json_redacts_to_exact_bytes_and_hash_is_64_hex() {
 #[test]
 fn duplicate_token_across_two_files_dedups_to_one_finding_with_both_paths() {
     let dir = TempDir::new().expect("tempdir");
-    std::fs::write(dir.path().join("dup_a.env"), format!("A={PLANTED}\n")).expect("write a");
-    std::fs::write(dir.path().join("dup_b.env"), format!("B={PLANTED}\n")).expect("write b");
+    std::fs::write(dir.path().join(".env.dup-a"), format!("A={PLANTED}\n")).expect("write a");
+    std::fs::write(dir.path().join(".env.dup-b"), format!("B={PLANTED}\n")).expect("write b");
 
     let (code, stdout, stderr) = scan(dir.path(), &["--format", "json"]);
     assert_eq!(code, Some(1), "planted dir must exit 1; stderr={stderr}");
@@ -294,12 +294,12 @@ fn duplicate_token_across_two_files_dedups_to_one_finding_with_both_paths() {
                 .into_owned(),
         );
     }
-    let expected: BTreeSet<String> = ["dup_a.env".to_string(), "dup_b.env".to_string()]
+    let expected: BTreeSet<String> = [".env.dup-a".to_string(), ".env.dup-b".to_string()]
         .into_iter()
         .collect();
     assert_eq!(
         names, expected,
-        "the finding must cover both dup_a.env and dup_b.env across its locations"
+        "the finding must cover both .env.dup-a and .env.dup-b across its locations"
     );
 }
 
@@ -311,7 +311,7 @@ fn duplicate_token_across_two_files_dedups_to_one_finding_with_both_paths() {
 /// a `level == error` (critical severity maps to the SARIF error level).
 #[test]
 fn sarif_result_has_exact_ruleid_and_error_level() {
-    let (_dir, path) = planted_dir("leak.env");
+    let (_dir, path) = planted_dir(".env.leak");
     let (code, stdout, stderr) = scan(&path, &["--format", "sarif"]);
     assert_eq!(code, Some(1), "sarif scan must exit 1; stderr={stderr}");
 
@@ -334,7 +334,7 @@ fn sarif_result_has_exact_ruleid_and_error_level() {
 /// emitted rule for the planted finding carries the exact human `name`.
 #[test]
 fn sarif_driver_is_keyhog_and_rule_has_exact_name() {
-    let (_dir, path) = planted_dir("leak.env");
+    let (_dir, path) = planted_dir(".env.leak");
     let (code, stdout, _stderr) = scan(&path, &["--format", "sarif"]);
     assert_eq!(code, Some(1));
 
@@ -481,12 +481,12 @@ fn explain_hot_fast_path_label_fails_with_canonical_command() {
 // ---------------------------------------------------------------------------
 
 fn baseline_json(entries: &str) -> String {
-    format!(r#"{{"version": 1, "created": "test", "entries": [{entries}]}}"#)
+    format!(r#"{{"version": 2, "created": "test", "entries": [{entries}]}}"#)
 }
 
 fn entry_json(detector_id: &str, credential_hash: &str, file_path: &str, line: usize) -> String {
     format!(
-        r#"{{"detector_id": "{detector_id}", "credential_hash": "{credential_hash}", "file_path": "{file_path}", "line": {line}, "status": "acknowledged"}}"#
+        r#"{{"detector_id": "{detector_id}", "credential_hash": "{credential_hash}", "file_path": "{file_path}", "line": {line}, "evidence": {{"tier": "review", "reason_code": "unattributed"}}}}"#
     )
 }
 

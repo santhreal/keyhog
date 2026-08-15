@@ -148,12 +148,15 @@ fn precision_mode_enforces_0_85_floor_on_weak_credentials() {
     let def_findings: serde_json::Value =
         serde_json::from_str(&def_out).expect("default stdout is JSON");
     let def_arr = def_findings.as_array().expect("array");
-    // Regression: assert the exact detector and confidence so a later scoring
+    // Regression: assert the exact detector and evidence score so a later scoring
     // change cannot silently turn this boundary fixture into another admin123.
     assert!(
         def_arr.iter().any(|finding| {
             finding.get("detector_id").and_then(|value| value.as_str()) == Some("abuseipdb-api-key")
-                && finding.get("confidence").and_then(|value| value.as_f64()) == Some(0.795)
+                && finding
+                    .get("evidence_score")
+                    .and_then(|value| value.as_f64())
+                    == Some(0.795)
         }),
         "default must surface the 0.795 AbuseIPDB finding; got {def_out}"
     );

@@ -1081,7 +1081,7 @@ thead th.sortable:hover { color: var(--text); }
   <script>
     const rawFindings = [];
     const coverageGaps = [];
-    const scanMetadata = {"scan_id":"da0c759572177510febec16503dfa68b","scan_status":"success","static_recovery":{"schema_version":"static-recovery-v1","supported":0,"unsupported":0,"erroneous":0,"reasons":{}},"keyhog_version":"0.5.50","git_hash":"de8f69ed84c92f4b59ffa05c68bb9fb51e9d1eb3","detector_digest":"923-34acf0b8588ab785","config_digest":"b2bc78d25e9331dc","resolved_scan":{"schema_version":1,"preset":"default","effective":{"detector_corpus_custom_count":"0","detector_corpus_digest":"f9022577538f6750761882825582969b31c1d09a340c21cb9906a8f78c1568da","detector_corpus_embedded_count":"923","detector_corpus_mode":"embedded","detector_corpus_source":"embedded","entropy_bpe_max_bytes_per_token":"2.2","entropy_bpe_override":"unset","entropy_enabled":"true","entropy_in_source_files":"false","entropy_ml_authoritative":"true","entropy_threshold":"4.5","generic_keyword_low_entropy":"true","known_prefixes_digest":"6896b27724024105737d74aaeeb38c7b3583471bb24bf935506e1037eb9f386b","max_decode_bytes":"524288","max_decode_depth":"10","max_matches_per_chunk":"1000","min_confidence":"0.4","min_secret_len":"16","ml_enabled":"true","ml_weight":"detector-policy","penalize_test_paths":"true","placeholder_keywords_digest":"283e54296c2451e59c411990bfb7b32cb80d63ff9b1785fad74ecdde00f0c581","scan_comments":"false","secret_keywords_digest":"0fd91f3f6c3e6426d182885ca4338e554332550f2299c01b5a9982ea116384e8","test_keywords_digest":"24803da6d2a6e722bd33fded7156edd35fae4b6d1e1fe58787a81351f4004b9e","unicode_normalization":"true","validate_decode":"true"},"overrides":[]},"generated_at":"2026-08-03T16:12:01","scan_started_at":"2026-08-03T16:12:01","scan_finished_at":"2026-08-03T16:12:01","duration_ms":570,"targets":["path:\u002ftmp\u002f.tmpIgBjCd\u002ftree"],"source_chunks_scanned":3,"source_bytes_scanned":146,"detector_count":923};
+    const scanMetadata = {"scan_id":"f10442b95baaef9cc5fb98ab99b23aae","scan_status":"success","static_recovery":{"schema_version":"static-recovery-v1","supported":0,"unsupported":0,"erroneous":0,"reasons":{}},"keyhog_version":"0.5.75","git_hash":"c191f8cdc175838037e593b470ef44e87b130037","detector_digest":"926-174c093ae73b1e7f","config_digest":"1e6704fc454f1542","resolved_scan":{"schema_version":1,"preset":"default","effective":{"detector_corpus_custom_count":"0","detector_corpus_digest":"d18f3cd5a3d008fb241552e2bf382e701edbc2922787ed0cebc773984fc74d17","detector_corpus_embedded_count":"926","detector_corpus_mode":"embedded","detector_corpus_source":"embedded","entropy_bpe_max_bytes_per_token":"2.2","entropy_bpe_override":"unset","entropy_enabled":"true","entropy_in_source_files":"false","entropy_ml_authoritative":"true","entropy_threshold":"4.5","generic_keyword_low_entropy":"true","known_prefixes_digest":"6896b27724024105737d74aaeeb38c7b3583471bb24bf935506e1037eb9f386b","max_decode_bytes":"524288","max_decode_depth":"10","max_matches_per_chunk":"1000","min_confidence":"0.4","min_secret_len":"16","ml_enabled":"true","ml_weight":"detector-policy","penalize_test_paths":"true","placeholder_keywords_digest":"283e54296c2451e59c411990bfb7b32cb80d63ff9b1785fad74ecdde00f0c581","scan_comments":"false","secret_keywords_digest":"0fd91f3f6c3e6426d182885ca4338e554332550f2299c01b5a9982ea116384e8","test_keywords_digest":"24803da6d2a6e722bd33fded7156edd35fae4b6d1e1fe58787a81351f4004b9e","unicode_normalization":"true","validate_decode":"true"},"overrides":[]},"generated_at":"2026-08-15T00:14:35","scan_started_at":"2026-08-15T00:14:35","scan_finished_at":"2026-08-15T00:14:35","duration_ms":136,"targets":["path:\u002ftmp\u002f.tmp7mTRhc\u002ftree"],"source_chunks_scanned":3,"source_bytes_scanned":146,"detector_count":926};
 // Master scripting file for the KeyHog interactive report. Zero external dependencies.
 
 let activeStatusTab = 'all';
@@ -1610,8 +1610,8 @@ function renderTable(findings, isInitial) {
     const commitStr = finding.location.commit ? escapeHtml(finding.location.commit) : 'none';
     const authorStr = finding.location.author ? escapeHtml(finding.location.author) : 'none';
     const dateStr = finding.location.date ? escapeHtml(finding.location.date) : 'none';
-    const confidenceStr = (finding.confidence != null && Number.isFinite(finding.confidence))
-      ? `${Math.round(finding.confidence * 100)}%` : 'none';
+    const evidenceScoreStr = (finding.evidence_score != null && Number.isFinite(finding.evidence_score))
+      ? `${Math.round(finding.evidence_score * 100)}%` : 'none';
 
     // Format companion strings
     let metadataItems = '';
@@ -1638,7 +1638,9 @@ function renderTable(findings, isInitial) {
               </div>
               <div class="details-item"><span class="details-lbl">Credential Hash:</span><span class="details-val">${escapeHtml(finding.credential_hash)}</span><button class="copy-btn" type="button" onclick="copyFrom(this)" aria-label="Copy credential hash to clipboard">Copy</button></div>
               <div class="details-item"><span class="details-lbl">Verification:</span><span class="details-val">${escapeHtml(verificationLabel(finding.verification))}${verificationIsUnattempted(finding.verification) ? ' <span class="verify-note">, not attempted; treat as potentially live</span>' : ''}</span></div>
-              <div class="details-item"><span class="details-lbl">Confidence:</span><span class="details-val">${confidenceStr}</span></div>
+              <div class="details-item"><span class="details-lbl">Evidence Tier:</span><span class="details-val">${escapeHtml(finding.evidence.tier)}</span></div>
+              <div class="details-item"><span class="details-lbl">Evidence Reason:</span><span class="details-val">${escapeHtml(finding.evidence.reason_code)}</span></div>
+              <div class="details-item"><span class="details-lbl">Evidence Score:</span><span class="details-val">${evidenceScoreStr}</span></div>
             </div>
           </div>
           <div class="details-block">

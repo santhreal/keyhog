@@ -73,7 +73,8 @@ fn finding_for(
         metadata: HashMap::new(),
         additional_locations: vec![],
         entropy: None,
-        confidence: Some(0.9),
+        evidence_score: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -101,7 +102,8 @@ fn finding_stdin_no_region(value: &str) -> VerifiedFinding {
         metadata: HashMap::new(),
         additional_locations: vec![],
         entropy: None,
-        confidence: None,
+        evidence_score: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -129,7 +131,8 @@ fn finding_offset_no_line(value: &str, offset: usize) -> VerifiedFinding {
         metadata: HashMap::new(),
         additional_locations: vec![],
         entropy: None,
-        confidence: None,
+        evidence_score: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

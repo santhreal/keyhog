@@ -15,7 +15,7 @@ fn binary() -> PathBuf {
 fn baseline_json(entries: &str) -> String {
     format!(
         r#"{{
-            "version": 1,
+            "version": 2,
             "created": "test",
             "entries": [
                 {entries}
@@ -31,7 +31,7 @@ fn entry_json(detector_id: &str, credential_hash: &str, file_path: &str, line: u
             "credential_hash": "{credential_hash}",
             "file_path": "{file_path}",
             "line": {line},
-            "status": "acknowledged"
+            "evidence": {{"tier": "review", "reason_code": "unattributed"}}
         }}"#
     )
 }

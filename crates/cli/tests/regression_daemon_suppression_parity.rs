@@ -184,6 +184,7 @@ fn scan_json(daemon: &Daemon, path: &Path, route_flag: &str) -> Vec<serde_json::
         .arg("json")
         .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
         .env("XDG_CACHE_HOME", &daemon.xdg_cache_home);
+    cmd.arg("--detectors").arg(workspace_detectors());
     if route_flag == "--daemon=off" {
         // Match the daemon's process-level backend pin without relying on
         // ambient autoroute calibration for the in-process control scan.
@@ -238,6 +239,9 @@ struct FindingSignature {
     line: Option<u64>,
     offset: Option<u64>,
     verification: String,
+    evidence_tier: String,
+    evidence_reason_code: String,
+    evidence_score_bits: Option<u64>,
 }
 
 fn required_str(finding: &serde_json::Value, pointer: &str) -> String {
@@ -258,6 +262,12 @@ fn optional_str(finding: &serde_json::Value, pointer: &str) -> Option<String> {
 fn optional_u64(finding: &serde_json::Value, pointer: &str) -> Option<u64> {
     finding.pointer(pointer).and_then(|value| value.as_u64())
 }
+fn optional_f64_bits(finding: &serde_json::Value, pointer: &str) -> Option<u64> {
+    finding
+        .pointer(pointer)
+        .and_then(serde_json::Value::as_f64)
+        .map(f64::to_bits)
+}
 
 fn finding_signatures(findings: &[serde_json::Value]) -> Vec<FindingSignature> {
     let mut signatures: Vec<_> = findings
@@ -274,6 +284,9 @@ fn finding_signatures(findings: &[serde_json::Value]) -> Vec<FindingSignature> {
             line: optional_u64(finding, "/location/line"),
             offset: optional_u64(finding, "/location/offset"),
             verification: required_str(finding, "/verification"),
+            evidence_tier: required_str(finding, "/evidence/tier"),
+            evidence_reason_code: required_str(finding, "/evidence/reason_code"),
+            evidence_score_bits: optional_f64_bits(finding, "/evidence_score"),
         })
         .collect();
     signatures.sort();
@@ -317,6 +330,10 @@ fn daemon_and_in_process_both_detect_unsuppressed_secret() {
         finding_signatures(&daemon_findings),
         finding_signatures(&in_process_findings),
         "eligible daemon and in-process single-file scans must emit the same finding signatures"
+    );
+    assert_eq!(
+        daemon_findings, in_process_findings,
+        "daemon and one-shot JSON findings must remain exact semantic equivalents"
     );
 }
 

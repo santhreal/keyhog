@@ -1,6 +1,6 @@
 //! Secret-safe semantic identity used to prove cross-backend detection parity.
 
-use keyhog_core::{CredentialHash, RawMatch, Severity};
+use keyhog_core::{CredentialHash, EvidenceReasonCode, EvidenceTier, RawMatch, Severity};
 
 /// Redacted, total user-visible identity of one backend match.
 ///
@@ -26,6 +26,8 @@ pub(crate) struct CanonicalMatch<'a> {
     date: Option<&'a str>,
     entropy_bits: Option<u64>,
     confidence_bits: Option<u64>,
+    evidence_tier: EvidenceTier,
+    evidence_reason_code: EvidenceReasonCode,
 }
 
 pub(crate) fn canonical_matches(matches: &[Vec<RawMatch>]) -> Vec<CanonicalMatch<'_>> {
@@ -113,6 +115,8 @@ fn canonical_match(chunk_idx: usize, m: &RawMatch) -> CanonicalMatch<'_> {
         date: m.location.date.as_deref(),
         entropy_bits: m.entropy.map(f64::to_bits),
         confidence_bits: m.confidence.map(f64::to_bits),
+        evidence_tier: m.evidence.tier(),
+        evidence_reason_code: m.evidence.reason_code(),
     }
 }
 
@@ -176,6 +180,12 @@ pub(crate) fn differing_canonical_match_fields(
         }
         if reference.confidence_bits != trial.confidence_bits {
             fields.insert("confidence");
+        }
+        if reference.evidence_tier != trial.evidence_tier {
+            fields.insert("evidence_tier");
+        }
+        if reference.evidence_reason_code != trial.evidence_reason_code {
+            fields.insert("evidence_reason_code");
         }
     }
     fields.into_iter().collect()
@@ -279,6 +289,11 @@ pub(crate) fn canonical_match_digest(matches: &[CanonicalMatch<'_>]) -> u64 {
         h.field_option_str("match.date", m.date);
         h.field_option_u64("match.entropy_bits", m.entropy_bits);
         h.field_option_u64("match.confidence_bits", m.confidence_bits);
+        h.field_str("match.evidence_tier", m.evidence_tier.as_str());
+        h.field_str(
+            "match.evidence_reason_code",
+            m.evidence_reason_code.as_str(),
+        );
     }
     h.finish_u64()
 }

@@ -161,8 +161,10 @@ pub(super) enum SarifLogicalLocationKind {
 #[derive(Debug, Clone, serde::Serialize)]
 pub(super) struct SarifResultProperties {
     pub(super) verification: String,
+    pub(super) evidence_tier: &'static str,
+    pub(super) evidence_reason_code: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) confidence: Option<f64>,
+    pub(super) evidence_score: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) entropy: Option<f64>,
     pub(super) cwe: &'static str,

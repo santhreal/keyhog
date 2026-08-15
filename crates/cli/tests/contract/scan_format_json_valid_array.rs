@@ -21,7 +21,7 @@ fn scan_format_json_valid_array() {
     let parsed: serde_json::Value =
         serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("json");
     let object = parsed.as_object().expect("json format must emit an object");
-    assert_eq!(object["schema_version"]["major"], 1);
+    assert_eq!(object["schema_version"]["major"], 2);
     assert!(object["schema_version"]["minor"].is_u64());
     assert_eq!(object["scan_status"], "success");
     assert!(object["metadata"]["scan_started_at"].is_string());

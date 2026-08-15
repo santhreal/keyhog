@@ -15,7 +15,8 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use crate::{
-    sha256_hash, CompanionMap, CredentialHash, MatchLocation, RawMatch, SensitiveString, Severity,
+    sha256_hash, CompanionMap, CredentialHash, EvidenceVerdict, MatchLocation, RawMatch,
+    SensitiveString, Severity,
 };
 
 /// Count of times [`dedup_cross_detector`] reached the (guard-impossible) empty
@@ -66,6 +67,8 @@ pub struct DedupedMatch {
     pub additional_locations: Vec<MatchLocation>,
     /// Confidence score (0.0 - 1.0) combining entropy, keyword proximity, file type, etc.
     pub confidence: Option<f64>,
+    /// Strongest deterministic evidence verdict among grouped matches.
+    pub evidence: EvidenceVerdict,
     /// Shannon entropy measured for the credential, when the detection path
     /// computed it. `None` means entropy was not part of that path.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -94,6 +97,7 @@ impl std::fmt::Debug for DedupedMatch {
             .field("primary_location", &self.primary_location)
             .field("additional_locations", &self.additional_locations)
             .field("confidence", &self.confidence)
+            .field("evidence", &self.evidence)
             .field("entropy", &self.entropy)
             .finish()
     }
@@ -118,6 +122,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                     primary_location: m.location,
                     additional_locations: Vec::new(),
                     confidence: m.confidence,
+                    evidence: m.evidence,
                     entropy: m.entropy,
                 }
             })
@@ -208,6 +213,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                     merge_companions(&mut existing.companions, matched.companions);
                     existing.confidence = max_confidence(existing.confidence, matched.confidence);
                     existing.entropy = max_entropy(existing.entropy, matched.entropy);
+                    existing.evidence = existing.evidence.stronger(matched.evidence);
                     continue;
                 }
                 // Drop locations that are the same (file_path, line) as the
@@ -235,6 +241,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                 merge_companions(&mut existing.companions, matched.companions);
                 existing.confidence = max_confidence(existing.confidence, matched.confidence);
                 existing.entropy = max_entropy(existing.entropy, matched.entropy);
+                existing.evidence = existing.evidence.stronger(matched.evidence);
             }
             None => {
                 let mut seen = IndexSet::with_capacity(1);
@@ -263,6 +270,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                         primary_location: matched.location,
                         additional_locations: Vec::new(),
                         confidence: matched.confidence,
+                        evidence: matched.evidence,
                         entropy: matched.entropy,
                     },
                 );
@@ -445,6 +453,7 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
             );
             winner.companions.entry(Arc::from(key)).or_insert(value);
             winner.entropy = max_entropy(winner.entropy, loser.entropy);
+            winner.evidence = winner.evidence.stronger(loser.evidence);
             merge_cross_detector_locations(&mut winner, &mut seen_locations, loser);
         }
         out.push(winner);

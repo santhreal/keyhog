@@ -57,7 +57,7 @@ fn scan_exit_priority_is_explicit_for_every_terminal_class() {
             autoroute_calibration: mask & 1 != 0,
             scanner_panicked: mask & 2 != 0,
             has_live_credentials: mask & 4 != 0,
-            has_new_entries: mask & 8 != 0,
+            has_blocking_findings: mask & 8 != 0,
             incremental_cache_failed: mask & 16 != 0,
             source_coverage_incomplete: mask & 32 != 0,
             total_source_failure: mask & 64 != 0,
@@ -67,7 +67,7 @@ fn scan_exit_priority_is_explicit_for_every_terminal_class() {
             EXIT_SCANNER_PANIC
         } else if outcome.has_live_credentials {
             EXIT_LIVE_CREDENTIALS
-        } else if outcome.has_new_entries {
+        } else if outcome.has_blocking_findings {
             EXIT_FINDINGS
         } else if outcome.autoroute_calibration {
             if outcome.autoroute_persist_failed {

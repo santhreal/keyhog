@@ -91,7 +91,7 @@ fn limit_git_line_bytes_admits_a_line_of_exactly_the_cap_and_surfaces_a_longer_o
     // longest diff line carries 601 content bytes. Every other line git emits
     // for this repo (commit/Author/Date/diff --git/index/@@) is far shorter.
     let leak_line_bytes = 601;
-    commit_file(repo, "leak.env", &format!("{}\n", padded_leak('N', 600)));
+    commit_file(repo, ".env.leak", &format!("{}\n", padded_leak('N', 600)));
 
     let at_cap = scan(
         repo,
@@ -167,7 +167,7 @@ fn limit_git_blob_bytes_includes_an_exactly_sized_blob_and_surfaces_a_larger_one
     init_repo(repo);
     let leak = format!("{}\n", padded_leak('N', 120));
     let leak_bytes = leak.len();
-    commit_file(repo, "small.env", &leak);
+    commit_file(repo, ".env.small", &leak);
     // A second, strictly larger blob so a cap set to the small blob's exact
     // size proves inclusion of one and exclusion of the other in one run.
     commit_file(repo, "large.env", &format!("{}\n", padded_leak('P', 400)));

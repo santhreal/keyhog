@@ -28,7 +28,7 @@ fn sarif_is_github_code_scanning_compliant() {
     let dir = TempDir::new().expect("tempdir");
     std::fs::create_dir_all(dir.path().join("src")).expect("mkdir src");
     std::fs::write(
-        dir.path().join("src/leak.env"),
+        dir.path().join("src/.env.leak"),
         concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
     )
     .expect("write fixture");

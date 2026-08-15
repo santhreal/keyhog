@@ -217,10 +217,13 @@ fn sarif_is_structurally_complete_2_1_0_with_every_ruleid_resolving() {
 fn sarif_result_count_equals_json_finding_count_across_backends() {
     let dir = TempDir::new().expect("tempdir");
     // Two separate files → two deterministic findings regardless of backend.
-    std::fs::write(dir.path().join("gh.env"), format!("GITHUB_TOKEN={PAT}\n"))
-        .expect("write gh fixture");
     std::fs::write(
-        dir.path().join("aws.env"),
+        dir.path().join(".env.github"),
+        format!("GITHUB_TOKEN={PAT}\n"),
+    )
+    .expect("write gh fixture");
+    std::fs::write(
+        dir.path().join(".env.aws"),
         format!("AWS_ACCESS_KEY_ID = \"{AWS}\"\n"),
     )
     .expect("write aws fixture");

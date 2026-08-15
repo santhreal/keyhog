@@ -87,7 +87,7 @@ prop_compose! {
         line in prop::option::of(0usize..1_000_000),
         offset in 0usize..1_000_000,
         sev_idx in 0usize..6,
-        confidence in prop::option::of(0.0f64..1.0),
+        evidence_score in prop::option::of(0.0f64..1.0),
     ) -> VerifiedFinding {
         VerifiedFinding {
             detector_id: Arc::from(detector_id.as_str()),
@@ -96,7 +96,7 @@ prop_compose! {
             severity: severity_at(sev_idx),
             credential_redacted: Cow::Owned(credential),
             credential_hash: [0u8; 32].into(),
-        companions_redacted: std::collections::HashMap::new(),
+            companions_redacted: std::collections::HashMap::new(),
             location: MatchLocation {
                 source: Arc::from(source.as_str()),
                 file_path: opt_arc(file_path),
@@ -113,7 +113,8 @@ prop_compose! {
             metadata: HashMap::new(),
             additional_locations: vec![],
             entropy: None,
-            confidence,
+            evidence_score,
+            evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
         }
     }
 }
@@ -179,7 +180,8 @@ fn base_finding() -> VerifiedFinding {
         metadata: HashMap::new(),
         additional_locations: vec![],
         entropy: None,
-        confidence: Some(0.5),
+        evidence_score: Some(0.5),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

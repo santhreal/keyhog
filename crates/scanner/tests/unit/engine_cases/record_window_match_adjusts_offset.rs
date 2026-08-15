@@ -28,6 +28,7 @@ fn record_window_match_adjusts_offset() {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     let line_offsets = compute_line_offsets(text);
     assert!(record_window_match(
@@ -71,6 +72,7 @@ fn record_window_match_adjusts_line_for_chunk_base_and_window_offset() {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     let line_offsets = compute_line_offsets(text);
     assert!(record_window_match(
@@ -114,6 +116,7 @@ fn record_window_match_rejects_synthesized_offsets_outside_window() {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     let line_offsets = compute_line_offsets(text);
     assert!(!record_window_match(

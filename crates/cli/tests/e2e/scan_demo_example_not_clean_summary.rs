@@ -6,7 +6,7 @@ use std::process::Command;
 #[test]
 fn scan_demo_example_not_clean_summary() {
     let (_dir, path) = write_temp_file(
-        "demo-secret.env",
+        ".env.demo-secret",
         "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n",
     );
     let output = Command::new(binary())

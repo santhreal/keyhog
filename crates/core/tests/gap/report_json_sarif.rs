@@ -42,7 +42,8 @@ fn finding() -> VerifiedFinding {
         metadata: HashMap::new(),
         additional_locations: vec![],
         entropy: None,
-        confidence: Some(0.9),
+        evidence_score: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -157,7 +158,7 @@ fn jsonl_required_fields_present_and_correct() {
     );
     // verification is snake_case; Unverifiable -> "unverifiable".
     assert_eq!(v["verification"], "unverifiable");
-    assert_eq!(v["confidence"], 0.9);
+    assert_eq!(v["evidence_score"], 0.9);
 }
 
 #[test]
@@ -175,15 +176,14 @@ fn jsonl_location_nested_object_fields() {
 }
 
 #[test]
-fn jsonl_confidence_omitted_when_none() {
-    // VerifiedFinding.confidence has skip_serializing_if = Option::is_none.
+fn jsonl_evidence_score_omitted_when_none() {
     let mut f = finding();
-    f.confidence = None;
+    f.evidence_score = None;
     let out = jsonl_str(&[f]);
     let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
     assert!(
-        v.get("confidence").is_none(),
-        "confidence:None must be omitted from JSON, not null"
+        v.get("evidence_score").is_none(),
+        "evidence_score:None must be omitted from JSON, not null"
     );
 }
 
@@ -318,7 +318,7 @@ fn json_array_required_fields_match_jsonl() {
     assert_eq!(obj["service"], "test");
     assert_eq!(obj["severity"], "high");
     assert_eq!(obj["verification"], "unverifiable");
-    assert_eq!(obj["confidence"], 0.9);
+    assert_eq!(obj["evidence_score"], 0.9);
 }
 
 #[test]
@@ -557,23 +557,23 @@ fn sarif_result_properties_verification_live() {
 }
 
 #[test]
-fn sarif_result_properties_confidence_number() {
+fn sarif_result_properties_evidence_score_number() {
     let json = sarif_of(&[finding()]);
     assert_eq!(
-        json["runs"][0]["results"][0]["properties"]["confidence"],
+        json["runs"][0]["results"][0]["properties"]["evidence_score"],
         0.9
     );
 }
 
 #[test]
-fn sarif_result_properties_confidence_omitted_when_none() {
+fn sarif_result_properties_evidence_score_omitted_when_none() {
     let mut f = finding();
-    f.confidence = None;
+    f.evidence_score = None;
     let json = sarif_of(&[f]);
     let props = &json["runs"][0]["results"][0]["properties"];
     assert!(
-        props.get("confidence").is_none(),
-        "confidence None -> no properties.confidence"
+        props.get("evidence_score").is_none(),
+        "evidence score None -> no properties.evidence_score"
     );
 }
 

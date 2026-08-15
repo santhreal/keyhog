@@ -1,22 +1,20 @@
-//! Regression: the `confidence` FIELD on the core finding types
-//! (`RawMatch`, `VerifiedFinding`, `RedactedFinding`).
+//! Regression: internal scanner confidence and public `evidence_score` fields.
 //!
-//! This pins the serde + ordering contract of the `confidence: Option<f64>`
-//! field specifically, read off `crates/core/src/finding.rs`:
+//! `RawMatch.confidence` remains an internal scoring signal. Public redacted
+//! and verified findings expose that optional value as `evidence_score`, while
+//! the required `EvidenceVerdict` carries the operator-facing tier and reason.
 //!
-//!   * `RawMatch.confidence` is copied into `RedactedFinding.confidence`, whose
-//!     `Option<f64>` serde field uses `skip_serializing_if = "Option::is_none"`;
-//!     `None` is omitted but `Some(0.0)` is present.
-//!   * `VerifiedFinding` has a hand-written `Serialize` that bumps its field
-//!     count from 11 to 12 iff `confidence.is_some()` (so `Some(0.0)` => 12,
-//!     `None` => 11), emitting `confidence` as a bare JSON number.
-//!   * `RawMatch::Ord` sorts HIGHER confidence first, treating a `None`
-//!     confidence as `0.0` (lowest) for ordering only (LAW10 recall-safe).
-//!   * `to_redacted()` copies `confidence` through byte-for-byte.
+//! This suite pins these boundaries:
 //!
-//! Distinct from `regression_confidence_scoring.rs` (the scanner scoring math)
-//! and the scanner `min_confidence` gate tests: this file is ONLY the core
-//! `Finding` field's serde shape, bounds, and ordering use.
+//!   * `RawMatch::to_redacted()` maps internal confidence to `evidence_score`;
+//!   * optional scores are omitted only for `None`, never for `Some(0.0)`;
+//!   * `VerifiedFinding` emits 13 base fields and a fourteenth field when an
+//!     evidence score is present;
+//!   * raw-match ordering still uses internal confidence, with `None` treated
+//!     as `0.0` for ordering only.
+//!
+//! Scanner scoring math and `min_confidence` behavior remain covered by their
+//! owning scanner tests.
 //!
 //! Every assertion is a concrete expected value; no bare `is_empty()` /
 //! `is_some()` sole assertions.
@@ -51,6 +49,7 @@ fn make_raw(confidence: Option<f64>) -> RawMatch {
         },
         entropy: Some(4.5),
         confidence,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -76,7 +75,8 @@ fn make_verified(confidence: Option<f64>) -> VerifiedFinding {
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
         entropy: None,
-        confidence,
+        evidence_score: confidence,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -104,69 +104,69 @@ fn measured_entropy_survives_redaction_dedup_and_verified_serialization() {
 }
 
 // ---------------------------------------------------------------------------
-// RedactedFinding.confidence serde, reached through RawMatch::to_redacted
+// RedactedFinding.evidence_score serde, reached through RawMatch::to_redacted
 // ---------------------------------------------------------------------------
 
 #[test]
-fn redacted_match_confidence_some_serializes_exact_number() {
+fn redacted_match_evidence_score_some_serializes_exact_number() {
     let redacted = make_raw(Some(0.4)).to_redacted();
     let value = serde_json::to_value(&redacted).expect("serialize RedactedFinding");
     // Present as a bare JSON number equal to 0.4.
-    assert_eq!(value["confidence"].as_f64(), Some(0.4));
-    assert!(value["confidence"].is_number());
-    assert!(!value["confidence"].is_string());
+    assert_eq!(value["evidence_score"].as_f64(), Some(0.4));
+    assert!(value["evidence_score"].is_number());
+    assert!(!value["evidence_score"].is_string());
 }
 
 #[test]
-fn redacted_match_confidence_none_is_omitted_from_object() {
+fn redacted_match_evidence_score_none_is_omitted_from_object() {
     let redacted = make_raw(None).to_redacted();
     let value = serde_json::to_value(&redacted).expect("serialize RedactedFinding");
     let obj = value.as_object().expect("object");
     // skip_serializing_if drops the key entirely.
-    assert!(!obj.contains_key("confidence"));
-    // But entropy (Some) is still present, proving only confidence was dropped.
+    assert!(!obj.contains_key("evidence_score"));
+    // But entropy (Some) is still present, proving only the score was dropped.
     assert_eq!(obj.get("entropy").and_then(|v| v.as_f64()), Some(4.5));
 }
 
 #[test]
-fn redacted_match_confidence_zero_boundary_is_present_not_omitted() {
+fn redacted_match_evidence_score_zero_boundary_is_present_not_omitted() {
     // BOUNDARY: 0.0 is `Some(0.0)`, NOT `None`, so it must be serialized.
     let redacted = make_raw(Some(0.0)).to_redacted();
     let value = serde_json::to_value(&redacted).expect("serialize RedactedFinding");
     let obj = value.as_object().expect("object");
-    assert!(obj.contains_key("confidence"));
-    assert_eq!(value["confidence"].as_f64(), Some(0.0));
+    assert!(obj.contains_key("evidence_score"));
+    assert_eq!(value["evidence_score"].as_f64(), Some(0.0));
 }
 
 #[test]
-fn redacted_match_confidence_one_boundary_serializes_one() {
+fn redacted_match_evidence_score_one_boundary_serializes_one() {
     // BOUNDARY: top of the documented [0.0, 1.0] closed interval.
     let redacted = make_raw(Some(1.0)).to_redacted();
     let value = serde_json::to_value(&redacted).expect("serialize RedactedFinding");
-    assert_eq!(value["confidence"].as_f64(), Some(1.0));
+    assert_eq!(value["evidence_score"].as_f64(), Some(1.0));
 }
 
 #[test]
-fn redacted_match_confidence_roundtrips_exact() {
+fn redacted_match_evidence_score_roundtrips_exact() {
     let redacted = make_raw(Some(0.9)).to_redacted();
     let json = serde_json::to_string(&redacted).expect("serialize");
     let back: RedactedFinding = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(back.confidence, Some(0.9));
+    assert_eq!(back.evidence_score, Some(0.9));
     assert_eq!(back.detector_id, redacted.detector_id);
     assert_eq!(back.credential_hash, redacted.credential_hash);
 }
 
 #[test]
-fn redacted_match_confidence_preserves_full_f64_precision() {
+fn redacted_match_evidence_score_preserves_full_f64_precision() {
     // A value that needs many significant digits: serde_json uses a
     // round-trippable shortest repr, so the exact bits must survive.
     let precise = 0.123_456_789_012_345_67_f64;
     let redacted = make_raw(Some(precise)).to_redacted();
     let json = serde_json::to_string(&redacted).expect("serialize");
     let back: RedactedFinding = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(back.confidence, Some(precise));
+    assert_eq!(back.evidence_score, Some(precise));
     // And within eps for good measure.
-    let got = back.confidence.expect("some");
+    let got = back.evidence_score.expect("some");
     assert!((got - precise).abs() < 1e-15, "got {got}");
 }
 
@@ -182,7 +182,8 @@ fn raw_match_confidence_deserializes_from_explicit_field() {
         "credential_hash":"1a5d44a2dca19669d72edf4c4f1c27c4c1ca4b4408fbb17f6ce4ad452d78ddb3",
         "companions":{},
         "location":{"source":"filesystem","file_path":null,"line":null,"offset":0,"commit":null,"author":null,"date":null},
-        "confidence":0.72
+        "confidence":0.72,
+        "evidence":{"tier":"review","reason_code":"unattributed"}
     }"#;
     let raw: RawMatch = serde_json::from_str(json).expect("deserialize hand JSON");
     assert_eq!(raw.confidence, Some(0.72));
@@ -191,73 +192,73 @@ fn raw_match_confidence_deserializes_from_explicit_field() {
 }
 
 // ---------------------------------------------------------------------------
-// VerifiedFinding.confidence serde (hand-written Serialize, field_count)
+// VerifiedFinding.evidence_score serde (hand-written Serialize, field_count)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn verified_finding_confidence_some_included_and_field_count_is_13() {
+fn verified_finding_evidence_score_some_included_and_field_count_is_14() {
     let finding = make_verified(Some(0.9));
     let value = serde_json::to_value(&finding).expect("serialize VerifiedFinding");
     let obj = value.as_object().expect("object");
-    // 12 base fields + confidence => 13.
-    assert_eq!(obj.len(), 13);
-    assert!(obj.contains_key("confidence"));
-    assert_eq!(value["confidence"].as_f64(), Some(0.9));
+    // 13 base fields + evidence_score => 14.
+    assert_eq!(obj.len(), 14);
+    assert!(obj.contains_key("evidence_score"));
+    assert_eq!(value["evidence_score"].as_f64(), Some(0.9));
 }
 
 #[test]
-fn verified_finding_confidence_none_omitted_and_field_count_is_12() {
+fn verified_finding_evidence_score_none_omitted_and_field_count_is_13() {
     let finding = make_verified(None);
     let value = serde_json::to_value(&finding).expect("serialize VerifiedFinding");
     let obj = value.as_object().expect("object");
-    assert_eq!(obj.len(), 12);
-    assert!(!obj.contains_key("confidence"));
+    assert_eq!(obj.len(), 13);
+    assert!(!obj.contains_key("evidence_score"));
     // remediation is always injected by the custom Serialize regardless.
     assert!(obj.contains_key("remediation"));
 }
 
 #[test]
-fn verified_finding_confidence_zero_is_present_field_count_13() {
-    // BOUNDARY on the custom Serialize: `Some(0.0)` bumps the count to 13
+fn verified_finding_evidence_score_zero_is_present_field_count_14() {
+    // BOUNDARY on the custom Serialize: `Some(0.0)` bumps the count to 14
     // because the branch keys on `is_some()`, not truthiness.
     let finding = make_verified(Some(0.0));
     let value = serde_json::to_value(&finding).expect("serialize VerifiedFinding");
     let obj = value.as_object().expect("object");
-    assert_eq!(obj.len(), 13);
-    assert_eq!(value["confidence"].as_f64(), Some(0.0));
+    assert_eq!(obj.len(), 14);
+    assert_eq!(value["evidence_score"].as_f64(), Some(0.0));
 }
 
 // ---------------------------------------------------------------------------
-// RedactedFinding.confidence via to_redacted()
+// RedactedFinding.evidence_score via to_redacted()
 // ---------------------------------------------------------------------------
 
 #[test]
-fn redacted_finding_confidence_propagates_from_raw_match() {
+fn redacted_finding_evidence_score_propagates_from_raw_match() {
     let raw = make_raw(Some(0.55));
     let redacted: RedactedFinding = raw.to_redacted();
     // Field copied byte-for-byte.
-    assert_eq!(redacted.confidence, Some(0.55));
+    assert_eq!(redacted.evidence_score, Some(0.55));
     let value = serde_json::to_value(&redacted).expect("serialize RedactedFinding");
-    assert_eq!(value["confidence"].as_f64(), Some(0.55));
+    assert_eq!(value["evidence_score"].as_f64(), Some(0.55));
 }
 
 #[test]
-fn redacted_finding_confidence_none_is_omitted() {
+fn redacted_finding_evidence_score_none_is_omitted() {
     let raw = make_raw(None);
     let redacted = raw.to_redacted();
-    assert_eq!(redacted.confidence, None);
+    assert_eq!(redacted.evidence_score, None);
     let value = serde_json::to_value(&redacted).expect("serialize RedactedFinding");
     let obj = value.as_object().expect("object");
-    assert!(!obj.contains_key("confidence"));
+    assert!(!obj.contains_key("evidence_score"));
 }
 
 #[test]
-fn redacted_finding_confidence_roundtrips_exact() {
+fn redacted_finding_evidence_score_roundtrips_exact() {
     let raw = make_raw(Some(0.33));
     let redacted = raw.to_redacted();
     let json = serde_json::to_string(&redacted).expect("serialize");
     let back: RedactedFinding = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(back.confidence, Some(0.33));
+    assert_eq!(back.evidence_score, Some(0.33));
 }
 
 // ---------------------------------------------------------------------------

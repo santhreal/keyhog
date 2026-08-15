@@ -69,6 +69,7 @@ fn rm(
         location: loc(offset, line),
         entropy: None,
         confidence: conf,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

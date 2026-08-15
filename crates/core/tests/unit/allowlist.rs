@@ -101,7 +101,8 @@ fn is_allowed_checks_detector_and_path_rules_consistently() {
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
         entropy: None,
-        confidence: None,
+        evidence_score: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     assert!(keyhog_core::testing::CoreTestApi::allowlist_is_allowed(
         &keyhog_core::testing::TestApi,
@@ -194,7 +195,8 @@ fn gitleaks_detector_ignore_by_id() {
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
         entropy: None,
-        confidence: None,
+        evidence_score: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     assert!(keyhog_core::testing::CoreTestApi::allowlist_is_allowed(
         &keyhog_core::testing::TestApi,

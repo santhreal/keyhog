@@ -12,7 +12,7 @@ fn scan_reports_secret_under_user_detectors_directory() {
     let dir = TempDir::new().expect("tempdir");
     let detectors_dir = dir.path().join("detectors");
     std::fs::create_dir_all(&detectors_dir).expect("mkdir detectors");
-    let leak_path = detectors_dir.join("leak.env");
+    let leak_path = detectors_dir.join(".env.leak");
     std::fs::write(
         &leak_path,
         concat!("AWS_ACCESS_KEY_ID=\"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
@@ -46,11 +46,11 @@ fn scan_reports_secret_under_user_detectors_directory() {
             .and_then(|value| value.get("file_path"))
             .and_then(|value| value.as_str());
         matches!(detector_id, Some("aws-access-key"))
-            && file_path.is_some_and(|path| path.ends_with("detectors/leak.env"))
+            && file_path.is_some_and(|path| path.ends_with("detectors/.env.leak"))
     });
     assert!(
         aws.is_some(),
-        "expected AWS finding from detectors/leak.env; findings={findings:?}; stderr={}",
+        "expected AWS finding from detectors/.env.leak; findings={findings:?}; stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
 }

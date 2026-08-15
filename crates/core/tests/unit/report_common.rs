@@ -31,6 +31,7 @@ pub fn sample_finding() -> VerifiedFinding {
         metadata,
         additional_locations: vec![],
         entropy: None,
-        confidence: Some(0.875),
+        evidence_score: Some(0.875),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }

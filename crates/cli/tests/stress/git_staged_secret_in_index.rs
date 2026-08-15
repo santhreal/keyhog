@@ -25,16 +25,16 @@ fn git_staged_secret_in_index_exit_one() {
         .expect("git config name");
 
     std::fs::write(
-        repo.join("staged.env"),
+        repo.join(".env.staged"),
         "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
     )
     .unwrap();
     std::process::Command::new("git")
-        .args(["add", "staged.env"])
+        .args(["add", ".env.staged"])
         .current_dir(repo)
         .status()
         .expect("git add");
-    std::fs::write(repo.join("staged.env"), "clean working tree replacement\n").unwrap();
+    std::fs::write(repo.join(".env.staged"), "clean working tree replacement\n").unwrap();
 
     let output = Command::new(binary())
         .args([
@@ -80,12 +80,12 @@ fn git_staged_from_nested_directory_uses_the_enclosing_index() {
         .expect("git init");
     std::fs::create_dir_all(repo.join("src/nested")).expect("create nested directory");
     std::fs::write(
-        repo.join("staged.env"),
+        repo.join(".env.staged"),
         "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
     )
     .expect("write staged secret");
     assert!(Command::new("git")
-        .args(["add", "staged.env"])
+        .args(["add", ".env.staged"])
         .current_dir(repo)
         .status()
         .expect("git add")
@@ -117,7 +117,7 @@ fn git_staged_from_nested_directory_uses_the_enclosing_index() {
     assert_eq!(findings.as_array().map(Vec::len), Some(1));
     assert_eq!(
         findings[0]["location"]["file_path"],
-        serde_json::Value::String("staged.env".into()),
+        serde_json::Value::String(".env.staged".into()),
         "staged paths must remain relative to the enclosing worktree root"
     );
 }

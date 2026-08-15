@@ -7,7 +7,7 @@ use tempfile::TempDir;
 #[test]
 fn stream_progress_lines_stay_within_file_line_count() {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("leak.env");
+    let path = dir.path().join(".env.leak");
     std::fs::write(
         &path,
         "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n",

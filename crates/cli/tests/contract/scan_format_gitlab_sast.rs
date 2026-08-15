@@ -62,7 +62,7 @@ fn clean_scan_emits_empty_gitlab_sast_report() {
 fn planted_secret_emits_gitlab_sast_vulnerability() {
     let plaintext = "AKIAKPQXRMSNTBVWYZBN";
     let (_dir, path) = write_temp_file(
-        "secret.env",
+        ".env.secret",
         &format!("clean line\nAWS_ACCESS_KEY_ID={plaintext}\n"),
     );
     let output = scan(&path);

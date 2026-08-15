@@ -32,7 +32,8 @@ fn sample_finding() -> VerifiedFinding {
         metadata: HashMap::from([("team".into(), "acme".into())]),
         additional_locations: vec![],
         entropy: None,
-        confidence: Some(0.88),
+        evidence_score: Some(0.88),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -121,7 +122,10 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
 
     let text = String::from_utf8(buf).expect("JSON envelope is UTF-8");
     let parsed = JsonReportEnvelope::parse(&text).expect("current major parses");
-    assert_eq!(parsed.schema_version.major, 1);
+    assert_eq!(
+        parsed.schema_version.major,
+        keyhog_core::JSON_REPORT_SCHEMA_MAJOR
+    );
     // Pinned to the exported constant, not a literal: every additive minor
     // revision would otherwise break this contract test for a change the
     // contract explicitly permits.
@@ -181,22 +185,21 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
         keyhog_core::ScanCompletionStatus::Success
     );
 
-    // A report written by an OLDER binary carries an older minor and none of
-    // the additive keys. Forward compatibility is the whole promise of the
-    // minor bump, so the current reader must accept that document.
-    let mut previous_minor: serde_json::Value =
+    // Version 1 findings used the removed `confidence` field and had no
+    // canonical evidence verdict. The version-2 reader rejects that stale
+    // persisted contract instead of inventing a tier.
+    let mut stale_v1: serde_json::Value =
         serde_json::from_str(&text).expect("envelope JSON parses");
-    previous_minor["schema_version"]["minor"] = serde_json::json!(8);
-    let previous_object = previous_minor
-        .as_object_mut()
-        .expect("previous-minor envelope object");
-    previous_object.remove("correlations");
-    previous_object.remove("access_targets");
-    let previous = JsonReportEnvelope::parse(&previous_minor.to_string())
-        .expect("a report from a previous binary must remain readable");
-    assert_eq!(previous.schema_version.minor, 8);
-    assert_eq!(previous.correlations.len(), 0);
-    assert_eq!(previous.findings.len(), 1);
+    stale_v1["schema_version"]["major"] = serde_json::json!(1);
+    stale_v1["schema_version"]["minor"] = serde_json::json!(10);
+    let error = JsonReportEnvelope::parse(&stale_v1.to_string())
+        .expect_err("version-1 evidence-free reports must fail closed");
+    assert!(
+        error
+            .to_string()
+            .contains("unsupported JSON report schema major 1"),
+        "stale major diagnostic must name version 1: {error}"
+    );
 
     let mut future_minor: serde_json::Value =
         serde_json::from_str(&text).expect("envelope JSON parses");
@@ -206,13 +209,13 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
 
     let mut incompatible: serde_json::Value =
         serde_json::from_str(&text).expect("envelope JSON parses");
-    incompatible["schema_version"]["major"] = serde_json::json!(2);
+    incompatible["schema_version"]["major"] = serde_json::json!(3);
     let error = JsonReportEnvelope::parse(&incompatible.to_string())
-        .expect_err("unsupported major must fail closed");
+        .expect_err("unsupported future major must fail closed");
     assert!(
         error
             .to_string()
-            .contains("unsupported JSON report schema major 2"),
+            .contains("unsupported JSON report schema major 3"),
         "major diagnostic must name the incompatible version: {error}"
     );
 }
@@ -244,7 +247,10 @@ fn versioned_jsonl_headers_split_concatenated_streams_and_validate_major() {
     let streams = parse_jsonl_stream(std::str::from_utf8(&joined).expect("JSONL is UTF-8"))
         .expect("concatenated streams parse by header boundary");
     assert_eq!(streams.len(), 2);
-    assert_eq!(streams[0].header.schema_version.minor, 9);
+    assert_eq!(
+        streams[0].header.schema_version.minor,
+        keyhog_core::JSONL_REPORT_SCHEMA_MINOR
+    );
     assert_eq!(streams[0].findings.len(), 1);
     assert!(streams[0].is_complete());
     assert_eq!(
@@ -301,7 +307,7 @@ fn versioned_jsonl_headers_split_concatenated_streams_and_validate_major() {
         .next()
         .expect("header line");
     let mut header_value: serde_json::Value = serde_json::from_slice(header).expect("header JSON");
-    header_value["schema_version"]["major"] = serde_json::json!(2);
+    header_value["schema_version"]["major"] = serde_json::json!(1);
     let replacement = format!("{}\n", header_value);
     let newline = incompatible
         .iter()
@@ -312,5 +318,5 @@ fn versioned_jsonl_headers_split_concatenated_streams_and_validate_major() {
         .expect_err("unsupported JSONL major must fail closed");
     assert!(error
         .to_string()
-        .contains("unsupported JSONL report schema major 2"));
+        .contains("unsupported JSONL report schema major 1"));
 }

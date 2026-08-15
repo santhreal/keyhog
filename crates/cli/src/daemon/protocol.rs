@@ -79,7 +79,11 @@ use std::collections::BTreeMap;
 /// * v14 - lets daemon-local filesystem scans consume and publish spec-bound
 ///   Merkle state, carry trusted skip evidence, and stream bounded batches
 ///   after one drain request.
-pub(crate) const WIRE_VERSION: u32 = 14;
+/// * v15 - raw scanner findings carry a validated evidence verdict. Guard
+///   receipts carry exact protected findings and the default-policy blocking
+///   count so daemon, staged-guard, and one-shot scans preserve finding output
+///   and evidence-policy exits.
+pub(crate) const WIRE_VERSION: u32 = 15;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -445,8 +449,13 @@ pub(crate) enum Response {
         bytes_hit: u64,
         /// Total bytes scanned.
         bytes_scanned: u64,
-        /// Number of unsuppressed findings (without secret values).
+        /// Number of unsuppressed findings.
         findings_count: u64,
+        /// Exact findings carried through the protected daemon transport.
+        #[serde(with = "protected_raw_matches")]
+        findings: Vec<RawMatch>,
+        /// Findings that block the default evidence policy.
+        blocking_findings_count: u64,
         /// Number of coverage gaps.
         coverage_gaps: u64,
         /// Terminal root state label.
@@ -807,6 +816,7 @@ mod protected_raw_matches {
         entropy: Option<f64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         confidence: Option<f64>,
+        evidence: keyhog_core::EvidenceVerdict,
     }
 
     #[derive(Deserialize)]
@@ -822,6 +832,7 @@ mod protected_raw_matches {
         location: MatchLocation,
         entropy: Option<f64>,
         confidence: Option<f64>,
+        evidence: keyhog_core::EvidenceVerdict,
     }
 
     impl From<DaemonRawMatchOwned> for RawMatch {
@@ -841,6 +852,7 @@ mod protected_raw_matches {
                 location: wire.location,
                 entropy: wire.entropy,
                 confidence: wire.confidence,
+                evidence: wire.evidence,
             }
         }
     }
@@ -862,6 +874,7 @@ mod protected_raw_matches {
                 location: &raw_match.location,
                 entropy: raw_match.entropy,
                 confidence: raw_match.confidence,
+                evidence: raw_match.evidence,
             })?;
         }
         sequence.end()

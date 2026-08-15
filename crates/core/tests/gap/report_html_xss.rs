@@ -19,17 +19,15 @@
 //!     (html.rs:102). `html_script.js`, `html_body.html` and `html_styles.css`
 //!     contain zero `</script>` sequences (verified). So any extra `</script>`
 //!     in the output would be an attacker breakout.
-//!   * `VerifiedFinding` uses serde default (snake_case) field names; no
-//!     `rename_all`. Field names in the JSON: detector_id, detector_name,
-//!     service, severity, credential_redacted, credential_hash, location,
-//!     verification, metadata, additional_locations, confidence.
-//!   * `Severity` serializes kebab-case (spec.rs:348): High -> "high",
+//!   * `VerifiedFinding` uses snake_case field names. The required evidence
+//!     object carries `tier` and `reason_code`; `evidence_score` is omitted
+//!     only when absent.
+//!   * `Severity` serializes kebab-case: High -> "high",
 //!     ClientSafe -> "client-safe", etc.
-//!   * `VerificationResult` serializes snake_case (finding.rs:229): Live ->
-//!     "live", RateLimited -> "rate_limited", Error(s) -> {"error":s} which
+//!   * `VerificationResult` serializes snake_case: Live -> "live",
+//!     RateLimited -> "rate_limited", Error(s) -> {"error":s}, which
 //!     `finish` rewrites to the bare string "error".
-//!   * `confidence` is `skip_serializing_if = "Option::is_none"`.
-//!   * `credential_hash` serializes as lowercase hex (finding.rs:319).
+//!   * `credential_hash` serializes as lowercase hex.
 
 use crate::support::reporters::HtmlReporter;
 use std::borrow::Cow;
@@ -65,7 +63,8 @@ fn base_finding() -> VerifiedFinding {
         metadata: HashMap::new(),
         additional_locations: vec![],
         entropy: None,
-        confidence: Some(0.5),
+        evidence_score: Some(0.5),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -630,25 +629,24 @@ fn credential_hash_serializes_as_lowercase_hex() {
 }
 
 #[test]
-fn confidence_present_is_serialized() {
+fn evidence_score_present_is_serialized() {
     let mut f = base_finding();
-    f.confidence = Some(0.5);
+    f.evidence_score = Some(0.5);
     let payload = raw_findings_payload(&render(&f)).to_string();
     assert!(
-        payload.contains(r#""confidence":0.5"#),
+        payload.contains(r#""evidence_score":0.5"#),
         "payload: {payload}"
     );
 }
 
 #[test]
-fn confidence_none_is_omitted() {
-    // skip_serializing_if = "Option::is_none" drops the key entirely.
+fn evidence_score_none_is_omitted() {
     let mut f = base_finding();
-    f.confidence = None;
+    f.evidence_score = None;
     let payload = raw_findings_payload(&render(&f)).to_string();
     assert!(
-        !payload.contains(r#""confidence""#),
-        "confidence key present despite None: {payload}"
+        !payload.contains(r#""evidence_score""#),
+        "evidence_score key present despite None: {payload}"
     );
 }
 

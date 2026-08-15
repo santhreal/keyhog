@@ -229,6 +229,7 @@ fn action_script_args(script_args: &[&str], inputs: &[(&str, &str)]) -> Vec<Stri
     push_script_arg(&mut args, "--verify", "false");
     push_script_arg(&mut args, "--preset", "default");
     push_script_arg(&mut args, "--lockdown", "false");
+    push_script_arg(&mut args, "--evidence-policy", "default");
     push_script_arg(&mut args, "--fail-on-findings", "true");
     push_script_arg(&mut args, "--upload-sarif", "true");
 
@@ -243,6 +244,9 @@ fn action_script_args(script_args: &[&str], inputs: &[(&str, &str)]) -> Vec<Stri
             "ACTION_INPUT_BACKEND" => push_script_arg(&mut args, "--backend", value),
             "ACTION_INPUT_PRESET" => push_script_arg(&mut args, "--preset", value),
             "ACTION_INPUT_LOCKDOWN" => push_script_arg(&mut args, "--lockdown", value),
+            "ACTION_INPUT_EVIDENCE_POLICY" => {
+                push_script_arg(&mut args, "--evidence-policy", value)
+            }
             "ACTION_INPUT_FAIL_ON_FINDINGS" => {
                 push_script_arg(&mut args, "--fail-on-findings", value)
             }
@@ -267,6 +271,7 @@ fn is_action_input_key(key: &str) -> bool {
             | "ACTION_INPUT_BACKEND"
             | "ACTION_INPUT_PRESET"
             | "ACTION_INPUT_LOCKDOWN"
+            | "ACTION_INPUT_EVIDENCE_POLICY"
             | "ACTION_INPUT_FAIL_ON_FINDINGS"
             | "ACTION_INPUT_UPLOAD_SARIF"
     )
@@ -1105,7 +1110,7 @@ fn action_runs_real_keyhog_and_counts_sarif_findings() {
     let repo = dir.path().join("repo");
     fs::create_dir(&repo).expect("create repo");
     fs::write(
-        repo.join("secret.env"),
+        repo.join(".env.secret"),
         "AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\n",
     )
     .expect("write planted secret");
@@ -1156,7 +1161,7 @@ fn action_runs_real_keyhog_and_counts_sarif_findings() {
 fn action_quick_start_scans_the_workspace_and_fails_closed_when_empty() {
     let checked_out = TempDir::new().expect("checked-out workspace tempdir");
     fs::write(
-        checked_out.path().join("secret.env"),
+        checked_out.path().join(".env.secret"),
         "AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\n",
     )
     .expect("write planted secret");
@@ -1204,7 +1209,7 @@ fn action_runs_real_keyhog_and_counts_text_findings() {
     let repo = dir.path().join("repo");
     fs::create_dir(&repo).expect("create repo");
     fs::write(
-        repo.join("secret.env"),
+        repo.join(".env.secret"),
         "AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\n",
     )
     .expect("write planted secret");
@@ -1318,6 +1323,42 @@ exit 1
         summary.contains("| Upload SARIF | <code>true</code> |"),
         "summary={summary}"
     );
+}
+
+/// Review-tier findings remain visible in the report while scanner exit `0`
+/// remains a valid default-policy Action success.
+#[test]
+fn action_accepts_nonempty_report_with_policy_success_exit() {
+    let dir = TempDir::new().expect("tempdir");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+cat > "$out" <<'JSON'
+{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1.0/sarif-schema-2.1.0.json","runs":[{"results":[{"ruleId":"review-one"},{"ruleId":"review-two"}],"tool":{"driver":{"name":"keyhog"}}}]}
+JSON
+exit 0
+"#,
+    );
+
+    let output = run_action(&dir, &[]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "review findings with scanner exit 0 must not be reclassified as blocking; output={}",
+        combined_output(&output)
+    );
+    let gh_output = output_file(&dir);
+    assert!(gh_output.contains("findings=2"), "outputs={gh_output}");
+    assert!(gh_output.contains("exit-code=0"), "outputs={gh_output}");
 }
 
 #[test]
@@ -1957,14 +1998,12 @@ exit 10
     );
 }
 
-/// Regression: wrapper receipts once trusted either process exit or report
-/// count independently, allowing contradictory clean/findings states to pass.
+/// Regression: blocking/live exits require a nonempty authenticated report.
 #[test]
-fn action_rejects_source_receipt_semantic_contradictions() {
-    for (exit_code, report_has_finding, label) in [
-        ("1", false, "findings exit with empty report"),
-        ("10", false, "live exit with empty report"),
-        ("0", true, "clean exit with nonempty report"),
+fn action_rejects_blocking_receipts_with_empty_reports() {
+    for (exit_code, label) in [
+        ("1", "findings exit with empty report"),
+        ("10", "live exit with empty report"),
     ] {
         let dir = TempDir::new().expect("tempdir");
         write_stub(
@@ -1992,10 +2031,7 @@ exit "$STUB_EXIT"
             &[
                 ("ACTION_INPUT_FAIL_ON_FINDINGS", "false"),
                 ("STUB_EXIT", exit_code),
-                (
-                    "STUB_REPORT_HAS_FINDING",
-                    if report_has_finding { "true" } else { "false" },
-                ),
+                ("STUB_REPORT_HAS_FINDING", "false"),
             ],
         );
         assert_eq!(
@@ -2471,7 +2507,7 @@ exit 0
 /// Regression: invalid authoritative Action policy values must fail before any
 /// scanner invocation so malformed inputs cannot fall through to defaults.
 #[test]
-fn action_validates_severity_verify_preset_and_lockdown_before_invoking_scanner() {
+fn action_validates_severity_verify_preset_lockdown_and_evidence_policy_before_invoking_scanner() {
     let dir = TempDir::new().expect("tempdir");
     let invoked = dir.path().join("invoked");
     write_stub(
@@ -2491,6 +2527,7 @@ exit 0
         ("ACTION_INPUT_VERIFY", "yes"),
         ("ACTION_INPUT_PRESET", "turbo"),
         ("ACTION_INPUT_LOCKDOWN", "sometimes"),
+        ("ACTION_INPUT_EVIDENCE_POLICY", "strictish"),
     ] {
         let output = run_action(&dir, &[(key, value)]);
         assert_eq!(
@@ -2700,6 +2737,10 @@ fn composite_action_passes_policy_inputs_to_scanner_script() {
         "composite action must validate fail-on-findings in the tested script"
     );
     assert!(
+        manifest.contains("ACTION_EVIDENCE_POLICY: ${{ inputs.evidence-policy }}"),
+        "composite action must validate evidence-policy in the tested script"
+    );
+    assert!(
         manifest.contains("ACTION_UPLOAD_SARIF: ${{ inputs.upload-sarif }}"),
         "composite action must validate upload-sarif in the tested script"
     );
@@ -2710,6 +2751,10 @@ fn composite_action_passes_policy_inputs_to_scanner_script() {
     assert!(
         manifest.contains("--fail-on-findings \"$ACTION_FAIL_ON_FINDINGS\""),
         "fail-on-findings must reach the tested script through argv"
+    );
+    assert!(
+        manifest.contains("--evidence-policy \"${ACTION_EVIDENCE_POLICY:-default}\""),
+        "evidence-policy must reach the tested script through argv"
     );
     assert!(
         manifest.contains("--upload-sarif \"$ACTION_UPLOAD_SARIF\""),
@@ -3174,7 +3219,7 @@ fn composite_action_fail_step_exits_ten_for_live_credentials() {
 }
 
 #[test]
-fn composite_action_fail_step_exits_one_for_advisory_findings() {
+fn composite_action_fail_step_exits_one_for_blocking_findings() {
     let output = run_manifest_bash_step(
         "Fail when findings reported",
         &[
@@ -3187,11 +3232,13 @@ fn composite_action_fail_step_exits_one_for_advisory_findings() {
     assert_eq!(
         output.status.code(),
         Some(1),
-        "ordinary findings must preserve the existing fail-on-findings contract; output={combined}"
+        "blocking findings must preserve scanner exit 1; output={combined}"
     );
     assert!(
-        combined.contains("2 finding(s) at or above 'critical' severity"),
-        "ordinary findings failure must include count and severity; output={combined}"
+        combined.contains(
+            "2 finding(s) block the active evidence policy at or above 'critical' severity"
+        ),
+        "blocking findings failure must include count, policy, and severity; output={combined}"
     );
 }
 
@@ -4143,6 +4190,12 @@ fn keyhog_workflow_dogfoods_local_composite_action() {
     assert!(
         workflow.contains("fail-on-findings: 'false'"),
         "repo CI should preserve strict-marker gating while still uploading findings"
+    );
+    assert!(
+        workflow.contains("evidence-policy: ${{ steps.evidence-policy.outputs.policy }}")
+            && workflow.contains("policy=paranoid")
+            && workflow.contains("steps.keyhog.outputs.exit-code == '1'"),
+        "strict-marker gating must select paranoid policy and key failure to the scanner exit"
     );
     assert!(
         workflow.contains("ACTION_FINDINGS: ${{ steps.keyhog.outputs.findings }}"),

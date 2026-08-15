@@ -52,6 +52,7 @@ fn make_raw() -> RawMatch {
         },
         entropy: Some(4.5),
         confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -158,7 +159,7 @@ fn redacted_finding_none_floats_are_omitted_from_output() {
     let obj = value.as_object().expect("object");
 
     assert!(!obj.contains_key("entropy"));
-    assert!(!obj.contains_key("confidence"));
+    assert!(!obj.contains_key("evidence_score"));
     assert_eq!(
         obj.get("credential_hash").and_then(|v| v.as_str()),
         Some(AKIA_HASH_HEX)
@@ -334,7 +335,8 @@ fn verified_finding_serialize_adds_remediation_and_sorts_metadata() {
         metadata,
         additional_locations: Vec::new(),
         entropy: None,
-        confidence: Some(0.9),
+        evidence_score: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
 
     let text = serde_json::to_string(&finding).expect("serialize VerifiedFinding");
@@ -342,7 +344,7 @@ fn verified_finding_serialize_adds_remediation_and_sorts_metadata() {
     let obj = value.as_object().expect("object");
 
     // Custom Serialize adds `companions_redacted` and `remediation`.
-    assert_eq!(obj.len(), 13);
+    assert_eq!(obj.len(), 14);
     assert!(obj.contains_key("remediation"));
     assert!(value["remediation"]["action"].is_string());
 
@@ -350,7 +352,7 @@ fn verified_finding_serialize_adds_remediation_and_sorts_metadata() {
     assert_eq!(value["verification"].as_str(), Some("unverifiable"));
     assert_eq!(value["credential_hash"].as_str(), Some(AKIA_HASH_HEX));
     assert_eq!(value["credential_redacted"].as_str(), Some("AK****LE"));
-    assert_eq!(value["confidence"].as_f64(), Some(0.9));
+    assert_eq!(value["evidence_score"].as_f64(), Some(0.9));
     assert_eq!(value["additional_locations"], serde_json::json!([]));
     assert_eq!(
         value["companions_redacted"],
@@ -387,7 +389,8 @@ fn verified_finding_error_verification_serializes_as_tagged_object() {
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
         entropy: None,
-        confidence: None,
+        evidence_score: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
 
     let value = serde_json::to_value(&finding).expect("serialize VerifiedFinding");
@@ -396,9 +399,9 @@ fn verified_finding_error_verification_serializes_as_tagged_object() {
         value["verification"]["error"].as_str(),
         Some("connection timed out")
     );
-    // confidence is None => omitted; field_count == 12.
+    // evidence_score is None => omitted; field_count == 13.
     let obj = value.as_object().expect("object");
-    assert!(!obj.contains_key("confidence"));
-    assert_eq!(obj.len(), 12);
+    assert!(!obj.contains_key("evidence_score"));
+    assert_eq!(obj.len(), 13);
     assert_eq!(value["severity"].as_str(), Some("high"));
 }

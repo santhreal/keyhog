@@ -28,7 +28,8 @@ fn sample_finding() -> VerifiedFinding {
         metadata: HashMap::from([("team".into(), "acme".into())]),
         additional_locations: vec![],
         entropy: None,
-        confidence: Some(0.85),
+        evidence_score: Some(0.85),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -115,7 +116,7 @@ fn sarif_reporter_basic_structure() {
 
     let props = &results[0]["properties"];
     assert_eq!(props["verification"], "live");
-    assert_eq!(props["confidence"], 0.85);
+    assert_eq!(props["evidence_score"], 0.85);
     assert_eq!(props["metadata.team"], "acme");
 }
 

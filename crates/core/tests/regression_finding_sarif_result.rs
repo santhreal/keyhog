@@ -67,7 +67,8 @@ fn finding(
         metadata: HashMap::new(),
         additional_locations: vec![],
         entropy: None,
-        confidence: Some(0.9),
+        evidence_score: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -371,9 +372,9 @@ fn properties_verification_token_matches_result() {
     );
 }
 
-/// A finite confidence passes through as the same f64; `None` omits the key.
+/// A finite evidence score passes through as the same f64; `None` omits the key.
 #[test]
-fn properties_confidence_passthrough_and_omitted() {
+fn properties_evidence_score_passthrough_and_omitted() {
     let with = finding(
         "aws-access-key",
         "aws",
@@ -384,19 +385,21 @@ fn properties_confidence_passthrough_and_omitted() {
         0,
     );
     let mut without = with.clone();
-    without.confidence = None;
+    without.evidence_score = None;
     without.location.file_path = Some("b.env".into());
     let json = render_sarif(&[with, without]);
-    let c = result(&json, 0)["properties"]["confidence"]
+    let score = result(&json, 0)["properties"]["evidence_score"]
         .as_f64()
-        .expect("confidence must be a JSON number when present");
+        .expect("evidence score must be a JSON number when present");
     assert!(
-        (c - 0.9).abs() < 1e-9,
-        "confidence must pass through as 0.9, got {c}"
+        (score - 0.9).abs() < 1e-9,
+        "evidence score must pass through as 0.9, got {score}"
     );
     assert!(
-        result(&json, 1)["properties"].get("confidence").is_none(),
-        "a None confidence must omit the properties.confidence key"
+        result(&json, 1)["properties"]
+            .get("evidence_score")
+            .is_none(),
+        "a None evidence score must omit properties.evidence_score"
     );
 }
 
@@ -423,10 +426,10 @@ fn properties_entropy_passthrough_and_omitted() {
     );
 }
 
-/// Adversarial: a non-finite confidence (NaN) is coerced to 0.0, never emitted
-/// as `null`/`NaN` (which would make the SARIF invalid JSON).
+/// Adversarial: a non-finite evidence score (NaN) is coerced to 0.0, never
+/// emitted as `null`/`NaN` (which would make the SARIF invalid JSON).
 #[test]
-fn properties_non_finite_confidence_coerced_to_zero() {
+fn properties_non_finite_evidence_score_coerced_to_zero() {
     let mut f = finding(
         "aws-access-key",
         "aws",
@@ -436,12 +439,15 @@ fn properties_non_finite_confidence_coerced_to_zero() {
         Some(1),
         0,
     );
-    f.confidence = Some(f64::NAN);
+    f.evidence_score = Some(f64::NAN);
     let json = render_sarif(&[f]);
-    let c = result(&json, 0)["properties"]["confidence"]
+    let score = result(&json, 0)["properties"]["evidence_score"]
         .as_f64()
-        .expect("non-finite confidence must serialize as a finite number, not null");
-    assert_eq!(c, 0.0, "NaN confidence must be coerced to exactly 0.0");
+        .expect("non-finite evidence score must serialize as a finite number, not null");
+    assert_eq!(
+        score, 0.0,
+        "NaN evidence score must be coerced to exactly 0.0"
+    );
 }
 
 /// Metadata entries are flattened into properties under a `metadata.` prefix,

@@ -23,7 +23,7 @@ fn write_repo_local_fixture() -> (tempfile::TempDir, PathBuf) {
     let fixtures_dir = dir.path().join("fixtures");
     std::fs::create_dir_all(&fixtures_dir).expect("mkdir fixtures");
     std::fs::write(
-        fixtures_dir.join("leak.env"),
+        fixtures_dir.join(".env.leak"),
         concat!("AWS_ACCESS_KEY_ID=\"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
     )
     .expect("write leak");

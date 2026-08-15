@@ -102,9 +102,9 @@ pub struct CorrelatedMember {
     /// Hex SHA-256 digest of the member credential, the join key for value
     /// reuse and the stable link back to the finding it came from.
     pub credential_hash: String,
-    /// Member confidence before correlation lifted it.
+    /// Member evidence score before correlation lifted it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub confidence: Option<f64>,
+    pub evidence_score: Option<f64>,
     /// Locations of this member that fall inside the group's scope.
     pub locations: Vec<CorrelatedLocation>,
 }
@@ -123,15 +123,15 @@ pub struct CorrelatedCredential {
     /// Group severity: the strongest member severity, raised to the composite's
     /// declared severity when the Tier-B policy declares a higher one.
     pub severity: Severity,
-    /// Correlated confidence: the strongest member confidence lifted by the
+    /// Correlated evidence score: the strongest member score lifted by the
     /// Tier-B bonus and clamped to the configured ceiling. Absent when no
-    /// member scored a confidence at all.
+    /// member carries an evidence score.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub confidence: Option<f64>,
-    /// Strongest confidence any single member had before the lift, so a reader
-    /// can see exactly what correlation added.
+    pub evidence_score: Option<f64>,
+    /// Strongest evidence score any single member had before the lift, so a
+    /// reader can see exactly what correlation added.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub strongest_member_confidence: Option<f64>,
+    pub strongest_member_evidence_score: Option<f64>,
     /// Directory the composite parts share. Absent for value reuse, which is
     /// scoped to the whole scan.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -342,17 +342,17 @@ fn finding_locations(finding: &VerifiedFinding) -> impl Iterator<Item = &MatchLo
     std::iter::once(&finding.location).chain(finding.additional_locations.iter())
 }
 
-/// Largest confidence in an iterator of member findings, ignoring members that
-/// never scored one.
-fn strongest_confidence<'a>(members: impl Iterator<Item = &'a VerifiedFinding>) -> Option<f64> {
+/// Largest evidence score in an iterator of member findings, ignoring members
+/// that never scored one.
+fn strongest_evidence_score<'a>(members: impl Iterator<Item = &'a VerifiedFinding>) -> Option<f64> {
     members
-        .filter_map(|finding| finding.confidence)
+        .filter_map(|finding| finding.evidence_score)
         .fold(None, |best: Option<f64>, value| {
             Some(best.map_or(value, |current| current.max(value)))
         })
 }
 
-/// Apply a Tier-B bonus to the strongest member confidence, clamped to the
+/// Apply a Tier-B bonus to the strongest member evidence score, clamped to the
 /// configured ceiling. A member already at the ceiling keeps its value.
 fn lift(strongest: Option<f64>, bonus: f64) -> Option<f64> {
     strongest.map(|value| {
@@ -391,7 +391,7 @@ fn member_of(
         role,
         credential_redacted: finding.credential_redacted.to_string(),
         credential_hash: hex_encode(finding.credential_hash),
-        confidence: finding.confidence,
+        evidence_score: finding.evidence_score,
         locations,
     }
 }
@@ -492,7 +492,7 @@ fn value_reuse_groups(findings: &[VerifiedFinding]) -> Vec<CorrelatedCredential>
                     .map_or("Credential", |member| member.detector_name.as_str())
             )
         };
-        let strongest = strongest_confidence(group.iter().copied());
+        let strongest = strongest_evidence_score(group.iter().copied());
         let severity = members
             .iter()
             .map(|member| member.severity)
@@ -504,8 +504,8 @@ fn value_reuse_groups(findings: &[VerifiedFinding]) -> Vec<CorrelatedCredential>
             title,
             service: shared_service(&members),
             severity,
-            confidence: lift(strongest, POLICY.settings.reuse_confidence_bonus),
-            strongest_member_confidence: strongest,
+            evidence_score: lift(strongest, POLICY.settings.reuse_confidence_bonus),
+            strongest_member_evidence_score: strongest,
             scope: None,
             file_count,
             impact: POLICY.settings.reuse_impact.clone(),
@@ -621,7 +621,7 @@ fn composite_group(
     });
     let locations = union_locations(&members);
     let file_count = distinct_files(&locations);
-    let strongest = strongest_confidence(sources.into_iter());
+    let strongest = strongest_evidence_score(sources.into_iter());
     let severity = members
         .iter()
         .map(|member| member.severity)
@@ -634,8 +634,8 @@ fn composite_group(
         title: format!("{} split across {file_count} files", composite.name),
         service: composite.service.clone(),
         severity,
-        confidence: lift(strongest, composite.confidence_bonus),
-        strongest_member_confidence: strongest,
+        evidence_score: lift(strongest, composite.confidence_bonus),
+        strongest_member_evidence_score: strongest,
         scope: Some(directory.to_string()),
         file_count,
         impact: composite.impact.clone(),

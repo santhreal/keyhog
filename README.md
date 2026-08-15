@@ -26,15 +26,15 @@ systems.**
 
 Most secret scanners stop at CPU regex matches in a repository checkout.
 KeyHog combines **926 service-specific detectors**, decode-through for concealed
-credentials, context-aware confidence and suppression, live provider
-verification, and first-class **CUDA, Metal, and WGPU execution through
+credentials, context-aware evidence and suppression, live provider verification,
+and first-class **CUDA, Metal, and WGPU execution through
 [Vyre](https://github.com/santhreal/vyre)**. Calibration measures every eligible
 pure-Rust CPU, Hyperscan/SIMD, and GPU backend. Automatic routing then uses the
 fastest parity-proven route for the exact host and workload class.
 
 | GPU is a real backend | Scan the actual attack surface | Separate signal from noise | Act on the result |
 |---|---|---|---|
-| CUDA, native Metal, and WGPU are measured peers, not a silent fallback chain. | Scan Git history, Docker layers, archives, cloud buckets, source maps, WASM, HAR captures, hosted Git collections, and whole systems. | Decode base64, hex, URL, protobuf, multiline, and structured configuration before applying confidence, example suppression, and baselines. | Verify eligible credentials with provider APIs, emit SARIF or structured envelopes, and preserve exact coverage and exit semantics. |
+| CUDA, native Metal, and WGPU are measured peers, not a silent fallback chain. | Scan Git history, Docker layers, archives, cloud buckets, source maps, WASM, HAR captures, hosted Git collections, and whole systems. | Decode base64, hex, URL, protobuf, multiline, and structured configuration before applying evidence, example suppression, and baselines. | Verify eligible credentials with provider APIs, emit SARIF or structured envelopes, and preserve exact coverage and exit semantics. |
 
 ```sh
 cargo install --locked keyhog
@@ -42,7 +42,7 @@ keyhog scan .
 ```
 
 <p align="center">
-  <img src="demo/keyhog-scan.gif" alt="KeyHog scan showing severity, confidence, file and line, remediation, results, and coverage status" width="900" />
+  <img src="demo/keyhog-scan.gif" alt="KeyHog scan showing severity, evidence, file and line, remediation, results, and coverage status" width="900" />
 </p>
 
 ## A secret scanner built around the GPU
@@ -51,7 +51,7 @@ KeyHog does not hand a few regular expressions to a generic compute shader.
 Its GPU path is built on [Vyre](https://github.com/santhreal/vyre), a Rust GPU
 compute substrate developed alongside KeyHog. Detector triggers compile into
 immutable GPU-resident tables. Bounded source batches produce complete match
-positions for the same confirmation, suppression, confidence, and reporting
+positions for the same confirmation, suppression, evidence, and reporting
 pipeline used by CPU and Hyperscan routes.
 
 - **Three physical GPU peers.** CUDA, native Metal, and portable WGPU are
@@ -99,19 +99,20 @@ Pin a CI environment to one exact release with
 or newer. See the [installation guide](https://santhreal.github.io/keyhog/install.html)
 for GPU, Hyperscan, CI, portable, and source-build profiles.
 
-KeyHog exits `0` when the scan is clean and `1` when it reports findings above
-your severity floor. Exit `1` means the scanner worked. Review each finding's
-file, line, detector, and remediation before deciding whether to remove,
-rotate, or suppress the credential. Other nonzero codes describe input,
-system, verification, or coverage failures; see the
+KeyHog exits `1` when a finding blocks the active evidence policy. The default
+policy blocks `likely` and `confirmed` findings while keeping `review` findings
+visible with exit `0`; `--evidence-policy paranoid` blocks every tier. Review
+each finding's exact evidence tier, reason code, file, line, detector, and
+remediation. Other nonzero codes describe input, system, verification, or
+coverage failures; see the
 [exit-code reference](https://santhreal.github.io/keyhog/reference/exit-codes.html).
 
 The complete process contract is:
 
 | Exit | Meaning |
 |---|---|
-| `0` clean | The scan completed with no reportable finding or coverage failure. |
-| `1` findings | Findings are present, but none were confirmed live. |
+| `0` success | No finding blocks the active evidence policy, and no coverage failure occurred. Review-tier findings can remain visible under the default policy. |
+| `1` blocking findings | At least one finding blocks the active evidence policy, but none were confirmed live. |
 | `2` operator error | Fix the arguments, configuration, detector corpus, or operator-correctable input. |
 | `3` system error | Repair or retry the runner. This includes low-level I/O, fatal daemon service, incremental-cache, and explicitly selected SIMD failures. |
 | `4` `backend --self-test` or maintenance failure | The requested installation, repair, backend, or autoroute health check was unhealthy. |
@@ -192,7 +193,7 @@ state.
 | Final package artifact | Run `npm pack`, then scan the produced `.tgz` with `keyhog scan package.tgz`. Archive expansion checks generated files, source maps, fixtures, and metadata that are absent from the expected source tree. |
 | Deployed browser application | `keyhog scan --url https://app.example.com/assets/app.js` follows bounded JavaScript, source-map, WASM, and response decoding without turning the scanner into an unbounded crawler. |
 | GitHub issues, pull requests, discussions, wikis, and gists | `keyhog scan --github-collaboration owner/repo --github-all` scans every collaboration surface outside the checkout. |
-| AI agent and MCP configuration | `keyhog scan ~/.config ~/.claude ~/.codex` applies the same detector, decode, confidence, and reporting pipeline to local tool configuration. |
+| AI agent and MCP configuration | `keyhog scan ~/.config ~/.claude ~/.codex` applies the same detector, decode, evidence, and reporting pipeline to local tool configuration. |
 | Container image layers | `keyhog scan --docker-image registry.example.com/team/app:v1` scans the image content that will run, including files introduced during the build. |
 | Cloud object inventories | `keyhog scan --s3-bucket BUCKET`, `--gcs-bucket BUCKET`, or `--azure-container-url URL` preserves provider pagination, object, and byte-limit coverage in the terminal report. |
 | Entire development host | `sudo keyhog scan-system --space 50G` discovers mounted filesystems and reachable Git history under a hard storage budget. |
@@ -504,9 +505,9 @@ contracts.
 ## How KeyHog works
 
 KeyHog compiles its 926 detectors into a shared trigger and extraction plan,
-decodes nested encodings before matching, and applies per-detector confidence
-and suppression. Pure-Rust CPU (`cpu-fallback`) is always available. The
-Hyperscan route (`simd-regex`) uses Hyperscan when that feature is present;
+decodes nested encodings before matching, and applies per-detector scoring,
+evidence, and suppression. Pure-Rust CPU (`cpu-fallback`) is always available.
+The Hyperscan route (`simd-regex`) uses Hyperscan when that feature is present;
 portable builds use the CPU route. CUDA (`gpu-cuda-region-presence`), Metal
 (`gpu-metal-region-presence`), and WGPU (`gpu-wgpu-region-presence`) are peers
 in a proof-backed autoroute selector, not a fallback chain. Calibration measures
@@ -617,20 +618,21 @@ Browse detector authoring and inspection in the
   Jinja templated outputs, all reassembled before regex matching.
 - **Companion validation.** Required companions gate high-noise detectors. A
   Twilio API key without its API secret is skipped. Optional companions enrich
-  confidence or verification. AWS access-key detection does not require its
-  secret, but the secret is needed for live verification.
+  evidence scoring or verification. AWS access-key detection does not require
+  its secret, but the secret is needed for live verification.
 - **Cross-detector resolution.** Detector TOML can require, reject, or subsume
   bounded findings from another detector. Resolution stays deterministic across
   input order, and invalid targets, contradictions, or dependency cycles fail
   corpus compilation.
-- **Confidence scoring.** Every finding carries a `[0.0, 1.0]` score
-  derived from Shannon entropy, surrounding context, companion match,
-  detector-owned offline proof (GitHub/npm CRC32 and PyPI payload decoding),
-  structural evidence, and a small ML classifier
-  (~30k params). Default threshold `0.40` (the canonical
-  `ScanConfig::default()` floor; same as the `--min-confidence` default
-  and the `[scan].min_confidence` example below) filters low-quality
-  matches without hiding real secrets.
+- **Evidence verdicts.** Every finding carries an exact `review`, `likely`, or
+  `confirmed` tier plus a canonical reason code. Intrinsic checksum or grammar
+  proof, required companions, and live verification produce confirmed evidence;
+  strong vendor-specific shape in a credential-bearing role produces likely
+  evidence; weak anchors, generic assignments, entropy-only candidates, and
+  test, documentation, rule, or identifier contexts remain review evidence.
+  An optional `evidence_score` supplements the verdict when measured. The
+  scanner's internal confidence floor remains configurable with
+  `--min-confidence`.
 - **Bayesian per-detector calibration.** `keyhog calibrate --fp generic-api-key`
   writes a Beta(α,β) posterior. Scans use it only when `--calibration-cache`
   or `[system].calibration_cache` points at that file, so confidence tuning is
@@ -855,7 +857,7 @@ for credential and runtime inputs.
 KeyHog keeps orchestration at the edge and domain behavior in libraries:
 
 ```text
-sources -> scanner -> suppression/confidence -> reporting
+sources -> scanner -> suppression/evidence -> reporting
                  \-> optional verifier
 CLI and Action own process, transport, and exit semantics.
 ```

@@ -3,7 +3,7 @@
 //!
 //! Complements `regression_report_alt_formats.rs` (header / single planted row /
 //! empty run) and `regression_csv_formula_injection.rs` (formula defang) by
-//! pinning the parts those files do not: the 20-column ORDER and count, a fully
+//! pinning the parts those files do not: the 22-column ORDER and count, a fully
 //! populated row with every git field present, empty cells for absent optional
 //! fields (line/confidence), RFC-4180 quoting for a NON-formula comma / embedded
 //! double-quote / embedded newline, the kebab-case severity strings for all six
@@ -21,8 +21,8 @@ use keyhog_core::{
     VerificationResult, VerifiedFinding,
 };
 
-/// The exact 20-column CSV header keyhog writes on CsvReporter::new.
-const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations";
+/// The exact 22-column CSV header keyhog writes on CsvReporter::new.
+const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,evidence_tier,evidence_reason_code,evidence_score,entropy,remediation,metadata,additional_locations";
 
 /// AWS's Tier-B remediation serialized and escaped as one RFC-4180 CSV cell.
 const AWS_REMEDIATION_CSV: &str = r#""{""action"":""Disable or delete the exposed IAM access key, then rotate any paired secret access key and session token."",""revoke_url"":""https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_ManagingAccessKeys"",""docs_url"":""https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html"",""revoke_command"":""aws iam update-access-key --access-key-id {{credential}} --status Inactive""}""#;
@@ -66,7 +66,8 @@ fn base() -> VerifiedFinding {
         metadata: HashMap::new(),
         additional_locations: vec![],
         entropy: None,
-        confidence: Some(0.9),
+        evidence_score: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -110,11 +111,11 @@ fn data_columns(out: &str) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn csv_header_is_exactly_twenty_columns_in_canonical_order() {
+fn csv_header_is_exactly_twenty_two_columns_in_canonical_order() {
     let out = render(&[base()]);
     let header = out.lines().next().expect("csv must have a header line");
     assert_eq!(header, CSV_HEADER);
-    assert_eq!(header.split(',').count(), 20);
+    assert_eq!(header.split(',').count(), 22);
 }
 
 #[test]
@@ -149,11 +150,14 @@ fn csv_fully_populated_row_places_every_field_exactly() {
         date: Some("2026-07-01".into()),
     };
     f.verification = VerificationResult::Live;
-    f.confidence = Some(0.875);
+    f.evidence_score = Some(0.875);
+    f.evidence = keyhog_core::EvidenceVerdict::from_reason(
+        keyhog_core::EvidenceReasonCode::LiveVerification,
+    );
 
     let out = render(&[f]);
     let expected = format!(
-        "github-pat,GitHub PAT,github,critical,ghp_****,{},{{}},git,src/config.rs,42,1234,abc123,Jane Dev,2026-07-01,live,0.875,,{GITHUB_SERVICE_REMEDIATION_CSV},{{}},[]",
+        "github-pat,GitHub PAT,github,critical,ghp_****,{},{{}},git,src/config.rs,42,1234,abc123,Jane Dev,2026-07-01,live,confirmed,live-verification,0.875,,{GITHUB_SERVICE_REMEDIATION_CSV},{{}},[]",
         "00".repeat(32)
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);
@@ -164,23 +168,25 @@ fn csv_fully_populated_row_places_every_field_exactly() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn csv_confidence_none_yields_empty_trailing_cell() {
+fn csv_evidence_score_none_yields_empty_cell() {
     let mut f = base();
-    f.confidence = None;
+    f.evidence_score = None;
     let out = render(&[f]);
     let cols = data_columns(&out);
-    assert_eq!(cols.len(), 20);
+    assert_eq!(cols.len(), 22);
     assert_eq!(cols[14], "unverifiable");
-    assert_eq!(cols[15], "");
-    assert_eq!(cols[16], "");
-    let remediation: serde_json::Value = serde_json::from_str(&cols[17]).expect("remediation JSON");
+    assert_eq!(cols[15], "review");
+    assert_eq!(cols[16], "unattributed");
+    assert_eq!(cols[17], "");
+    assert_eq!(cols[18], "");
+    let remediation: serde_json::Value = serde_json::from_str(&cols[19]).expect("remediation JSON");
     assert_eq!(remediation["action"], "Disable or delete the exposed IAM access key, then rotate any paired secret access key and session token.");
     assert!(
-        out.contains(",unverifiable,,,\"{"),
-        "remediation must follow confidence"
+        out.contains(",unverifiable,review,unattributed,,,\"{"),
+        "remediation must follow evidence fields"
     );
-    assert_eq!(cols[18], "{}");
-    assert_eq!(cols[19], "[]");
+    assert_eq!(cols[20], "{}");
+    assert_eq!(cols[21], "[]");
 }
 
 #[test]
@@ -188,12 +194,12 @@ fn csv_measured_entropy_is_a_distinct_numeric_column() {
     let mut f = base();
     f.entropy = Some(4.5);
     let cols = data_columns(&render(&[f]));
-    assert_eq!(cols.len(), 20);
-    assert_eq!(cols[16], "4.5");
-    let remediation: serde_json::Value = serde_json::from_str(&cols[17]).expect("remediation JSON");
+    assert_eq!(cols.len(), 22);
+    assert_eq!(cols[18], "4.5");
+    let remediation: serde_json::Value = serde_json::from_str(&cols[19]).expect("remediation JSON");
     assert!(remediation["action"].is_string());
-    assert_eq!(cols[18], "{}");
-    assert_eq!(cols[19], "[]");
+    assert_eq!(cols[20], "{}");
+    assert_eq!(cols[21], "[]");
 }
 
 #[test]
@@ -212,10 +218,10 @@ fn csv_preserves_sorted_metadata_and_additional_locations() {
     });
 
     let cols = data_columns(&render(&[f]));
-    assert_eq!(cols.len(), 20);
-    assert_eq!(cols[18], r#"{"account":"123","scope":"read"}"#);
+    assert_eq!(cols.len(), 22);
+    assert_eq!(cols[20], r#"{"account":"123","scope":"read"}"#);
     let locations: serde_json::Value =
-        serde_json::from_str(&cols[19]).expect("additional locations JSON");
+        serde_json::from_str(&cols[21]).expect("additional locations JSON");
     assert_eq!(locations[0]["source"], "git");
     assert_eq!(locations[0]["file_path"], "history.env");
     assert_eq!(locations[0]["line"], 19);

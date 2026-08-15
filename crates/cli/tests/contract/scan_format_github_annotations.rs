@@ -55,7 +55,7 @@ fn clean_scan_emits_success_status_notice() {
 fn planted_secret_emits_github_error_annotation() {
     let plaintext = "AKIAKPQXRMSNTBVWYZBN";
     let (_dir, path) = write_temp_file(
-        "secret.env",
+        ".env.secret",
         &format!("clean line\nAWS_ACCESS_KEY_ID={plaintext}\n"),
     );
     let output = scan(&path);

@@ -27,6 +27,7 @@ fn make_match(detector_id: &str, credential: &str, confidence: Option<f64>) -> R
         },
         entropy: None,
         confidence,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

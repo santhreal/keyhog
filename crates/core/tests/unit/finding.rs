@@ -23,6 +23,7 @@ fn raw_match_sorting_priority() {
             },
             entropy: None,
             confidence: Some(0.5),
+            evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
         },
         RawMatch {
             detector_id: "test-high".into(),
@@ -43,6 +44,7 @@ fn raw_match_sorting_priority() {
             },
             entropy: None,
             confidence: Some(0.9),
+            evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
         },
         RawMatch {
             detector_id: "test-med".into(),
@@ -63,6 +65,7 @@ fn raw_match_sorting_priority() {
             },
             entropy: None,
             confidence: Some(0.9),
+            evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
         },
     ];
 
@@ -139,6 +142,7 @@ fn raw_match_sorting_handles_close_floats_without_epsilon_collapse() {
         },
         entropy: None,
         confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     let mut higher = lower.clone();
     higher.detector_id = "beta".into();

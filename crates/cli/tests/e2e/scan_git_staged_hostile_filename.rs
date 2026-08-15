@@ -42,6 +42,8 @@ fn staged_secret_in_newline_non_utf8_filename_is_scanned() {
             "--format",
             "json",
             "--no-suppress-test-fixtures",
+            "--evidence-policy",
+            "paranoid",
         ])
         .current_dir(repo)
         .arg(".")
@@ -84,12 +86,12 @@ fn staged_rename_scans_the_destination_blob() {
             .success());
     }
     std::fs::write(
-        repo.join("original.env"),
+        repo.join(".env.original"),
         "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
     )
     .expect("write original");
     assert!(Command::new("git")
-        .args(["add", "original.env"])
+        .args(["add", ".env.original"])
         .current_dir(repo)
         .status()
         .expect("git add")
@@ -101,7 +103,7 @@ fn staged_rename_scans_the_destination_blob() {
         .expect("git commit")
         .success());
     assert!(Command::new("git")
-        .args(["mv", "original.env", "renamed.env"])
+        .args(["mv", ".env.original", "renamed.env"])
         .current_dir(repo)
         .status()
         .expect("git mv")

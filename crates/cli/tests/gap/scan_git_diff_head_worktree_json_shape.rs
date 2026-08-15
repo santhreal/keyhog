@@ -31,7 +31,7 @@ fn scan_git_diff_head_worktree_json_shape() {
         .status()
         .unwrap();
     std::fs::write(
-        repo.join("leak.env"),
+        repo.join(".env.leak"),
         "export AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
     )
     .unwrap();
@@ -58,7 +58,7 @@ fn scan_git_diff_head_worktree_json_shape() {
     let obj = &v[0];
     // Law 6: pin the actual attribution, not just that the keys exist. The
     // planted `AKIAKPQXRMSNTBVWYZBN` in the worktree file must surface as the
-    // aws-access-key detector, pointing at leak.env.
+    // aws-access-key detector, pointing at .env.leak.
     assert_eq!(
         obj.get("detector_id").and_then(|d| d.as_str()),
         Some("aws-access-key"),
@@ -73,7 +73,7 @@ fn scan_git_diff_head_worktree_json_shape() {
         obj["location"]["file_path"]
             .as_str()
             .unwrap_or_default()
-            .contains("leak.env"),
-        "finding must point at the worktree file leak.env; got {v}"
+            .contains(".env.leak"),
+        "finding must point at the worktree file .env.leak; got {v}"
     );
 }

@@ -1,5 +1,5 @@
 name: 'KeyHog Secret Scanner'
-description: 'Scan a path for secrets, keep a report, and fail on findings by default.'
+description: 'Scan a path for secrets, keep a report, and fail on policy-blocking findings by default.'
 branding:
   icon: 'shield'
   color: 'red'
@@ -33,9 +33,16 @@ inputs:
     default: 'keyhog'
   fail-on-findings:
     description: |
-      Fail on reported findings. Set to "false" for advisory findings.
-      A verified-live credential still fails with exit code 10.
+      Fail when the scanner's active evidence policy blocks findings. The
+      default scanner policy blocks likely and confirmed findings while review
+      findings remain visible. A verified-live credential always fails with
+      exit code 10. Set to "false" to make non-live blocking findings advisory.
     default: 'true'
+  evidence-policy:
+    description: |
+      Evidence tiers that block the scan: default blocks likely and confirmed;
+      paranoid also blocks review. Findings remain visible under either policy.
+    default: 'default'
   baseline:
     description: |
       Committed baseline created with keyhog scan <PATH>
@@ -58,7 +65,7 @@ outputs:
     description: 'Number of reported findings at or above `severity`.'
     value: ${{ steps.scan.outputs.findings }}
   exit-code:
-    description: 'Raw KeyHog exit code. Common scan results are 0 clean, 1 findings, and 10 verified-live findings.'
+    description: 'Raw KeyHog exit code. Common scan results are 0 policy success, 1 blocking findings, and 10 verified-live findings.'
     value: ${{ steps.scan.outputs.exit-code }}
   duration-ms:
     description: 'Scan duration in milliseconds.'
@@ -346,6 +353,7 @@ runs:
         ACTION_BASELINE: ${{ inputs.baseline }}
         ACTION_PRESET: ${{ inputs.preset }}
         ACTION_LOCKDOWN: ${{ inputs.lockdown }}
+        ACTION_EVIDENCE_POLICY: ${{ inputs.evidence-policy }}
         ACTION_CACHE_HOME: ${{ steps.runtime.outputs.path }}/cache
         ACTION_KEYHOG: ${{ steps.install.outputs.binary-path }}
         ACTION_RUNTIME: ${{ steps.runtime.outputs.path }}
@@ -371,6 +379,13 @@ runs:
           true | false) ;;
           *)
             echo "::error title=KeyHog::Invalid lockdown. Use 'true' or 'false'."
+            exit 2
+            ;;
+        esac
+        case "${ACTION_EVIDENCE_POLICY:-default}" in
+          default | paranoid) ;;
+          *)
+            echo "::error title=KeyHog::Invalid evidence-policy. Use one of: default, paranoid."
             exit 2
             ;;
         esac
@@ -405,6 +420,7 @@ runs:
           --severity "$ACTION_SEVERITY"
           --format json
           --autoroute-cache "$route_cache"
+          --evidence-policy "${ACTION_EVIDENCE_POLICY:-default}"
         )
         args=(
           scan
@@ -416,6 +432,7 @@ runs:
           --format json
           --output "$probe"
           --autoroute-cache "$route_cache"
+          --evidence-policy "${ACTION_EVIDENCE_POLICY:-default}"
         )
         if [[ -n "$preset_flag" ]]; then
           config_args+=("$preset_flag")
@@ -475,6 +492,7 @@ runs:
         ACTION_LOCKDOWN: ${{ inputs.lockdown }}
         ACTION_OUTPUT: ${{ steps.outfile.outputs.name }}
         ACTION_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+        ACTION_EVIDENCE_POLICY: ${{ inputs.evidence-policy }}
         ACTION_UPLOAD_SARIF: ${{ inputs.upload-sarif }}
         ACTION_CACHE_HOME: ${{ steps.runtime.outputs.path }}/cache
         ACTION_RUNTIME: ${{ steps.runtime.outputs.path }}
@@ -531,6 +549,7 @@ runs:
           --preset "$ACTION_PRESET"
           --lockdown "$ACTION_LOCKDOWN"
           --fail-on-findings "$ACTION_FAIL_ON_FINDINGS"
+          --evidence-policy "${ACTION_EVIDENCE_POLICY:-default}"
           --upload-sarif "$ACTION_UPLOAD_SARIF"
         )
         if [[ -n "${ACTION_BASELINE:-}" ]]; then
@@ -616,7 +635,7 @@ runs:
     - name: Fail when findings reported
       # The runner is tolerated long enough to upload its report. Re-emit every
       # terminal scanner or wrapper failure here after those always-run steps.
-      if: always() && (steps.scan.outcome == 'failure' || (steps.scan.outputs.runner-exit-code != '' && (steps.scan.outputs.runner-exit-code != '0' || (steps.scan.outputs.findings != '' && steps.scan.outputs.exit-code != '' && ((inputs.fail-on-findings == 'true' && (steps.scan.outputs.findings != '0' || steps.scan.outputs.exit-code == '1')) || steps.scan.outputs.exit-code == '10')))))
+      if: always() && (steps.scan.outcome == 'failure' || (steps.scan.outputs.runner-exit-code != '' && (steps.scan.outputs.runner-exit-code != '0' || (steps.scan.outputs.findings != '' && steps.scan.outputs.exit-code != '' && ((inputs.fail-on-findings == 'true' && steps.scan.outputs.exit-code == '1') || steps.scan.outputs.exit-code == '10')))))
       shell: bash
       env:
         ACTION_RUNNER_EXIT_CODE: ${{ steps.scan.outputs.runner-exit-code }}
@@ -668,8 +687,8 @@ runs:
           exit 10
         fi
         if [[ "$ACTION_EXIT_CODE" == "1" && "$ACTION_FINDINGS" == "0" ]]; then
-          echo "::error title=KeyHog::keyhog exited 1 (findings) but the report count is 0; treating as a findings failure (fail-on-findings)."
+          echo "::error title=KeyHog::keyhog exited 1 (blocking findings) but the report count is 0; treating as a policy failure."
           exit 1
         fi
-        echo "::error title=KeyHog::${ACTION_FINDINGS} finding(s) at or above '${ACTION_SEVERITY}' severity. Set fail-on-findings:false to ignore."
+        echo "::error title=KeyHog::${ACTION_FINDINGS} finding(s) block the active evidence policy at or above '${ACTION_SEVERITY}' severity. Set fail-on-findings:false to make non-live blocking findings advisory."
         exit 1

@@ -96,6 +96,7 @@ impl PendingRawMatch {
                 location: self.location,
                 entropy: self.entropy,
                 confidence: Some(confidence),
+                evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
             },
             self.provenance,
         )
@@ -532,8 +533,12 @@ impl AttributedRawMatch {
     }
 
     pub(crate) fn into_raw(self) -> keyhog_core::RawMatch {
-        let Self { raw, provenance } = self;
+        let Self {
+            mut raw,
+            provenance,
+        } = self;
         debug_assert!(provenance.is_well_formed());
+        raw.evidence = provenance.evidence();
         raw
     }
 }

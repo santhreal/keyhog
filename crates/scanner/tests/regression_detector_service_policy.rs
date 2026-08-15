@@ -41,6 +41,7 @@ fn raw_match(detector_id: &str, service: &str, credential: &str, confidence: f64
         },
         entropy: None,
         confidence: Some(confidence),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

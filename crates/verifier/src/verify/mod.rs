@@ -276,6 +276,7 @@ pub async fn tracked_join_error_preservation_for_test() -> Option<VerifiedFindin
         additional_locations: Vec::new(),
         entropy: None,
         confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     let abort_handle = join_set.spawn(async { std::future::pending::<VerifiedFinding>().await });
     task_groups.insert(abort_handle.id(), group);

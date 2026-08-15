@@ -82,7 +82,8 @@ fn finding_with_additional(additional: Vec<MatchLocation>) -> VerifiedFinding {
         metadata: HashMap::new(),
         additional_locations: additional,
         entropy: None,
-        confidence: Some(0.5),
+        evidence_score: Some(0.5),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

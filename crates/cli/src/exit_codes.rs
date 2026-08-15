@@ -40,13 +40,13 @@ pub const DEFINITIONS: &[ExitCodeDefinition] = &[
     ExitCodeDefinition {
         code: EXIT_SUCCESS,
         label: "Success",
-        help: "Success (no secrets found)",
+        help: "Success (no finding blocks the active evidence policy)",
         scan_reachable: true,
     },
     ExitCodeDefinition {
         code: EXIT_FINDINGS,
-        label: "Findings present",
-        help: "Secrets found, none confirmed live (unverified, skipped, or verified-inactive: dead/revoked)",
+        label: "Blocking findings present",
+        help: "Findings block the active evidence policy, none confirmed live",
         scan_reachable: true,
     },
     ExitCodeDefinition {

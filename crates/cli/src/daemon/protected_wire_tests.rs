@@ -24,6 +24,9 @@ fn raw_match() -> RawMatch {
         },
         entropy: Some(4.5),
         confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::from_reason(
+            keyhog_core::EvidenceReasonCode::VendorPattern,
+        ),
     }
 }
 
@@ -64,6 +67,11 @@ fn daemon_private_wire_is_the_only_plaintext_serde_boundary() {
         encoded["matches"][0]["credential"],
         "protected-daemon-credential"
     );
+    assert_eq!(encoded["matches"][0]["evidence"]["tier"], "likely");
+    assert_eq!(
+        encoded["matches"][0]["evidence"]["reason_code"],
+        "vendor-pattern"
+    );
     let decoded: Response =
         serde_json::from_value(encoded.clone()).expect("deserialize protected daemon response");
     match decoded {
@@ -77,6 +85,12 @@ fn daemon_private_wire_is_the_only_plaintext_serde_boundary() {
             assert_eq!(
                 matches[0].credential.as_str(),
                 "protected-daemon-credential"
+            );
+            assert_eq!(
+                matches[0].evidence,
+                keyhog_core::EvidenceVerdict::from_reason(
+                    keyhog_core::EvidenceReasonCode::VendorPattern,
+                )
             );
             assert_eq!(static_recovery_rejections, recovery_rejections());
             assert_eq!(
@@ -102,6 +116,12 @@ fn daemon_private_wire_is_the_only_plaintext_serde_boundary() {
         .expect("response JSON object")
         .remove("static_recovery_status");
     assert!(serde_json::from_value::<Response>(missing_status).is_err());
+    let mut missing_evidence = encoded.clone();
+    missing_evidence["matches"][0]
+        .as_object_mut()
+        .expect("match JSON object")
+        .remove("evidence");
+    assert!(serde_json::from_value::<Response>(missing_evidence).is_err());
 
     let mut malformed = encoded;
     malformed["matches"][0]

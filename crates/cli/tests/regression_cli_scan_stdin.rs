@@ -235,9 +235,9 @@ fn stdin_json_redacts_credential_and_hashes_exact_bytes() {
         "credential_hash must be sha256 of the exact piped token bytes"
     );
     assert_eq!(
-        obj.get("confidence").and_then(|x| x.as_f64()),
+        obj.get("evidence_score").and_then(|x| x.as_f64()),
         Some(1.0),
-        "the literal-anchored Slack bot token reports confidence 1.0 over stdin"
+        "the literal-anchored Slack bot token reports evidence score 1.0 over stdin"
     );
 }
 

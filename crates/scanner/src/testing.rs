@@ -218,6 +218,7 @@ pub fn match_priority_for_test(
         },
         entropy: None,
         confidence,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     crate::resolution::match_priority(&m)
 }
@@ -3755,6 +3756,7 @@ fn scan_state_probe_match(
         },
         entropy: None,
         confidence: Some(confidence),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 

@@ -5,7 +5,7 @@ use std::process::Command;
 
 #[test]
 fn scan_format_junit_testcase_structure() {
-    let (_dir, path) = write_temp_file("secret.env", "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n");
+    let (_dir, path) = write_temp_file(".env.secret", "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n");
     let output = Command::new(binary())
         .args([
             "scan",

@@ -12,6 +12,7 @@ autoroute_cache=""
 cleanup_autoroute_cache=false
 preset="default"
 lockdown="false"
+evidence_policy="default"
 fail_on_findings="true"
 upload_sarif="true"
 print_effective_config=false
@@ -120,6 +121,14 @@ while [[ "$#" -gt 0 ]]; do
         exit 2
       fi
       lockdown="$2"
+      shift 2
+      ;;
+    --evidence-policy)
+      if [[ "$#" -lt 2 ]]; then
+        gha_error "Missing value for run-scan.sh argument: --evidence-policy"
+        exit 2
+      fi
+      evidence_policy="$2"
       shift 2
       ;;
     --fail-on-findings)
@@ -279,6 +288,14 @@ case "$lockdown" in
     ;;
 esac
 
+case "$evidence_policy" in
+  default | paranoid) ;;
+  *)
+    gha_error "Invalid evidence-policy '$evidence_policy'. Use one of: default, paranoid."
+    exit 2
+    ;;
+esac
+
 
 case "$fail_on_findings" in
   true | false) ;;
@@ -337,11 +354,13 @@ args=(scan
   --format "$format"
   --output "$report"
   --action-receipt "$action_receipt")
+args+=(--evidence-policy "$evidence_policy")
 config_args=(config
   --effective
   --path "$scan_path"
   --severity "$severity"
   --format "$format")
+config_args+=(--evidence-policy "$evidence_policy")
 if [[ "$verify" == "true" ]]; then
   config_args+=(--verify)
 else
@@ -557,12 +576,6 @@ else
 fi
 
 if [[ "$unexpected_exit" != "true" ]]; then
-  if [[ "$keyhog_exit" == "0" && "$findings" != "0" ]]; then
-    scan_status=failed
-    publish_receipt
-    gha_error "Contradictory scan result: keyhog exited 0 but the report contains $findings finding(s)."
-    exit 3
-  fi
   if [[ ("$keyhog_exit" == "1" || "$keyhog_exit" == "10") && "$findings" == "0" ]]; then
     scan_status=failed
     publish_receipt
@@ -634,12 +647,9 @@ if [[ "$scan_status" == "failed" ]]; then
   exit 3
 fi
 
-# When fail-on-findings is true, propagate exit 1 from the process (and from a
-# non-zero report count). The composite Action also gates on this, but the
-# script must not claim success if used alone.
-if [[ "$fail_on_findings" == "true" ]]; then
-  if [[ "$keyhog_exit" == "1" || "$findings" != "0" ]]; then
-    gha_error "Found ${findings} finding(s) (fail-on-findings=true)."
-    exit 1
-  fi
+# When fail-on-findings is true, propagate scanner exit 1. A non-empty report
+# with scanner exit 0 contains visible review-tier findings and is valid.
+if [[ "$fail_on_findings" == "true" && "$keyhog_exit" == "1" ]]; then
+  gha_error "Found ${findings} policy-blocking finding(s) (fail-on-findings=true)."
+  exit 1
 fi

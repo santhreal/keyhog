@@ -46,7 +46,7 @@ fn fixture_dir(config: &str, allowlist: &str) -> TempDir {
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(dir.path().join(".keyhog.toml"), config).expect("write config");
     std::fs::write(dir.path().join(".keyhogignore"), allowlist).expect("write allowlist");
-    std::fs::write(dir.path().join("secret.env"), PLANTED_AWS).expect("write fixture");
+    std::fs::write(dir.path().join(".env.secret"), PLANTED_AWS).expect("write fixture");
     dir
 }
 
@@ -151,9 +151,9 @@ fn scan_uses_configured_allowlist_file() {
         "[allowlist]\nfile = \"custom.ignore\"\n",
     )
     .expect("write config");
-    std::fs::write(dir.path().join("custom.ignore"), "path:**/secret.env\n")
+    std::fs::write(dir.path().join("custom.ignore"), "path:**/.env.secret\n")
         .expect("write configured allowlist");
-    std::fs::write(dir.path().join("secret.env"), PLANTED_AWS).expect("write fixture");
+    std::fs::write(dir.path().join(".env.secret"), PLANTED_AWS).expect("write fixture");
 
     let (stdout, stderr, code) = run_scan(&dir);
     assert_eq!(

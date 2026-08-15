@@ -19,6 +19,8 @@ fn diagnostic_match() -> CanonicalMatch<'static> {
         date: Some("2026-07-14T00:00:00Z"),
         entropy_bits: Some(4.2_f64.to_bits()),
         confidence_bits: Some(0.9_f64.to_bits()),
+        evidence_tier: EvidenceTier::Review,
+        evidence_reason_code: EvidenceReasonCode::Unattributed,
     }
 }
 
@@ -99,6 +101,14 @@ fn diagnostic_reports_only_differing_field_names() {
     let mut changed = base.clone();
     changed.confidence_bits = Some(0.8_f64.to_bits());
     variants.push(("confidence", changed));
+
+    let mut changed = base.clone();
+    changed.evidence_tier = EvidenceTier::Likely;
+    variants.push(("evidence_tier", changed));
+
+    let mut changed = base.clone();
+    changed.evidence_reason_code = EvidenceReasonCode::UnsupportedContext;
+    variants.push(("evidence_reason_code", changed));
 
     for (field, changed) in variants {
         assert_eq!(

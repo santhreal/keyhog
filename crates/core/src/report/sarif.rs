@@ -206,9 +206,11 @@ impl<W: Write + Send> SarifReporter<W> {
         }
         SarifResultProperties {
             verification: super::style::verification_token(&finding.verification).into_owned(),
-            confidence: finding.confidence.map(|confidence| {
-                if confidence.is_finite() {
-                    confidence
+            evidence_tier: finding.evidence.tier().as_str(),
+            evidence_reason_code: finding.evidence.reason_code().as_str(),
+            evidence_score: finding.evidence_score.map(|evidence_score| {
+                if evidence_score.is_finite() {
+                    evidence_score
                 } else {
                     0.0
                 }

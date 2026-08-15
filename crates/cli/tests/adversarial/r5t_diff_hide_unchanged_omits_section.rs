@@ -8,7 +8,7 @@ use tempfile::TempDir;
 fn r5t_diff_hide_unchanged_omits_section() {
     let dir = TempDir::new().expect("tempdir");
     let baseline = dir.path().join("base.json");
-    std::fs::write(&baseline, r#"{"version":1,"entries":[]}"#).unwrap();
+    std::fs::write(&baseline, r#"{"version":2,"entries":[]}"#).unwrap();
     let output = Command::new(binary())
         .args(["diff", "--json", "--hide-unchanged"])
         .arg(&baseline)

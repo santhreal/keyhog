@@ -29,7 +29,8 @@ fn make_finding(
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
         entropy: None,
-        confidence: None,
+        evidence_score: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
 }
 
@@ -53,7 +54,7 @@ fn baseline_creation_produces_expected_entries() {
     ];
 
     let baseline = API.baseline_from_findings(&findings);
-    assert_eq!(baseline.version, 1);
+    assert_eq!(baseline.version, 2);
     assert_eq!(baseline.entries.len(), 2);
     assert_eq!(baseline.entries[0].detector_id, "aws-key");
     assert_eq!(baseline.entries[0].credential_hash, baseline_hash("def456"));
@@ -62,6 +63,10 @@ fn baseline_creation_produces_expected_entries() {
         Some("src/aws.py".to_string())
     );
     assert_eq!(baseline.entries[0].line, Some(42));
+    assert_eq!(
+        baseline.entries[0].evidence,
+        keyhog_core::EvidenceVerdict::review_unattributed()
+    );
 }
 
 #[test]
@@ -176,7 +181,7 @@ fn baseline_save_and_load_roundtrip() {
 }
 
 #[test]
-fn baseline_status_is_not_serialized_but_legacy_status_loads() {
+fn baseline_v2_serializes_evidence_and_rejects_stale_v1() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("baseline.json");
     let baseline =
@@ -185,12 +190,15 @@ fn baseline_status_is_not_serialized_but_legacy_status_loads() {
     API.baseline_save(&baseline, &path).unwrap();
     let serialized = std::fs::read_to_string(&path).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&serialized).unwrap();
-    assert!(
-        parsed["entries"][0].get("status").is_none(),
-        "baseline status is not a real suppression state and must not be serialized: {serialized}"
+    assert_eq!(parsed["version"], 2);
+    assert_eq!(parsed["entries"][0]["evidence"]["tier"], "review");
+    assert_eq!(
+        parsed["entries"][0]["evidence"]["reason_code"],
+        "unattributed"
     );
+    assert!(parsed["entries"][0].get("status").is_none());
 
-    let legacy = format!(
+    let stale_v1 = format!(
         r#"{{
             "version": 1,
             "created": "legacy",
@@ -204,12 +212,14 @@ fn baseline_status_is_not_serialized_but_legacy_status_loads() {
         }}"#,
         baseline_hash("abc123")
     );
-    std::fs::write(&path, legacy).unwrap();
-    let loaded = API.baseline_load(&path).unwrap();
-    assert!(API.baseline_contains(
-        &loaded,
-        &make_finding("github-pat", "abc123", Some("src/moved.py"))
-    ));
+    std::fs::write(&path, stale_v1).unwrap();
+    let error = API
+        .baseline_load(&path)
+        .expect_err("version-1 baseline must fail closed");
+    assert!(
+        format!("{error:#}").contains("unsupported baseline version 1 (expected 2)"),
+        "stale baseline diagnostic must name the explicit version boundary: {error:#}"
+    );
 }
 
 #[test]
@@ -241,7 +251,7 @@ fn findings_report_object_without_baseline_keys_is_recognized() {
 #[test]
 fn real_baseline_is_not_flagged_as_findings_report() {
     assert!(
-        !API.baseline_looks_like_findings_report(r#"{"version":1,"created":"now","entries":[]}"#)
+        !API.baseline_looks_like_findings_report(r#"{"version":2,"created":"now","entries":[]}"#)
     );
 }
 
@@ -276,11 +286,11 @@ fn load_of_valid_baseline_roundtrips() {
 }
 
 #[test]
-fn unknown_baseline_fields_fail_closed_but_legacy_status_is_explicit() {
+fn unknown_baseline_fields_and_removed_status_alias_fail_closed() {
     let mut root = tempfile::NamedTempFile::new().unwrap();
     write!(
         root,
-        r#"{{"version":1,"created":"now","entries":[],"reviewd":true}}"#
+        r#"{{"version":2,"created":"now","entries":[],"reviewd":true}}"#
     )
     .unwrap();
     let root_error = API
@@ -294,7 +304,7 @@ fn unknown_baseline_fields_fail_closed_but_legacy_status_is_explicit() {
     let mut entry = tempfile::NamedTempFile::new().unwrap();
     write!(
         entry,
-        r#"{{"version":1,"created":"now","entries":[{{"detector_id":"aws-key","credential_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000","file_path":"x","line":1,"reviewd":true}}]}}"#
+        r#"{{"version":2,"created":"now","entries":[{{"detector_id":"aws-key","credential_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000","file_path":"x","line":1,"evidence":{{"tier":"review","reason_code":"unattributed"}},"reviewd":true}}]}}"#
     )
     .unwrap();
     let entry_error = API
@@ -308,9 +318,11 @@ fn unknown_baseline_fields_fail_closed_but_legacy_status_is_explicit() {
     let mut legacy = tempfile::NamedTempFile::new().unwrap();
     write!(
         legacy,
-        r#"{{"version":1,"created":"legacy","entries":[{{"detector_id":"aws-key","credential_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000","file_path":"x","line":1,"status":"rejected"}}]}}"#
+        r#"{{"version":2,"created":"current","entries":[{{"detector_id":"aws-key","credential_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000","file_path":"x","line":1,"evidence":{{"tier":"review","reason_code":"unattributed"}},"status":"rejected"}}]}}"#
     )
     .unwrap();
-    API.baseline_load(legacy.path())
-        .expect("the documented legacy status alias remains readable");
+    let status_error = API
+        .baseline_load(legacy.path())
+        .expect_err("removed status alias must fail closed");
+    assert!(format!("{status_error:#}").contains("status"));
 }

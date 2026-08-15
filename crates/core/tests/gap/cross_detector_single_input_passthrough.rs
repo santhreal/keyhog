@@ -26,6 +26,7 @@ fn cross_detector_single_input_passthrough() {
         additional_locations: vec![],
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
     let out = dedup_cross_detector(vec![one]);
     assert_eq!(out.len(), 1);

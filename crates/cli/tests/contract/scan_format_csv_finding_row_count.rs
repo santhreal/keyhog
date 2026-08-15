@@ -33,7 +33,7 @@ fn parse_csv_row(row: &str) -> Vec<String> {
 #[test]
 fn scan_format_csv_finding_row_count() {
     // Plant exactly one AWS key to guarantee one finding
-    let (_dir, path) = write_temp_file("secret.env", "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n");
+    let (_dir, path) = write_temp_file(".env.secret", "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n");
     let output = Command::new(binary())
         .args([
             "scan",

@@ -31,16 +31,16 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// Wrap a comma-joined entry list into a version-1 baseline document.
+/// Wrap a comma-joined entry list into a version-2 baseline document.
 fn baseline_json(entries: &str) -> String {
-    format!(r#"{{"version": 1, "created": "test", "entries": [{entries}]}}"#)
+    format!(r#"{{"version": 2, "created": "test", "entries": [{entries}]}}"#)
 }
 
 /// One baseline entry. `credential_hash` is compared as an opaque string by
 /// `diff` (it never re-hashes), so distinct string values model distinct creds.
 fn entry_json(detector_id: &str, credential_hash: &str, file_path: &str, line: usize) -> String {
     format!(
-        r#"{{"detector_id": "{detector_id}", "credential_hash": "{credential_hash}", "file_path": "{file_path}", "line": {line}, "status": "acknowledged"}}"#
+        r#"{{"detector_id": "{detector_id}", "credential_hash": "{credential_hash}", "file_path": "{file_path}", "line": {line}, "evidence": {{"tier": "review", "reason_code": "unattributed"}}}}"#
     )
 }
 
@@ -546,7 +546,7 @@ fn unsupported_baseline_version_exits_two_naming_versions() {
         "the error must state the unsupported version 999; got {stderr}"
     );
     assert!(
-        stderr.contains("expected 1"),
-        "the error must state the expected version 1; got {stderr}"
+        stderr.contains("expected 2"),
+        "the error must state the expected version 2; got {stderr}"
     );
 }

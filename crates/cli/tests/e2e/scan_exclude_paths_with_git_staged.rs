@@ -44,12 +44,12 @@ fn scan_exclude_paths_with_git_staged() {
         .status()
         .expect("git commit");
     std::fs::write(
-        repo.join("secret.env"),
+        repo.join(".env.secret"),
         "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
     )
     .unwrap();
     std::process::Command::new("git")
-        .args(["add", "secret.env"])
+        .args(["add", ".env.secret"])
         .current_dir(repo)
         .status()
         .expect("git add");
@@ -63,7 +63,7 @@ fn scan_exclude_paths_with_git_staged() {
             "--format",
             "json",
             "--exclude-paths",
-            "secret.env",
+            ".env.secret",
             "--no-suppress-test-fixtures",
         ])
         .current_dir(repo)
@@ -91,13 +91,13 @@ fn scan_keyhogignore_path_with_git_staged() {
     let repo = dir.path();
     init_git_repo(repo);
     std::fs::write(
-        repo.join("secret.env"),
+        repo.join(".env.secret"),
         "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
     )
     .unwrap();
-    std::fs::write(repo.join(".keyhogignore"), "path:secret.env\n").unwrap();
+    std::fs::write(repo.join(".keyhogignore"), "path:.env.secret\n").unwrap();
     std::process::Command::new("git")
-        .args(["add", "secret.env"])
+        .args(["add", ".env.secret"])
         .current_dir(repo)
         .status()
         .expect("git add");

@@ -317,8 +317,8 @@ fn every_root_is_scanned_and_no_finding_is_dropped() {
     let b = tmp.path().join("b");
     std::fs::create_dir(&a).unwrap();
     std::fs::create_dir(&b).unwrap();
-    std::fs::write(a.join("alpha.env"), PLANTED_SECRET).unwrap();
-    std::fs::write(b.join("beta.env"), PLANTED_SECRET).unwrap();
+    std::fs::write(a.join(".env.alpha"), PLANTED_SECRET).unwrap();
+    std::fs::write(b.join(".env.beta"), PLANTED_SECRET).unwrap();
 
     let out = scan(&[a.as_os_str(), b.as_os_str()]);
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -327,8 +327,14 @@ fn every_root_is_scanned_and_no_finding_is_dropped() {
         Some(1),
         "findings present exit 1; stdout={stdout}"
     );
-    assert!(stdout.contains("alpha.env"), "first root scanned: {stdout}");
-    assert!(stdout.contains("beta.env"), "second root scanned: {stdout}");
+    assert!(
+        stdout.contains(".env.alpha"),
+        "first root scanned: {stdout}"
+    );
+    assert!(
+        stdout.contains(".env.beta"),
+        "second root scanned: {stdout}"
+    );
     assert_eq!(
         stdout.matches("\"file_path\"").count(),
         2,
@@ -342,7 +348,7 @@ fn overlapping_roots_fold_loudly_and_scan_the_subtree_once() {
     let parent = tmp.path().join("parent");
     let child = parent.join("child");
     std::fs::create_dir_all(&child).unwrap();
-    std::fs::write(child.join("planted.env"), PLANTED_SECRET).unwrap();
+    std::fs::write(child.join(".env.planted"), PLANTED_SECRET).unwrap();
 
     let out = scan(&[parent.as_os_str(), child.as_os_str()]);
     let stdout = String::from_utf8_lossy(&out.stdout);

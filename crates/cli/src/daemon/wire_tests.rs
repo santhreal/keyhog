@@ -99,6 +99,7 @@ async fn daemon_scan_text_roundtrip_carries_matches() {
         },
         entropy: None,
         confidence: None,
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     };
 
     frame::write_request(
@@ -286,16 +287,97 @@ async fn daemon_frame_rejects_oversized_length_prefix() {
     );
 }
 
-/// Locks the v14 bump: daemon-local filesystem scans now carry incremental
-/// cache state and stream bounded responses after one drain request. Older
-/// peers must fail at Hello instead of disagreeing about frame cardinality.
+/// Locks the v15 bump: daemon findings carry the same validated evidence
+/// verdict consumed by one-shot report and exit policy.
 #[test]
-fn daemon_wire_version_is_v14_with_mass_filesystem_protocol() {
-    assert_eq!(WIRE_VERSION, 14);
+fn daemon_wire_version_is_v15_with_evidence_verdicts() {
+    assert_eq!(WIRE_VERSION, 15);
+}
+
+#[test]
+fn guard_receipt_requires_default_policy_blocking_count() {
+    let review = keyhog_core::RawMatch {
+        detector_id: "provider-key".into(),
+        detector_name: "Provider Key".into(),
+        service: "provider".into(),
+        severity: keyhog_core::Severity::High,
+        credential: keyhog_core::SensitiveString::from("redacted-review-fixture"),
+        credential_hash: [9u8; 32].into(),
+        companions: Default::default(),
+        location: keyhog_core::MatchLocation {
+            source: "git-staged".into(),
+            file_path: Some("provider.txt".into()),
+            line: Some(1),
+            offset: 0,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: None,
+        confidence: Some(0.8),
+        evidence: keyhog_core::EvidenceVerdict::from_reason(
+            keyhog_core::EvidenceReasonCode::UnsupportedContext,
+        ),
+    };
+    let mut likely = review.clone();
+    likely.location.file_path = Some(".env.provider".into());
+    likely.location.offset = 1;
+    likely.evidence =
+        keyhog_core::EvidenceVerdict::from_reason(keyhog_core::EvidenceReasonCode::VendorPattern);
+
+    let response = Response::GuardCommitReceipt {
+        objects_requested: 3,
+        objects_hit: 1,
+        objects_scanned: 2,
+        objects_skipped: 0,
+        bytes_requested: 90,
+        bytes_hit: 30,
+        bytes_scanned: 60,
+        findings_count: 2,
+        findings: vec![review, likely],
+        blocking_findings_count: 1,
+        coverage_gaps: 0,
+        terminal_state: "blocked".into(),
+        terminal_sequence: 7,
+    };
+    let encoded = serde_json::to_value(&response).expect("serialize guard receipt");
+    assert_eq!(encoded["blocking_findings_count"], 1);
+    assert_eq!(encoded["findings"][0]["evidence"]["tier"], "review");
+    assert_eq!(encoded["findings"][1]["evidence"]["tier"], "likely");
+    let decoded =
+        serde_json::from_value::<Response>(encoded.clone()).expect("round-trip guard receipt");
+    assert_eq!(
+        serde_json::to_value(decoded).expect("re-serialize guard receipt"),
+        encoded
+    );
+
+    let mut stale = encoded;
+    stale
+        .as_object_mut()
+        .expect("guard receipt object")
+        .remove("blocking_findings_count");
+    let error = serde_json::from_value::<Response>(stale)
+        .expect_err("stale guard receipt must fail closed");
+    assert!(
+        error.to_string().contains("blocking_findings_count"),
+        "missing policy count must be named: {error}"
+    );
+
+    let mut stale_findings = serde_json::to_value(&response).expect("serialize guard receipt");
+    stale_findings
+        .as_object_mut()
+        .expect("guard receipt object")
+        .remove("findings");
+    let error = serde_json::from_value::<Response>(stale_findings)
+        .expect_err("receipt without protected findings must fail closed");
+    assert!(
+        error.to_string().contains("findings"),
+        "missing protected findings must be named: {error}"
+    );
 }
 
 #[tokio::test]
-async fn daemon_wire_v14_mass_incremental_cache_roundtrips() {
+async fn daemon_wire_v15_mass_incremental_cache_roundtrips() {
     let request = Request::MassFilesystemBegin {
         root: "/workspace".into(),
         max_file_size: 1024,
@@ -314,7 +396,7 @@ async fn daemon_wire_v14_mass_incremental_cache_roundtrips() {
 }
 
 #[tokio::test]
-async fn daemon_wire_v14_mass_filesystem_drain_roundtrips() {
+async fn daemon_wire_v15_mass_filesystem_drain_roundtrips() {
     let (mut client, mut server) = tokio::io::duplex(1024);
     frame::write_request(&mut client, &Request::MassFilesystemDrain)
         .await

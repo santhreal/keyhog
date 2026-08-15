@@ -437,6 +437,7 @@ fn cached_autoroute_router(
 /// `keyhog scan` (Law 10: watch must not silently un-suppress a finding that
 /// scan would drop). Built once at setup from the resolved config plus the
 /// loaded allowlist, and fed into the shared [`postprocess::MatchFilter`].
+
 pub(crate) struct DefaultScanFilter {
     signatures: std::collections::HashSet<Arc<str>>,
     disabled_detectors: std::collections::HashSet<String>,
@@ -475,15 +476,14 @@ impl DefaultScanFilter {
         }
     }
 
-    /// Finalize raw scanner matches through the suppression pipeline.
-    /// Returns `Some(count)` on success, or `None` if the filtering
-    /// step failed. Callers must treat `None` as a coverage gap
-    /// (degraded), not as zero findings.
-    pub(crate) fn finalize_count(
+    /// Finalize raw scanner matches through the guard suppression pipeline.
+    /// Returns the exact surviving findings on success. Callers must treat
+    /// `None` as a coverage gap, never as zero findings.
+    pub(crate) fn finalize_matches(
         &self,
         scanner: &CompiledScanner,
         matches: Vec<RawMatch>,
-    ) -> Option<usize> {
+    ) -> Option<Vec<RawMatch>> {
         let filter = postprocess::MatchFilter {
             scanner,
             signatures: &self.signatures,
@@ -495,12 +495,21 @@ impl DefaultScanFilter {
             min_severity: self.min_severity,
         };
         match postprocess::filter_and_resolve_matches(&filter, matches, &self.allowlist) {
-            Ok(finalized) => Some(finalized.len()),
+            Ok(finalized) => Some(finalized),
             Err(e) => {
                 tracing::warn!("guard: match finalization failed: {}", e);
                 None
             }
         }
+    }
+
+    pub(crate) fn finalize_count(
+        &self,
+        scanner: &CompiledScanner,
+        matches: Vec<RawMatch>,
+    ) -> Option<usize> {
+        self.finalize_matches(scanner, matches)
+            .map(|finalized| finalized.len())
     }
 }
 
@@ -1169,12 +1178,12 @@ pub(crate) fn scanner_panic_notice_for_test(panicked: bool) -> Option<String> {
 
 #[doc(hidden)]
 pub(crate) fn resolve_scan_exit_for_test(
-    has_new_entries: bool,
+    has_blocking_findings: bool,
     incremental_cache_failed: bool,
     source_coverage_incomplete: bool,
 ) -> u8 {
     run::resolve_scan_exit(run::ScanOutcome {
-        has_new_entries,
+        has_blocking_findings,
         incremental_cache_failed,
         source_coverage_incomplete,
         ..run::ScanOutcome::default()
@@ -1916,6 +1925,7 @@ impl ScanOrchestrator {
                     show_secrets: false,
                     no_suppress_test_fixtures: false,
                     hide_client_safe: false,
+                    evidence_policy: crate::args::EvidencePolicy::Default,
                 },
                 verify: crate::orchestrator_config::ResolvedVerifyPolicy::disabled(),
             },

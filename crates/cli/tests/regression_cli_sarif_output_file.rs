@@ -432,10 +432,13 @@ fn sarif_output_file_clean_scan_is_empty_skeleton_exit_zero() {
 #[test]
 fn sarif_output_file_multi_detector_results_all_resolve() {
     let dir = TempDir::new().expect("tempdir");
-    std::fs::write(dir.path().join("gh.env"), format!("GITHUB_TOKEN={PAT}\n"))
-        .expect("write gh fixture");
     std::fs::write(
-        dir.path().join("aws.env"),
+        dir.path().join(".env.github"),
+        format!("GITHUB_TOKEN={PAT}\n"),
+    )
+    .expect("write gh fixture");
+    std::fs::write(
+        dir.path().join(".env.aws"),
         format!("AWS_ACCESS_KEY_ID = \"{AWS}\"\n"),
     )
     .expect("write aws fixture");

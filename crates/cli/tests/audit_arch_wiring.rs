@@ -281,7 +281,7 @@ fn daemon_route_honors_config_min_confidence_floor() {
         baseline_findings[0]["detector_id"], "activepieces-api-key",
         "baseline must preserve detector ownership"
     );
-    let baseline_confidence = baseline_findings[0]["confidence"]
+    let baseline_confidence = baseline_findings[0]["evidence_score"]
         .as_f64()
         .expect("baseline confidence is numeric");
     assert!(

@@ -36,22 +36,42 @@ const PLANTED: &str = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\
 /// expected-value string for the `show_secrets` assertion.
 const FULL_SECRET: &str = concat!("AKIA", "QYLPMN5HFIQR7XYA");
 
+/// Provider-shaped fixture in unsupported plain-text context. Its exact review
+/// verdict makes evidence-policy precedence observable without changing recall.
+const REVIEW_TOKEN: &str = concat!(
+    "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+    "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+    "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+    "Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+);
+
 /// Config disabling every detector that can report the planted key, so a load
-/// that takes effect suppresses the finding entirely (exit 0). `aws-access-key`
-/// is the structural detector; `entropy-api-key` is the entropy twin that also
-/// reports the same token.
-const DISABLE_PLANTED: &str =
-    "[detector.aws-access-key]\nenabled = false\n[detector.entropy-api-key]\nenabled = false\n";
+/// that takes effect suppresses the finding entirely (exit 0). The named AWS
+/// detector and both generic entropy owners report this canary-shaped value.
+const DISABLE_PLANTED: &str = "[detector.aws-access-key]\nenabled = false\n\
+[detector.entropy-api-key]\nenabled = false\n\
+[detector.entropy-token]\nenabled = false\n";
 
 /// Create a temp scan dir containing the planted fixture, and (optionally) a
 /// `.keyhog.toml` with `config`. Returns the owned `TempDir` (keep it alive for
 /// the duration of the scan) and its path.
 fn make_scan_dir(config: Option<&str>) -> TempDir {
     let dir = TempDir::new().expect("tempdir");
-    std::fs::write(dir.path().join("planted.txt"), PLANTED).expect("write fixture");
+    std::fs::write(dir.path().join(".env.planted"), PLANTED).expect("write fixture");
     if let Some(cfg) = config {
         std::fs::write(dir.path().join(".keyhog.toml"), cfg).expect("write config");
     }
+    dir
+}
+
+fn make_review_scan_dir(config: &str) -> TempDir {
+    let dir = TempDir::new().expect("review tempdir");
+    std::fs::write(
+        dir.path().join("planted.txt"),
+        format!("ABUSEIPDB_API_KEY={REVIEW_TOKEN}\n"),
+    )
+    .expect("write review fixture");
+    std::fs::write(dir.path().join(".keyhog.toml"), config).expect("write review config");
     dir
 }
 
@@ -202,7 +222,7 @@ fn config_scan_section_format_json_envelope_is_honored() {
     );
     let report: serde_json::Value =
         serde_json::from_str(&stdout).expect("[scan].format=json-envelope must emit a JSON object");
-    assert_eq!(report["schema_version"]["major"], 1);
+    assert_eq!(report["schema_version"]["major"], 2);
     assert!(report["findings"].is_array());
     assert_eq!(report["findings"][0]["detector_id"], "aws-access-key");
 }
@@ -242,7 +262,7 @@ fn config_show_secrets_reveals_full_credential() {
 fn config_scan_exclude_suppresses_the_planted_file() {
     // `[scan].exclude` drops the planted file from the walk, so the
     // scan is clean.
-    let dir = make_scan_dir(Some("[scan]\nexclude = [\"planted.txt\"]\n"));
+    let dir = make_scan_dir(Some("[scan]\nexclude = [\".env.planted\"]\n"));
     let (code, stdout, stderr) = scan(dir.path(), &["--format", "json"]);
     assert_eq!(
         code,
@@ -278,6 +298,33 @@ fn cli_format_flag_overrides_config_format() {
         stdout.contains("AWS Access Key"),
         "the CLI-selected text report must render the human-readable detector name.\n\
          --- stdout ---\n{stdout}"
+    );
+}
+
+#[test]
+fn cli_evidence_policy_overrides_repository_policy() {
+    let dir = make_review_scan_dir("[scan]\nformat = \"json\"\nevidence_policy = \"paranoid\"\n");
+    let (paranoid_code, paranoid_stdout, paranoid_stderr) = scan(dir.path(), &[]);
+    assert_eq!(
+        paranoid_code,
+        Some(1),
+        "repository paranoid policy must block the visible review finding: stdout={paranoid_stdout} stderr={paranoid_stderr}"
+    );
+    let paranoid_report: serde_json::Value =
+        serde_json::from_str(&paranoid_stdout).expect("paranoid JSON report");
+    assert_eq!(paranoid_report[0]["evidence"]["tier"], "review");
+
+    let (default_code, default_stdout, default_stderr) =
+        scan(dir.path(), &["--evidence-policy", "default"]);
+    assert_eq!(
+        default_code,
+        Some(0),
+        "explicit CLI default policy must override repository paranoid policy while retaining the finding: stdout={default_stdout} stderr={default_stderr}"
+    );
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&default_stdout).expect("default JSON report")[0]
+            ["evidence"]["tier"],
+        "review"
     );
 }
 
@@ -393,7 +440,7 @@ fn config_relative_detector_corpus_is_independent_of_caller_cwd() {
     let scan_root = case.path().join("scan-root");
     let corpus = case.path().join("corpus");
     std::fs::create_dir(&scan_root).expect("create scan root");
-    std::fs::write(scan_root.join("planted.txt"), PLANTED).expect("write fixture");
+    std::fs::write(scan_root.join(".env.planted"), PLANTED).expect("write fixture");
     copy_detector(&corpus, "aws-access-key.toml");
     std::fs::write(
         scan_root.join(".keyhog.toml"),
@@ -430,7 +477,7 @@ fn explicit_cli_detector_corpus_overrides_config_relative_corpus() {
     let config_corpus = case.path().join("config-corpus");
     let cli_corpus = case.path().join("cli-corpus");
     std::fs::create_dir(&scan_root).expect("create scan root");
-    std::fs::write(scan_root.join("planted.txt"), PLANTED).expect("write fixture");
+    std::fs::write(scan_root.join(".env.planted"), PLANTED).expect("write fixture");
     copy_detector(&config_corpus, "aws-access-key.toml");
     copy_detector(&cli_corpus, "stripe-secret-key.toml");
     std::fs::write(
@@ -555,6 +602,23 @@ fn invalid_format_value_lists_the_valid_formats() {
              jsonl-envelope, sarif, csv, github-annotations, gitlab-sast, html, junit"
         ),
         "error must quote the bad value and list the valid formats.\n--- stderr ---\n{stderr}"
+    );
+}
+
+#[test]
+fn invalid_evidence_policy_lists_the_valid_values() {
+    let dir = make_scan_dir(Some("[scan]\nevidence_policy = \"strictish\"\n"));
+    let (code, _stdout, stderr) = scan(dir.path(), &[]);
+    assert_eq!(
+        code,
+        Some(2),
+        "an invalid evidence policy must fail closed: stderr={stderr}"
+    );
+    assert!(
+        stderr.contains(
+            "- [scan].evidence_policy = \"strictish\": expected one of default, paranoid"
+        ),
+        "error must name the bad policy and accepted values: stderr={stderr}"
     );
 }
 

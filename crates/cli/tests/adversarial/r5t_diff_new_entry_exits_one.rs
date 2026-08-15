@@ -9,10 +9,10 @@ fn r5t_diff_new_entry_exits_one() {
     let dir = TempDir::new().expect("tempdir");
     let before = dir.path().join("before.json");
     let after = dir.path().join("after.json");
-    std::fs::write(&before, r#"{"version":1,"entries":[]}"#).unwrap();
+    std::fs::write(&before, r#"{"version":2,"entries":[]}"#).unwrap();
     std::fs::write(
         &after,
-        r#"{"version":1,"entries":[{"detector_id":"aws-access-key","credential_hash":"abc","path":"x","line":1}]}"#,
+        r#"{"version":2,"entries":[{"detector_id":"aws-access-key","credential_hash":"abc","file_path":"x","line":1,"evidence":{"tier":"review","reason_code":"unattributed"}}]}"#,
     )
     .unwrap();
     let output = Command::new(binary())

@@ -63,7 +63,7 @@ impl<W: Write + Send> CsvReporter<W> {
 fn write_header<W: Write>(writer: &mut W) -> Result<(), ReportError> {
     writeln!(
         writer,
-        "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations"
+        "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,evidence_tier,evidence_reason_code,evidence_score,entropy,remediation,metadata,additional_locations"
     )?;
     Ok(())
 }
@@ -88,9 +88,9 @@ impl<W: Write + Send> Reporter for CsvReporter<W> {
         // OPTIONAL fields of an already-detected `VerifiedFinding` into CSV
         // cells. A `None` becomes an empty cell; the finding is still emitted in
         // full. No detection happens here, so nothing can be dropped.
-        // Numeric fields (line, offset) and the `0.0..=1.0` confidence never
-        // contain a CSV metacharacter, so they are written straight through
-        // without `escape_csv` and without an intermediate `String`.
+        // Numeric fields (line, offset) and the optional `0.0..=1.0` evidence
+        // score never contain a CSV metacharacter, so they are written straight
+        // through without `escape_csv` and without an intermediate `String`.
         let file_path_str = finding.location.file_path.as_deref().map_or("", |v| v);
         let commit_str = finding.location.commit.as_deref().map_or("", |v| v);
         let author_str = finding.location.author.as_deref().map_or("", |v| v);
@@ -122,9 +122,15 @@ impl<W: Write + Send> Reporter for CsvReporter<W> {
             escape_csv(author_str),
             escape_csv(date_str),
         )?;
-        write!(w, "{},", escape_csv(&verification))?;
-        if let Some(confidence) = finding.confidence {
-            write!(w, "{confidence}")?;
+        write!(
+            w,
+            "{},{},{},",
+            escape_csv(&verification),
+            finding.evidence.tier().as_str(),
+            finding.evidence.reason_code().as_str(),
+        )?;
+        if let Some(evidence_score) = finding.evidence_score {
+            write!(w, "{evidence_score}")?;
         }
         write!(w, ",")?;
         if let Some(entropy) = finding.entropy {

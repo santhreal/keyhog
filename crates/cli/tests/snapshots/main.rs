@@ -1024,7 +1024,9 @@ fn csv_format_is_valid_and_row_count_matches_findings() {
         "author",
         "date",
         "verification",
-        "confidence",
+        "evidence_tier",
+        "evidence_reason_code",
+        "evidence_score",
         "entropy",
         "remediation",
         "metadata",
@@ -1032,7 +1034,7 @@ fn csv_format_is_valid_and_row_count_matches_findings() {
     ];
     assert_eq!(
         records[0], HEADER,
-        "csv header row is not the promised 20-column schema: {:?}",
+        "csv header row is not the promised 22-column schema: {:?}",
         records[0]
     );
 
