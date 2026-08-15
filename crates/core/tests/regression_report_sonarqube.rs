@@ -420,7 +420,9 @@ fn command_data_escapes_percent_cr_lf_but_keeps_colon_and_comma() {
     );
     // Error verification text has its CR/LF percent-escaped, keeping one line.
     assert!(
-        out.contains("verification=error: a%0D%0Ab\n"),
+        out.contains(
+            "verification=error: a%0D%0Ab evidence_tier=review evidence_reason_code=unattributed\n"
+        ),
         "verification error text must escape CR and LF in data: {out:?}"
     );
     assert_eq!(

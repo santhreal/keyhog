@@ -22,12 +22,12 @@ fn csv_emits_header_then_escaped_row() {
 
     assert_eq!(
         lines.next().expect("header line"),
-        "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations",
+        "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,evidence_tier,evidence_reason_code,evidence_score,entropy,remediation,metadata,additional_locations",
     );
 
     assert_eq!(
         lines.next().expect("data row"),
-        format!("aws-access-key,\"AWS Key, \"\"prod\"\" <a&b>\",aws,high,AKIA...7XYA,deadbeef00000000000000000000000000000000000000000000000000000000,{{}},filesystem,config/app.env,12,5,,,,live,0.875,,{AWS_REMEDIATION_CSV},{AWS_METADATA_CSV},[]"),
+        format!("aws-access-key,\"AWS Key, \"\"prod\"\" <a&b>\",aws,high,AKIA...7XYA,deadbeef00000000000000000000000000000000000000000000000000000000,{{}},filesystem,config/app.env,12,5,,,,live,review,unattributed,0.875,,{AWS_REMEDIATION_CSV},{AWS_METADATA_CSV},[]"),
     );
     assert!(
         lines.next().is_none(),
@@ -52,7 +52,7 @@ fn csv_uses_canonical_structured_verification_tokens() {
         let row = out.lines().nth(1).expect("csv data row");
         assert!(
             row.ends_with(&format!(
-                ",,,,{expected},0.875,,{AWS_REMEDIATION_CSV},{AWS_METADATA_CSV},[]"
+                ",,,,{expected},review,unattributed,0.875,,{AWS_REMEDIATION_CSV},{AWS_METADATA_CSV},[]"
             )),
             "CSV must use the canonical structured verification token: {out:?}"
         );

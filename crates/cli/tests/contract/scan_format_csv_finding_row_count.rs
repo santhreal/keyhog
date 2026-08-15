@@ -82,11 +82,11 @@ fn scan_format_csv_finding_row_count() {
     let fields = parse_csv_row(data_lines[0]);
     let field_count = fields.len();
     assert_eq!(
-        field_count, 20,
-        "csv data row must have exactly 20 fields, got {field_count}"
+        field_count, 22,
+        "csv data row must have exactly 22 fields, got {field_count}"
     );
     let metadata: serde_json::Value =
-        serde_json::from_str(&fields[18]).expect("metadata JSON must parse");
+        serde_json::from_str(&fields[20]).expect("metadata JSON must parse");
     assert!(metadata["account_id"].is_string());
-    assert_eq!(fields[19], "[]");
+    assert_eq!(fields[21], "[]");
 }

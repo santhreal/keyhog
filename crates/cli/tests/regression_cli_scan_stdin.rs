@@ -46,8 +46,8 @@ const DETECTOR_NAME: &str = "Slack Bot Token";
 const TOKEN_SHA256: &str = "a8dd917042994f6c6f183c6f0718ab4241065165b299050b51302d3167cc3901";
 /// The redacted credential form the reporter emits for this token.
 const REDACTED: &str = "xoxb...uvwx";
-/// The exact 20-field CSV header the reporter writes (from `CsvReporter::new`).
-const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations";
+/// The exact 22-field CSV header the reporter writes (from `CsvReporter::new`).
+const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,evidence_tier,evidence_reason_code,evidence_score,entropy,remediation,metadata,additional_locations";
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))

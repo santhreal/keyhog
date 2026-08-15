@@ -35,7 +35,7 @@ const DETECTOR_ID: &str = "github-classic-pat";
 /// The human-facing detector name (CSV column 2, text block).
 const DETECTOR_NAME: &str = "GitHub Classic PAT";
 /// The exact CSV header line the reporter writes (from `CsvReporter::new`).
-const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations";
+const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,evidence_tier,evidence_reason_code,evidence_score,entropy,remediation,metadata,additional_locations";
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))

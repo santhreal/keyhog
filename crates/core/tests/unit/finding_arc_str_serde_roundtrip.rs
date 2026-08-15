@@ -28,7 +28,11 @@ fn deserialize(detector_id: &str, detector_name: &str, service: &str) -> RawMatc
             "author": null,
             "date": null
         },
-        "confidence": 0.5
+        "confidence": 0.5,
+        "evidence": {
+            "tier": "review",
+            "reason_code": "unattributed"
+        }
     }))
     .expect("historical RawMatch input deserializes")
 }

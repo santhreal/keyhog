@@ -21,7 +21,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 /// The exact CSV header keyhog writes on `CsvReporter::new`.
-const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations";
+const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,evidence_tier,evidence_reason_code,evidence_score,entropy,remediation,metadata,additional_locations";
 const AWS_REMEDIATION_CSV: &str = r#""{""action"":""Disable or delete the exposed IAM access key, then rotate any paired secret access key and session token."",""revoke_url"":""https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_ManagingAccessKeys"",""docs_url"":""https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html"",""revoke_command"":""aws iam update-access-key --access-key-id {{credential}} --status Inactive""}""#;
 
 /// GitLab SAST schema version and URL pinned by the reporter.
@@ -30,7 +30,7 @@ const GITLAB_SCHEMA_URL: &str = "https://gitlab.com/gitlab-org/security-products
 const GITLAB_SOLUTION: &str = "Rotate this credential, revoke the exposed value, and load the replacement from a secret manager or CI secret variable.";
 
 /// The canonical planted finding: a High-severity AWS access key at
-/// `config/app.env:7`, credential hash all `0xAB`, confidence exactly 0.9,
+/// `config/app.env:7`, credential hash all `0xAB`, evidence score exactly 0.9,
 /// verification `Unverifiable` (token "unverifiable").
 fn planted() -> VerifiedFinding {
     VerifiedFinding {
@@ -105,7 +105,7 @@ fn test_metadata(scan_status: ScanCompletionStatus) -> ScanReportMetadata {
     }
 }
 
-/// Positive: the CSV report's first line is the fixed 20-column header verbatim.
+/// Positive: the CSV report's first line is the fixed 22-column header verbatim.
 #[test]
 fn csv_header_is_exact_first_line() {
     let out = render_str(ReportFormat::Csv, &[planted()]);
@@ -114,13 +114,13 @@ fn csv_header_is_exact_first_line() {
 }
 
 /// Positive: the single planted finding renders as one exact CSV data row, with
-/// the three absent git fields (commit/author/date) as empty cells and
-/// confidence as the plain `f64` string `0.9`.
+/// the three absent git fields (commit/author/date) as empty cells and the
+/// canonical evidence verdict followed by evidence score `0.9`.
 #[test]
 fn csv_planted_finding_row_is_exact() {
     let out = render_str(ReportFormat::Csv, &[planted()]);
     let expected_row = format!(
-        "aws-access-key,AWS Access Key,aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,,{AWS_REMEDIATION_CSV},{{}},[]",
+        "aws-access-key,AWS Access Key,aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,review,unattributed,0.9,,{AWS_REMEDIATION_CSV},{{}},[]",
         hash_hex()
     );
     assert!(
@@ -433,11 +433,11 @@ fn junit_planted_finding_cdata_body_fields() {
 
 /// Positive: a High finding with a file+line emits one `::error` workflow
 /// command with `file`, `line`, `title` properties and the full message,
-/// confidence formatted to 3 decimals.
+/// evidence score formatted to 3 decimals.
 #[test]
 fn github_planted_finding_is_exact_line() {
     let out = render_str(ReportFormat::GithubAnnotations, &[planted()]);
-    let expected = "::error file=config/app.env,line=7,title=keyhog high aws-access-key::AWS Access Key detector=aws-access-key service=aws redacted=AKIA**** verification=unverifiable confidence=0.900";
+    let expected = "::error file=config/app.env,line=7,title=keyhog high aws-access-key::AWS Access Key detector=aws-access-key service=aws redacted=AKIA**** verification=unverifiable evidence_tier=review evidence_reason_code=unattributed evidence_score=0.900";
     assert!(
         has_line(&out, expected),
         "want annotation line:\n{expected}\ngot:\n{out}"
@@ -462,7 +462,7 @@ fn github_medium_no_location_is_warning_title_only() {
     f.location.file_path = None;
     f.location.line = None;
     let out = render_str(ReportFormat::GithubAnnotations, &[f]);
-    let expected = "::warning title=keyhog medium aws-access-key::AWS Access Key detector=aws-access-key service=aws redacted=AKIA**** verification=unverifiable confidence=0.900";
+    let expected = "::warning title=keyhog medium aws-access-key::AWS Access Key detector=aws-access-key service=aws redacted=AKIA**** verification=unverifiable evidence_tier=review evidence_reason_code=unattributed evidence_score=0.900";
     assert!(
         has_line(&out, expected),
         "want warning line:\n{expected}\ngot:\n{out}"

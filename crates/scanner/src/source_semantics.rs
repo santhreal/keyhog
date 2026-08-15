@@ -198,8 +198,13 @@ impl StructuredSourceIndex {
                 .iter()
                 .any(|marker| component.eq_ignore_ascii_case(marker))
         });
+        let test_path = crate::context::is_test_file(path);
         let key_paths = &self.key_paths;
         for value in &mut self.values {
+            if test_path {
+                value.role = SemanticSourceRole::TestFixture;
+                continue;
+            }
             let Some(key_index) = usize::from(value.key_path_len).checked_sub(1) else {
                 continue;
             };
