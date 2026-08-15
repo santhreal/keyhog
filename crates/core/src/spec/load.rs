@@ -8,10 +8,10 @@ use rayon::prelude::*;
 use thiserror::Error;
 
 use super::{
-    migrate_legacy_success_policies, validate_detector, DetectorCorpusManifest, DetectorFile,
-    DetectorSpec, QualityIssue, DETECTOR_CORPUS_MANIFEST_FILE,
+    migrate_legacy_success_policies, validate_detector_for_corpus_schema, DetectorCorpusManifest,
+    DetectorFile, DetectorSpec, QualityIssue, DETECTOR_CORPUS_MANIFEST_FILE,
     DETECTOR_CORPUS_MAX_FORWARD_SCHEMA_VERSION, DETECTOR_CORPUS_MIN_SCHEMA_VERSION,
-    DETECTOR_CORPUS_SCHEMA_VERSION,
+    DETECTOR_CORPUS_SCHEMA_VERSION, HARD_NEGATIVE_TEST_EVIDENCE_SCHEMA_VERSION,
 };
 pub use crate::detector_file_io::{read_detector_toml_file, DETECTOR_TOML_FILE_BYTES};
 
@@ -321,6 +321,7 @@ fn assemble_detector_load(
                     &spec,
                     &path,
                     enforce_gate,
+                    compatibility.schema_version,
                     &mut load_state.gate_rejected,
                     &mut load_state.gate_errors,
                     &mut load_state.total_warnings,
@@ -535,19 +536,41 @@ enum ReadDetectorOutcome {
 
 const SEMANTIC_POLICY_SCHEMA_VERSION: u32 = 4;
 
-fn declares_semantic_policy(contents: &str) -> Result<bool, toml::de::Error> {
+#[derive(Default)]
+struct DeclaredSchemaFields {
+    semantic_policy: bool,
+    hard_negative_test_evidence: bool,
+}
+
+fn declared_schema_fields(contents: &str) -> Result<DeclaredSchemaFields, toml::de::Error> {
     let document = toml::from_str::<toml::Value>(contents)?;
     let Some(detector) = document.get("detector").and_then(toml::Value::as_table) else {
-        return Ok(false);
+        return Ok(DeclaredSchemaFields::default());
     };
-    Ok([
+    let semantic_policy = [
         "capture_role",
         "anchor_role",
         "allowed_source_roles",
         "required_evidence",
     ]
     .iter()
-    .any(|field| detector.contains_key(*field)))
+    .any(|field| detector.contains_key(*field));
+    let hard_negative_test_evidence = detector
+        .get("tests")
+        .and_then(toml::Value::as_array)
+        .is_some_and(|tests| {
+            tests.iter().any(|test| {
+                test.as_table().is_some_and(|table| {
+                    ["pattern_index", "negative_class"]
+                        .iter()
+                        .any(|field| table.contains_key(*field))
+                })
+            })
+        });
+    Ok(DeclaredSchemaFields {
+        semantic_policy,
+        hard_negative_test_evidence,
+    })
 }
 
 fn read_detector_file(path: &Path, compatibility: CorpusCompatibility) -> ReadDetectorOutcome {
@@ -568,27 +591,46 @@ fn read_detector_file(path: &Path, compatibility: CorpusCompatibility) -> ReadDe
             return ReadDetectorOutcome::Skipped { message };
         }
     };
-    if compatibility.schema_version < SEMANTIC_POLICY_SCHEMA_VERSION {
-        match declares_semantic_policy(&contents) {
-            Ok(true) => {
-                return ReadDetectorOutcome::Skipped {
-                    message: format!(
-                        "{} declares semantic policy fields that require corpus schema {SEMANTIC_POLICY_SCHEMA_VERSION}; corpus.toml declares schema {}",
-                        path.display(),
-                        compatibility.schema_version
-                    ),
-                };
-            }
-            Ok(false) => {}
+    let declared_fields = if compatibility.schema_version
+        < HARD_NEGATIVE_TEST_EVIDENCE_SCHEMA_VERSION
+    {
+        match declared_schema_fields(&contents) {
+            Ok(fields) => fields,
             Err(error) => {
                 return ReadDetectorOutcome::Skipped {
-                    message: format!(
-                        "failed to inspect detector schema fields in {}: {error}",
-                        path.display()
-                    ),
-                };
+                        message: format!(
+                            "failed to parse {} under detector corpus schema {}: {}. Fix: correct \
+                             misspelled or invalid detector fields; only a corpus manifest declaring \
+                             a supported newer schema permits an unknown future field",
+                            path.display(),
+                            compatibility.schema_version,
+                            error
+                        ),
+                    };
             }
         }
+    } else {
+        DeclaredSchemaFields::default()
+    };
+    if compatibility.schema_version < SEMANTIC_POLICY_SCHEMA_VERSION
+        && declared_fields.semantic_policy
+    {
+        return ReadDetectorOutcome::Skipped {
+            message: format!(
+                "{} declares semantic policy fields that require corpus schema {SEMANTIC_POLICY_SCHEMA_VERSION}; corpus.toml declares schema {}",
+                path.display(),
+                compatibility.schema_version
+            ),
+        };
+    }
+    if declared_fields.hard_negative_test_evidence {
+        return ReadDetectorOutcome::Skipped {
+            message: format!(
+                "{} declares hard-negative test evidence fields that require corpus schema {HARD_NEGATIVE_TEST_EVIDENCE_SCHEMA_VERSION}; corpus.toml declares schema {}",
+                path.display(),
+                compatibility.schema_version
+            ),
+        };
     }
 
     match toml::from_str::<DetectorFile>(&contents) {
@@ -650,13 +692,14 @@ fn should_reject_detector(
     spec: &DetectorSpec,
     path: &Path,
     enforce_gate: bool,
+    corpus_schema_version: u32,
     gate_rejected: &mut usize,
     gate_errors: &mut Vec<String>,
     total_warnings: &mut usize,
 ) -> bool {
     let mut has_errors = false;
     let mut detector_errors = Vec::new();
-    for issue in validate_detector(spec) {
+    for issue in validate_detector_for_corpus_schema(spec, corpus_schema_version) {
         match issue {
             QualityIssue::Warning(warning) => {
                 // Advisory only - the detector still loads and scans. This is

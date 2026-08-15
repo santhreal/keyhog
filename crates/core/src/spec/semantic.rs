@@ -179,6 +179,44 @@ impl RequiredSemanticEvidence {
     }
 }
 
+/// Named synthetic false-positive class carried by detector test evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DetectorHardNegativeClass {
+    /// A valid-looking token placed across an invalid lexical boundary.
+    Boundary,
+    /// An identifier, type, or member name that resembles a credential.
+    Identifier,
+    /// Prose that contains credential-shaped vocabulary or bytes.
+    Prose,
+    /// A regex, scanner rule, or grammar literal.
+    RegexLiteral,
+    /// A nearby provider or token prefix that the detector does not own.
+    SiblingPrefix,
+}
+
+impl DetectorHardNegativeClass {
+    /// Complete class registry in declaration order.
+    pub const ALL: &'static [Self] = &[
+        Self::Boundary,
+        Self::Identifier,
+        Self::Prose,
+        Self::RegexLiteral,
+        Self::SiblingPrefix,
+    ];
+
+    /// Return the stable detector TOML spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Boundary => "boundary",
+            Self::Identifier => "identifier",
+            Self::Prose => "prose",
+            Self::RegexLiteral => "regex-literal",
+            Self::SiblingPrefix => "sibling-prefix",
+        }
+    }
+}
+
 /// Canonical detector semantic policy copied into compiled and packed plans.
 ///
 /// The policy participates in execution identity. Current scan admission does
@@ -198,4 +236,18 @@ pub struct DetectorSemanticPolicySpec {
     /// Detector-owned evidence requirements.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub required_evidence: Vec<RequiredSemanticEvidence>,
+}
+
+impl DetectorSemanticPolicySpec {
+    /// Whether the declaration carries every typed field required for verdict
+    /// enforcement.
+    pub fn is_enforcement_capable(&self) -> bool {
+        self.capture_role != CaptureSemanticRole::Unknown
+            && self.anchor_role != AnchorSemanticRole::Unknown
+            && !self.allowed_source_roles.is_empty()
+            && self
+                .allowed_source_roles
+                .iter()
+                .all(|role| *role != SemanticSourceRole::Unknown)
+    }
 }

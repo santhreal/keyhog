@@ -17,10 +17,10 @@ pub use load::{
     DETECTOR_TOML_FILE_BYTES,
 };
 pub use semantic::{
-    AnchorSemanticRole, CaptureSemanticRole, DetectorSemanticPolicySpec, RequiredSemanticEvidence,
-    SemanticSourceRole,
+    AnchorSemanticRole, CaptureSemanticRole, DetectorHardNegativeClass, DetectorSemanticPolicySpec,
+    RequiredSemanticEvidence, SemanticSourceRole,
 };
-pub use validate::{validate_detector, QualityIssue};
+pub use validate::{validate_detector, validate_detector_for_corpus_schema, QualityIssue};
 
 /// Metadata field specification for verification results.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1447,6 +1447,12 @@ pub struct DetectorTestSpec {
     /// Text this detector MUST NOT fire on.
     #[serde(default)]
     pub test_negative: Option<String>,
+    /// Canonical zero-based pattern ordinal this evidence directly covers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pattern_index: Option<u32>,
+    /// Named false-positive class for `test_negative`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub negative_class: Option<DetectorHardNegativeClass>,
     /// Optional source path used when executing this fixture through the scanner.
     #[serde(default)]
     pub test_path: Option<String>,
@@ -2377,7 +2383,8 @@ pub const DETECTOR_CORPUS_MANIFEST_FILE: &str = "corpus.toml";
 pub const DETECTOR_CORPUS_MIN_SCHEMA_VERSION: u32 = 1;
 
 /// Detector schema authored and enforced by this binary.
-pub const DETECTOR_CORPUS_SCHEMA_VERSION: u32 = 4;
+pub const DETECTOR_CORPUS_SCHEMA_VERSION: u32 = 5;
+pub(crate) const HARD_NEGATIVE_TEST_EVIDENCE_SCHEMA_VERSION: u32 = 5;
 
 /// Highest newer detector schema this binary may inspect additively.
 ///

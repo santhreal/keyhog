@@ -6,6 +6,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Detector TOML schema 5 binds synthetic positives and named hard negatives to exact pattern ordinals and rejects those fields under older manifests. A deterministic regex-HIR generator exercises every shipped pattern. Schema-5 enforcement-capable semantic policies require direct positive, named hard-negative, and generated sibling-prefix evidence; schema-4 policies retain their prior validity. The schema identity change rejects prior detector-corpus caches, execution packs, and autoroute decisions.
 - Hosted Action release proofs now default to the workspace's published 0.5.75 scanner instead of the obsolete 0.5.70 crate.
 - Scanner detector TOML schema 4 accepts typed capture, anchor, allowed-source, and required-evidence roles. Omitted declarations preserve current findings and serialization; declaring them under an older corpus schema fails closed. The schema identity change rejects prior detector-corpus caches and execution packs. Autoroute reports a detector corpus digest mismatch and instructs `keyhog calibrate-autoroute`. Detector-plan schema version 3 persists the resolved policy, rejects stale sections, and `explain` labels omitted scalar roles as compatibility defaults.
 - Merge remote-tracking branch 'origin/main'.

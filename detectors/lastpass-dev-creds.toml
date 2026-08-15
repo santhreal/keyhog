@@ -12,5 +12,7 @@ regex = '(?i)lastpass[\s_\-:.=]*\bid[=:]\s*([0-9]{7,})'
 group = 1
 
 [[detector.tests]]
+pattern_index = 0
 test_positive = "lastpass id=9860386"
 test_negative = "microsoft_advertising client_id=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+negative_class = "sibling-prefix"

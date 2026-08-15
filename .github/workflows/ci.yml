@@ -317,6 +317,7 @@ jobs:
           --test regression_checksum_boundary_no_downgrade
           --test regression_detector_owned_keyword_separators
           --test detector_corpus_coverage_ratchet
+          --test detector_pattern_hard_negative_gates
 
   # Preserve the established required-check name while making it an explicit
   # fail-closed aggregate of the five independent integration lanes.

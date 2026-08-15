@@ -203,13 +203,16 @@ pub fn load_embedded_detectors_or_fail() -> Result<Vec<DetectorSpec>, SpecError>
 fn parse_embedded_detector(name: &str, toml_content: &str) -> Result<DetectorSpec, String> {
     let file =
         toml::from_str::<DetectorFile>(toml_content).map_err(|error| format!("{name}: {error}"))?;
-    let errors: Vec<String> = spec::validate_detector(&file.detector)
-        .into_iter()
-        .filter_map(|issue| match issue {
-            spec::QualityIssue::Error(error) => Some(error),
-            spec::QualityIssue::Warning(_) => None,
-        })
-        .collect();
+    let errors: Vec<String> = spec::validate_detector_for_corpus_schema(
+        &file.detector,
+        spec::DETECTOR_CORPUS_SCHEMA_VERSION,
+    )
+    .into_iter()
+    .filter_map(|issue| match issue {
+        spec::QualityIssue::Error(error) => Some(error),
+        spec::QualityIssue::Warning(_) => None,
+    })
+    .collect();
     if errors.is_empty() {
         Ok(file.detector)
     } else {

@@ -85,13 +85,16 @@ required; neither substitutes for the other.
 
    ```toml
    [[detector.tests]]
+   pattern_index = 0
    test_positive = "SERVICE_API_KEY=<valid-shaped-test-value>"
    test_negative = "SERVICE_API_KEY=YOUR_API_KEY_HERE"
+   negative_class = "identifier"
    ```
 
    Use synthetic or vendor-published test material, never a live credential.
-   The positive must emit this detector's exact ID; the negative must remain
-   silent through the production scan path.
+   Add one indexed row for every pattern. The positive must emit this detector's
+   exact ID; the named negative must remain silent through the production scan
+   path.
 
 3. **Write the adversarial contract** at
    `crates/scanner/tests/contracts/<id>.toml`.
@@ -109,6 +112,7 @@ required; neither substitutes for the other.
    ```sh
    cargo test -p keyhog-scanner --test detector_inline_test_truth
    cargo test -p keyhog-scanner --test contracts_runner
+   cargo test -p keyhog-scanner --test detector_pattern_hard_negative_gates
    ```
 
    Must pass before you push. CI re-runs it with strict env vars set,

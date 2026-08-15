@@ -259,6 +259,8 @@ fn canonical_detector_ir_excludes_self_test_fixtures() {
     tested.tests.push(keyhog_core::DetectorTestSpec {
         test_positive: Some("fixture-positive".to_owned()),
         test_negative: Some("fixture-negative".to_owned()),
+        pattern_index: None,
+        negative_class: None,
         test_path: Some("fixture.env".to_owned()),
     });
     let plain_ir = CanonicalDetectorExecutionIr::compile(&[plain]).expect("plain IR");

@@ -155,6 +155,8 @@ fn compiled_scanner_detector_digest_covers_routing_validation_and_policy() {
     fixtures_only.tests.push(DetectorTestSpec {
         test_positive: Some("token = ghp_abcdefghijklmnopqrstuvwxyz0123456789".into()),
         test_negative: None,
+        pattern_index: None,
+        negative_class: None,
         test_path: None,
     });
     let fixtures_digest = CompiledScanner::compile(vec![fixtures_only])
