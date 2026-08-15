@@ -117,6 +117,15 @@ jobs:
           set -euo pipefail
           cd benchmarks && PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest -p no:cacheprovider -q -m 'not target_spec' bench/tests
 
+      - name: Validate redacted quality gate contract
+        env:
+          KEYHOG_BIN: ${{ github.workspace }}/target/release/keyhog
+        run: |
+          set -euo pipefail
+          make -C benchmarks real-repository-quality-contract \
+            REAL_REPOSITORY_IDENTITY="${RUNNER_TEMP}/real-repository-quality-identity.json" \
+            REAL_REPOSITORY_REPORT="${RUNNER_TEMP}/real-repository-quality-report.json"
+
       - name: Prepare clean benchmark artifact and source directories
         # Never permit a prior attempt's results, context receipts, source
         # workloads, or snapshots to cross the fresh-run boundary. In
