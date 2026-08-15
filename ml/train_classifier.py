@@ -61,6 +61,75 @@ RECALL_SENSITIVE_CLASS_FLOOR = 0.50
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_DIFFERENTIAL_RESULTS = "benchmarks/results"
 DEFAULT_DIFFERENTIAL_CORPUS = "creddata"
+PATTERN_CALIBRATION_SCHEMA_VERSION = 1
+PATTERN_CALIBRATION_MAX_ENTRIES = 16_384
+PATTERN_CALIBRATION_IDENTITY_SCHEMA = (
+    "detector-corpus-v1:detector-id:pattern-index:"
+    "candidate-channel:source-role:context-class"
+)
+PATTERN_CALIBRATION_DEFAULT_FLOORS = {
+    "blocking_score": REAL_RECALL_FLOOR,
+    "minimum_positive_support": 2,
+    "minimum_negative_support": 2,
+    "minimum_recall": 1.0,
+    "maximum_brier_score": 0.25,
+    "maximum_ece": 0.10,
+}
+PATTERN_CALIBRATION_SOURCE_ROLES = frozenset({
+    "structured-assignment-value",
+    "environment-assignment-value",
+    "string-literal",
+    "command-argument-value",
+    "command-option-declaration",
+    "header-value",
+    "url-authority-userinfo",
+    "connection-string",
+    "standalone-token",
+    "pem-block",
+    "regex-rule-definition",
+    "identifier-type-member-name",
+    "prose-documentation",
+    "test-fixture",
+    "generated-vendor-material",
+    "unknown",
+})
+PATTERN_CALIBRATION_CONTEXT_CLASSES = frozenset({
+    "unsupported-context",
+    "required-evidence-missing",
+    "weak-anchor",
+    "generic-detector",
+    "generic-assignment",
+    "entropy-only",
+    "test-fixture",
+    "documentation",
+    "rule-definition",
+    "identifier",
+    "option-declaration",
+    "generated-material",
+    "source-role-mismatch",
+    "vendor-pattern",
+    "structural-grammar",
+    "required-companion",
+    "checksum-valid",
+})
+PATTERN_CALIBRATION_MAX_DETECTOR_ID_BYTES = 128
+
+
+def valid_detector_slug(value):
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= PATTERN_CALIBRATION_MAX_DETECTOR_ID_BYTES
+        and all(ch.isascii() and (ch.islower() or ch.isdigit() or ch == "-") for ch in value)
+    )
+
+
+def valid_model_version(value):
+    return (
+        isinstance(value, str)
+        and len(value) == len("moe-v1-") + 16
+        and value.startswith("moe-v1-")
+        and all(ch in "0123456789abcdef" for ch in value[len("moe-v1-"):])
+    )
 
 
 def fast_sigmoid(x):
@@ -288,11 +357,12 @@ def train(X, y, num_features, epochs, seed, kinds):
 def load_real_corpus(path, num_features):
     """Load harvested real records.
 
-    Returns (X, y, classes, detectors, files); `files` drives the no-leakage
-    grouped split, while classes/detectors drive model-card tail metrics.
+    Returns (X, y, classes, detectors, files, calibration identities); `files`
+    drives the no-leakage grouped split, while the exact secret-free identities
+    condition held-out calibration.
     """
     kp, sk, tk, pk = config_lists.DEFAULT_LISTS
-    records, y, classes, detectors, files = [], [], [], [], []
+    records, y, classes, detectors, files, identities = [], [], [], [], [], []
     with open(path) as fh:
         for line_no, line in enumerate(fh, start=1):
             line = line.strip()
@@ -307,8 +377,9 @@ def load_real_corpus(path, num_features):
             detector_policy.validate_candidate_channel(detector_id, channel)
             detectors.append(detector_id)
             files.append(_required_corpus_field(path, line_no, rec, "source_file"))
+            identities.append(calibration_identity(path, line_no, rec))
     X = rust_features.compute_feature_matrix(records, (kp, sk, tk, pk), num_features)
-    return X, np.asarray(y, dtype=np.float32), classes, detectors, files
+    return X, np.asarray(y, dtype=np.float32), classes, detectors, files, identities
 
 
 def _required_corpus_field(path, line_no, record, field):
@@ -388,6 +459,443 @@ def per_class_eval(probs, labels, kinds, thr=0.5, floor=REAL_RECALL_FLOOR):
             else None,
         }
     return out
+
+
+def calibration_identity(path, line_no, record):
+    """Return the secret-free exact calibration key for one named-pattern row."""
+    source_file = record.get("source_file")
+    if isinstance(source_file, str) and source_file.startswith("contract:"):
+        return None
+    channel = _required_corpus_field(
+        path, line_no, record, "candidate_channel"
+    )
+    if channel != "pattern":
+        return None
+    pattern_index = record.get("pattern_index")
+    if (
+        isinstance(pattern_index, bool)
+        or not isinstance(pattern_index, int)
+        or pattern_index < 0
+        or pattern_index > 0xFFFFFFFF
+    ):
+        raise ValueError(
+            f"{path}:{line_no}: corpus record has invalid `pattern_index`; "
+            "regenerate it from scanner candidate provenance"
+        )
+    detector_digest = _required_corpus_field(
+        path, line_no, record, "detector_digest"
+    )
+    if (
+        len(detector_digest) != 16
+        or any(ch not in "0123456789abcdef" for ch in detector_digest)
+    ):
+        raise ValueError(
+            f"{path}:{line_no}: `detector_digest` must be 16 lowercase hex digits"
+        )
+    detector_id = _required_corpus_field(path, line_no, record, "detector_id")
+    if not valid_detector_slug(detector_id):
+        raise ValueError(
+            f"{path}:{line_no}: detector_id must be a bounded lowercase detector slug"
+        )
+    source_role = _required_corpus_field(path, line_no, record, "source_role")
+    context_class = _required_corpus_field(path, line_no, record, "context_class")
+    if source_role not in PATTERN_CALIBRATION_SOURCE_ROLES:
+        raise ValueError(
+            f"{path}:{line_no}: unknown calibration source_role {source_role!r}"
+        )
+    if context_class not in PATTERN_CALIBRATION_CONTEXT_CLASSES:
+        raise ValueError(
+            f"{path}:{line_no}: unknown calibration context_class {context_class!r}"
+        )
+    return {
+        "detector_id": detector_id,
+        "pattern_index": pattern_index,
+        "candidate_channel": channel,
+        "source_role": source_role,
+        "context_class": context_class,
+        "detector_digest": detector_digest,
+    }
+
+
+def expected_calibration_error(probs, labels, bins=10):
+    """Return deterministic equal-width ECE over a bounded held-out row set."""
+    probs = np.asarray(probs, dtype=np.float64)
+    labels = np.asarray(labels, dtype=np.float64)
+    if (
+        probs.ndim != 1
+        or labels.ndim != 1
+        or len(probs) != len(labels)
+        or isinstance(bins, (bool, np.bool_))
+        or not isinstance(bins, (int, np.integer))
+        or bins <= 0
+    ):
+        raise ValueError("ECE requires equal one-dimensional inputs and positive integer bins")
+    bins = int(bins)
+    if len(probs) == 0:
+        return 0.0
+    if (
+        not np.isfinite(probs).all()
+        or not np.isfinite(labels).all()
+        or ((probs < 0.0) | (probs > 1.0)).any()
+        or ((labels != 0.0) & (labels != 1.0)).any()
+    ):
+        raise ValueError("ECE inputs must be finite probabilities and binary labels")
+    bucket = np.minimum((probs * bins).astype(np.int64), bins - 1)
+    ece = 0.0
+    for index in range(bins):
+        selected = bucket == index
+        support = int(selected.sum())
+        if support:
+            ece += (
+                support
+                / len(probs)
+                * abs(float(probs[selected].mean() - labels[selected].mean()))
+            )
+    return ece
+
+
+def validate_calibration_floors(floors):
+    required = set(PATTERN_CALIBRATION_DEFAULT_FLOORS)
+    if not isinstance(floors, dict) or set(floors) != required:
+        raise ValueError(
+            f"calibration floors must contain exactly {sorted(required)!r}"
+        )
+    support_fields = ("minimum_positive_support", "minimum_negative_support")
+    for field in support_fields:
+        value = floors[field]
+        if (
+            isinstance(value, (bool, np.bool_))
+            or not isinstance(value, (int, np.integer))
+            or not 2 <= int(value) <= 0xFFFFFFFFFFFFFFFF
+        ):
+            raise ValueError("calibration support floors must be u64 integers of at least 2")
+    probability_fields = (
+        "blocking_score",
+        "minimum_recall",
+        "maximum_brier_score",
+        "maximum_ece",
+    )
+    for field in probability_fields:
+        value = floors[field]
+        if (
+            isinstance(value, (bool, np.bool_))
+            or not isinstance(value, (int, float, np.integer, np.floating))
+            or not math.isfinite(float(value))
+            or not 0.0 <= float(value) <= 1.0
+        ):
+            raise ValueError("calibration probability floors must be finite numbers in [0, 1]")
+    normalized = {
+        "blocking_score": float(floors["blocking_score"]),
+        "minimum_positive_support": int(floors["minimum_positive_support"]),
+        "minimum_negative_support": int(floors["minimum_negative_support"]),
+        "minimum_recall": float(floors["minimum_recall"]),
+        "maximum_brier_score": float(floors["maximum_brier_score"]),
+        "maximum_ece": float(floors["maximum_ece"]),
+    }
+    if (
+        normalized["blocking_score"] != REAL_RECALL_FLOOR
+        or normalized["minimum_recall"] < 1.0
+        or normalized["maximum_brier_score"] > 0.25
+        or normalized["maximum_ece"] > 0.1
+    ):
+        raise ValueError("calibration artifact weakens the serving floors")
+    return normalized
+
+
+def pattern_calibration_entries(
+    float_probs,
+    quantized_probs,
+    labels,
+    identities,
+    floors=None,
+):
+    """Build conservative per-key metrics after exact float/quantized verdict parity."""
+    floors = validate_calibration_floors(
+        PATTERN_CALIBRATION_DEFAULT_FLOORS if floors is None else floors
+    )
+    float_probs = np.asarray(float_probs, dtype=np.float64)
+    quantized_probs = np.asarray(quantized_probs, dtype=np.float64)
+    labels = np.asarray(labels, dtype=np.float64)
+    if not (
+        len(float_probs)
+        == len(quantized_probs)
+        == len(labels)
+        == len(identities)
+    ):
+        raise ValueError("calibration probabilities, labels, and identities differ in length")
+    blocking = float(floors["blocking_score"])
+    groups = {}
+    for index, identity in enumerate(identities):
+        if identity is None:
+            continue
+        if (
+            not valid_detector_slug(identity.get("detector_id"))
+            or identity.get("candidate_channel") != "pattern"
+            or identity.get("source_role") not in PATTERN_CALIBRATION_SOURCE_ROLES
+            or identity.get("context_class") not in PATTERN_CALIBRATION_CONTEXT_CLASSES
+            or isinstance(identity.get("pattern_index"), bool)
+            or not isinstance(identity.get("pattern_index"), int)
+            or not 0 <= identity["pattern_index"] <= 0xFFFFFFFF
+        ):
+            raise ValueError("calibration identity is not an exact bounded scanner key")
+        key = (
+            identity["detector_id"],
+            identity["pattern_index"],
+            identity["candidate_channel"],
+            identity["source_role"],
+            identity["context_class"],
+        )
+        groups.setdefault(key, []).append(index)
+    entries = []
+    for key in sorted(groups):
+        selected = np.asarray(groups[key], dtype=np.int64)
+        fp = float_probs[selected]
+        qp = quantized_probs[selected]
+        truth = labels[selected]
+        for threshold in (0.5, blocking):
+            if not np.array_equal(fp >= threshold, qp >= threshold):
+                raise ValueError(
+                    "float/quantized verdict parity failed for calibration key "
+                    f"{key!r} at threshold {threshold}"
+                )
+        positive = truth >= 0.5
+        negative = ~positive
+        pred = fp >= 0.5
+        tp = int((pred & positive).sum())
+        fp_count = int((pred & negative).sum())
+        fn = int(((~pred) & positive).sum())
+        precision = tp / (tp + fp_count) if tp + fp_count else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1 = (
+            2.0 * precision * recall / (precision + recall)
+            if precision + recall
+            else 0.0
+        )
+        positive_support = int(positive.sum())
+        blocking_recall = (
+            min(
+                float(np.mean(fp[positive] >= blocking)),
+                float(np.mean(qp[positive] >= blocking)),
+            )
+            if positive_support
+            else 0.0
+        )
+        metrics = {
+            "f1": f1,
+            "precision": precision,
+            "recall": recall,
+            "recall_at_blocking_floor": blocking_recall,
+            "brier_score": max(
+                float(np.mean((fp - truth) ** 2)),
+                float(np.mean((qp - truth) ** 2)),
+            ),
+            "ece": max(
+                expected_calibration_error(fp, truth),
+                expected_calibration_error(qp, truth),
+            ),
+            "positive_support": positive_support,
+            "negative_support": int(negative.sum()),
+        }
+        entries.append(
+            {
+                "detector_id": key[0],
+                "pattern_index": key[1],
+                "candidate_channel": key[2],
+                "source_role": key[3],
+                "context_class": key[4],
+                "metrics": metrics,
+            }
+        )
+    if len(entries) > PATTERN_CALIBRATION_MAX_ENTRIES:
+        raise ValueError(
+            f"pattern calibration exceeds {PATTERN_CALIBRATION_MAX_ENTRIES} exact keys"
+        )
+    return entries
+
+
+def build_pattern_calibration_artifact(
+    model_version,
+    detector_digest,
+    float_probs,
+    quantized_probs,
+    labels,
+    identities,
+    floors=None,
+):
+    """Build the persisted artifact without candidate text or source context."""
+    if not valid_model_version(model_version):
+        raise ValueError(
+            "calibration model_version must use moe-v1- plus 16 lowercase hex digits"
+        )
+    floors = validate_calibration_floors(
+        PATTERN_CALIBRATION_DEFAULT_FLOORS if floors is None else floors
+    )
+    entries = pattern_calibration_entries(
+        float_probs,
+        quantized_probs,
+        labels,
+        identities,
+        floors,
+    )
+    if entries and (
+        not isinstance(detector_digest, str)
+        or len(detector_digest) != 16
+        or any(ch not in "0123456789abcdef" for ch in detector_digest)
+    ):
+        raise ValueError("populated calibration artifact requires a 16-digit detector digest")
+    return {
+        "schema_version": PATTERN_CALIBRATION_SCHEMA_VERSION,
+        "identity_schema": PATTERN_CALIBRATION_IDENTITY_SCHEMA,
+        "model_version": model_version,
+        "detector_digest": detector_digest if entries else None,
+        "floors": floors,
+        "entries": entries,
+    }
+
+
+def serialize_pattern_calibration_artifact(artifact):
+    return (json.dumps(artifact, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def pattern_calibration_model_card_summary(artifact):
+    if artifact.get("schema_version") != PATTERN_CALIBRATION_SCHEMA_VERSION:
+        raise ValueError("model-card calibration summary requires the current schema")
+    if artifact.get("identity_schema") != PATTERN_CALIBRATION_IDENTITY_SCHEMA:
+        raise ValueError("model-card calibration summary has a stale identity schema")
+    if not valid_model_version(artifact.get("model_version")):
+        raise ValueError("model-card calibration summary has an invalid model version")
+    floors = artifact.get("floors")
+    if not isinstance(floors, dict):
+        raise ValueError("model-card calibration summary requires floors")
+    floors = validate_calibration_floors(floors)
+    entries = artifact.get("entries")
+    if not isinstance(entries, list):
+        raise ValueError("model-card calibration summary requires entries")
+    detector_digest = artifact.get("detector_digest")
+    if entries:
+        if (
+            not isinstance(detector_digest, str)
+            or len(detector_digest) != 16
+            or any(ch not in "0123456789abcdef" for ch in detector_digest)
+        ):
+            raise ValueError(
+                "populated model-card calibration summary requires detector digest"
+            )
+    elif detector_digest is not None:
+        raise ValueError(
+            "empty model-card calibration summary requires null detector digest"
+        )
+    positive_support = 0
+    negative_support = 0
+    eligible_entries = 0
+    recalls = []
+    blocking_recalls = []
+    brier_scores = []
+    eces = []
+    expected_entry_fields = {
+        "detector_id",
+        "pattern_index",
+        "candidate_channel",
+        "source_role",
+        "context_class",
+        "metrics",
+    }
+    expected_metric_fields = {
+        "f1",
+        "precision",
+        "recall",
+        "recall_at_blocking_floor",
+        "brier_score",
+        "ece",
+        "positive_support",
+        "negative_support",
+    }
+    if len(entries) > PATTERN_CALIBRATION_MAX_ENTRIES:
+        raise ValueError(
+            f"model-card calibration exceeds {PATTERN_CALIBRATION_MAX_ENTRIES} exact keys"
+        )
+    seen_keys = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != expected_entry_fields:
+            raise ValueError("model-card calibration entry has an invalid shape")
+        if (
+            not valid_detector_slug(entry["detector_id"])
+            or isinstance(entry["pattern_index"], bool)
+            or not isinstance(entry["pattern_index"], int)
+            or not 0 <= entry["pattern_index"] <= 0xFFFFFFFF
+            or entry["candidate_channel"] != "pattern"
+            or entry["source_role"] not in PATTERN_CALIBRATION_SOURCE_ROLES
+            or entry["context_class"] not in PATTERN_CALIBRATION_CONTEXT_CLASSES
+        ):
+            raise ValueError("model-card calibration entry has an invalid identity")
+        key = (
+            entry["detector_id"],
+            entry["pattern_index"],
+            entry["candidate_channel"],
+            entry["source_role"],
+            entry["context_class"],
+        )
+        if key in seen_keys:
+            raise ValueError("model-card calibration contains a duplicate exact key")
+        seen_keys.add(key)
+        metrics = entry["metrics"]
+        if not isinstance(metrics, dict) or set(metrics) != expected_metric_fields:
+            raise ValueError("model-card calibration entry has invalid metrics")
+        for support_field in ("positive_support", "negative_support"):
+            support = metrics[support_field]
+            if isinstance(support, bool) or not isinstance(support, int) or support < 0:
+                raise ValueError("model-card calibration support must be nonnegative integers")
+        for metric_field in expected_metric_fields - {
+            "positive_support",
+            "negative_support",
+        }:
+            value = metrics[metric_field]
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                or not 0.0 <= value <= 1.0
+            ):
+                raise ValueError(
+                    "model-card calibration quality metrics must be probabilities"
+                )
+        positive_support += int(metrics["positive_support"])
+        negative_support += int(metrics["negative_support"])
+        recalls.append(float(metrics["recall"]))
+        blocking_recalls.append(float(metrics["recall_at_blocking_floor"]))
+        brier_scores.append(float(metrics["brier_score"]))
+        eces.append(float(metrics["ece"]))
+        eligible_entries += int(
+            metrics["positive_support"] >= floors["minimum_positive_support"]
+            and metrics["negative_support"] >= floors["minimum_negative_support"]
+            and metrics["recall"] >= floors["minimum_recall"]
+            and metrics["recall_at_blocking_floor"] >= floors["minimum_recall"]
+            and metrics["brier_score"] <= floors["maximum_brier_score"]
+            and metrics["ece"] <= floors["maximum_ece"]
+        )
+    return {
+        "artifact_sha256": hashlib.sha256(
+            serialize_pattern_calibration_artifact(artifact)
+        ).hexdigest(),
+        "schema_version": artifact["schema_version"],
+        "identity_schema": artifact["identity_schema"],
+        "model_version": artifact["model_version"],
+        "detector_digest": artifact.get("detector_digest"),
+        "status": "abstaining" if eligible_entries == 0 else "calibrated",
+        "floors": dict(floors),
+        "entry_count": len(entries),
+        "eligible_entry_count": eligible_entries,
+        "aggregate_metrics": {
+            "positive_support": positive_support,
+            "negative_support": negative_support,
+            "minimum_recall": min(recalls) if recalls else None,
+            "minimum_recall_at_blocking_floor": (
+                min(blocking_recalls) if blocking_recalls else None
+            ),
+            "maximum_brier_score": max(brier_scores) if brier_scores else None,
+            "maximum_ece": max(eces) if eces else None,
+        },
+    }
 
 
 def validation_selection_key(
@@ -905,6 +1413,7 @@ def write_model_card(
     args,
     metrics,
     real_metrics=None,
+    calibration_artifact=None,
 ) -> None:
     """Write model-card provenance beside the serialized weights.
 
@@ -919,6 +1428,13 @@ def write_model_card(
         )
 
     digest = weights_fnv1a64(blob)
+    if calibration_artifact is None:
+        calibration_artifact = build_pattern_calibration_artifact(
+            f"moe-v1-{digest}", None, [], [], [], []
+        )
+    if calibration_artifact.get("model_version") != f"moe-v1-{digest}":
+        raise ValueError("pattern calibration model version does not match weights")
+    calibration_card = pattern_calibration_model_card_summary(calibration_artifact)
     real_card = dict(real_metrics) if real_metrics else {
         "note": "scratch training only; shipped writes require --real-corpus"
     }
@@ -963,6 +1479,7 @@ def write_model_card(
         "recorded_date": datetime.date.today().isoformat(),
         "trainer": "ml/train_classifier.py",
         "feature_source": "Rust dump_features serve path",
+        "pattern_calibration": calibration_card,
         "training_inputs": {
             "synthetic": args.corpus,
             "synthetic_sha256": file_sha256(args.corpus),
@@ -1023,6 +1540,11 @@ def main() -> int:
                     help="quantized model artifact to update with --write")
     ap.add_argument("--model-card", default=CURRENT_MODEL_CARD,
                     help="model-card JSON to update with --write; must match weights.bin")
+    ap.add_argument(
+        "--pattern-calibration-out",
+        default="crates/scanner/src/pattern_calibration.json",
+        help="pattern-conditioned calibration artifact to update with --write",
+    )
     ap.add_argument("--features", type=int, default=55, choices=[41, 42, 43, 51, 55])
     ap.add_argument("--epochs", type=int, default=60)
     ap.add_argument("--learning-rate", type=float, default=2e-3)
@@ -1101,7 +1623,7 @@ def main() -> int:
         # (so breadth coverage cannot silently regress); the real held-out is
         # the recall number that matters and is reported alongside.
         Xs, ys, kinds_s, detectors_s = load_corpus(args.corpus, args.features)
-        Xr, yr, classes_r, detectors_r, files_r = load_real_corpus(
+        Xr, yr, classes_r, detectors_r, files_r, identities_r = load_real_corpus(
             args.real_corpus,
             args.features,
         )
@@ -1140,6 +1662,50 @@ def main() -> int:
             return 1
         blob = serialize(model, args.features)
         sys.stderr.write(f"serialized {len(blob)} bytes ({len(blob) // 4} f32)\n")
+        calibration_digests = {
+            identity["detector_digest"]
+            for identity in identities_r
+            if identity is not None
+        }
+        if len(calibration_digests) > 1:
+            sys.stderr.write(
+                "REFUSING retrain artifact: real corpus mixes detector digests\n"
+            )
+            return 1
+        try:
+            if args.features == rust_features.NUM_FEATURES:
+                import torch
+
+                _, _, calibration_test_indices = _group_split(files_r, args.seed)
+                quantized_candidate = serialize_quantized(blob, args.features)
+                quantized_test_probs = rust_features.score_quantized_features(
+                    quantized_candidate,
+                    Xr[calibration_test_indices],
+                )
+                with torch.no_grad():
+                    float_test_probs = model(
+                        torch.from_numpy(Xr[calibration_test_indices])
+                    ).numpy()
+                calibration_artifact = build_pattern_calibration_artifact(
+                    f"moe-v1-{weights_fnv1a64(blob)}",
+                    next(iter(calibration_digests), None),
+                    float_test_probs,
+                    quantized_test_probs,
+                    yr[calibration_test_indices],
+                    [identities_r[index] for index in calibration_test_indices],
+                )
+            else:
+                calibration_artifact = build_pattern_calibration_artifact(
+                    f"moe-v1-{weights_fnv1a64(blob)}",
+                    None,
+                    [],
+                    [],
+                    [],
+                    [],
+                )
+        except ValueError as error:
+            sys.stderr.write(f"REFUSING retrain artifact: {error}\n")
+            return 1
         if metrics["f1"] < args.min_f1:
             sys.stderr.write(
                 f"REFUSING to write: synthetic val F1 {metrics['f1']:.4f} < floor {args.min_f1}\n"
@@ -1199,7 +1765,7 @@ def main() -> int:
             sys.stderr.write(
                 f"candidate artifact has no current six-scanner differential: {error}\n"
             )
-        _write_weights(blob, args, metrics, real_metrics)
+        _write_weights(blob, args, metrics, real_metrics, calibration_artifact)
         return 0
 
     if args.write:
@@ -1237,7 +1803,13 @@ def main() -> int:
     return 0
 
 
-def _write_weights(blob: bytes, args, metrics, real_metrics=None) -> None:
+def _write_weights(
+    blob: bytes,
+    args,
+    metrics,
+    real_metrics=None,
+    calibration_artifact=None,
+) -> None:
     """Write the serialized weights: `--write` overwrites the crate's
     `weights.bin` (backing up the old one to `.bak`); otherwise a scratch file
     next to the corpus, never touching the shipped crate."""
@@ -1252,6 +1824,20 @@ def _write_weights(blob: bytes, args, metrics, real_metrics=None) -> None:
             )
         quantized_blob = None
         feature_schema_digest = None
+    if calibration_artifact is None:
+        calibration_artifact = build_pattern_calibration_artifact(
+            f"moe-v1-{weights_fnv1a64(blob)}",
+            None,
+            [],
+            [],
+            [],
+            [],
+        )
+    if calibration_artifact.get("model_version") != (
+        f"moe-v1-{weights_fnv1a64(blob)}"
+    ):
+        raise ValueError("pattern calibration model version does not match weights")
+    pattern_calibration_model_card_summary(calibration_artifact)
     if args.write:
         real = real_metrics or {}
         recall = real.get("recall_at_0_40_floor", real.get("real_pos_recall_at_0.40_floor"))
@@ -1290,6 +1876,18 @@ def _write_weights(blob: bytes, args, metrics, real_metrics=None) -> None:
             with open(args.quantized_out, "wb") as fh:
                 fh.write(quantized_blob)
             sys.stderr.write(f"wrote {args.quantized_out}\n")
+        if os.path.exists(args.pattern_calibration_out):
+            shutil.copy2(
+                args.pattern_calibration_out,
+                args.pattern_calibration_out + ".bak",
+            )
+            sys.stderr.write(
+                "backed up existing pattern calibration -> "
+                f"{args.pattern_calibration_out}.bak\n"
+            )
+        with open(args.pattern_calibration_out, "wb") as fh:
+            fh.write(serialize_pattern_calibration_artifact(calibration_artifact))
+        sys.stderr.write(f"wrote {args.pattern_calibration_out}\n")
     else:
         # default: write next to corpus for inspection, do NOT touch the crate
         scratch = os.path.join(os.path.dirname(args.corpus) or ".", f"weights_{args.features}.bin")
@@ -1306,6 +1904,16 @@ def _write_weights(blob: bytes, args, metrics, real_metrics=None) -> None:
             sys.stderr.write(
                 f"wrote {quantized_scratch} (pass --write to update {args.quantized_out})\n"
             )
+        calibration_scratch = os.path.join(
+            os.path.dirname(args.corpus) or "",
+            f"pattern_calibration_{args.features}.json",
+        )
+        with open(calibration_scratch, "wb") as fh:
+            fh.write(serialize_pattern_calibration_artifact(calibration_artifact))
+        sys.stderr.write(
+            f"wrote {calibration_scratch} "
+            f"(pass --write to update {args.pattern_calibration_out})\n"
+        )
     write_model_card(
         blob,
         quantized_blob,
@@ -1313,6 +1921,7 @@ def _write_weights(blob: bytes, args, metrics, real_metrics=None) -> None:
         args,
         metrics,
         real_metrics,
+        calibration_artifact,
     )
 
 

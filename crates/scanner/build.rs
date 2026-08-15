@@ -5,6 +5,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[path = "src/pattern_calibration_contract.rs"]
+mod pattern_calibration_contract;
 #[path = "src/ml_scorer/service_vocab_build.rs"]
 mod service_vocab_build;
 
@@ -12,6 +14,8 @@ fn main() -> io::Result<()> {
     println!("cargo:rerun-if-changed=src/weights.bin");
     println!("cargo:rerun-if-changed=src/model_card.json");
     println!("cargo:rerun-if-changed=src/quantized_moe.bin");
+    println!("cargo:rerun-if-changed=src/pattern_calibration.json");
+    println!("cargo:rerun-if-changed=src/pattern_calibration_contract.rs");
     println!("cargo:rerun-if-changed=data/english_bigram_logprob.bin");
     println!("cargo:rerun-if-changed=data/english_bigram_logprob.card.toml");
 
@@ -145,6 +149,107 @@ fn main() -> io::Result<()> {
         return Err(invalid_data(format!(
             "model_card.json weights_fnv1a64 mismatch: card has {card_hash}, weights.bin is {weights_hash}"
         )));
+    }
+    let calibration_src = fs::read_to_string("src/pattern_calibration.json").map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!("src/pattern_calibration.json is required beside model artifacts: {error}"),
+        )
+    })?;
+    let parsed_calibration = pattern_calibration_contract::PatternCalibration::parse(
+        &calibration_src,
+    )
+    .map_err(|error| {
+        invalid_data(format!(
+            "src/pattern_calibration.json violates the serving contract: {error}"
+        ))
+    })?;
+    let calibration: serde_json::Value =
+        serde_json::from_str(&calibration_src).map_err(|error| {
+            invalid_data(format!(
+                "src/pattern_calibration.json is not valid JSON: {error}"
+            ))
+        })?;
+    if json_u64(&calibration, "/schema_version")? != 1
+        || json_str(&calibration, "/identity_schema")?
+            != "detector-corpus-v1:detector-id:pattern-index:candidate-channel:source-role:context-class"
+    {
+        return Err(invalid_data(
+            "pattern_calibration.json schema is stale; regenerate the calibration artifact",
+        ));
+    }
+    if parsed_calibration.model_version != version_str {
+        return Err(invalid_data(
+            "pattern_calibration.json model_version does not match weights.bin",
+        ));
+    }
+    let calibration_digest = hex_lower(&Sha256::digest(calibration_src.as_bytes()));
+    if json_str(&card, "/pattern_calibration/artifact_sha256")? != calibration_digest
+        || json_u64(&card, "/pattern_calibration/schema_version")? != 1
+        || json_str(&card, "/pattern_calibration/identity_schema")?
+            != json_str(&calibration, "/identity_schema")?
+        || json_str(&card, "/pattern_calibration/model_version")?
+            != json_str(&calibration, "/model_version")?
+        || card.pointer("/pattern_calibration/detector_digest")
+            != calibration.pointer("/detector_digest")
+        || card.pointer("/pattern_calibration/floors") != calibration.pointer("/floors")
+        || json_u64(&card, "/pattern_calibration/entry_count")?
+            != parsed_calibration.entries.len() as u64
+    {
+        return Err(invalid_data(
+            "model_card.json pattern calibration summary does not match pattern_calibration.json",
+        ));
+    }
+    let floors = parsed_calibration.floors;
+    let mut positive_support = 0u64;
+    let mut negative_support = 0u64;
+    let mut eligible_entries = 0u64;
+    let mut minimum_recall: Option<f64> = None;
+    let mut minimum_blocking_recall: Option<f64> = None;
+    let mut maximum_brier: Option<f64> = None;
+    let mut maximum_ece: Option<f64> = None;
+    for entry in &parsed_calibration.entries {
+        let metrics = entry.metrics;
+        positive_support = positive_support
+            .checked_add(metrics.positive_support)
+            .ok_or_else(|| invalid_data("pattern calibration positive support overflows u64"))?;
+        negative_support = negative_support
+            .checked_add(metrics.negative_support)
+            .ok_or_else(|| invalid_data("pattern calibration negative support overflows u64"))?;
+        minimum_recall =
+            Some(minimum_recall.map_or(metrics.recall, |value| value.min(metrics.recall)));
+        minimum_blocking_recall = Some(
+            minimum_blocking_recall.map_or(metrics.recall_at_blocking_floor, |value| {
+                value.min(metrics.recall_at_blocking_floor)
+            }),
+        );
+        maximum_brier =
+            Some(maximum_brier.map_or(metrics.brier_score, |value| value.max(metrics.brier_score)));
+        maximum_ece = Some(maximum_ece.map_or(metrics.ece, |value| value.max(metrics.ece)));
+        eligible_entries += u64::from(pattern_calibration_contract::metrics_meet_floors(
+            metrics, floors,
+        ));
+    }
+    let aggregate = serde_json::json!({
+        "positive_support": positive_support,
+        "negative_support": negative_support,
+        "minimum_recall": minimum_recall,
+        "minimum_recall_at_blocking_floor": minimum_blocking_recall,
+        "maximum_brier_score": maximum_brier,
+        "maximum_ece": maximum_ece,
+    });
+    let expected_status = if eligible_entries == 0 {
+        "abstaining"
+    } else {
+        "calibrated"
+    };
+    if json_u64(&card, "/pattern_calibration/eligible_entry_count")? != eligible_entries
+        || json_str(&card, "/pattern_calibration/status")? != expected_status
+        || card.pointer("/pattern_calibration/aggregate_metrics") != Some(&aggregate)
+    {
+        return Err(invalid_data(
+            "model_card.json pattern calibration metrics summary is stale",
+        ));
     }
 
     let feature_count = json_u64(&card, "/feature_count")?;

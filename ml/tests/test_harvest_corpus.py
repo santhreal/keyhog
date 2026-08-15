@@ -1,10 +1,14 @@
 import dataclasses
 import sys
+import json
+
+import numpy as np
 
 import pytest
 
 import harvest_corpus
 from bench.corpora.base import LabeledRecord
+from bench.scanners.keyhog import _normalize_keyhog
 
 
 def _record(record_id, secret, label, category, ignore=False, file_path="fixture.env"):
@@ -16,6 +20,19 @@ def _record(record_id, secret, label, category, ignore=False, file_path="fixture
         file_path=file_path,
         ignore=ignore,
     )
+
+
+def _provenance(**overrides):
+    provenance = {
+        "schema_version": 1,
+        "detector_digest": "0123456789abcdef",
+        "pattern_index": 3,
+        "candidate_channel": "pattern",
+        "source_role": "structured-assignment-value",
+        "context_class": "vendor-pattern",
+    }
+    provenance.update(overrides)
+    return {"tier": "likely", "reason_code": "vendor-pattern", "provenance": provenance}
 
 
 def test_classify_finding_preserves_scorer_category_and_ignore_semantics():
@@ -79,6 +96,203 @@ def test_finding_detector_id_rejects_unknown_or_missing_values():
     ):
         with pytest.raises(ValueError, match="missing explicit detector_id"):
             harvest_corpus._finding_detector_id(finding, "creddata:fixture.env")
+
+
+def test_provenance_requires_exact_authoritative_identity():
+    finding = {"evidence": _provenance()}
+    assert harvest_corpus._finding_provenance(finding, "fixture") == {
+        "detector_digest": "0123456789abcdef",
+        "pattern_index": 3,
+        "candidate_channel": "pattern",
+        "source_role": "structured-assignment-value",
+        "context_class": "vendor-pattern",
+    }
+
+    for missing in (
+        "schema_version",
+        "detector_digest",
+        "pattern_index",
+        "candidate_channel",
+        "source_role",
+        "context_class",
+    ):
+        provenance = _provenance()
+        del provenance["provenance"][missing]
+        with pytest.raises(ValueError, match="evidence.provenance"):
+            harvest_corpus._finding_provenance(
+                {"evidence": provenance},
+                "fixture",
+            )
+
+    for channel in ("generic-assignment", "entropy"):
+        assert harvest_corpus._finding_provenance(
+            {
+                "evidence": _provenance(
+                    candidate_channel=channel,
+                    pattern_index=None,
+                )
+            },
+            "fixture",
+        )["candidate_channel"] == channel
+
+    with pytest.raises(ValueError, match="non-pattern.*pattern_index must be null"):
+        harvest_corpus._finding_provenance(
+            {"evidence": _provenance(candidate_channel="entropy")},
+            "fixture",
+        )
+    with pytest.raises(ValueError, match="unsupported.*candidate_channel"):
+        harvest_corpus._finding_provenance(
+            {
+                "evidence": _provenance(
+                    candidate_channel="unattributed",
+                    pattern_index=None,
+                )
+            },
+            "fixture",
+        )
+
+
+def test_keyhog_normalization_preserves_evidence_provenance():
+    evidence = _provenance()
+    findings = _normalize_keyhog(
+        [
+            {
+                "credential": "fixture-secret",
+                "detector_id": "generic-api-key",
+                "confidence": 0.75,
+                "location": {
+                    "file_path": "fixture.env",
+                    "line": 1,
+                    "offset": 0,
+                },
+                "evidence": evidence,
+            }
+        ]
+    )
+    assert findings[0]["evidence"] == evidence
+
+
+@pytest.mark.parametrize(
+    ("detector_id", "candidate_channel", "pattern_index", "expected_detector_id"),
+    (
+        ("generic-api-key", "pattern", 3, "generic-api-key"),
+        ("entropy-api-key", "entropy", None, "entropy-api-key"),
+        ("generic-api-key", "generic-assignment", None, "generic-api-key"),
+        (
+            "generic-api-key:reassembled",
+            "pattern",
+            3,
+            "generic-api-key",
+        ),
+    ),
+)
+def test_harvest_emits_versioned_secret_safe_features_with_exact_identity(
+    tmp_path,
+    monkeypatch,
+    detector_id,
+    candidate_channel,
+    pattern_index,
+    expected_detector_id,
+):
+    secret = "fixture-secret-that-must-not-persist"
+    fixture = tmp_path / "fixture.env"
+    fixture.write_text(f"API_KEY={secret}\n", encoding="utf-8")
+
+    @dataclasses.dataclass
+    class FakeConfig:
+        min_confidence: float = 0.5
+
+    class FakeCorpus:
+        file_root = tmp_path
+        scan_root = tmp_path
+
+        def records(self):
+            return [
+                _record(
+                    "positive",
+                    secret,
+                    True,
+                    "authentication-key",
+                )
+            ]
+
+    class FakeScanner:
+        binary = "keyhog"
+
+        def available(self):
+            return True
+
+        def default_config(self):
+            return FakeConfig()
+
+        def run(self, _root, _cfg):
+            return (
+                [
+                    {
+                        "file": str(fixture),
+                        "line": 1,
+                        "value": secret,
+                        "detector": detector_id,
+                        "evidence": _provenance(
+                            candidate_channel=candidate_channel,
+                            pattern_index=pattern_index,
+                        ),
+                    }
+                ],
+                object(),
+            )
+
+    def fake_features(records, _lists, width):
+        assert width == 55
+        assert records[0]["text"] == secret
+        assert secret in records[0]["context"]
+        return np.asarray([[index / 100.0 for index in range(width)]], dtype=np.float32)
+
+    monkeypatch.setattr(harvest_corpus, "resolve_corpus", lambda _name: FakeCorpus())
+    monkeypatch.setattr(
+        harvest_corpus,
+        "resolve_scanner",
+        lambda *_args, **_kwargs: FakeScanner(),
+    )
+    monkeypatch.setattr(
+        harvest_corpus.rust_features,
+        "compute_feature_matrix",
+        fake_features,
+    )
+    monkeypatch.setattr(
+        harvest_corpus.rust_features,
+        "quantized_schema_digest",
+        lambda: "ab" * 32,
+    )
+
+    rows = harvest_corpus.harvest("fixture", None, 0.0)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["schema_version"] == "keyhog-ml-feature-corpus-v1"
+    assert row["feature_schema_sha256"] == "ab" * 32
+    assert len(row["features"]) == 55
+    assert {
+        key: row[key]
+        for key in (
+            "detector_id",
+            "detector_digest",
+            "pattern_index",
+            "candidate_channel",
+            "source_role",
+            "context_class",
+        )
+    } == {
+        "detector_id": expected_detector_id,
+        "detector_digest": "0123456789abcdef",
+        "pattern_index": pattern_index,
+        "candidate_channel": candidate_channel,
+        "source_role": "structured-assignment-value",
+        "context_class": "vendor-pattern",
+    }
+    serialized = json.dumps(row)
+    assert secret not in serialized
+    assert "text" not in row
+    assert "context" not in row
 
 
 def test_harvest_rejects_ambiguous_finding_paths(tmp_path, monkeypatch):

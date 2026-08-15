@@ -45,7 +45,41 @@ fn resolve_detector(id: &str) -> Option<&'static keyhog_core::DetectorSpec> {
     })
 }
 
+fn score_quantized_model(path: &str) {
+    let bytes = std::fs::read(path).expect("read quantized model");
+    let model = keyhog_scanner::confidence::quantized::QuantizedModel::parse(&bytes)
+        .expect("valid quantized model");
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let mut out = io::BufWriter::new(stdout.lock());
+    for line in stdin.lock().lines() {
+        let line = line.expect("read feature row");
+        if line.is_empty() {
+            continue;
+        }
+        let values: Vec<f32> = line
+            .split_ascii_whitespace()
+            .map(|value| value.parse::<f32>().expect("finite f32 feature"))
+            .collect();
+        let features: [f32; keyhog_scanner::confidence::quantized::FEATURE_NAMES.len()] =
+            values.try_into().expect("exact quantized feature width");
+        let row = keyhog_scanner::confidence::quantized::QuantizedFeatureRow::from_float(&features)
+            .expect("quantizable feature row");
+        writeln!(out, "{}", model.score(&row).0).expect("write quantized score");
+    }
+    out.flush().expect("flush quantized scores");
+}
+
 fn main() {
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() == Some("--score-quantized") {
+        let path = args
+            .next()
+            .expect("--score-quantized requires an artifact path");
+        assert!(args.next().is_none(), "unexpected quantized-score argument");
+        score_quantized_model(&path);
+        return;
+    }
     if std::env::args().nth(1).as_deref() == Some("--quantized-schema-digest") {
         println!(
             "{}",

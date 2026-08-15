@@ -24,6 +24,7 @@ def test_contract_records_labels_positive_evasion_negative():
         assert r["source_file"] == "contract:generic-password"
         assert r["class"] == "Contract:generic-password"
         assert r["detector_id"] == "generic-password"
+        assert r["candidate_channel"] == "pattern"
         assert r["context"].startswith("file:contract:generic-password\n")
 
 

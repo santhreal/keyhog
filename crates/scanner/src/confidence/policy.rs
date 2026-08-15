@@ -518,12 +518,17 @@ pub(crate) fn ml_pending_match_confidence(
     model_confidence: f64,
     scan_comments: bool,
     penalize_test_paths: bool,
+    model_lowering_allowed: bool,
 ) -> f64 {
     ml_pending_confidence(MlConfidencePolicy {
         heuristic_confidence: pending.heuristic_conf,
         model_confidence,
         ml_weight: pending.ml_weight,
-        mode: pending.ml_mode,
+        mode: if model_lowering_allowed {
+            pending.ml_mode
+        } else {
+            crate::detector_ml_policy::ActiveMlMode::Lift
+        },
         code_context: pending.code_context,
         context_multiplier: pending.context_multiplier,
         scan_comments,
