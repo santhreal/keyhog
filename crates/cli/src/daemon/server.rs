@@ -1948,6 +1948,11 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             let mut oid_order = Vec::new();
             let mut objects_skipped = 0u64;
             for entry in &entries {
+                if let Err(message) = validate_staged_relative_path(&entry.path) {
+                    return Response::Error {
+                        message: format!("daemon: guard commit: {message}"),
+                    };
+                }
                 if entry.kind != "file" || entry.object_oid.is_empty() {
                     objects_skipped += 1;
                     continue;
@@ -2060,21 +2065,29 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             // Verify the payload matches the declared OID and size.
             // This prevents a client from streaming benign bytes
             // labeled with a secret-bearing blob's OID.
-            let payload_bytes: Vec<u8> = payload
-                .iter()
-                .flat_map(|c| c.data.as_bytes().iter().copied())
-                .collect();
-            if payload_bytes.len() as u64 != object_size {
+            let payload_len = match payload.iter().try_fold(0u64, |total, chunk| {
+                total.checked_add(chunk.data.len() as u64)
+            }) {
+                Some(len) => len,
+                None => {
+                    return Response::Error {
+                        message: format!(
+                            "daemon: guard commit blob: payload size overflow for {}",
+                            blob_oid
+                        ),
+                    };
+                }
+            };
+            if payload_len != object_size {
                 return Response::Error {
                     message: format!(
                         "daemon: guard commit blob: size mismatch for {}: declared {}, got {}",
-                        blob_oid,
-                        object_size,
-                        payload_bytes.len()
+                        blob_oid, object_size, payload_len
                     ),
                 };
             }
-            let computed_oid = compute_git_blob_oid(blob_context.hash_algorithm, &payload_bytes);
+            let computed_oid =
+                compute_git_blob_oid(blob_context.hash_algorithm, object_size, &payload);
             if computed_oid != blob_oid {
                 return Response::Error {
                     message: format!(
@@ -2083,39 +2096,24 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     ),
                 };
             }
-            let source_paths = &blob_context.source_paths;
-            let expanded_len = match payload.len().checked_mul(source_paths.len()) {
-                Some(len) => len,
-                None => {
-                    return Response::Error {
-                        message: format!(
-                            "daemon: guard commit blob: source expansion overflow for {}",
-                            blob_oid
-                        ),
-                    };
-                }
-            };
-            let mut contextual_payload = Vec::with_capacity(expanded_len);
-            for source_path in source_paths {
-                let relative = std::path::Path::new(source_path);
-                if relative.is_absolute() {
-                    return Response::Error {
-                        message: format!(
-                            "daemon: guard commit blob: staged source path must be relative: {}",
-                            source_path
-                        ),
-                    };
-                }
-                let resolved_path: Arc<str> = std::path::Path::new(&blob_context.repo_path)
-                    .join(relative)
-                    .display()
-                    .to_string()
-                    .into();
-                for chunk in &payload {
-                    let mut contextual_chunk = chunk.clone();
-                    contextual_chunk.metadata.path = Some(resolved_path.clone());
-                    contextual_payload.push(contextual_chunk);
-                }
+            let mut resolved_paths: Vec<Arc<str>> =
+                Vec::with_capacity(blob_context.source_paths.len());
+            for source_path in &blob_context.source_paths {
+                let relative = match validate_staged_relative_path(source_path) {
+                    Ok(relative) => relative,
+                    Err(message) => {
+                        return Response::Error {
+                            message: format!("daemon: guard commit blob: {message}"),
+                        };
+                    }
+                };
+                resolved_paths.push(
+                    std::path::Path::new(&blob_context.repo_path)
+                        .join(relative)
+                        .display()
+                        .to_string()
+                        .into(),
+                );
             }
 
             // Scan the blob payload using the existing scanner.
@@ -2134,48 +2132,54 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             let oid = blob_oid.clone();
             let _fragment_guard = fragment_scan_lock.lock_owned().await;
             scanner.clear_fragment_cache();
-            let bytes_scanned: u64 = payload.iter().map(|c| c.data.len() as u64).sum();
+            let bytes_scanned = payload_len;
             let scan_result = tokio::task::spawn_blocking(move || -> Result<Vec<RawMatch>> {
-                let matches = keyhog_scanner::telemetry::with_scan_telemetry(
+                keyhog_scanner::telemetry::with_scan_telemetry(
                     &telemetry,
                     || -> Result<Vec<RawMatch>> {
-                        scanner.clear_fragment_cache();
-                        let total_bytes: usize =
-                            contextual_payload.iter().map(|c| c.data.len()).sum();
-                        keyhog_profile::add_input_units(contextual_payload.len() as u64);
-                        keyhog_profile::add_input_bytes(total_bytes as u64);
-                        if contextual_payload.is_empty() {
+                        let mut contextual_payload = payload;
+                        let mut raw = Vec::new();
+                        for resolved_path in resolved_paths {
+                            for chunk in &mut contextual_payload {
+                                chunk.metadata.path = Some(resolved_path.clone());
+                            }
                             scanner.clear_fragment_cache();
-                            return Ok(Vec::new());
-                        }
-                        let selection = router.choose_with_plan(
-                            scanner.as_ref(),
-                            backend_override,
-                            &contextual_payload,
-                        )?;
-                        let outcome = crate::orchestrator::scan_selected_batch(
-                            scanner.as_ref(),
-                            &contextual_payload,
-                            selection.backend,
-                            #[cfg(feature = "gpu")]
-                            selection.ordered_gpu.as_deref(),
-                            selection.phase1_plan.as_ref(),
-                            selection.execution_route,
-                            selection
-                                .recovery_plan
-                                .filter(|_| recover_automatic_backend_faults),
-                        )
-                        .with_context(|| {
-                            format!(
-                                "selected backend {} failed during guard blob scan",
-                                selection.backend.label()
+                            let total_bytes: usize =
+                                contextual_payload.iter().map(|c| c.data.len()).sum();
+                            keyhog_profile::add_input_units(contextual_payload.len() as u64);
+                            keyhog_profile::add_input_bytes(total_bytes as u64);
+                            if contextual_payload.is_empty() {
+                                continue;
+                            }
+                            let selection = router.choose_with_plan(
+                                scanner.as_ref(),
+                                backend_override,
+                                &contextual_payload,
+                            )?;
+                            let outcome = crate::orchestrator::scan_selected_batch(
+                                scanner.as_ref(),
+                                &contextual_payload,
+                                selection.backend,
+                                #[cfg(feature = "gpu")]
+                                selection.ordered_gpu.as_deref(),
+                                selection.phase1_plan.as_ref(),
+                                selection.execution_route,
+                                selection
+                                    .recovery_plan
+                                    .filter(|_| recover_automatic_backend_faults),
                             )
-                        })?;
-                        let raw: Vec<RawMatch> = outcome.per_chunk.into_iter().flatten().collect();
+                            .with_context(|| {
+                                format!(
+                                    "selected backend {} failed during guard blob scan",
+                                    selection.backend.label()
+                                )
+                            })?;
+                            raw.extend(outcome.per_chunk.into_iter().flatten());
+                        }
+                        scanner.clear_fragment_cache();
                         Ok(raw)
                     },
-                )?;
-                Ok(matches)
+                )
             })
             .await;
             let raw_matches = match scan_result {
@@ -2202,8 +2206,8 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     };
                 }
             };
-            // Finalize raw matches through the suppression pipeline
-            // (allowlist, test-fixture, confidence, inline suppression)
+            // Finalize raw matches through the guard suppression pipeline
+            // (allowlist, test-fixture, confidence, deduplication, and rules)
             // so suppressed/example values do not count as findings.
             // If finalization fails, treat it as a coverage gap
             // rather than zero findings (fail closed).
@@ -2239,8 +2243,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 if findings == 0 {
                     // A clean attestation is reusable only for the same exact
                     // staged path set because evidence is source-conditioned.
-                    let attestation_identity =
-                        guard_attestation_identity(&blob_context.policy_identity, source_paths);
+                    let attestation_identity = guard_attestation_identity(
+                        &blob_context.policy_identity,
+                        &blob_context.source_paths,
+                    );
                     let att = keyhog_core::guard_state::GitCleanAttestation {
                         hash_algorithm: blob_context.hash_algorithm,
                         blob_oid: oid.clone(),
@@ -2335,11 +2341,49 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     ),
                 };
             }
-            // All validation passed. Take ownership without cloning the staged
-            // path index or accounting vectors.
-            let txn = match state.guard.finish_transaction(transaction_id) {
-                Some(txn) => txn,
-                None => {
+            // Prove the exact terminal frame fits before consuming the
+            // transaction or updating durable guard state. The byte counter
+            // serializes borrowed findings and therefore does not clone the
+            // protected payload.
+            let txn = match state.guard.finish_transaction_if(transaction_id, |txn| {
+                let total_objects = txn.clean_hits.len() as u64
+                    + txn.scanned_oids.len() as u64
+                    + txn.objects_skipped;
+                let terminal_state =
+                    guard_commit_terminal_state(txn.blocking_findings_count, txn.coverage_gaps);
+                let wire_len = crate::daemon::protocol::guard_commit_receipt_wire_len(
+                    crate::daemon::protocol::GuardCommitReceiptWireFields {
+                        objects_requested: total_objects,
+                        objects_hit: txn.clean_hits.len() as u64,
+                        objects_scanned: txn.scanned_oids.len() as u64,
+                        objects_skipped: txn.objects_skipped,
+                        bytes_requested: txn.bytes_requested,
+                        bytes_hit: txn.bytes_hit,
+                        bytes_scanned: txn.bytes_scanned,
+                        findings_count: txn.findings_count,
+                        findings: &txn.reported_findings,
+                        blocking_findings_count: txn.blocking_findings_count,
+                        coverage_gaps: txn.coverage_gaps,
+                        terminal_state: terminal_state.label(),
+                        // Decimal u64::MAX is the longest possible sequence.
+                        terminal_sequence: u64::MAX,
+                    },
+                )
+                .map_err(|error| {
+                    format!(
+                        "daemon: guard commit finish: cannot size protected receipt: {error}"
+                    )
+                })?;
+                if wire_len > crate::daemon::protocol::MAX_FRAME_BYTES as usize {
+                    return Err(format!(
+                        "daemon: guard commit finish: protected receipt requires {wire_len} bytes but the frame limit is {}",
+                        crate::daemon::protocol::MAX_FRAME_BYTES
+                    ));
+                }
+                Ok(())
+            }) {
+                Ok(Some(txn)) => txn,
+                Ok(None) => {
                     return Response::Error {
                         message: format!(
                             "daemon: guard commit finish: transaction {} was already finished",
@@ -2347,6 +2391,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                         ),
                     };
                 }
+                Err(message) => return Response::Error { message },
             };
             let total_objects =
                 txn.clean_hits.len() as u64 + txn.scanned_oids.len() as u64 + txn.objects_skipped;
@@ -3454,27 +3499,64 @@ fn filesystem_identity(path: &std::path::Path) -> keyhog_core::guard_state::File
     }
 }
 
-/// Compute the Git blob OID for a payload. Git stores blobs as
-/// `blob <size>\0<content>` and hashes with SHA-1 or SHA-256.
+/// Validate an authenticated staged source path before resolving it below the
+/// declared repository root. Git paths are normalized, non-empty relative
+/// paths, so every component must be a normal path segment.
+fn validate_staged_relative_path(source_path: &str) -> std::result::Result<&Path, String> {
+    let relative = Path::new(source_path);
+    let bytes = source_path.as_bytes();
+    let has_non_normal_slash_component = source_path
+        .split('/')
+        .any(|component| component.is_empty() || matches!(component, "." | ".."));
+    let has_platform_prefix = source_path.contains('\\')
+        || (bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':');
+    if source_path.is_empty()
+        || relative.is_absolute()
+        || has_non_normal_slash_component
+        || has_platform_prefix
+    {
+        return Err(format!(
+            "staged source path must be a normalized non-empty relative path: {}",
+            source_path
+        ));
+    }
+    for component in relative.components() {
+        if !matches!(component, std::path::Component::Normal(_)) {
+            return Err(format!(
+                "staged source path contains a forbidden component: {}",
+                source_path
+            ));
+        }
+    }
+    Ok(relative)
+}
+
+/// Compute the Git blob OID directly from the protected payload chunks. Git
+/// stores blobs as `blob <size>\0<content>` and hashes with SHA-1 or SHA-256.
 fn compute_git_blob_oid(
     algorithm: keyhog_core::guard_state::GitHashAlgorithm,
-    payload: &[u8],
+    object_size: u64,
+    payload: &[Chunk],
 ) -> String {
     use keyhog_core::guard_state::GitHashAlgorithm;
-    let header = format!("blob {}\0", payload.len());
+    let header = format!("blob {object_size}\0");
     match algorithm {
         GitHashAlgorithm::Sha1 => {
             use sha1::{Digest, Sha1};
             let mut hasher = Sha1::new();
             hasher.update(header.as_bytes());
-            hasher.update(payload);
+            for chunk in payload {
+                hasher.update(chunk.data.as_bytes());
+            }
             hex::encode(hasher.finalize())
         }
         GitHashAlgorithm::Sha256 => {
             use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
             hasher.update(header.as_bytes());
-            hasher.update(payload);
+            for chunk in payload {
+                hasher.update(chunk.data.as_bytes());
+            }
             hex::encode(hasher.finalize())
         }
     }
@@ -3509,7 +3591,7 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
     let skip_before = keyhog_sources::skip_counts();
     let result = tokio::task::spawn_blocking(move || -> Result<(usize, usize)> {
         let source = keyhog_sources::FilesystemSource::new(root_path.clone());
-        let mut total_findings = 0usize;
+        let mut total_blockers = 0usize;
         let mut total_gaps = 0usize;
         for chunk_result in source.chunks() {
             let chunk = match chunk_result {
@@ -3555,8 +3637,10 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
                 },
             );
             match scan_out {
-                Ok(raw_matches) => match guard_filter.finalize_count(&scanner, raw_matches) {
-                    Some(count) => total_findings += count,
+                Ok(raw_matches) => match guard_filter
+                    .finalize_default_policy_blocker_count(&scanner, raw_matches)
+                {
+                    Some(count) => total_blockers += count,
                     None => total_gaps += 1,
                 },
                 Err(_) => {
@@ -3564,7 +3648,7 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
                 }
             }
         }
-        Ok((total_findings, total_gaps))
+        Ok((total_blockers, total_gaps))
     })
     .await;
     // Count files the source quietly skipped (oversized, binary,
@@ -3573,11 +3657,11 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
     let skip_after = keyhog_sources::skip_counts();
     let skip_delta = skip_after.total().saturating_sub(skip_before.total());
     match result {
-        Ok(Ok((findings, gaps))) => {
+        Ok(Ok((blockers, gaps))) => {
             let total_gaps = gaps + skip_delta;
             if total_gaps > 0 {
                 BaselineResult::Degraded
-            } else if findings > 0 {
+            } else if blockers > 0 {
                 BaselineResult::Findings
             } else {
                 BaselineResult::Clean

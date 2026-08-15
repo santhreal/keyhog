@@ -5,7 +5,7 @@
 //! empty run) and `regression_csv_formula_injection.rs` (formula defang) by
 //! pinning the parts those files do not: the 22-column ORDER and count, a fully
 //! populated row with every git field present, empty cells for absent optional
-//! fields (line/confidence), RFC-4180 quoting for a NON-formula comma / embedded
+//! fields (line/evidence score), RFC-4180 quoting for a NON-formula comma / embedded
 //! double-quote / embedded newline, the kebab-case severity strings for all six
 //! severities, every verification token (incl. the `error: {e}` form), 3-finding
 //! input-order preservation, and the 64-char lowercase-hex credential hash cell.
@@ -42,7 +42,7 @@ fn hash_ab() -> String {
 }
 
 /// A fully benign baseline finding: High AWS key, `config/app.env:7`, offset 0,
-/// no git commit/author/date, `Unverifiable`, confidence exactly 0.9. Renders
+/// no git commit/author/date, `Unverifiable`, evidence score exactly 0.9. Renders
 /// with empty entropy, deterministic metadata, and an additional-location JSON cell.
 fn base() -> VerifiedFinding {
     VerifiedFinding {
@@ -249,7 +249,7 @@ fn csv_non_formula_comma_field_is_quoted_not_split() {
     f.detector_name = "AWS, Inc".into();
     let out = render(&[f]);
     let expected = format!(
-        "aws-access-key,\"AWS, Inc\",aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,,{AWS_REMEDIATION_CSV},{{}},[]",
+        "aws-access-key,\"AWS, Inc\",aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,review,unattributed,0.9,,{AWS_REMEDIATION_CSV},{{}},[]",
         hash_ab()
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);
@@ -262,7 +262,7 @@ fn csv_embedded_double_quote_is_doubled_and_wrapped() {
     let out = render(&[f]);
     // escape_csv: inner `"` doubled, whole field wrapped => "He said ""hi"""
     let expected = format!(
-        "aws-access-key,\"He said \"\"hi\"\"\",aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,,{AWS_REMEDIATION_CSV},{{}},[]",
+        "aws-access-key,\"He said \"\"hi\"\"\",aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,review,unattributed,0.9,,{AWS_REMEDIATION_CSV},{{}},[]",
         hash_ab()
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);
@@ -355,7 +355,7 @@ fn csv_three_findings_preserve_input_order_exact_document() {
     let out = render(&[a, b, c]);
     let hash = hash_ab();
     let row = |id: &str, sev: &str| {
-        format!("{id},AWS Access Key,aws,{sev},AKIA****,{hash},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,,{AWS_SERVICE_REMEDIATION_CSV},{{}},[]")
+        format!("{id},AWS Access Key,aws,{sev},AKIA****,{hash},{{}},filesystem,config/app.env,7,0,,,,unverifiable,review,unattributed,0.9,,{AWS_SERVICE_REMEDIATION_CSV},{{}},[]")
     };
     let expected = format!(
         "{}\n{}\n{}\n{}\n",
@@ -391,7 +391,7 @@ fn csv_formula_prefix_with_comma_is_guarded_then_quoted() {
     let out = render(&[f]);
     // Combined branch: opening `"`, then the `'` formula guard, then the value.
     let expected = format!(
-        "aws-access-key,AWS Access Key,\"'=A1,B1\",high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,,{AWS_REMEDIATION_CSV},{{}},[]",
+        "aws-access-key,AWS Access Key,\"'=A1,B1\",high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,review,unattributed,0.9,,{AWS_REMEDIATION_CSV},{{}},[]",
         hash_ab()
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);

@@ -208,6 +208,7 @@ impl<W: Write + Send> SarifReporter<W> {
             verification: super::style::verification_token(&finding.verification).into_owned(),
             evidence_tier: finding.evidence.tier().as_str(),
             evidence_reason_code: finding.evidence.reason_code().as_str(),
+            evidence_provenance: finding.evidence.provenance(),
             evidence_score: finding.evidence_score.map(|evidence_score| {
                 if evidence_score.is_finite() {
                     evidence_score

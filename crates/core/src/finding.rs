@@ -389,8 +389,9 @@ impl Ord for RawMatch {
             .then_with(|| opt_f64_total_cmp(self.entropy, other.entropy))
             .then_with(|| opt_f64_total_cmp(self.confidence, other.confidence))
             .then_with(|| {
-                (self.evidence.reason_code() as u8).cmp(&(other.evidence.reason_code() as u8))
+                (other.evidence.reason_code() as u8).cmp(&(self.evidence.reason_code() as u8))
             })
+            .then_with(|| self.evidence.provenance().cmp(&other.evidence.provenance()))
     }
 }
 
@@ -478,7 +479,9 @@ impl VerifiedFinding {
         metadata: HashMap<String, String>,
     ) -> Self {
         let evidence = if matches!(verification, VerificationResult::Live) {
-            EvidenceVerdict::from_reason(EvidenceReasonCode::LiveVerification)
+            group
+                .evidence
+                .with_reason(EvidenceReasonCode::LiveVerification)
         } else {
             group.evidence
         };

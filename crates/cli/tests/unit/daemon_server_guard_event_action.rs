@@ -1,6 +1,6 @@
 use super::{
     baseline_terminal_transition, guard_attestation_identity, guard_commit_terminal_state,
-    guard_event_action, BaselineResult, GuardEventAction,
+    guard_event_action, validate_staged_relative_path, BaselineResult, GuardEventAction,
 };
 use keyhog_core::guard_state::{GuardRootState, GuardTransition};
 
@@ -105,5 +105,33 @@ fn guard_attestations_are_bound_to_the_exact_staged_path_set() {
     assert!(
         !env_identity.source_policy_digest.contains(".env.secret"),
         "persisted policy identities retain only a digest of staged paths"
+    );
+}
+
+#[test]
+fn staged_source_paths_reject_non_normal_components_before_join() {
+    for invalid in [
+        "",
+        "/outside",
+        "..",
+        "../outside",
+        "nested/../../outside",
+        "./file",
+        "nested/./file",
+        "nested//file",
+        "nested/",
+        "C:\\outside",
+        "C:/outside",
+        "\\\\server\\share",
+        "nested\\..\\outside",
+    ] {
+        assert!(
+            validate_staged_relative_path(invalid).is_err(),
+            "staged path must reject non-normal, absolute, parent, current, and platform-prefix components: {invalid}"
+        );
+    }
+    assert_eq!(
+        validate_staged_relative_path("nested/config.env").unwrap(),
+        std::path::Path::new("nested/config.env")
     );
 }

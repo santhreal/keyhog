@@ -621,8 +621,8 @@ fn sarif_rules_carry_code_scanning_severity_props() {
 // ---------------------------------------------------------------------------
 
 /// The CSV metadata preamble and header are written unconditionally, so the
-/// exact 20-column header appears even on an EMPTY corpus.
-const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations";
+/// exact 22-column header appears even on an EMPTY corpus.
+const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,evidence_tier,evidence_reason_code,evidence_score,entropy,remediation,metadata,additional_locations";
 
 #[test]
 fn csv_empty_corpus_is_header_only() {

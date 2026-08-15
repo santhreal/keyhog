@@ -124,6 +124,41 @@ fn receipt_accepts_visible_review_finding_with_policy_success_exit() {
     assert_eq!(verified.stdout, b"1\n");
 }
 
+/// WHY: a report can contain visible review findings while an independent
+/// cache failure or scanner panic owns the terminal exit. Receipt verification
+/// must preserve that fail-closed exit instead of replacing it with an internal
+/// contradiction.
+#[test]
+fn receipt_accepts_failure_exit_with_visible_review_findings() {
+    let dir = TempDir::new().expect("failure receipt tempdir");
+    let input = dir.path().join("review.txt");
+    let token = concat!(
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+    );
+    fs::write(&input, format!("ABUSEIPDB_API_KEY={token}\n")).expect("review input");
+    let (report, receipt, scan) = scan(&dir, "json", &input);
+    assert_eq!(scan.status.code(), Some(0));
+    let success_receipt = fs::read_to_string(&receipt).expect("read success receipt");
+
+    for (exit, status) in [(3, "success"), (11, "partial")] {
+        let body = success_receipt
+            .replace("scan-status=success", &format!("scan-status={status}"))
+            .replace("exit-code=0", &format!("exit-code={exit}"));
+        fs::write(&receipt, body).expect("write failure receipt");
+        let verified = verify(&report, &receipt, "json", exit);
+        assert_eq!(
+            verified.status.code(),
+            Some(0),
+            "exit {exit}: {}",
+            String::from_utf8_lossy(&verified.stderr)
+        );
+        assert_eq!(verified.stdout, b"1\n");
+    }
+}
+
 /// Report or receipt tampering, uppercase/noncanonical digests, and any
 /// count/status/exit/format contradiction fail without publishing a count.
 #[test]

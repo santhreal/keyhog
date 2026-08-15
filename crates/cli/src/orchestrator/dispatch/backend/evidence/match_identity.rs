@@ -1,6 +1,8 @@
 //! Secret-safe semantic identity used to prove cross-backend detection parity.
 
-use keyhog_core::{CredentialHash, EvidenceReasonCode, EvidenceTier, RawMatch, Severity};
+use keyhog_core::{
+    CredentialHash, EvidenceReasonCode, EvidenceTier, FindingProvenance, RawMatch, Severity,
+};
 
 /// Redacted, total user-visible identity of one backend match.
 ///
@@ -28,6 +30,7 @@ pub(crate) struct CanonicalMatch<'a> {
     confidence_bits: Option<u64>,
     evidence_tier: EvidenceTier,
     evidence_reason_code: EvidenceReasonCode,
+    evidence_provenance: FindingProvenance,
 }
 
 pub(crate) fn canonical_matches(matches: &[Vec<RawMatch>]) -> Vec<CanonicalMatch<'_>> {
@@ -117,6 +120,7 @@ fn canonical_match(chunk_idx: usize, m: &RawMatch) -> CanonicalMatch<'_> {
         confidence_bits: m.confidence.map(f64::to_bits),
         evidence_tier: m.evidence.tier(),
         evidence_reason_code: m.evidence.reason_code(),
+        evidence_provenance: m.evidence.provenance(),
     }
 }
 
@@ -186,6 +190,9 @@ pub(crate) fn differing_canonical_match_fields(
         }
         if reference.evidence_reason_code != trial.evidence_reason_code {
             fields.insert("evidence_reason_code");
+        }
+        if reference.evidence_provenance != trial.evidence_provenance {
+            fields.insert("evidence_provenance");
         }
     }
     fields.into_iter().collect()
@@ -293,6 +300,27 @@ pub(crate) fn canonical_match_digest(matches: &[CanonicalMatch<'_>]) -> u64 {
         h.field_str(
             "match.evidence_reason_code",
             m.evidence_reason_code.as_str(),
+        );
+        let provenance = m.evidence_provenance;
+        h.field_option_u64(
+            "match.evidence_provenance.detector_digest",
+            provenance.detector_digest(),
+        );
+        h.field_option_u64(
+            "match.evidence_provenance.pattern_index",
+            provenance.pattern_index().map(u64::from),
+        );
+        h.field_str(
+            "match.evidence_provenance.candidate_channel",
+            provenance.candidate_channel().as_str(),
+        );
+        h.field_str(
+            "match.evidence_provenance.source_role",
+            provenance.source_role().as_str(),
+        );
+        h.field_str(
+            "match.evidence_provenance.context_class",
+            provenance.context_class().as_str(),
         );
     }
     h.finish_u64()

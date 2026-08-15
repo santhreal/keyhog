@@ -1,4 +1,4 @@
-//! Contract: `--help` documents exit code 1 (findings).
+//! Contract: `--help` documents evidence-policy exit code 1.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -19,12 +19,7 @@ fn help_documents_exit_code_one() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        combined.contains("1   Secrets found") || combined.contains("1  Secrets found"),
-        "help must document exit 1; got: {combined}"
-    );
-    assert!(
-        combined.contains("none confirmed live")
-            && combined.contains("verified-inactive: dead/revoked"),
-        "exit 1 help must explain that verified-inactive findings also exit 1; got: {combined}"
+        combined.contains("1   Findings block the active evidence policy, none confirmed live"),
+        "help must document exit 1 evidence policy semantics; got: {combined}"
     );
 }

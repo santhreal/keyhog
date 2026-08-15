@@ -460,10 +460,23 @@ impl GuardRuntime {
         self.touch_activity();
         Ok(())
     }
-    /// Finish a transaction and return its final state. Removes it
-    /// from the in-flight map.
-    pub fn finish_transaction(&self, txn_id: u64) -> Option<GuardTransaction> {
-        self.transactions.lock().remove(&txn_id)
+    /// Finish a transaction only after the caller validates its terminal wire
+    /// representation. A failed validation leaves the transaction available
+    /// for a corrected finish request.
+    pub fn finish_transaction_if<F>(
+        &self,
+        txn_id: u64,
+        validate: F,
+    ) -> Result<Option<GuardTransaction>, String>
+    where
+        F: FnOnce(&GuardTransaction) -> Result<(), String>,
+    {
+        let mut transactions = self.transactions.lock();
+        let Some(transaction) = transactions.get(&txn_id) else {
+            return Ok(None);
+        };
+        validate(transaction)?;
+        Ok(transactions.remove(&txn_id))
     }
 
     /// Remove transactions older than `TRANSACTION_TIMEOUT_SECS`.
