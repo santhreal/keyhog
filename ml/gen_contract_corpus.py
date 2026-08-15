@@ -21,6 +21,7 @@ import glob
 import json
 import re
 import sys
+import detector_policy
 
 try:
     import tomllib
@@ -66,6 +67,7 @@ def contract_records(spec: dict, det: str) -> list:
             "kind": kind,
             "class": cls,
             "detector_id": det,
+            "candidate_channel": detector_policy.candidate_channel(det),
             "source_file": src,
         })
 

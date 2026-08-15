@@ -346,6 +346,7 @@ impl MlPendingMatch {
 impl MlPendingMatch {
     fn has_same_execution_as(&self, other: &Self) -> bool {
         self.channel == other.channel
+            && self.pending_raw_match.provenance == other.pending_raw_match.provenance
             && self.code_context == other.code_context
             && self.context_multiplier.to_bits() == other.context_multiplier.to_bits()
             && self.context_suppression_threshold.map(f64::to_bits)
@@ -388,6 +389,7 @@ struct PendingMatchIdentity {
     credential: SensitiveString,
     offset: usize,
     channel: crate::ml_scorer::MlCandidateChannel,
+    provenance: CandidateProvenance,
 }
 
 #[cfg(feature = "ml")]
@@ -398,6 +400,7 @@ impl From<&MlPendingMatch> for PendingMatchIdentity {
             credential: pending.pending_raw_match.credential.clone(),
             offset: pending.pending_raw_match.location.offset,
             channel: pending.channel,
+            provenance: pending.pending_raw_match.provenance,
         }
     }
 }

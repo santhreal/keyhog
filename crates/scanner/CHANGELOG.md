@@ -12,6 +12,7 @@
 - Detector TOML schema 4 accepts typed capture, anchor, allowed-source, and required-evidence roles. Omitted declarations preserve current findings and serialization; declaring them under an older corpus schema fails closed. The schema identity change rejects prior detector-corpus caches and execution packs. Autoroute reports a detector corpus digest mismatch and instructs `keyhog calibrate-autoroute`. Detector-plan schema version 3 persists the resolved policy, rejects stale sections, and `explain` labels omitted scalar roles as compatibility defaults.
 - Merge remote-tracking branch 'origin/main'.
 - Candidates retain their producer channel and exact canonical pattern ordinal through ML scoring and final adjudication without changing public `RawMatch` output, ordering, deduplication, or caps. Matcher section schema version 6 persists the ordinal and rejects stale or out-of-range provenance during hydration.
+- Pattern-conditioned calibration permits model-driven confidence reduction only for exact named-pattern provenance with current detector/model identity and held-out positive/negative support, recall, Brier, and ECE floors. Unsupported channels, stale artifacts, missing required-nullable identity fields, missing keys, and ineligible metrics abstain. Build-time and runtime loading share one strict parser. Runtime and harvested reassembly findings use the canonical detector owner so training and serving share the same pattern identity.
 
 ## 0.5.74 - 2026-08-14
 
