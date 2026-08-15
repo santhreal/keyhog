@@ -16,6 +16,14 @@ def test_finding_identity_resolves_to_its_detector_owned_ml_mode():
     assert not detector_policy.model_can_reduce_recall("github-classic-pat")
 
 
+def test_finding_identity_accepts_only_the_runtime_reassembly_suffix():
+    assert detector_policy.finding_base_id("github-classic-pat:reassembled") == (
+        "github-classic-pat"
+    )
+    with pytest.raises(ValueError, match="unsupported synthetic detector suffix"):
+        detector_policy.finding_base_id("github-classic-pat:other")
+
+
 def test_unknown_finding_identity_fails_instead_of_guessing_a_policy():
     with pytest.raises(ValueError, match="unknown detector or entropy owner"):
         detector_policy.resolve_detector("entropy-unknown")
@@ -26,6 +34,16 @@ def test_candidate_channel_cannot_disagree_with_finding_identity():
         detector_policy.validate_candidate_channel("entropy-api-key", "pattern")
     resolved = detector_policy.validate_candidate_channel("github-classic-pat", "pattern")
     assert resolved["id"] == "github-classic-pat"
+    generic = detector_policy.validate_candidate_channel(
+        "generic-api-key",
+        "generic-assignment",
+    )
+    assert generic["kind"] == "phase2-generic"
+    with pytest.raises(ValueError, match="cannot own candidate_channel='generic-assignment'"):
+        detector_policy.validate_candidate_channel(
+            "github-classic-pat",
+            "generic-assignment",
+        )
 
 
 def test_recall_sensitive_policy_coverage_names_every_suppressing_channel():

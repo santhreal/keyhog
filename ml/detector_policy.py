@@ -28,8 +28,15 @@ def _load() -> tuple[dict[str, dict], dict[str, dict]]:
     return _BY_ID, _FALLBACK_OWNER
 
 
+REASSEMBLED_SUFFIX = ":reassembled"
+
+
 def finding_base_id(detector_id: str) -> str:
-    return detector_id.split(":", 1)[0]
+    if detector_id.endswith(REASSEMBLED_SUFFIX):
+        return detector_id[: -len(REASSEMBLED_SUFFIX)]
+    if ":" in detector_id:
+        raise ValueError(f"unsupported synthetic detector suffix in {detector_id!r}")
+    return detector_id
 
 
 def resolve_detector(detector_id: str) -> dict:
@@ -49,6 +56,12 @@ def candidate_channel(detector_id: str) -> str:
 def validate_candidate_channel(detector_id: str, channel: str) -> dict:
     """Resolve provenance and reject train/serve channel skew."""
     detector = resolve_detector(detector_id)
+    if channel == "generic-assignment":
+        if detector.get("kind") != "phase2-generic":
+            raise ValueError(
+                f"detector {detector_id!r} cannot own candidate_channel='generic-assignment'"
+            )
+        return detector
     expected = candidate_channel(detector_id)
     if channel != expected:
         raise ValueError(

@@ -83,6 +83,26 @@ fn exact_supported_key_allows_lowering_and_every_identity_component_is_required(
         "vendor-pattern",
     )
     .expect("valid artifact"));
+    assert!(crate::testing::pattern_calibration_key_for_test(
+        &serde_json::to_string(&value).expect("serialize test artifact"),
+        0x0123_4567_89ab_cdef,
+        "fixture-detector:reassembled",
+        3,
+        "pattern",
+        "structured-assignment-value",
+        "vendor-pattern",
+    )
+    .expect("runtime-owned reassembly suffix resolves to its detector owner"));
+    assert!(!crate::testing::pattern_calibration_key_for_test(
+        &serde_json::to_string(&value).expect("serialize test artifact"),
+        0x0123_4567_89ab_cdef,
+        "fixture-detector:other",
+        3,
+        "pattern",
+        "structured-assignment-value",
+        "vendor-pattern",
+    )
+    .expect("unsupported synthetic suffix abstains"));
 
     for (digest, pattern, role, context) in [
         (
@@ -202,6 +222,61 @@ fn stale_or_ambiguous_artifacts_fail_closed() {
         .push(repeated);
     assert!(evaluate(
         &duplicate,
+        0x0123_4567_89ab_cdef,
+        3,
+        "structured-assignment-value",
+        "vendor-pattern"
+    )
+    .is_err());
+}
+
+#[test]
+fn serving_parser_rejects_oversized_and_empty_attributed_artifacts() {
+    let mut oversized = artifact();
+    let entry = oversized["entries"][0].clone();
+    oversized["entries"] = Value::Array(vec![
+        entry;
+        crate::pattern_calibration_contract::MAX_ENTRIES + 1
+    ]);
+    assert!(evaluate(
+        &oversized,
+        0x0123_4567_89ab_cdef,
+        3,
+        "structured-assignment-value",
+        "vendor-pattern"
+    )
+    .is_err());
+
+    let mut empty_attributed = artifact();
+    empty_attributed["entries"] = json!([]);
+    assert!(evaluate(
+        &empty_attributed,
+        0x0123_4567_89ab_cdef,
+        3,
+        "structured-assignment-value",
+        "vendor-pattern"
+    )
+    .is_err());
+
+    let mut missing_digest = artifact();
+    missing_digest["entries"] = json!([]);
+    missing_digest
+        .as_object_mut()
+        .expect("artifact object")
+        .remove("detector_digest");
+    assert!(evaluate(
+        &missing_digest,
+        0x0123_4567_89ab_cdef,
+        3,
+        "structured-assignment-value",
+        "vendor-pattern"
+    )
+    .is_err());
+
+    let mut populated_without_digest = artifact();
+    populated_without_digest["detector_digest"] = Value::Null;
+    assert!(evaluate(
+        &populated_without_digest,
         0x0123_4567_89ab_cdef,
         3,
         "structured-assignment-value",

@@ -98,9 +98,9 @@ def test_finding_detector_id_rejects_unknown_or_missing_values():
             harvest_corpus._finding_detector_id(finding, "creddata:fixture.env")
 
 
-def test_pattern_provenance_requires_exact_authoritative_identity():
+def test_provenance_requires_exact_authoritative_identity():
     finding = {"evidence": _provenance()}
-    assert harvest_corpus._finding_pattern_provenance(finding, "fixture") == {
+    assert harvest_corpus._finding_provenance(finding, "fixture") == {
         "detector_digest": "0123456789abcdef",
         "pattern_index": 3,
         "candidate_channel": "pattern",
@@ -119,14 +119,35 @@ def test_pattern_provenance_requires_exact_authoritative_identity():
         provenance = _provenance()
         del provenance["provenance"][missing]
         with pytest.raises(ValueError, match="evidence.provenance"):
-            harvest_corpus._finding_pattern_provenance(
+            harvest_corpus._finding_provenance(
                 {"evidence": provenance},
                 "fixture",
             )
 
-    with pytest.raises(ValueError, match="candidate_channel must be 'pattern'"):
-        harvest_corpus._finding_pattern_provenance(
+    for channel in ("generic-assignment", "entropy"):
+        assert harvest_corpus._finding_provenance(
+            {
+                "evidence": _provenance(
+                    candidate_channel=channel,
+                    pattern_index=None,
+                )
+            },
+            "fixture",
+        )["candidate_channel"] == channel
+
+    with pytest.raises(ValueError, match="non-pattern.*pattern_index must be null"):
+        harvest_corpus._finding_provenance(
             {"evidence": _provenance(candidate_channel="entropy")},
+            "fixture",
+        )
+    with pytest.raises(ValueError, match="unsupported.*candidate_channel"):
+        harvest_corpus._finding_provenance(
+            {
+                "evidence": _provenance(
+                    candidate_channel="unattributed",
+                    pattern_index=None,
+                )
+            },
             "fixture",
         )
 
@@ -151,9 +172,27 @@ def test_keyhog_normalization_preserves_evidence_provenance():
     assert findings[0]["evidence"] == evidence
 
 
+@pytest.mark.parametrize(
+    ("detector_id", "candidate_channel", "pattern_index", "expected_detector_id"),
+    (
+        ("generic-api-key", "pattern", 3, "generic-api-key"),
+        ("entropy-api-key", "entropy", None, "entropy-api-key"),
+        ("generic-api-key", "generic-assignment", None, "generic-api-key"),
+        (
+            "generic-api-key:reassembled",
+            "pattern",
+            3,
+            "generic-api-key",
+        ),
+    ),
+)
 def test_harvest_emits_versioned_secret_safe_features_with_exact_identity(
     tmp_path,
     monkeypatch,
+    detector_id,
+    candidate_channel,
+    pattern_index,
+    expected_detector_id,
 ):
     secret = "fixture-secret-that-must-not-persist"
     fixture = tmp_path / "fixture.env"
@@ -193,8 +232,11 @@ def test_harvest_emits_versioned_secret_safe_features_with_exact_identity(
                         "file": str(fixture),
                         "line": 1,
                         "value": secret,
-                        "detector": "generic-api-key",
-                        "evidence": _provenance(),
+                        "detector": detector_id,
+                        "evidence": _provenance(
+                            candidate_channel=candidate_channel,
+                            pattern_index=pattern_index,
+                        ),
                     }
                 ],
                 object(),
@@ -240,10 +282,10 @@ def test_harvest_emits_versioned_secret_safe_features_with_exact_identity(
             "context_class",
         )
     } == {
-        "detector_id": "generic-api-key",
+        "detector_id": expected_detector_id,
         "detector_digest": "0123456789abcdef",
-        "pattern_index": 3,
-        "candidate_channel": "pattern",
+        "pattern_index": pattern_index,
+        "candidate_channel": candidate_channel,
         "source_role": "structured-assignment-value",
         "context_class": "vendor-pattern",
     }

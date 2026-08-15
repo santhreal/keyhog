@@ -146,6 +146,8 @@ pub mod ml_scorer;
 pub(crate) mod multiline;
 #[cfg(feature = "ml")]
 pub(crate) mod pattern_calibration;
+#[cfg(feature = "ml")]
+mod pattern_calibration_contract;
 /// Pure phase-two regex truncation and UTF-8 focus boundaries.
 pub(crate) mod phase2_truncate;
 pub(crate) mod placeholder_words;

@@ -56,13 +56,23 @@ EVIDENCE_PROVENANCE_SCHEMA_VERSION = 1
 MAX_DETECTOR_ID_BYTES = 128
 
 
-def _finding_pattern_provenance(finding: dict, context: str) -> dict:
+def _finding_provenance(finding: dict, context: str) -> dict:
     evidence = finding.get("evidence")
     if not isinstance(evidence, dict):
         raise ValueError(f"{context}: missing authoritative evidence object")
     provenance = evidence.get("provenance")
     if not isinstance(provenance, dict):
         raise ValueError(f"{context}: missing authoritative evidence.provenance")
+    expected_fields = {
+        "schema_version",
+        "detector_digest",
+        "pattern_index",
+        "candidate_channel",
+        "source_role",
+        "context_class",
+    }
+    if set(provenance) != expected_fields:
+        raise ValueError(f"{context}: evidence.provenance has unsupported or missing fields")
     schema_version = provenance.get("schema_version")
     if isinstance(schema_version, bool) or schema_version != EVIDENCE_PROVENANCE_SCHEMA_VERSION:
         raise ValueError(f"{context}: stale evidence.provenance schema_version")
@@ -75,20 +85,24 @@ def _finding_pattern_provenance(finding: dict, context: str) -> dict:
         raise ValueError(
             f"{context}: evidence.provenance detector_digest must be 16 lowercase hex digits"
         )
-    pattern_index = provenance.get("pattern_index")
-    if (
-        isinstance(pattern_index, bool)
-        or not isinstance(pattern_index, int)
-        or not 0 <= pattern_index <= 0xFFFFFFFF
-    ):
-        raise ValueError(
-            f"{context}: evidence.provenance pattern_index must be a u32 integer"
-        )
     candidate_channel = provenance.get("candidate_channel")
-    if candidate_channel != "pattern":
-        raise ValueError(
-            f"{context}: evidence.provenance candidate_channel must be 'pattern'"
-        )
+    pattern_index = provenance.get("pattern_index")
+    if candidate_channel == "pattern":
+        if (
+            isinstance(pattern_index, bool)
+            or not isinstance(pattern_index, int)
+            or not 0 <= pattern_index <= 0xFFFFFFFF
+        ):
+            raise ValueError(
+                f"{context}: pattern evidence.provenance pattern_index must be a u32 integer"
+            )
+    elif candidate_channel in {"generic-assignment", "entropy"}:
+        if pattern_index is not None:
+            raise ValueError(
+                f"{context}: non-pattern evidence.provenance pattern_index must be null"
+            )
+    else:
+        raise ValueError(f"{context}: unsupported evidence.provenance candidate_channel")
     source_role = provenance.get("source_role")
     context_class = provenance.get("context_class")
     if (
@@ -273,7 +287,11 @@ def harvest(corpus_name: str, keyhog_bin: str | None, floor: float) -> list[dict
             skipped_ignore += 1
             continue  # template/placeholder ground truth → neither class
         line = f.get("line") or 0
-        detector_id = _finding_detector_id(f, context)
+        reported_detector_id = _finding_detector_id(f, context)
+        try:
+            detector_id = detector_policy.finding_base_id(reported_detector_id)
+        except ValueError as error:
+            raise ValueError(f"{context}: {error}") from error
         if (
             len(detector_id) > MAX_DETECTOR_ID_BYTES
             or any(
@@ -282,7 +300,7 @@ def harvest(corpus_name: str, keyhog_bin: str | None, floor: float) -> list[dict
             )
         ):
             raise ValueError(f"{context}: detector_id is not a bounded lowercase slug")
-        provenance = _finding_pattern_provenance(f, context)
+        provenance = _finding_provenance(f, context)
         detector_policy.validate_candidate_channel(
             detector_id,
             provenance["candidate_channel"],

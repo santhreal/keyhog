@@ -113,19 +113,23 @@ def score_quantized_features(
     if len(matrix) == 0:
         return np.zeros(0, dtype=np.float64)
     cmd, cwd = _dump_features_command()
-    with tempfile.NamedTemporaryFile(suffix=".khqmoe") as artifact:
-        artifact.write(quantized_artifact)
-        artifact.flush()
+    artifact = tempfile.NamedTemporaryFile(suffix=".khqmoe", delete=False)
+    artifact_path = Path(artifact.name)
+    try:
+        with artifact:
+            artifact.write(quantized_artifact)
         payload = "\n".join(
             " ".join(format(float(value), ".9g") for value in row)
             for row in matrix
         ) + "\n"
         proc = subprocess.run(
-            _example_arguments(cmd, "--score-quantized", artifact.name),
+            _example_arguments(cmd, "--score-quantized", str(artifact_path)),
             cwd=cwd,
             input=payload.encode("ascii"),
             capture_output=True,
         )
+    finally:
+        artifact_path.unlink(missing_ok=True)
     if proc.returncode != 0:
         stderr = proc.stderr.decode("utf-8", "replace")
         raise RuntimeError(

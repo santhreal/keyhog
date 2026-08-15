@@ -62,6 +62,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_DIFFERENTIAL_RESULTS = "benchmarks/results"
 DEFAULT_DIFFERENTIAL_CORPUS = "creddata"
 PATTERN_CALIBRATION_SCHEMA_VERSION = 1
+PATTERN_CALIBRATION_MAX_ENTRIES = 16_384
 PATTERN_CALIBRATION_IDENTITY_SCHEMA = (
     "detector-corpus-v1:detector-id:pattern-index:"
     "candidate-channel:source-role:context-class"
@@ -93,7 +94,6 @@ PATTERN_CALIBRATION_SOURCE_ROLES = frozenset({
     "unknown",
 })
 PATTERN_CALIBRATION_CONTEXT_CLASSES = frozenset({
-    "unattributed",
     "unsupported-context",
     "required-evidence-missing",
     "weak-anchor",
@@ -111,7 +111,6 @@ PATTERN_CALIBRATION_CONTEXT_CLASSES = frozenset({
     "structural-grammar",
     "required-companion",
     "checksum-valid",
-    "live-verification",
 })
 PATTERN_CALIBRATION_MAX_DETECTOR_ID_BYTES = 128
 
@@ -522,8 +521,16 @@ def expected_calibration_error(probs, labels, bins=10):
     """Return deterministic equal-width ECE over a bounded held-out row set."""
     probs = np.asarray(probs, dtype=np.float64)
     labels = np.asarray(labels, dtype=np.float64)
-    if len(probs) != len(labels) or bins <= 0:
-        raise ValueError("ECE requires equal non-empty dimensions and positive bins")
+    if (
+        probs.ndim != 1
+        or labels.ndim != 1
+        or len(probs) != len(labels)
+        or isinstance(bins, (bool, np.bool_))
+        or not isinstance(bins, (int, np.integer))
+        or bins <= 0
+    ):
+        raise ValueError("ECE requires equal one-dimensional inputs and positive integer bins")
+    bins = int(bins)
     if len(probs) == 0:
         return 0.0
     if (
@@ -549,21 +556,50 @@ def expected_calibration_error(probs, labels, bins=10):
 
 def validate_calibration_floors(floors):
     required = set(PATTERN_CALIBRATION_DEFAULT_FLOORS)
-    if set(floors) != required:
+    if not isinstance(floors, dict) or set(floors) != required:
         raise ValueError(
             f"calibration floors must contain exactly {sorted(required)!r}"
         )
-    values = {key: float(value) for key, value in floors.items()}
+    support_fields = ("minimum_positive_support", "minimum_negative_support")
+    for field in support_fields:
+        value = floors[field]
+        if (
+            isinstance(value, (bool, np.bool_))
+            or not isinstance(value, (int, np.integer))
+            or not 2 <= int(value) <= 0xFFFFFFFFFFFFFFFF
+        ):
+            raise ValueError("calibration support floors must be u64 integers of at least 2")
+    probability_fields = (
+        "blocking_score",
+        "minimum_recall",
+        "maximum_brier_score",
+        "maximum_ece",
+    )
+    for field in probability_fields:
+        value = floors[field]
+        if (
+            isinstance(value, (bool, np.bool_))
+            or not isinstance(value, (int, float, np.integer, np.floating))
+            or not math.isfinite(float(value))
+            or not 0.0 <= float(value) <= 1.0
+        ):
+            raise ValueError("calibration probability floors must be finite numbers in [0, 1]")
+    normalized = {
+        "blocking_score": float(floors["blocking_score"]),
+        "minimum_positive_support": int(floors["minimum_positive_support"]),
+        "minimum_negative_support": int(floors["minimum_negative_support"]),
+        "minimum_recall": float(floors["minimum_recall"]),
+        "maximum_brier_score": float(floors["maximum_brier_score"]),
+        "maximum_ece": float(floors["maximum_ece"]),
+    }
     if (
-        not all(math.isfinite(value) for value in values.values())
-        or values["blocking_score"] != REAL_RECALL_FLOOR
-        or values["minimum_positive_support"] < 2
-        or values["minimum_negative_support"] < 2
-        or values["minimum_recall"] < 1.0
-        or values["maximum_brier_score"] > 0.25
-        or values["maximum_ece"] > 0.1
+        normalized["blocking_score"] != REAL_RECALL_FLOOR
+        or normalized["minimum_recall"] < 1.0
+        or normalized["maximum_brier_score"] > 0.25
+        or normalized["maximum_ece"] > 0.1
     ):
         raise ValueError("calibration artifact weakens the serving floors")
+    return normalized
 
 
 def pattern_calibration_entries(
@@ -574,8 +610,9 @@ def pattern_calibration_entries(
     floors=None,
 ):
     """Build conservative per-key metrics after exact float/quantized verdict parity."""
-    floors = dict(PATTERN_CALIBRATION_DEFAULT_FLOORS if floors is None else floors)
-    validate_calibration_floors(floors)
+    floors = validate_calibration_floors(
+        PATTERN_CALIBRATION_DEFAULT_FLOORS if floors is None else floors
+    )
     float_probs = np.asarray(float_probs, dtype=np.float64)
     quantized_probs = np.asarray(quantized_probs, dtype=np.float64)
     labels = np.asarray(labels, dtype=np.float64)
@@ -669,6 +706,10 @@ def pattern_calibration_entries(
                 "metrics": metrics,
             }
         )
+    if len(entries) > PATTERN_CALIBRATION_MAX_ENTRIES:
+        raise ValueError(
+            f"pattern calibration exceeds {PATTERN_CALIBRATION_MAX_ENTRIES} exact keys"
+        )
     return entries
 
 
@@ -686,7 +727,9 @@ def build_pattern_calibration_artifact(
         raise ValueError(
             "calibration model_version must use moe-v1- plus 16 lowercase hex digits"
         )
-    floors = dict(PATTERN_CALIBRATION_DEFAULT_FLOORS if floors is None else floors)
+    floors = validate_calibration_floors(
+        PATTERN_CALIBRATION_DEFAULT_FLOORS if floors is None else floors
+    )
     entries = pattern_calibration_entries(
         float_probs,
         quantized_probs,
@@ -724,7 +767,7 @@ def pattern_calibration_model_card_summary(artifact):
     floors = artifact.get("floors")
     if not isinstance(floors, dict):
         raise ValueError("model-card calibration summary requires floors")
-    validate_calibration_floors(floors)
+    floors = validate_calibration_floors(floors)
     entries = artifact.get("entries")
     if not isinstance(entries, list):
         raise ValueError("model-card calibration summary requires entries")
@@ -767,6 +810,11 @@ def pattern_calibration_model_card_summary(artifact):
         "positive_support",
         "negative_support",
     }
+    if len(entries) > PATTERN_CALIBRATION_MAX_ENTRIES:
+        raise ValueError(
+            f"model-card calibration exceeds {PATTERN_CALIBRATION_MAX_ENTRIES} exact keys"
+        )
+    seen_keys = set()
     for entry in entries:
         if not isinstance(entry, dict) or set(entry) != expected_entry_fields:
             raise ValueError("model-card calibration entry has an invalid shape")
@@ -780,6 +828,16 @@ def pattern_calibration_model_card_summary(artifact):
             or entry["context_class"] not in PATTERN_CALIBRATION_CONTEXT_CLASSES
         ):
             raise ValueError("model-card calibration entry has an invalid identity")
+        key = (
+            entry["detector_id"],
+            entry["pattern_index"],
+            entry["candidate_channel"],
+            entry["source_role"],
+            entry["context_class"],
+        )
+        if key in seen_keys:
+            raise ValueError("model-card calibration contains a duplicate exact key")
+        seen_keys.add(key)
         metrics = entry["metrics"]
         if not isinstance(metrics, dict) or set(metrics) != expected_metric_fields:
             raise ValueError("model-card calibration entry has invalid metrics")
@@ -823,7 +881,7 @@ def pattern_calibration_model_card_summary(artifact):
         "identity_schema": artifact["identity_schema"],
         "model_version": artifact["model_version"],
         "detector_digest": artifact.get("detector_digest"),
-        "status": "abstaining" if not entries else "calibrated",
+        "status": "abstaining" if eligible_entries == 0 else "calibrated",
         "floors": dict(floors),
         "entry_count": len(entries),
         "eligible_entry_count": eligible_entries,
@@ -1614,36 +1672,40 @@ def main() -> int:
                 "REFUSING retrain artifact: real corpus mixes detector digests\n"
             )
             return 1
-        if args.features == rust_features.NUM_FEATURES:
-            import torch
+        try:
+            if args.features == rust_features.NUM_FEATURES:
+                import torch
 
-            _, _, calibration_test_indices = _group_split(files_r, args.seed)
-            quantized_candidate = serialize_quantized(blob, args.features)
-            quantized_test_probs = rust_features.score_quantized_features(
-                quantized_candidate,
-                Xr[calibration_test_indices],
-            )
-            with torch.no_grad():
-                float_test_probs = model(
-                    torch.from_numpy(Xr[calibration_test_indices])
-                ).numpy()
-            calibration_artifact = build_pattern_calibration_artifact(
-                f"moe-v1-{weights_fnv1a64(blob)}",
-                next(iter(calibration_digests), None),
-                float_test_probs,
-                quantized_test_probs,
-                yr[calibration_test_indices],
-                [identities_r[index] for index in calibration_test_indices],
-            )
-        else:
-            calibration_artifact = build_pattern_calibration_artifact(
-                f"moe-v1-{weights_fnv1a64(blob)}",
-                None,
-                [],
-                [],
-                [],
-                [],
-            )
+                _, _, calibration_test_indices = _group_split(files_r, args.seed)
+                quantized_candidate = serialize_quantized(blob, args.features)
+                quantized_test_probs = rust_features.score_quantized_features(
+                    quantized_candidate,
+                    Xr[calibration_test_indices],
+                )
+                with torch.no_grad():
+                    float_test_probs = model(
+                        torch.from_numpy(Xr[calibration_test_indices])
+                    ).numpy()
+                calibration_artifact = build_pattern_calibration_artifact(
+                    f"moe-v1-{weights_fnv1a64(blob)}",
+                    next(iter(calibration_digests), None),
+                    float_test_probs,
+                    quantized_test_probs,
+                    yr[calibration_test_indices],
+                    [identities_r[index] for index in calibration_test_indices],
+                )
+            else:
+                calibration_artifact = build_pattern_calibration_artifact(
+                    f"moe-v1-{weights_fnv1a64(blob)}",
+                    None,
+                    [],
+                    [],
+                    [],
+                    [],
+                )
+        except ValueError as error:
+            sys.stderr.write(f"REFUSING retrain artifact: {error}\n")
+            return 1
         if metrics["f1"] < args.min_f1:
             sys.stderr.write(
                 f"REFUSING to write: synthetic val F1 {metrics['f1']:.4f} < floor {args.min_f1}\n"
