@@ -77,6 +77,8 @@ mod assignment_keyword_matcher;
 pub(crate) mod assignment_keywords;
 /// Offline AWS account-ID recovery from an access-key ID (no network/verify).
 pub mod aws;
+/// Secret-safe candidate producer and pattern provenance.
+pub(crate) mod candidate_provenance;
 /// Service-specific credential checksum validation (GitHub, npm, Slack, etc.).
 pub mod checksum;
 /// Compiled scanner construction and lifecycle implementation.

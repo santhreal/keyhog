@@ -252,6 +252,7 @@ impl CompiledScanner {
                 continue;
             };
             let detector_plan = self.detector_plans.get(policy_detector_index);
+            let provenance = crate::candidate_provenance::CandidateProvenance::entropy();
             let match_confidence = self.detector_plans.match_confidence(policy_detector_index);
             let execution_policy = &detector_plan.execution;
             let Some(compiled_policy) = self.detector_plans.entropy(policy_detector_index) else {
@@ -471,6 +472,7 @@ impl CompiledScanner {
                     Some(line_number),
                     Some(entropy_match.entropy),
                     scan_state,
+                    provenance,
                 );
                 scan_state.push_entropy_ml_pending(
                     pending_raw_match,
@@ -514,7 +516,7 @@ impl CompiledScanner {
             ) else {
                 continue;
             };
-            scan_state.push_match_lazy(
+            scan_state.push_match_lazy_with_provenance(
                 crate::types::RawMatchPriority {
                     confidence: Some(report_conf),
                     severity: keyhog_core::Severity::High,
@@ -523,6 +525,7 @@ impl CompiledScanner {
                     offset,
                     line: Some(line_number),
                 },
+                provenance,
                 self.config.max_matches_per_chunk,
                 |scan_state| build_raw_match(scan_state, report_conf),
             );

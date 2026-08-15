@@ -1,5 +1,6 @@
 use super::{CanonicalDetectorExecutionIr, ExecutionPackError};
-use serde::{Deserialize, Serialize};
+use serde::de::{IgnoredAny, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -94,11 +95,50 @@ pub(crate) struct DetectorPlanRecord {
     pub required_companion: bool,
 }
 
+pub(crate) struct DetectorPlanPreludePatternCount(usize);
+
+impl DetectorPlanPreludePatternCount {
+    pub(crate) const fn len(&self) -> usize {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for DetectorPlanPreludePatternCount {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct PatternCountVisitor;
+
+        impl<'de> Visitor<'de> for PatternCountVisitor {
+            type Value = DetectorPlanPreludePatternCount;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a detector pattern array")
+            }
+
+            fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut count = 0usize;
+                while sequence.next_element::<IgnoredAny>()?.is_some() {
+                    count = count.saturating_add(1);
+                }
+                Ok(DetectorPlanPreludePatternCount(count))
+            }
+        }
+
+        deserializer.deserialize_seq(PatternCountVisitor)
+    }
+}
+
 #[derive(Deserialize)]
 pub(crate) struct DetectorPlanPreludeRecord<'a> {
     pub(crate) id: &'a str,
     pub(crate) name: &'a str,
     pub(crate) service: &'a str,
+    pub(crate) patterns: DetectorPlanPreludePatternCount,
     pub(crate) companion_names: Vec<&'a str>,
     #[serde(borrow)]
     pub(crate) entropy_fallback: Option<DetectorPlanPreludeEntropyFallback<'a>>,

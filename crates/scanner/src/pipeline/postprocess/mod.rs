@@ -27,6 +27,7 @@ pub(crate) fn build_pending_raw_match(
     line: usize,
     ent: f64,
     scan_state: &mut ScanState,
+    provenance: crate::candidate_provenance::CandidateProvenance,
     pattern_client_safe: bool,
 ) -> crate::scan_state::PendingRawMatch {
     let (detector_id, detector_name, service) = metadata;
@@ -68,6 +69,7 @@ pub(crate) fn build_pending_raw_match(
                 .map(|date| scan_state.intern_metadata(date)),
         },
         entropy: Some(ent),
+        provenance,
     }
 }
 
@@ -168,6 +170,7 @@ pub(crate) fn build_pending_synthetic_raw_match(
     absolute_line: Option<usize>,
     entropy: Option<f64>,
     scan_state: &mut ScanState,
+    provenance: crate::candidate_provenance::CandidateProvenance,
 ) -> crate::scan_state::PendingRawMatch {
     let (detector_id, detector_name, service) = metadata;
     crate::scan_state::PendingRawMatch {
@@ -203,6 +206,7 @@ pub(crate) fn build_pending_synthetic_raw_match(
                 .map(|date| scan_state.intern_metadata(date)),
         },
         entropy,
+        provenance,
     }
 }
 

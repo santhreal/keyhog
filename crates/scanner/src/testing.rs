@@ -3451,7 +3451,7 @@ pub fn scan_state_drain(
 ) -> Vec<keyhog_core::RawMatch> {
     let mut state = crate::scan_state::ScanState::default();
     for m in matches {
-        state.push_match(m, limit);
+        state.push_unattributed_match(m, limit);
     }
     state.into_matches()
 }
@@ -3464,10 +3464,10 @@ pub fn scan_state_lazy_duplicate_probe_for_test() -> (bool, bool, Vec<keyhog_cor
 
     const LIMIT: usize = 2;
     let mut state = crate::scan_state::ScanState::default();
-    state.push_match(raw_match(0.50), LIMIT);
+    state.push_unattributed_match(raw_match(0.50), LIMIT);
 
     let mut worse_built = false;
-    state.push_match_lazy(
+    state.push_unattributed_match_lazy(
         crate::scan_state::RawMatchPriority {
             confidence: Some(0.10),
             severity: keyhog_core::Severity::High,
@@ -3484,7 +3484,7 @@ pub fn scan_state_lazy_duplicate_probe_for_test() -> (bool, bool, Vec<keyhog_cor
     );
 
     let mut better_built = false;
-    state.push_match_lazy(
+    state.push_unattributed_match_lazy(
         crate::scan_state::RawMatchPriority {
             confidence: Some(0.90),
             severity: keyhog_core::Severity::High,
@@ -3508,10 +3508,10 @@ pub fn scan_state_lazy_overestimated_priority_probe_for_test() -> (bool, Vec<key
 {
     const LIMIT: usize = 1;
     let mut state = crate::scan_state::ScanState::default();
-    state.push_match(scan_state_probe_match("retained", 7, 0.90), LIMIT);
+    state.push_unattributed_match(scan_state_probe_match("retained", 7, 0.90), LIMIT);
 
     let mut built = false;
-    state.push_match_lazy(
+    state.push_unattributed_match_lazy(
         crate::scan_state::RawMatchPriority {
             confidence: Some(0.99),
             severity: keyhog_core::Severity::High,
@@ -3536,10 +3536,10 @@ pub fn scan_state_lazy_identity_tiebreak_probe_for_test() -> (bool, Vec<keyhog_c
     let mut state = crate::scan_state::ScanState::default();
     let mut retained = scan_state_probe_match("duplicate", 7, 0.50);
     retained.detector_name = std::sync::Arc::from("Zulu detector");
-    state.push_match(retained, LIMIT);
+    state.push_unattributed_match(retained, LIMIT);
 
     let mut built = false;
-    state.push_match_lazy(
+    state.push_unattributed_match_lazy(
         crate::scan_state::RawMatchPriority {
             confidence: Some(0.50),
             severity: keyhog_core::Severity::High,
@@ -3596,7 +3596,7 @@ pub(crate) fn scan_state_drain_with_static_intern(
     let interner = std::sync::Arc::new(crate::static_intern::StaticInterner::default());
     let mut state = crate::scan_state::ScanState::with_static_intern(interner);
     for m in matches {
-        state.push_match(m, limit);
+        state.push_unattributed_match(m, limit);
     }
     state.into_matches()
 }
@@ -3639,6 +3639,7 @@ impl LazyRegexProbe {
 pub(crate) fn phase2_keyword_index_summary(regex: &str, keywords: Vec<String>) -> (bool, usize) {
     let pattern = crate::types::CompiledPattern {
         detector_index: 0,
+        pattern_index: 0,
         regex: crate::types::LazyRegex::detector(regex),
         group: None,
         client_safe: false,
@@ -3860,6 +3861,31 @@ impl crate::engine::CompiledScanner {
         )
         .expect("phase-2 diagnostic scan");
         scan_state.into_matches()
+    }
+}
+
+#[cfg(test)]
+impl crate::engine::CompiledScanner {
+    pub(crate) fn debug_scan_phase2_with_provenance(
+        &self,
+        chunk: &keyhog_core::Chunk,
+    ) -> Vec<crate::scan_state::AttributedRawMatch> {
+        let prepared = self.prepare_chunk(chunk);
+        let line_index = prepared.line_index();
+        let mut scan_state =
+            crate::scan_state::ScanState::with_static_intern(self.static_intern.clone());
+        self.scan_phase2_patterns(
+            &prepared.preprocessed,
+            line_index,
+            prepared.chunk,
+            &mut scan_state,
+            None,
+            None,
+            None,
+            self.default_execution_route(),
+        )
+        .expect("phase-2 provenance diagnostic scan");
+        scan_state.into_attributed_matches()
     }
 }
 
