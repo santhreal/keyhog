@@ -12,6 +12,7 @@
 #   make ioc-recovery-axes    # score value/certificate/detector/span/mechanism axes
 #   make agentre-corpus       # verify sources and build the pinned Linux binaries
 #   make leakage-audit        # prove train/calibration/sealed-test split isolation
+#   make real-repository-quality # enforce redacted repository-class quality floors
 #   make creddata          # fetch, repair, and validate pinned Samsung/CredData
 #   make bloom             # measure Bloom rejection + bypass parity on CredData F/X records
 #   make canonical         # rerun the exact KH-020 mirror run set with Bloom linkage
@@ -58,6 +59,10 @@ CREDDATA_JOBS ?= 8
 LEAKAGE_MANIFEST ?=
 LEAKAGE_CONTENT_ROOT ?=
 LEAKAGE_RECEIPT ?= reports/leakage-receipt.json
+REAL_REPOSITORY_IDENTITY ?= results/real-repository-quality-identity.json
+REAL_REPOSITORY_REPORT ?= results/real-repository-quality.json
+REAL_REPOSITORY_REGISTRY ?= quality/repository-classes.toml
+REAL_REPOSITORY_EVIDENCE ?= quality/synthetic-evidence
 README_MATRIX_CONFIG_OUT ?= results-readme-config
 README_MATRIX_DAEMON_OUT ?= results-readme-daemon
 README_MATRIX_DAEMON_CORPUS ?= corpora/daemon-file-8mib.txt
@@ -94,7 +99,7 @@ ifneq ($(strip $(KEYHOG_BIN)),)
 export KEYHOG_BIN
 endif
 
-.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery agentre-corpus leakage-audit creddata bloom canonical readme-matrix-corpus readme-scaling readme-scaling-check readme-matrix readme-matrix-check require-clean-tree kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
+.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery agentre-corpus leakage-audit real-repository-quality creddata bloom canonical readme-matrix-corpus readme-scaling readme-scaling-check readme-matrix readme-matrix-check require-clean-tree kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
 
 help:
 	@grep -E '^#   make ' $(lastword $(MAKEFILE_LIST)) | sed 's/^#   /  /'
@@ -136,6 +141,17 @@ leakage-audit:
 	@test -n "$(LEAKAGE_CONTENT_ROOT)" || { echo "LEAKAGE_CONTENT_ROOT is required" >&2; exit 2; }
 	cd $(BENCH_DIR) && $(PY) -m bench.leakage_guard "$(LEAKAGE_MANIFEST)" \
 		--content-root "$(LEAKAGE_CONTENT_ROOT)" --receipt "$(LEAKAGE_RECEIPT)"
+
+real-repository-quality:
+	@test -n "$(KEYHOG_BIN)" || { echo "KEYHOG_BIN is required for the real-repository quality gate" >&2; exit 2; }
+	cd $(BENCH_DIR) && $(PY) -B -m bench.real_repository_quality identity \
+		--binary "$(KEYHOG_BIN)" --output "$(REAL_REPOSITORY_IDENTITY)"
+	cd $(BENCH_DIR) && $(PY) -B -m bench.real_repository_quality gate \
+		--registry "$(REAL_REPOSITORY_REGISTRY)" \
+		--evidence-dir "$(REAL_REPOSITORY_EVIDENCE)" \
+		--binary "$(KEYHOG_BIN)" \
+		--identity-receipt "$(REAL_REPOSITORY_IDENTITY)" \
+		--output "$(REAL_REPOSITORY_REPORT)"
 
 creddata:
 	cd $(BENCH_DIR) && $(PY) -m bench.corpora.creddata --download --jobs "$(CREDDATA_JOBS)"

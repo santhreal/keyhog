@@ -185,9 +185,10 @@ Each class must provide at least one labeled finding and one deterministic
 injected canary. The gate measures unlabeled findings per MLOC, default-policy
 blocking false positives, labeled recall, and canary recall. It rejects missing
 or unexpected classes, missing canary outcomes, mismatched label hashes,
-noncanonical tier/reason pairs, and every threshold violation. The required
-class set is loaded from the registry for each run, so adding a class without
-its evidence fails.
+noncanonical tier/reason pairs, and every threshold violation. No class may set
+the unlabeled density ceiling above 2.0 findings per MLOC. The required class
+set is loaded from the registry for each run, so adding a class without its
+evidence fails.
 
 Capture and gate with a source-built release candidate:
 
@@ -201,6 +202,10 @@ python3 -m bench.real_repository_quality gate \
   --identity-receipt results/real-repository-binary.json \
   --output results/real-repository-quality.json
 ```
+
+`make real-repository-quality KEYHOG_BIN="$KEYHOG_BIN"` runs both commands with
+the committed registry and synthetic evidence. The nightly benchmark workflow
+runs this target against its source-built release binary.
 
 Run these commands from `benchmarks/`. The identity receipt binds the
 executable SHA-256, source commit, workspace version, and detector-set digest.

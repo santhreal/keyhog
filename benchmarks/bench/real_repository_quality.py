@@ -10,8 +10,11 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import pathlib
 import re
+import stat
+import subprocess
 import sys
 import tomllib
 from collections import Counter
@@ -35,6 +38,7 @@ MAX_INPUT_BYTES = 4 * 1024 * 1024
 MAX_CLASSES = 64
 MAX_LABELS_PER_CLASS = 100_000
 MAX_FINDINGS_PER_CLASS = 1_000_000
+MAX_NOISE_FINDINGS_PER_MLOC = Decimal("2")
 
 _CLASS_ID_RE = re.compile(r"rc-[0-9]{3}")
 _LABEL_RE = re.compile(r"\[redacted:label-[0-9]{4,6}\]")
@@ -153,13 +157,24 @@ def deterministic_canary_sha256(class_id: str, redacted_label: str) -> str:
 
 
 def _read_bounded(path: pathlib.Path) -> bytes:
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
     try:
-        size = path.stat().st_size
-        if size > MAX_INPUT_BYTES:
-            raise QualityGateError("quality input exceeds the size limit")
-        return path.read_bytes()
+        descriptor = os.open(path, flags)
+        with os.fdopen(descriptor, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                raise QualityGateError("quality input must be a regular file")
+            data = handle.read(MAX_INPUT_BYTES + 1)
     except OSError as exc:
         raise QualityGateError("quality input cannot be read") from exc
+    if len(data) > MAX_INPUT_BYTES:
+        raise QualityGateError("quality input exceeds the size limit")
+    return data
 
 
 def load_registry(path: str | pathlib.Path) -> RepositoryClassRegistry:
@@ -223,7 +238,7 @@ def load_registry(path: str | pathlib.Path) -> RepositoryClassRegistry:
                 row["max_findings_per_mloc"],
                 "max_findings_per_mloc",
                 minimum=Decimal(0),
-                maximum=Decimal(1_000_000),
+                maximum=MAX_NOISE_FINDINGS_PER_MLOC,
             ),
             max_blocking_false_positives=max_blocking_false_positives,
             min_recall=min_recall,
@@ -361,6 +376,8 @@ def load_evidence(path: str | pathlib.Path) -> RepositoryEvidence:
 def load_evidence_directory(path: str | pathlib.Path) -> Mapping[str, RepositoryEvidence]:
     """Load every JSON evidence manifest; the contained IDs, not filenames, are authoritative."""
     directory = pathlib.Path(path)
+    if not directory.is_dir():
+        raise QualityGateError("repository evidence directory is unavailable")
     try:
         paths = sorted(directory.glob("*.json"))
     except OSError as exc:
@@ -402,11 +419,7 @@ def capture_binary_identity(
             "source_version": workspace_keyhog_version(root),
             "detector_set_digest": workspace_detector_digest(root),
         }
-    except KeyhogVersionError as exc:
-        raise QualityGateError(
-            f"candidate binary cannot prove current-source identity: {exc}"
-        ) from exc
-    except OSError as exc:
+    except (KeyhogVersionError, subprocess.SubprocessError, OSError) as exc:
         raise QualityGateError(
             f"candidate binary cannot prove current-source identity: {exc}"
         ) from exc
@@ -466,6 +479,10 @@ def evaluate_quality(
         sample = evidence[class_id]
         if sample.redacted_label != spec.redacted_label:
             raise QualityGateError("repository-class redacted labels disagree")
+        if not sample.labels or not sample.canaries:
+            raise QualityGateError(
+                f"{class_id}: repository evidence requires labels and canaries"
+            )
         matched_labels = sum(label.outcome == "matched" for label in sample.labels)
         matched_canaries = sum(label.outcome == "matched" for label in sample.canaries)
         recall = Decimal(matched_labels) / Decimal(len(sample.labels))

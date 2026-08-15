@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from bench.real_repository_quality import (
 _BENCH_ROOT = Path(__file__).resolve().parents[2]
 _REGISTRY = _BENCH_ROOT / "quality" / "repository-classes.toml"
 _EVIDENCE = _BENCH_ROOT / "quality" / "synthetic-evidence"
+_REPO_ROOT = _BENCH_ROOT.parent
 _IDENTITY = {
     "schema": IDENTITY_SCHEMA,
     "executable_sha256": "a" * 64,
@@ -126,6 +128,25 @@ def test_synthetic_registry_passes_at_exact_quality_boundaries_without_sensitive
     assert "plaintext" not in encoded
 
 
+def test_make_target_and_nightly_workflow_execute_the_source_built_gate():
+    makefile = (_BENCH_ROOT / "Makefile").read_text(encoding="utf-8")
+    workflow = (_REPO_ROOT / ".github/workflows/bench-nightly.yml").read_text(
+        encoding="utf-8"
+    )
+
+    for contract in (
+        "real-repository-quality:",
+        "--binary \"$(KEYHOG_BIN)\"",
+        "--identity-receipt \"$(REAL_REPOSITORY_IDENTITY)\"",
+        "--evidence-dir \"$(REAL_REPOSITORY_EVIDENCE)\"",
+    ):
+        assert contract in makefile
+    build = workflow.index("- name: Build keyhog release binary")
+    gate = workflow.index("- name: Enforce redacted real-repository quality gate")
+    assert build < gate
+    assert "make -C benchmarks real-repository-quality" in workflow
+
+
 @pytest.mark.parametrize("unsafe_key", ["repository_path", "repository_name", "plaintext_label", "raw_finding"])
 def test_evidence_rejects_every_plaintext_or_repository_locator_field(tmp_path: Path, unsafe_key: str):
     value = _fixture()
@@ -157,6 +178,11 @@ def test_evidence_rejects_noncanonical_redacted_label_without_echoing_it(tmp_pat
             "max_blocking_false_positives = 0",
             "max_blocking_false_positives = 1",
             "must be zero",
+        ),
+        (
+            "max_findings_per_mloc = 2.0",
+            "max_findings_per_mloc = 2.1",
+            "outside its allowed range",
         ),
     ],
 )
@@ -195,6 +221,11 @@ def test_every_manifest_class_is_required(drop_class: str):
 
     with pytest.raises(QualityGateError, match="coverage is incomplete"):
         evaluate_quality(registry, incomplete, _IDENTITY, _IDENTITY)
+
+
+def test_missing_evidence_directory_fails_with_actionable_error(tmp_path: Path):
+    with pytest.raises(QualityGateError, match="directory is unavailable"):
+        load_evidence_directory(tmp_path / "missing")
 
 
 def test_findings_per_mloc_passes_at_limit_and_fails_one_finding_over():
@@ -259,6 +290,16 @@ def test_canary_recall_rejects_a_recorded_miss():
         evaluate_quality(registry, samples, _IDENTITY, _IDENTITY)
 
 
+@pytest.mark.parametrize(("field", "replacement"), (("labels", ()), ("canaries", ())))
+def test_direct_evaluation_rejects_empty_ground_truth_classes(field: str, replacement: tuple):
+    registry, evidence = _loaded()
+    samples = dict(evidence)
+    samples["rc-001"] = replace(samples["rc-001"], **{field: replacement})
+
+    with pytest.raises(QualityGateError, match="requires labels and canaries"):
+        evaluate_quality(registry, samples, _IDENTITY, _IDENTITY)
+
+
 def test_absent_canary_outcome_is_malformed_not_an_implicit_miss(tmp_path: Path):
     value = _fixture()
     del value["canaries"][0]["outcome"]
@@ -276,6 +317,12 @@ def test_canary_digest_is_deterministic_and_tampering_fails(tmp_path: Path):
 
     with pytest.raises(QualityGateError, match="canary content hash is invalid"):
         load_evidence(_write_fixture(tmp_path, value))
+
+
+@pytest.mark.skipif(not Path("/dev/zero").exists(), reason="requires a Unix special file")
+def test_bounded_reader_rejects_special_files_without_reading_them():
+    with pytest.raises(QualityGateError, match="must be a regular file"):
+        quality._read_bounded(Path("/dev/zero"))
 
 
 def test_labeled_finding_hash_must_match_ground_truth_hash(tmp_path: Path):
@@ -354,4 +401,21 @@ def test_binary_identity_preserves_actionable_freshness_failure(tmp_path: Path, 
     )
 
     with pytest.raises(QualityGateError, match="tracked workspace has uncommitted changes"):
+        quality.capture_binary_identity(binary, repo_root=tmp_path)
+
+
+def test_binary_identity_maps_subprocess_timeouts_to_actionable_gate_errors(
+    tmp_path: Path, monkeypatch
+):
+    binary = tmp_path / "keyhog"
+    binary.write_bytes(b"source-built-candidate")
+    monkeypatch.setattr(
+        quality,
+        "assert_keyhog_binary_current",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            subprocess.TimeoutExpired("keyhog --version", 30)
+        ),
+    )
+
+    with pytest.raises(QualityGateError, match="timed out after 30 seconds"):
         quality.capture_binary_identity(binary, repo_root=tmp_path)
