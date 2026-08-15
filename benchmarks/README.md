@@ -182,7 +182,7 @@ and canonical evidence tiers and reasons. Unknown fields fail schema
 validation.
 
 Each class must provide at least one labeled finding and one deterministic
-injected canary. The gate measures non-canary findings per MLOC, default-policy
+injected canary. The gate measures unlabeled findings per MLOC, default-policy
 blocking false positives, labeled recall, and canary recall. It rejects missing
 or unexpected classes, missing canary outcomes, mismatched label hashes,
 noncanonical tier/reason pairs, and every threshold violation. The required

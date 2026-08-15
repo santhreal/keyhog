@@ -444,9 +444,10 @@ def evaluate_quality(
     registry: RepositoryClassRegistry,
     evidence: Mapping[str, RepositoryEvidence],
     binary_identity: Mapping[str, str],
+    current_binary_identity: Mapping[str, str],
 ) -> dict[str, object]:
     """Score every required class and fail on any coverage or threshold gap."""
-    binary_identity = validate_binary_identity(binary_identity, binary_identity)
+    binary_identity = validate_binary_identity(binary_identity, current_binary_identity)
     required = set(registry.classes)
     observed = set(evidence)
     if required != observed:
@@ -463,12 +464,9 @@ def evaluate_quality(
         matched_canaries = sum(label.outcome == "matched" for label in sample.canaries)
         recall = Decimal(matched_labels) / Decimal(len(sample.labels))
         canary_recall = Decimal(matched_canaries) / Decimal(len(sample.canaries))
-        canary_names = {canary.redacted_label for canary in sample.canaries}
-        repository_findings = sum(
-            finding.label not in canary_names for finding in sample.findings
-        )
+        noise_findings = sum(finding.label is None for finding in sample.findings)
         findings_per_mloc = (
-            Decimal(repository_findings)
+            Decimal(noise_findings)
             * Decimal(1_000_000)
             / Decimal(sample.source_lines)
         )
@@ -562,11 +560,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "identity":
             _write_json(args.output, current)
             return 0
-        receipt = validate_binary_identity(load_binary_identity(args.identity_receipt), current)
         report = evaluate_quality(
             load_registry(args.registry),
             load_evidence_directory(args.evidence_dir),
-            receipt,
+            load_binary_identity(args.identity_receipt),
+            current,
         )
         _write_json(args.output, report)
         return 0
