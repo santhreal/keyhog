@@ -161,6 +161,51 @@ Choose a surface by scope:
 | Findings that predate adoption | Baseline | Path rules for the whole legacy tree |
 | A detector that is not applicable to the repository | `[detector.<id>] enabled = false` | A large list of per-file rules |
 
+### Triage artifacts
+
+`keyhog triage` imports a redacted finding envelope and creates two different
+artifacts. `--suppressions` contains dismissed decisions for the `exact`,
+`path`, and `repository` scopes. `--pattern-feedback` contains validated
+training observations. A `pattern-feedback-only` decision appears only in
+training feedback and can never become runtime suppression.
+
+The envelope and both outputs have independent version fields. Each record
+carries a finding hash, the 16-hex active detector digest, a stable detector
+ID, the authoritative scanner pattern index, candidate channel, source role
+and context class, a bounded context digest, a typed reason, and one scope.
+Path and repository scopes carry BLAKE3 identities. None of these files accepts
+a credential value, context text, filesystem path, repository URL, or free-form
+reason.
+
+```json
+{
+  "version": 1,
+  "detector_digest": "0123456789abcdef",
+  "records": [{
+    "finding_hash": "blake3:<64-lowercase-hex>",
+    "detector_id": "<stable-detector-id>",
+    "pattern_index": 0,
+    "candidate_channel": "named-pattern",
+    "source_role": "standalone-token",
+    "context_class": "string-literal",
+    "context_digest": "blake3:<64-lowercase-hex>",
+    "disposition": "dismissed",
+    "reason": "false-positive",
+    "scope": {
+      "path": {
+        "path_hash": "blake3:<64-lowercase-hex>"
+      }
+    }
+  }]
+}
+```
+
+The command accepts only the detector corpus built into the running binary.
+Stale detector or pattern identities, unknown fields, malformed digests,
+version mismatches, excessive input, symbolic links, and existing output files
+fail without publishing either output. See
+[`keyhog triage`](./reference/cli.md#keyhog-triage).
+
 ### `.keyhogignore`: one condition per line
 
 Create `.keyhogignore` at the scan root. Each non-comment line suppresses by

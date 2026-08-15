@@ -3,7 +3,7 @@
 //! silently churn via rename) without a deliberate edit to this file.
 //!
 //! This snapshot flags the concern directly: "scan carries
-//! 76 unconditional flags; the binary exposes 19 subcommands. Surface this large is hard to
+//! 76 unconditional flags; the binary exposes 22 subcommands. Surface this large is hard to
 //! keep coherent, document, and test." This gate makes every addition show up
 //! as a failing test that names exactly what was added/removed, forcing the
 //! author to (a) confirm the new surface is intentional and (b) update the
@@ -42,6 +42,7 @@ const BASE_SUBCOMMANDS: &[&str] = &[
     "repair",
     "scan",
     "scan-system",
+    "triage",
     "uninstall",
     "update",
     "watch",

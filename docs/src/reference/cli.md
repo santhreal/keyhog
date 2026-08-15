@@ -60,7 +60,7 @@ or incomplete coverage.
 | `--entropy-bpe-max-bytes-per-token` | `RATIO` |  | BPE "rare-not-random" suppression bound in bytes-per-token (default: 2.2). A surviving entropy/generic candidate whose cl100k_base bytes-per-token is above this is treated as word-like (dotted API paths, prose) and dropped. Lower = more aggressive suppression (higher precision, lower recall); a large value effectively disables the gate |
 | `--entropy-source-files` |  |  | Enable entropy scanning in source code files |
 | `--entropy-threshold` | `BITS` |  | Entropy threshold in bits per byte (default: 4.5) |
-| `--evidence-policy` | `POLICY` |  | Finding evidence tiers that produce a non-zero CI exit. `default` blocks `likely` and `confirmed`; `paranoid` also blocks `review`. Findings remain visible under either policy. Possible values: `default`, `paranoid`. |
+| `--evidence-policy` | `POLICY` |  | Finding evidence tiers that produce a non-zero CI exit Possible values: `default`, `paranoid`. |
 | `--exclude-paths` | `PATH...` |  | Explicit paths or glob patterns to exclude from scanning |
 | `--fast` |  |  | Fast mode: pattern matching only. No decode, no entropy, no ML scoring. Maximum speed. A preset is a BASE: it seeds defaults, then compatible explicit knobs override it (e.g. `--fast --decode-depth 2` re-enables shallow decode on top of the fast base). Entropy-only knobs conflict because fast mode disables entropy, so accepting them would create a no-op flag |
 | `--format` | `FORMAT` | `text` | Output format. `json` is a bare findings array for pipelines; prefer `json-envelope` for scan status, coverage gaps, and backend recoveries in one document (KH-1435 / KH-1474) Possible values: `text`, `json`, `json-envelope`, `jsonl`, `jsonl-envelope`, `sarif`, `csv`, `github-annotations`, `gitlab-sast`, `html`, `junit`. |
@@ -246,7 +246,7 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--entropy-bpe-max-bytes-per-token` | `RATIO` |  | BPE "rare-not-random" suppression bound in bytes-per-token (default: 2.2). A surviving entropy/generic candidate whose cl100k_base bytes-per-token is above this is treated as word-like (dotted API paths, prose) and dropped. Lower = more aggressive suppression (higher precision, lower recall); a large value effectively disables the gate |
 | `--entropy-source-files` |  |  | Enable entropy scanning in source code files |
 | `--entropy-threshold` | `BITS` |  | Entropy threshold in bits per byte (default: 4.5) |
-| `--evidence-policy` | `POLICY` |  | Finding evidence tiers that produce a non-zero CI exit. `default` blocks `likely` and `confirmed`; `paranoid` also blocks `review`. Findings remain visible under either policy. Possible values: `default`, `paranoid`. |
+| `--evidence-policy` | `POLICY` |  | Finding evidence tiers that produce a non-zero CI exit Possible values: `default`, `paranoid`. |
 | `--exclude-paths` | `PATH...` |  | Explicit paths or glob patterns to exclude from scanning |
 | `--fast` |  |  | Fast mode: pattern matching only. No decode, no entropy, no ML scoring. Maximum speed. A preset is a BASE: it seeds defaults, then compatible explicit knobs override it (e.g. `--fast --decode-depth 2` re-enables shallow decode on top of the fast base). Entropy-only knobs conflict because fast mode disables entropy, so accepting them would create a no-op flag |
 | `--format` | `FORMAT` | `text` | Output format. `json` is a bare findings array for pipelines; prefer `json-envelope` for scan status, coverage gaps, and backend recoveries in one document (KH-1435 / KH-1474) Possible values: `text`, `json`, `json-envelope`, `jsonl`, `jsonl-envelope`, `sarif`, `csv`, `github-annotations`, `gitlab-sast`, `html`, `junit`. |
@@ -618,6 +618,41 @@ must use `keyhog scan --binary`; artifact diff never decodes them implicitly.
 | `--verify-removed` |  |  | Verify credentials found only in the older artifact |
 | `--verify-timeout` | `VERIFY_TIMEOUT` |  | Per-credential verification timeout in seconds (default: 5) |
 <!-- /keyhog-generated: cli-reference command="diff" -->
+
+## `keyhog triage`
+
+Import a current versioned redacted finding envelope and write separate
+runtime-suppression and pattern-training artifacts. Every record must carry
+the scanner's authoritative pattern index, candidate channel, source role, and
+context class. The input accepts the 16-hex active detector digest, stable
+detector IDs, and BLAKE3 finding/context/scope identities only. It rejects
+unknown fields, stale detector or pattern identities, free-form reasons, raw
+paths, raw context, and credential values.
+
+```sh
+keyhog triage \
+  --input findings.redacted.json \
+  --suppressions suppressions.json \
+  --pattern-feedback pattern-feedback.json
+```
+
+The command creates new regular files with private permissions. Input and
+output files must be distinct and must not traverse symbolic links or parent
+components. Existing output files are not overwritten.
+
+Scopes are `exact`, `path`, `repository`, and `pattern-feedback-only`. Path and
+repository scopes carry BLAKE3 identities, not names or filesystem locations.
+Only dismissed `exact`, `path`, and `repository` records produce immediate
+runtime suppressions. Every validated record produces pattern feedback.
+`pattern-feedback-only` can never produce runtime suppression.
+
+<!-- keyhog-generated: cli-reference command="triage" -->
+| Argument | Value | Default | Description |
+|----------|-------|---------|-------------|
+| `--input` *(required)* | `PATH` |  | Current versioned redacted finding envelope |
+| `--pattern-feedback` *(required)* | `PATH` |  | New file for pattern-training feedback |
+| `--suppressions` *(required)* | `PATH` |  | New file for immediate scoped runtime suppressions |
+<!-- /keyhog-generated: cli-reference command="triage" -->
 
 ## `keyhog calibrate`
 

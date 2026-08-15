@@ -14,6 +14,7 @@ mod limits;
 mod maintenance;
 mod scan;
 mod scan_system;
+mod triage;
 mod watch;
 
 pub use action_report::{
@@ -37,6 +38,7 @@ pub use scan::{
     CliDedupScope, DaemonMode, DetectorMode, EvidencePolicy, OutputFormat, ScanArgs, SeverityFilter,
 };
 pub use scan_system::{parse_space_bytes, ScanSystemArgs};
+pub use triage::TriageArgs;
 pub use watch::WatchArgs;
 pub use watch::DEFAULT_WATCH_MAX_CONSECUTIVE_SCAN_FAILURES;
 
@@ -110,6 +112,10 @@ pub enum Command {
     /// Diff baselines or artifacts: show NEW / REMOVED / UNCHANGED
     #[command(verbatim_doc_comment)]
     Diff(DiffArgs),
+
+    /// Import redacted findings into scoped suppression and pattern feedback
+    #[command(verbatim_doc_comment)]
+    Triage(TriageArgs),
 
     /// Show or update per-detector Bayesian calibration counters
     #[command(verbatim_doc_comment)]

@@ -34,7 +34,7 @@ fn run(args: &[&str]) -> (Option<i32>, String, String) {
 }
 
 /// The exact set of subcommands keyhog exposes. `help` is clap's auto-generated
-/// subcommand; the other 18 are the `args::Command` enum variants, rendered in
+/// subcommand; the other 20 are the visible `args::Command` variants, rendered in
 /// clap's kebab-case (`calibrate-autoroute`, `bloom-diagnostic`, `scan-system`).
 const EXPECTED_SUBCOMMANDS: &[&str] = &[
     "scan",
@@ -43,6 +43,7 @@ const EXPECTED_SUBCOMMANDS: &[&str] = &[
     "detectors",
     "explain",
     "diff",
+    "triage",
     "calibrate",
     "calibrate-autoroute",
     "watch",
@@ -55,6 +56,7 @@ const EXPECTED_SUBCOMMANDS: &[&str] = &[
     "uninstall",
     "scan-system",
     "daemon",
+    "guard",
     "help",
 ];
 
