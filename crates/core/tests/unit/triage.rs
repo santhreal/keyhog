@@ -80,8 +80,7 @@ fn current_contract_round_trips_into_distinct_artifacts() {
         runtime
     );
     assert_eq!(
-        PatternFeedback::from_json(&feedback_bytes, DETECTOR_DIGEST)
-            .expect("feedback round trip"),
+        PatternFeedback::from_json(&feedback_bytes, DETECTOR_DIGEST).expect("feedback round trip"),
         feedback
     );
     assert!(
@@ -128,8 +127,7 @@ fn unknown_secret_fields_and_missing_provenance_are_rejected() {
     }
 
     let mut unknown = base;
-    unknown["records"][0]["credential"] =
-        serde_json::Value::String("plaintext-secret".to_owned());
+    unknown["records"][0]["credential"] = serde_json::Value::String("plaintext-secret".to_owned());
     let bytes = serde_json::to_vec(&unknown).expect("serialize mutation");
     assert!(TriageEnvelope::from_json(&bytes, DETECTOR_DIGEST).is_err());
 }
@@ -193,8 +191,11 @@ fn public_provenance_digest_channel_and_context_fail_closed() {
         .expect("attributed entropy provenance");
 
     let mut reassembled = envelope(TriageScope::Exact);
-    reassembled.records[0].detector_id =
-        format!("{}{}", detector_id(), keyhog_core::REASSEMBLED_DETECTOR_SUFFIX);
+    reassembled.records[0].detector_id = format!(
+        "{}{}",
+        detector_id(),
+        keyhog_core::REASSEMBLED_DETECTOR_SUFFIX
+    );
     reassembled
         .validate(DETECTOR_DIGEST)
         .expect("reassembled finding retains its canonical detector owner");
@@ -240,8 +241,7 @@ fn malicious_strings_and_cross_scope_fields_are_rejected() {
     malicious.records[0].detector_id = "../../credential\nvalue".to_owned();
     assert!(malicious.validate(DETECTOR_DIGEST).is_err());
 
-    let mut value =
-        serde_json::to_value(envelope(TriageScope::Exact)).expect("serialize envelope");
+    let mut value = serde_json::to_value(envelope(TriageScope::Exact)).expect("serialize envelope");
     value["records"][0]["scope"] = serde_json::json!({
         "path": { "path_hash": digest('3') },
         "repository": { "repository_hash": digest('4') }
@@ -255,11 +255,10 @@ fn record_and_byte_bounds_are_enforced() {
     let mut oversized = envelope(TriageScope::Exact);
     oversized.records = vec![oversized.records[0].clone(); MAX_TRIAGE_RECORDS + 1];
     assert!(oversized.validate(DETECTOR_DIGEST).is_err());
-    assert!(TriageEnvelope::from_json(
-        &vec![b' '; MAX_TRIAGE_INPUT_BYTES + 1],
-        DETECTOR_DIGEST,
-    )
-    .is_err());
+    assert!(
+        TriageEnvelope::from_json(&vec![b' '; MAX_TRIAGE_INPUT_BYTES + 1], DETECTOR_DIGEST,)
+            .is_err()
+    );
 }
 
 #[test]
