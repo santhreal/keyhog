@@ -111,6 +111,8 @@ pub(crate) mod detector_key_material_policy;
 pub(crate) mod detector_ml_policy;
 /// Unified detector-indexed runtime plan compiled from detector TOMLs.
 pub(crate) mod detector_plan;
+/// Candidate-bounded documentation, roff, and shell semantic roles.
+pub(crate) mod documentation_semantics;
 /// Core scan execution engine.
 pub(crate) mod engine;
 /// Shannon entropy analysis for secret detection.

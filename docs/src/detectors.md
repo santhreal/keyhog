@@ -255,6 +255,16 @@ balanced syntax; test-file ownership uses the scanner's Tier-B path rules.
 Malformed, truncated, unsupported, or over-budget code yields `unknown` with
 abstaining confidence and never suppresses a finding.
 
+Markdown, roff/man, shell script, Dockerfile, and Containerfile extraction is
+candidate-triggered and accepts at most 64 KiB of source. Markdown prose and
+inline code receive `prose-documentation`; shell-language fences use shell
+token roles. Roff option declarations remain distinct from prose. Shell
+tokenization distinguishes environment assignments from command argument
+values. Structured files under detector and rule paths derive regex-definition,
+test-fixture, and prose roles from `rules/structured-source-role-markers.toml`.
+Malformed, truncated, unsupported, or over-budget input yields `unknown` with
+abstaining confidence and never suppresses a finding.
+
 `detector.required_evidence` is a list containing `checksum`,
 `required-companion`, `private-key-companion`, `structural-grammar`, or
 `live-verification`. Omitted semantic fields carry no proof and preserve the

@@ -1,0 +1,9 @@
+schema_version = 1
+
+[fields]
+regex_definitions = ["regex", "pattern", "patterns", "expression", "signature"]
+test_fixtures = ["test_positive", "test_negative", "positive", "negative", "fixture", "fixtures"]
+prose = ["description", "documentation", "help", "usage"]
+
+[paths]
+rule_components = ["detectors", "rules"]
