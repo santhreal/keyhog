@@ -9,7 +9,7 @@
 //!   * `RawMatch` still deserializes the historical plaintext input shape so
 //!     existing protected private artifacts remain readable.
 //!   * `RedactedFinding` serializes its SHA-256 credential hash as 64 lower-case
-//!     hexadecimal characters and omits absent entropy/confidence values.
+//!     hexadecimal characters and omits absent entropy/evidence-score values.
 //!   * `Severity` is `serde(rename_all = "kebab-case")` with a `client_safe`
 //!     alias on the `ClientSafe` variant.
 //!   * `credential_hash` deserialization fails closed on any string that is not
@@ -75,7 +75,19 @@ fn raw_wire_value() -> serde_json::Value {
             "date": null
         },
         "entropy": 4.5,
-        "confidence": 0.9
+        "confidence": 0.9,
+        "evidence": {
+            "tier": "review",
+            "reason_code": "unattributed",
+            "provenance": {
+                "schema_version": 1,
+                "detector_digest": null,
+                "pattern_index": null,
+                "candidate_channel": "unattributed",
+                "source_role": "unknown",
+                "context_class": "unattributed"
+            }
+        }
     })
 }
 
@@ -93,21 +105,16 @@ fn raw_match_serialization_fails_closed_without_plaintext() {
 }
 
 #[test]
-fn raw_match_historical_wire_deserializes_equal() {
-    let expected = make_raw();
-    let back: RawMatch =
-        serde_json::from_value(raw_wire_value()).expect("deserialize historical RawMatch");
+fn raw_match_historical_wire_without_evidence_fails_closed() {
+    let mut value = raw_wire_value();
+    value.as_object_mut().expect("object").remove("evidence");
 
-    assert_eq!(expected, back);
-    assert_eq!(&*back.detector_id, "aws-access-key-id");
-    assert_eq!(&*back.service, "aws");
-    assert_eq!(back.severity, Severity::Critical);
-    assert_eq!(&*back.credential, AKIA_PLAINTEXT);
-    assert_eq!(back.location.line, Some(42));
-    assert_eq!(back.credential_hash, sha256_hash(AKIA_PLAINTEXT));
-    let debug = format!("{back:?}");
-    assert!(!debug.contains(AKIA_PLAINTEXT));
-    assert!(debug.contains("<redacted"));
+    let error = serde_json::from_value::<RawMatch>(value)
+        .expect_err("historical RawMatch without required evidence must fail closed");
+    assert!(
+        error.to_string().contains("missing field `evidence`"),
+        "unexpected error: {error}"
+    );
 }
 
 #[test]

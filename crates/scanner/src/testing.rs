@@ -3624,7 +3624,7 @@ pub fn scan_state_drain(
     for m in matches {
         state.push_unattributed_match(m, limit);
     }
-    state.into_matches()
+    state.into_matches(0)
 }
 
 #[cfg(feature = "entropy")]
@@ -3671,7 +3671,7 @@ pub fn scan_state_lazy_duplicate_probe_for_test() -> (bool, bool, Vec<keyhog_cor
         },
     );
 
-    (worse_built, better_built, state.into_matches())
+    (worse_built, better_built, state.into_matches(0))
 }
 
 #[cfg(feature = "entropy")]
@@ -3698,7 +3698,7 @@ pub fn scan_state_lazy_overestimated_priority_probe_for_test() -> (bool, Vec<key
         },
     );
 
-    (built, state.into_matches())
+    (built, state.into_matches(0))
 }
 
 #[cfg(feature = "entropy")]
@@ -3728,7 +3728,7 @@ pub fn scan_state_lazy_identity_tiebreak_probe_for_test() -> (bool, Vec<keyhog_c
         },
     );
 
-    (built, state.into_matches())
+    (built, state.into_matches(0))
 }
 
 #[cfg(feature = "entropy")]
@@ -3770,7 +3770,7 @@ pub(crate) fn scan_state_drain_with_static_intern(
     for m in matches {
         state.push_unattributed_match(m, limit);
     }
-    state.into_matches()
+    state.into_matches(0)
 }
 
 #[derive(Clone)]
@@ -4032,7 +4032,7 @@ impl crate::engine::CompiledScanner {
             self.default_execution_route(),
         )
         .expect("phase-2 diagnostic scan");
-        scan_state.into_matches()
+        scan_state.into_matches(0)
     }
 }
 

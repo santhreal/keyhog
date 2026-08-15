@@ -1420,13 +1420,13 @@ impl CompiledScanner {
             let _g = profile::span(keyhog_profile::Stage::MachineLearning);
             self.apply_ml_batch_scores_across(&mut scan_states, backend)?;
             for (output_index, state) in output_indices.into_iter().zip(scan_states) {
-                outputs[output_index].matches = state.into_matches();
+                outputs[output_index].matches = state.into_matches(self.detector_digest);
             }
         }
         #[cfg(not(feature = "ml"))]
         for output in &mut outputs {
             if let Some(state) = output.state.take() {
-                output.matches = state.into_matches();
+                output.matches = state.into_matches(self.detector_digest);
             }
         }
 

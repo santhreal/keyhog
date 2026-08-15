@@ -352,6 +352,55 @@ fn detector_name_breaks_a_complete_priority_tie() {
 }
 
 #[test]
+fn stronger_evidence_precedes_weaker_on_complete_priority_tie() {
+    let weak = rm("det", "same", Severity::High, "same-cred", Some(0.5), 4, 2);
+    let mut strong = weak.clone();
+    strong.evidence =
+        keyhog_core::EvidenceVerdict::from_reason(keyhog_core::EvidenceReasonCode::VendorPattern)
+            .with_provenance(keyhog_core::FindingProvenance::pattern(
+                1,
+                0,
+                keyhog_core::SemanticSourceRole::Unknown,
+                keyhog_core::EvidenceReasonCode::VendorPattern,
+            ));
+
+    let mut findings = vec![weak, strong];
+    findings.sort();
+    assert_eq!(
+        findings[0].evidence.reason_code(),
+        keyhog_core::EvidenceReasonCode::VendorPattern,
+        "stronger evidence must be the cmp-smallest, highest-priority finding"
+    );
+}
+
+#[test]
+fn provenance_difference_breaks_ordering_equality_after_same_reason() {
+    let mut first = rm("det", "same", Severity::High, "same-cred", Some(0.5), 4, 2);
+    first.evidence = keyhog_core::EvidenceVerdict::from_reason(
+        keyhog_core::EvidenceReasonCode::UnsupportedContext,
+    )
+    .with_provenance(keyhog_core::FindingProvenance::pattern(
+        1,
+        0,
+        keyhog_core::SemanticSourceRole::Unknown,
+        keyhog_core::EvidenceReasonCode::UnsupportedContext,
+    ));
+    let mut second = first.clone();
+    second.evidence = second
+        .evidence
+        .with_provenance(keyhog_core::FindingProvenance::pattern(
+            1,
+            1,
+            keyhog_core::SemanticSourceRole::Unknown,
+            keyhog_core::EvidenceReasonCode::UnsupportedContext,
+        ));
+
+    assert_ne!(first, second);
+    assert_ne!(first.cmp(&second), Ordering::Equal);
+    assert_eq!(first.cmp(&second), second.cmp(&first).reverse());
+}
+
+#[test]
 fn every_fieldwise_identity_difference_breaks_cmp_equality() {
     let base = rm("det", "name", Severity::High, "same-cred", Some(0.0), 4, 2);
     let mut variants = Vec::new();

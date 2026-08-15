@@ -183,7 +183,7 @@ fn raw_match_confidence_deserializes_from_explicit_field() {
         "companions":{},
         "location":{"source":"filesystem","file_path":null,"line":null,"offset":0,"commit":null,"author":null,"date":null},
         "confidence":0.72,
-        "evidence":{"tier":"review","reason_code":"unattributed"}
+        "evidence":{"tier":"review","reason_code":"unattributed","provenance":{"schema_version":1,"detector_digest":null,"pattern_index":null,"candidate_channel":"unattributed","source_role":"unknown","context_class":"unattributed"}}
     }"#;
     let raw: RawMatch = serde_json::from_str(json).expect("deserialize hand JSON");
     assert_eq!(raw.confidence, Some(0.72));

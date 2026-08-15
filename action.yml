@@ -42,6 +42,8 @@ inputs:
     description: |
       Evidence tiers that block the scan: default blocks likely and confirmed;
       paranoid also blocks review. Findings remain visible under either policy.
+      Published scanners without this flag retain their equivalent paranoid
+      behavior for an explicit paranoid request and reject the default policy.
     default: 'default'
   baseline:
     description: |
@@ -493,6 +495,7 @@ runs:
         ACTION_OUTPUT: ${{ steps.outfile.outputs.name }}
         ACTION_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
         ACTION_EVIDENCE_POLICY: ${{ inputs.evidence-policy }}
+        ACTION_RELEASE_REQUIRED: ${{ steps.version.outputs.release_required }}
         ACTION_UPLOAD_SARIF: ${{ inputs.upload-sarif }}
         ACTION_CACHE_HOME: ${{ steps.runtime.outputs.path }}/cache
         ACTION_RUNTIME: ${{ steps.runtime.outputs.path }}

@@ -251,7 +251,20 @@ fn scanner_residency_is_active_during_transaction() {
         rt.blob_context(1, "other").is_err(),
         "unplanned blobs must not acquire scan context"
     );
-    rt.finish_transaction(1);
+    assert!(
+        rt.finish_transaction_if(1, |_| Err("oversized receipt".to_string()))
+            .is_err(),
+        "failed terminal validation must reject finish"
+    );
+    assert_eq!(
+        rt.scanner_residency(),
+        "active",
+        "failed terminal validation must retain the transaction"
+    );
+    assert!(rt
+        .finish_transaction_if(1, |_| Ok(()))
+        .expect("valid terminal receipt")
+        .is_some());
     assert_eq!(rt.scanner_residency(), "resident");
 }
 

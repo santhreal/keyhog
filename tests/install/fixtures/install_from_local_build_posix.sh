@@ -120,7 +120,7 @@ if [ -x "$KEYHOG" ]; then
     # Install used --no-calibrate, so there is no autoroute cache. Explicit
     # --backend is the documented diagnostic override (same contract as the
     # CI smoke test); auto scan must fail closed without a calibrated route.
-    scan_output=$("$KEYHOG" scan --backend simd "$WORK/scanme" 2>&1); sc=$?
+    scan_output=$("$KEYHOG" scan --daemon=off --backend simd --evidence-policy paranoid "$WORK/scanme" 2>&1); sc=$?
     [ "$sc" = "1" ] && ok_ "A.6 seeded scan exits 1 (findings)" || \
         bad_ "A.6 seeded scan exits 1 (findings)" "exit=$sc; $(printf '%s' "$scan_output" | tail -4)"
 

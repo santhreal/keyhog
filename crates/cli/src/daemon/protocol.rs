@@ -540,6 +540,89 @@ pub(crate) enum Response {
     },
 }
 
+/// Borrowed fields used to prove a guard receipt fits one protocol frame before
+/// the transaction is consumed.
+pub(crate) struct GuardCommitReceiptWireFields<'a> {
+    pub objects_requested: u64,
+    pub objects_hit: u64,
+    pub objects_scanned: u64,
+    pub objects_skipped: u64,
+    pub bytes_requested: u64,
+    pub bytes_hit: u64,
+    pub bytes_scanned: u64,
+    pub findings_count: u64,
+    pub findings: &'a [RawMatch],
+    pub blocking_findings_count: u64,
+    pub coverage_gaps: u64,
+    pub terminal_state: &'a str,
+    pub terminal_sequence: u64,
+}
+
+/// Return the exact JSON body length for a protected guard receipt without
+/// allocating a second findings payload.
+pub(crate) fn guard_commit_receipt_wire_len(
+    fields: GuardCommitReceiptWireFields<'_>,
+) -> serde_json::Result<usize> {
+    #[derive(Serialize)]
+    #[serde(tag = "kind", rename_all = "snake_case")]
+    enum BorrowedResponse<'a> {
+        GuardCommitReceipt {
+            objects_requested: u64,
+            objects_hit: u64,
+            objects_scanned: u64,
+            objects_skipped: u64,
+            bytes_requested: u64,
+            bytes_hit: u64,
+            bytes_scanned: u64,
+            findings_count: u64,
+            #[serde(with = "protected_raw_matches")]
+            findings: &'a [RawMatch],
+            blocking_findings_count: u64,
+            coverage_gaps: u64,
+            terminal_state: &'a str,
+            terminal_sequence: u64,
+        },
+    }
+
+    #[derive(Default)]
+    struct ByteCounter(usize);
+
+    impl std::io::Write for ByteCounter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self
+                .0
+                .checked_add(bytes.len())
+                .ok_or_else(|| std::io::Error::other("guard receipt length overflow"))?;
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let mut counter = ByteCounter::default();
+    serde_json::to_writer(
+        &mut counter,
+        &BorrowedResponse::GuardCommitReceipt {
+            objects_requested: fields.objects_requested,
+            objects_hit: fields.objects_hit,
+            objects_scanned: fields.objects_scanned,
+            objects_skipped: fields.objects_skipped,
+            bytes_requested: fields.bytes_requested,
+            bytes_hit: fields.bytes_hit,
+            bytes_scanned: fields.bytes_scanned,
+            findings_count: fields.findings_count,
+            findings: fields.findings,
+            blocking_findings_count: fields.blocking_findings_count,
+            coverage_gaps: fields.coverage_gaps,
+            terminal_state: fields.terminal_state,
+            terminal_sequence: fields.terminal_sequence,
+        },
+    )?;
+    Ok(counter.0)
+}
+
 /// One entry in the staged manifest sent over the wire in
 /// `GuardCommitBegin`. Carries no payload bytes, only identity metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

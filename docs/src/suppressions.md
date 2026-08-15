@@ -385,16 +385,24 @@ one takes part in matching.
       "line": 1,
       "evidence": {
         "tier": "likely",
-        "reason_code": "vendor-pattern"
+        "reason_code": "vendor-pattern",
+        "provenance": {
+          "schema_version": 1,
+          "detector_digest": "0123456789abcdef",
+          "pattern_index": 0,
+          "candidate_channel": "pattern",
+          "source_role": "environment-assignment-value",
+          "context_class": "vendor-pattern"
+        }
       }
     }
   ]
 }
 ```
 
-Baseline schema 2 records the finding's required evidence verdict. Schema 1
-baselines and entries without `evidence` are rejected; regenerate them before
-scanning.
+Baseline schema 2 records the finding's required evidence verdict and
+schema-1 candidate provenance. Schema 1 baselines and entries without exact
+evidence provenance are rejected; regenerate them before scanning.
 
 That key decides every outcome:
 

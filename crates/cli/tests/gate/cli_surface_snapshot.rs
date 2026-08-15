@@ -59,7 +59,7 @@ fn expected_subcommands() -> BTreeSet<String> {
 }
 
 /// `scan` long-flags that are ALWAYS compiled in (no feature gate). This is the
-/// 76-flag base this snapshot protects; the feature-gated source/verify/binary
+/// 77-flag base this snapshot protects; the feature-gated source/verify/binary
 /// flags are layered on in [`expected_scan_long_flags`] under the SAME `#[cfg]`
 /// gates the real args carry, so a new flag fails this gate until it is added
 /// here (or in the matching cfg block) on purpose. A rename shows up as one
@@ -92,6 +92,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "entropy-bpe-max-bytes-per-token",
     "entropy-source-files",
     "entropy-threshold",
+    "evidence-policy",
     "exclude-paths",
     "fast",
     "format",

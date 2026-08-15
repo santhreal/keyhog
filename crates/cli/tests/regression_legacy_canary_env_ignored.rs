@@ -83,7 +83,7 @@ fn malformed_keyhog_aws_canary_accounts_is_ignored() {
 #[test]
 fn aws_canary_accounts_toml_key_reaches_scan_metadata() {
     let dir = TempDir::new().expect("tempdir");
-    let target = dir.path().join("aws.txt");
+    let target = dir.path().join(".env.canary");
     let config = dir.path().join(".keyhog.toml");
     std::fs::write(&target, "aws_access_key_id = ASIAY34FZKBOKMUTVV7A\n")
         .expect("write AWS fixture");

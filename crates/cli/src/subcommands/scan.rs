@@ -1560,6 +1560,19 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
     Ok(ExitCode::from(exit))
 }
 
+#[cfg(all(unix, feature = "git"))]
+fn guard_commit_exit_code(finding_exit: u8, fingerprint_changed: bool, coverage_gaps: u64) -> u8 {
+    if finding_exit == EXIT_LIVE_CREDENTIALS {
+        EXIT_LIVE_CREDENTIALS
+    } else if fingerprint_changed {
+        EXIT_SOURCE_FAILED
+    } else if coverage_gaps > 0 && finding_exit != EXIT_CREDENTIALS_FOUND {
+        EXIT_SOURCE_FAILED
+    } else {
+        finding_exit
+    }
+}
+
 /// Finish a guard commit transaction scan. Finalizes and reports the exact
 /// protected findings, then applies the same evidence policy and fail-closed
 /// coverage precedence as the in-process and daemon scan paths.
@@ -1568,7 +1581,7 @@ fn finish_guard_commit_scan(
     result: crate::daemon::guard_commit::GuardCommitResult,
     args: &ScanArgs,
 ) -> Result<ExitCode> {
-    use crate::exit_codes::{EXIT_CREDENTIALS_FOUND, EXIT_SOURCE_FAILED, EXIT_SUCCESS};
+    use crate::exit_codes::EXIT_CREDENTIALS_FOUND;
 
     // Report cache hit statistics to stderr.
     let palette = crate::style::for_stderr();
@@ -1580,7 +1593,7 @@ fn finish_guard_commit_scan(
         result.bytes_scanned
     );
 
-    let findings = finalize_for_report(result.findings, args)?;
+    let findings = finalize_staged_for_report(result.findings, args)?;
     let report_time = chrono::Utc::now();
     let source_chunks_scanned = usize::try_from(result.blobs_scanned)
         .context("guard commit blob count exceeds this platform's report capacity")?;
@@ -1603,43 +1616,41 @@ fn finish_guard_commit_scan(
         &findings,
         args.evidence_policy.unwrap_or_default().is_paranoid(),
     );
-    let policy_blocking_findings = if finding_exit == EXIT_CREDENTIALS_FOUND {
-        findings
-            .iter()
-            .filter(|finding| {
-                finding
-                    .evidence
-                    .tier()
-                    .blocks(args.evidence_policy.unwrap_or_default().is_paranoid())
-            })
-            .count()
-    } else {
-        0
-    };
-    let exit = if result.fingerprint_changed {
-        eprintln!(
-            "{}: guard commit: staged index changed during transaction; the scanned content may not match what is now staged.",
-            crate::style::fail("error", &palette)
-        );
-        EXIT_SOURCE_FAILED
-    } else if result.coverage_gaps > 0 && policy_blocking_findings == 0 {
-        eprintln!(
-            "{}: guard commit: {} coverage gap(s); not reporting clean after incomplete coverage.",
-            crate::style::fail("error", &palette),
-            result.coverage_gaps
-        );
-        EXIT_SOURCE_FAILED
-    } else if policy_blocking_findings > 0 {
+    let policy_blocking_findings = findings
+        .iter()
+        .filter(|finding| {
+            finding
+                .evidence
+                .tier()
+                .blocks(args.evidence_policy.unwrap_or_default().is_paranoid())
+        })
+        .count();
+    let exit = guard_commit_exit_code(
+        finding_exit,
+        result.fingerprint_changed,
+        result.coverage_gaps,
+    );
+    if exit == EXIT_SOURCE_FAILED {
+        if result.fingerprint_changed {
+            eprintln!(
+                "{}: guard commit: staged index changed during transaction; the scanned content may not match what is now staged.",
+                crate::style::fail("error", &palette)
+            );
+        } else {
+            eprintln!(
+                "{}: guard commit: {} coverage gap(s); not reporting clean after incomplete coverage.",
+                crate::style::fail("error", &palette),
+                result.coverage_gaps
+            );
+        }
+    } else if exit == EXIT_CREDENTIALS_FOUND {
         eprintln!(
             "{}: guard commit: {} of {} unsuppressed finding(s) block the active evidence policy.",
             crate::style::fail("error", &palette),
             policy_blocking_findings,
             findings.len()
         );
-        EXIT_CREDENTIALS_FOUND
-    } else {
-        EXIT_SUCCESS
-    };
+    }
     crate::action_report::write_scan_receipt(
         args,
         findings.len(),
@@ -1770,6 +1781,23 @@ pub(crate) fn unwrap_scan_results(resp: Response) -> Result<(Vec<RawMatch>, Sour
 
 #[cfg(unix)]
 fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Result<Vec<VerifiedFinding>> {
+    finalize_for_report_with_inline_suppression(matches, args, true)
+}
+
+#[cfg(all(unix, feature = "git"))]
+fn finalize_staged_for_report(
+    matches: Vec<RawMatch>,
+    args: &ScanArgs,
+) -> Result<Vec<VerifiedFinding>> {
+    finalize_for_report_with_inline_suppression(matches, args, false)
+}
+
+#[cfg(unix)]
+fn finalize_for_report_with_inline_suppression(
+    matches: Vec<RawMatch>,
+    args: &ScanArgs,
+    inspect_worktree_inline_directives: bool,
+) -> Result<Vec<VerifiedFinding>> {
     // Test-fixture suppression mirrors the orchestrator's
     // pipeline_tests::* filter: known-public example credentials
     // (Stripe's sk_live_4eC39…, GitHub's ghp_… README sample, …) get
@@ -1826,23 +1854,21 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Result<Vec<Ve
         .map_err(anyhow::Error::msg)
         .context("failed to resolve matches; fix the detector definitions")?;
 
-    // Inline `keyhog:ignore` / `gitleaks:allow` comment suppression. The
-    // shared filter only acts on matches whose source is "filesystem"
-    // (it re-opens `file_path` to read the directive line); daemon
-    // `ScanPath` matches carry the daemon's own `source_type`
-    // ("daemon/scan_path"), so normalise filesystem-backed matches to the
-    // "filesystem" source before the call. A daemon single-file scan IS a
-    // filesystem read, and `file_path` points at the real on-disk file,
-    // so this is the same suppression the in-process path performs.
-    // stdin/`ScanText` matches have no `file_path` and are left untouched
-    // by the filter regardless of source.
-    let filesystem_source = std::sync::Arc::<str>::from("filesystem");
-    for m in &mut matches {
-        if m.location.file_path.is_some() && m.location.source.as_ref() != "filesystem" {
-            m.location.source = filesystem_source.clone();
+    // Inline suppression is valid only when the daemon scanned the current
+    // filesystem bytes. Guard commit findings came from authenticated staged
+    // blobs, so reopening the worktree here would suppress against different
+    // content and is deliberately skipped.
+    let matches = if inspect_worktree_inline_directives {
+        let filesystem_source = std::sync::Arc::<str>::from("filesystem");
+        for m in &mut matches {
+            if m.location.file_path.is_some() && m.location.source.as_ref() != "filesystem" {
+                m.location.source = filesystem_source.clone();
+            }
         }
-    }
-    let matches = crate::inline_suppression::filter_inline_suppressions(matches);
+        crate::inline_suppression::filter_inline_suppressions(matches)
+    } else {
+        matches
+    };
 
     let scope = args.dedup.to_core();
     let deduped = crate::orchestrator::dedup_for_report(matches, &scope);
@@ -1930,3 +1956,6 @@ fn load_daemon_rule_suppressor(args: &ScanArgs) -> Result<RuleSuppressor> {
         ),
     }
 }
+#[cfg(all(test, unix, feature = "git"))]
+#[path = "../../tests/unit/subcommands_scan_guard.rs"]
+mod guard_tests;

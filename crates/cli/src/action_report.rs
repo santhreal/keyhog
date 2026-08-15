@@ -142,8 +142,9 @@ fn report_finding_count(
 ) -> Result<usize> {
     match format {
         ActionReportFormat::Json => {
-            let value: serde_json::Value = serde_json::from_reader(open_regular(path)?)
-                .context("parsing Action JSON report")?;
+            let value: serde_json::Value =
+                serde_json::from_reader(BufReader::new(open_regular(path)?))
+                    .context("parsing Action JSON report")?;
             value
                 .as_array()
                 .map(Vec::len)
@@ -177,7 +178,7 @@ fn report_finding_count(
                 results: Vec<serde::de::IgnoredAny>,
             }
 
-            let sarif: Sarif = serde_json::from_reader(open_regular(path)?)
+            let sarif: Sarif = serde_json::from_reader(BufReader::new(open_regular(path)?))
                 .context("parsing Action SARIF report")?;
             sarif.runs.into_iter().try_fold(0usize, |total, run| {
                 total
@@ -210,9 +211,9 @@ fn parse_decimal(value: &str, name: &str) -> Result<usize> {
 
 fn validate_semantics(findings: usize, exit_code: u8, status: &str) -> Result<()> {
     match (exit_code, status, findings) {
-        (0, "success" | "complete_after_recovery" | "partial", _) => Ok(()),
+        (0 | 3, "success" | "complete_after_recovery" | "partial", _) => Ok(()),
         (1 | 10, "success" | "complete_after_recovery" | "partial", 1..) => Ok(()),
-        (13, "partial", _) => Ok(()),
+        (11 | 13, "partial", _) => Ok(()),
         _ => bail!("Action receipt count/status/exit semantics contradict: findings={findings}, status={status}, exit={exit_code}"),
     }
 }

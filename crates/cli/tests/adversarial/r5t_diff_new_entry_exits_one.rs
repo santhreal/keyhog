@@ -12,7 +12,7 @@ fn r5t_diff_new_entry_exits_one() {
     std::fs::write(&before, r#"{"version":2,"entries":[]}"#).unwrap();
     std::fs::write(
         &after,
-        r#"{"version":2,"entries":[{"detector_id":"aws-access-key","credential_hash":"abc","file_path":"x","line":1,"evidence":{"tier":"review","reason_code":"unattributed"}}]}"#,
+        r#"{"version":2,"entries":[{"detector_id":"aws-access-key","credential_hash":"abc","file_path":"x","line":1,"evidence":{"tier":"review","reason_code":"unattributed","provenance":{"schema_version":1,"detector_digest":null,"pattern_index":null,"candidate_channel":"unattributed","source_role":"unknown","context_class":"unattributed"}}}]}"#,
     )
     .unwrap();
     let output = Command::new(binary())

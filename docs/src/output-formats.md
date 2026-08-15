@@ -135,7 +135,18 @@ credential is already redacted, and the hash is a non-secret example value.
   "verification": "skipped",
   "metadata": {},
   "additional_locations": [],
-  "evidence": {"tier": "likely", "reason_code": "vendor-pattern"},
+  "evidence": {
+    "tier": "likely",
+    "reason_code": "vendor-pattern",
+    "provenance": {
+      "schema_version": 1,
+      "detector_digest": "0123456789abcdef",
+      "pattern_index": 0,
+      "candidate_channel": "pattern",
+      "source_role": "environment-assignment-value",
+      "context_class": "vendor-pattern"
+    }
+  },
   "evidence_score": 1.0,
   "remediation": {
     "action": "Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.",
@@ -149,6 +160,16 @@ Optional fields such as `entropy` are absent when they were not measured.
 Location members are present and use `null` when the value is unknown. A
 verification transport failure is encoded as an externally tagged object, for
 example `"verification":{"error":"timeout: the endpoint did not respond within the verification deadline. Fix: raise the verification timeout with --timeout, or check network egress / proxy reachability to the credential's host"}`.
+
+`evidence.provenance` is secret-safe. The detector-corpus digest and pattern
+ordinal bind the exact detector pattern. The candidate channel, source role,
+and context class bind the evidence used before optional live verification.
+Unsupported scanner context retains its producer identity and uses the
+`unsupported-context` context class. Caller-created findings use the
+`unattributed` channel with no detector digest or pattern ordinal.
+Cross-detector grouping retains the strongest evidence reason while keeping
+provenance owned by the detector named in `detector_id`; folded detectors remain
+listed in `cross_detector.*` companions.
 
 Do not enable `--show-secrets` when stdout or `--output` is retained by CI,
 uploaded as an artifact, or sent to another process. That option deliberately
@@ -352,6 +373,14 @@ message contains only the redacted credential:
         "verification": "skipped",
         "evidence_tier": "likely",
         "evidence_reason_code": "vendor-pattern",
+        "evidence_provenance": {
+          "schema_version": 1,
+          "detector_digest": "0123456789abcdef",
+          "pattern_index": 0,
+          "candidate_channel": "pattern",
+          "source_role": "environment-assignment-value",
+          "context_class": "vendor-pattern"
+        },
         "evidence_score": 1.0,
         "cwe": "CWE-798",
         "owasp": "A07:2021",

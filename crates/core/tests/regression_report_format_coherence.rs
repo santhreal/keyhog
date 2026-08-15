@@ -214,6 +214,17 @@ fn every_finding_format_exposes_exact_evidence_tier_and_reason() {
     let sarif_properties = &sarif["runs"][0]["results"][0]["properties"];
     assert_eq!(sarif_properties["evidence_tier"], "review");
     assert_eq!(sarif_properties["evidence_reason_code"], "unattributed");
+    assert_eq!(
+        sarif_properties["evidence_provenance"],
+        serde_json::json!({
+            "schema_version": 1,
+            "detector_digest": null,
+            "pattern_index": null,
+            "candidate_channel": "unattributed",
+            "source_role": "unknown",
+            "context_class": "unattributed"
+        })
+    );
 
     let csv = render(ReportFormat::Csv, &findings);
     let mut csv_lines = csv.lines();
@@ -248,7 +259,7 @@ fn every_finding_format_exposes_exact_evidence_tier_and_reason() {
         },
         &findings,
     );
-    assert!(html.contains(r#""evidence":{"tier":"review","reason_code":"unattributed"}"#));
+    assert!(html.contains(r#""evidence":{"tier":"review","reason_code":"unattributed","provenance":{"schema_version":1,"detector_digest":null,"pattern_index":null,"candidate_channel":"unattributed","source_role":"unknown","context_class":"unattributed"}}"#));
     assert!(html.contains("Evidence Tier:"));
     assert!(html.contains("Evidence Reason:"));
 

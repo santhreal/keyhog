@@ -240,12 +240,15 @@ fn verification_doc_discloses_low_confidence_verify_skips() {
 }
 
 #[test]
-fn exit_codes_doc_explains_exit_one_inactive_and_skipped_findings() {
+fn exit_codes_doc_explains_evidence_policy_and_verification_precedence() {
     assert!(
-        EXIT_CODES_DOC.contains("none confirmed live")
-            && EXIT_CODES_DOC.contains("unverified, skipped, or verified inactive")
-            && EXIT_CODES_DOC.contains("`dead` or `revoked`"),
-        "exit-codes.md must match --help: exit 1 includes skipped and verified-inactive findings"
+        EXIT_CODES_DOC.contains("default evidence policy blocks `likely` and `confirmed`")
+            && EXIT_CODES_DOC.contains("Paranoid policy")
+            && EXIT_CODES_DOC.contains("also blocks `review`")
+            && EXIT_CODES_DOC.contains("skipped, dead, revoked, and verification-error")
+            && EXIT_CODES_DOC.contains("A live finding returns")
+            && EXIT_CODES_DOC.contains("`10`"),
+        "exit-codes.md must bind exit 1 to evidence policy and reserve exit 10 for live findings"
     );
 }
 

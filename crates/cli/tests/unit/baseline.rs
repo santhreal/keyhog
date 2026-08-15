@@ -304,7 +304,7 @@ fn unknown_baseline_fields_and_removed_status_alias_fail_closed() {
     let mut entry = tempfile::NamedTempFile::new().unwrap();
     write!(
         entry,
-        r#"{{"version":2,"created":"now","entries":[{{"detector_id":"aws-key","credential_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000","file_path":"x","line":1,"evidence":{{"tier":"review","reason_code":"unattributed"}},"reviewd":true}}]}}"#
+        r#"{{"version":2,"created":"now","entries":[{{"detector_id":"aws-key","credential_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000","file_path":"x","line":1,"evidence":{{"tier":"review","reason_code":"unattributed","provenance":{{"schema_version":1,"detector_digest":null,"pattern_index":null,"candidate_channel":"unattributed","source_role":"unknown","context_class":"unattributed"}}}},"reviewd":true}}]}}"#
     )
     .unwrap();
     let entry_error = API
@@ -318,7 +318,7 @@ fn unknown_baseline_fields_and_removed_status_alias_fail_closed() {
     let mut legacy = tempfile::NamedTempFile::new().unwrap();
     write!(
         legacy,
-        r#"{{"version":2,"created":"current","entries":[{{"detector_id":"aws-key","credential_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000","file_path":"x","line":1,"evidence":{{"tier":"review","reason_code":"unattributed"}},"status":"rejected"}}]}}"#
+        r#"{{"version":2,"created":"current","entries":[{{"detector_id":"aws-key","credential_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000","file_path":"x","line":1,"evidence":{{"tier":"review","reason_code":"unattributed","provenance":{{"schema_version":1,"detector_digest":null,"pattern_index":null,"candidate_channel":"unattributed","source_role":"unknown","context_class":"unattributed"}}}},"status":"rejected"}}]}}"#
     )
     .unwrap();
     let status_error = API

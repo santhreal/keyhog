@@ -284,12 +284,12 @@ fn raw_match_sanitize_floats_keeps_finite() {
 }
 
 // ---------------------------------------------------------------------------
-// RawMatch serde boundary (fail-closed output + compatible input).
+// RawMatch serde boundary (fail-closed output + exact current input).
 // ---------------------------------------------------------------------------
 
-/// Prevents raw-match output from leaking a credential while retaining legacy input compatibility.
+/// Prevents raw-match output from leaking a credential while accepting the exact current input schema.
 #[test]
-fn raw_match_serde_refuses_plaintext_but_deserializes_legacy_wire() {
+fn raw_match_serde_refuses_plaintext_but_accepts_current_wire() {
     let m = raw(
         "github-pat",
         "GitHub PAT",
@@ -321,7 +321,19 @@ fn raw_match_serde_refuses_plaintext_but_deserializes_legacy_wire() {
             "author": null,
             "date": null
         },
-        "confidence": 0.83
+        "confidence": 0.83,
+        "evidence": {
+            "tier": "review",
+            "reason_code": "unattributed",
+            "provenance": {
+                "schema_version": 1,
+                "detector_digest": null,
+                "pattern_index": null,
+                "candidate_channel": "unattributed",
+                "source_role": "unknown",
+                "context_class": "unattributed"
+            }
+        }
     });
     let back: RawMatch = serde_json::from_value(wire).unwrap();
     assert_eq!(back, m);
@@ -841,8 +853,21 @@ fn cross_detector_folds_same_credential_into_winner() {
             d.remove(0)
         },
     ];
-    deduped[0].evidence = EvidenceVerdict::from_reason(EvidenceReasonCode::Documentation);
-    deduped[1].evidence = EvidenceVerdict::from_reason(EvidenceReasonCode::ChecksumValid);
+    let winner_provenance = keyhog_core::FindingProvenance::pattern(
+        1,
+        7,
+        keyhog_core::SemanticSourceRole::ProseDocumentation,
+        EvidenceReasonCode::Documentation,
+    );
+    deduped[0].evidence = EvidenceVerdict::from_reason(EvidenceReasonCode::Documentation)
+        .with_provenance(winner_provenance);
+    deduped[1].evidence = EvidenceVerdict::from_reason(EvidenceReasonCode::ChecksumValid)
+        .with_provenance(keyhog_core::FindingProvenance::pattern(
+            1,
+            3,
+            keyhog_core::SemanticSourceRole::StructuredAssignmentValue,
+            EvidenceReasonCode::ChecksumValid,
+        ));
     let out = dedup_cross_detector(deduped);
     assert_eq!(
         out.len(),
@@ -867,6 +892,11 @@ fn cross_detector_folds_same_credential_into_winner() {
         winner.evidence.reason_code(),
         EvidenceReasonCode::ChecksumValid,
         "a lower-score detector's stronger proof must survive grouping"
+    );
+    assert_eq!(
+        winner.evidence.provenance(),
+        winner_provenance,
+        "cross-detector evidence must retain provenance owned by the reported detector"
     );
 }
 
