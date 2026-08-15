@@ -42,6 +42,14 @@
         "tier": "review",
         "reason_code": "documentation"
       }
+    },
+    {
+      "content_sha256": "4111111111111111111111111111111111111111111111111111111111111111",
+      "redacted_label": null,
+      "evidence": {
+        "tier": "review",
+        "reason_code": "test-fixture"
+      }
     }
   ]
 }

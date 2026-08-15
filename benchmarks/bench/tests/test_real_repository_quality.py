@@ -53,7 +53,7 @@ def test_synthetic_registry_passes_at_exact_quality_boundaries_without_sensitive
     registry, evidence = _loaded()
     receipt = validate_binary_identity(_IDENTITY, _IDENTITY)
 
-    report = evaluate_quality(registry, evidence, receipt)
+    report = evaluate_quality(registry, evidence, receipt, receipt)
 
     classes = {row["repository_class_id"]: row for row in report["repository_classes"]}
     assert classes["rc-001"] == {
@@ -106,6 +106,14 @@ def test_synthetic_registry_passes_at_exact_quality_boundaries_without_sensitive
                 "evidence": {
                     "tier": "review",
                     "reason_code": "documentation",
+                },
+            },
+            {
+                "content_sha256": "4" + "1" * 63,
+                "redacted_label": None,
+                "evidence": {
+                    "tier": "review",
+                    "reason_code": "test-fixture",
                 },
             },
         ],
@@ -175,7 +183,7 @@ def test_runtime_registry_addition_fails_until_new_class_has_evidence():
     )
 
     with pytest.raises(QualityGateError, match="coverage is incomplete"):
-        evaluate_quality(RepositoryClassRegistry(classes), evidence, _IDENTITY)
+        evaluate_quality(RepositoryClassRegistry(classes), evidence, _IDENTITY, _IDENTITY)
 
 
 @pytest.mark.parametrize("drop_class", ["rc-001", "rc-002"])
@@ -185,12 +193,12 @@ def test_every_manifest_class_is_required(drop_class: str):
     del incomplete[drop_class]
 
     with pytest.raises(QualityGateError, match="coverage is incomplete"):
-        evaluate_quality(registry, incomplete, _IDENTITY)
+        evaluate_quality(registry, incomplete, _IDENTITY, _IDENTITY)
 
 
 def test_findings_per_mloc_passes_at_limit_and_fails_one_finding_over():
     registry, evidence = _loaded()
-    evaluate_quality(registry, evidence, _IDENTITY)
+    evaluate_quality(registry, evidence, _IDENTITY, _IDENTITY)
     samples = dict(evidence)
     first = samples["rc-001"]
     extra = RedactedFinding(
@@ -202,7 +210,7 @@ def test_findings_per_mloc_passes_at_limit_and_fails_one_finding_over():
     samples["rc-001"] = replace(first, findings=first.findings + (extra,))
 
     with pytest.raises(QualityGateError, match="rc-001:findings-per-mloc"):
-        evaluate_quality(registry, samples, _IDENTITY)
+        evaluate_quality(registry, samples, _IDENTITY, _IDENTITY)
 
 
 def test_default_policy_blocking_false_positive_fails_even_within_density_limit():
@@ -217,7 +225,7 @@ def test_default_policy_blocking_false_positive_fails_even_within_density_limit(
     samples["rc-001"] = replace(first, findings=first.findings[:-1] + (blocking,))
 
     with pytest.raises(QualityGateError, match="rc-001:blocking-false-positives"):
-        evaluate_quality(registry, samples, _IDENTITY)
+        evaluate_quality(registry, samples, _IDENTITY, _IDENTITY)
 
 
 def test_per_class_recall_rejects_a_recorded_miss():
@@ -232,7 +240,7 @@ def test_per_class_recall_rejects_a_recorded_miss():
     )
 
     with pytest.raises(QualityGateError, match="rc-001:recall"):
-        evaluate_quality(registry, samples, _IDENTITY)
+        evaluate_quality(registry, samples, _IDENTITY, _IDENTITY)
 
 
 def test_canary_recall_rejects_a_recorded_miss():
@@ -247,7 +255,7 @@ def test_canary_recall_rejects_a_recorded_miss():
     )
 
     with pytest.raises(QualityGateError, match="rc-001:canary-recall"):
-        evaluate_quality(registry, samples, _IDENTITY)
+        evaluate_quality(registry, samples, _IDENTITY, _IDENTITY)
 
 
 def test_absent_canary_outcome_is_malformed_not_an_implicit_miss(tmp_path: Path):
@@ -304,6 +312,14 @@ def test_stale_and_mismatched_binary_receipt_fields_fail_closed():
         stale[field] = replacement
         with pytest.raises(QualityGateError, match="stale or mismatched"):
             validate_binary_identity(stale, _IDENTITY)
+
+
+def test_quality_report_identity_is_checked_against_current_binary():
+    registry, evidence = _loaded()
+    stale = {**_IDENTITY, "executable_sha256": "c" * 64}
+
+    with pytest.raises(QualityGateError, match="stale or mismatched"):
+        evaluate_quality(registry, evidence, stale, _IDENTITY)
 
 
 def test_malformed_identity_receipt_rejects_extra_paths_and_bad_hashes():
