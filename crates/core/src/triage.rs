@@ -1,6 +1,6 @@
 //! Versioned, redacted triage interchange and derived feedback artifacts.
 
-use crate::SemanticSourceRole;
+use crate::{FindingCandidateChannel, FindingProvenance};
 use serde::{Deserialize, Serialize};
 
 /// Current redacted finding-envelope version.
@@ -36,14 +36,8 @@ pub struct TriageRecord {
     pub finding_hash: String,
     /// Stable embedded detector identifier.
     pub detector_id: String,
-    /// Authoritative scanner pattern ordinal within the exact detector corpus.
-    pub pattern_index: u32,
-    /// Authoritative scanner candidate producer channel.
-    pub candidate_channel: CandidateChannel,
-    /// Candidate-bounded source role.
-    pub source_role: SemanticSourceRole,
-    /// Authoritative scanner context classification.
-    pub context_class: ContextClass,
+    /// Exact public scanner provenance from `evidence.provenance`.
+    pub provenance: FindingProvenance,
     /// BLAKE3 digest of bounded context. Never context bytes.
     pub context_digest: String,
     /// Human triage disposition.
@@ -52,40 +46,6 @@ pub struct TriageRecord {
     pub reason: TriageReason,
     /// Exactly one typed scope.
     pub scope: TriageScope,
-}
-
-/// Scanner lane that produced a candidate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum CandidateChannel {
-    /// Compiled detector pattern.
-    NamedPattern,
-    /// Generic credential-key assignment bridge.
-    GenericAssignment,
-    /// Detector-owned entropy discovery.
-    Entropy,
-    /// Caller-constructed candidate without scanner attribution.
-    Unattributed,
-}
-
-/// Structural context class attached by the scanner.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ContextClass {
-    /// Direct assignment.
-    Assignment,
-    /// Comment text.
-    Comment,
-    /// Test source.
-    TestCode,
-    /// Encrypted or sealed block.
-    Encrypted,
-    /// Documentation content.
-    Documentation,
-    /// String literal in ordinary source.
-    StringLiteral,
-    /// Unstructured or unavailable context.
-    Unknown,
 }
 
 /// Whether the finding was dismissed or confirmed.
@@ -158,14 +118,8 @@ pub struct RuntimeSuppression {
     pub finding_hash: String,
     /// Stable detector identifier.
     pub detector_id: String,
-    /// Authoritative scanner pattern ordinal.
-    pub pattern_index: u32,
-    /// Authoritative scanner candidate producer channel.
-    pub candidate_channel: CandidateChannel,
-    /// Candidate-bounded source role.
-    pub source_role: SemanticSourceRole,
-    /// Authoritative scanner context classification.
-    pub context_class: ContextClass,
+    /// Exact public scanner provenance.
+    pub provenance: FindingProvenance,
     /// Bounded context digest.
     pub context_digest: String,
     /// Runtime scope. Pattern-feedback-only is unrepresentable here.
@@ -212,14 +166,8 @@ pub struct PatternFeedbackRecord {
     pub finding_hash: String,
     /// Stable detector identifier.
     pub detector_id: String,
-    /// Authoritative scanner pattern ordinal.
-    pub pattern_index: u32,
-    /// Authoritative scanner candidate producer channel.
-    pub candidate_channel: CandidateChannel,
-    /// Candidate-bounded source role.
-    pub source_role: SemanticSourceRole,
-    /// Authoritative scanner context classification.
-    pub context_class: ContextClass,
+    /// Exact public scanner provenance.
+    pub provenance: FindingProvenance,
     /// Bounded context digest.
     pub context_digest: String,
     /// Triage disposition.
@@ -248,12 +196,13 @@ impl TriageEnvelope {
         if self.version != TRIAGE_ENVELOPE_VERSION {
             return Err("unsupported triage envelope version".to_owned());
         }
-        validate_active_detector_digest(&self.detector_digest, expected_detector_digest)?;
+        let detector_digest =
+            validate_active_detector_digest(&self.detector_digest, expected_detector_digest)?;
         if self.records.len() > MAX_TRIAGE_RECORDS {
             return Err("triage envelope exceeds the record limit".to_owned());
         }
         for record in &self.records {
-            validate_record(record)?;
+            validate_record(record, detector_digest)?;
         }
         Ok(())
     }
@@ -280,10 +229,7 @@ impl TriageEnvelope {
                     suppressions.push(RuntimeSuppression {
                         finding_hash: record.finding_hash.clone(),
                         detector_id: record.detector_id.clone(),
-                        pattern_index: record.pattern_index,
-                        candidate_channel: record.candidate_channel,
-                        source_role: record.source_role,
-                        context_class: record.context_class,
+                        provenance: record.provenance,
                         context_digest: record.context_digest.clone(),
                         scope,
                         reason: record.reason,
@@ -293,10 +239,7 @@ impl TriageEnvelope {
             feedback.push(PatternFeedbackRecord {
                 finding_hash: record.finding_hash,
                 detector_id: record.detector_id,
-                pattern_index: record.pattern_index,
-                candidate_channel: record.candidate_channel,
-                source_role: record.source_role,
-                context_class: record.context_class,
+                provenance: record.provenance,
                 context_digest: record.context_digest,
                 disposition: record.disposition,
                 reason: record.reason,
@@ -329,13 +272,14 @@ impl RuntimeSuppressions {
         if value.suppression_version != TRIAGE_SUPPRESSION_VERSION {
             return Err("unsupported runtime suppression version".to_owned());
         }
-        validate_active_detector_digest(&value.detector_digest, expected_detector_digest)?;
+        let detector_digest =
+            validate_active_detector_digest(&value.detector_digest, expected_detector_digest)?;
         if value.suppressions.len() > MAX_TRIAGE_RECORDS {
             return Err("runtime suppression artifact exceeds the record limit".to_owned());
         }
         for record in &value.suppressions {
             validate_digest(&record.finding_hash, "finding")?;
-            validate_pattern_identity(&record.detector_id, record.pattern_index)?;
+            validate_provenance(&record.detector_id, record.provenance, detector_digest)?;
             validate_digest(&record.context_digest, "context")?;
             if !matches!(
                 record.reason,
@@ -370,32 +314,71 @@ impl PatternFeedback {
         if value.pattern_feedback_version != PATTERN_FEEDBACK_VERSION {
             return Err("unsupported pattern feedback version".to_owned());
         }
-        validate_active_detector_digest(&value.detector_digest, expected_detector_digest)?;
+        let detector_digest =
+            validate_active_detector_digest(&value.detector_digest, expected_detector_digest)?;
         if value.feedback.len() > MAX_TRIAGE_RECORDS {
             return Err("pattern feedback artifact exceeds the record limit".to_owned());
         }
         for record in &value.feedback {
-            validate_record(&TriageRecord {
-                finding_hash: record.finding_hash.clone(),
-                detector_id: record.detector_id.clone(),
-                pattern_index: record.pattern_index,
-                candidate_channel: record.candidate_channel,
-                source_role: record.source_role,
-                context_class: record.context_class,
-                context_digest: record.context_digest.clone(),
-                disposition: record.disposition,
-                reason: record.reason,
-                scope: record.scope.clone(),
-            })?;
+            validate_record_fields(TriageRecordFields::from(record), detector_digest)?;
         }
         Ok(value)
     }
 }
 
-fn validate_record(record: &TriageRecord) -> Result<(), String> {
-    validate_digest(&record.finding_hash, "finding")?;
-    validate_digest(&record.context_digest, "context")?;
-    validate_pattern_identity(&record.detector_id, record.pattern_index)?;
+struct TriageRecordFields<'a> {
+    finding_hash: &'a str,
+    detector_id: &'a str,
+    provenance: FindingProvenance,
+    context_digest: &'a str,
+    disposition: TriageDisposition,
+    reason: TriageReason,
+    scope: &'a TriageScope,
+}
+
+impl<'a> From<&'a TriageRecord> for TriageRecordFields<'a> {
+    fn from(record: &'a TriageRecord) -> Self {
+        Self {
+            finding_hash: &record.finding_hash,
+            detector_id: &record.detector_id,
+            provenance: record.provenance,
+            context_digest: &record.context_digest,
+            disposition: record.disposition,
+            reason: record.reason,
+            scope: &record.scope,
+        }
+    }
+}
+
+impl<'a> From<&'a PatternFeedbackRecord> for TriageRecordFields<'a> {
+    fn from(record: &'a PatternFeedbackRecord) -> Self {
+        Self {
+            finding_hash: &record.finding_hash,
+            detector_id: &record.detector_id,
+            provenance: record.provenance,
+            context_digest: &record.context_digest,
+            disposition: record.disposition,
+            reason: record.reason,
+            scope: &record.scope,
+        }
+    }
+}
+
+fn validate_record(record: &TriageRecord, expected_detector_digest: u64) -> Result<(), String> {
+    validate_record_fields(TriageRecordFields::from(record), expected_detector_digest)
+}
+
+fn validate_record_fields(
+    record: TriageRecordFields<'_>,
+    expected_detector_digest: u64,
+) -> Result<(), String> {
+    validate_digest(record.finding_hash, "finding")?;
+    validate_digest(record.context_digest, "context")?;
+    validate_provenance(
+        record.detector_id,
+        record.provenance,
+        expected_detector_digest,
+    )?;
     let coherent = matches!(
         (record.disposition, record.reason),
         (
@@ -413,7 +396,7 @@ fn validate_record(record: &TriageRecord) -> Result<(), String> {
     if !coherent {
         return Err("triage disposition and reason disagree".to_owned());
     }
-    match &record.scope {
+    match record.scope {
         TriageScope::Path { path_hash } => validate_digest(path_hash, "path")?,
         TriageScope::Repository { repository_hash } => {
             validate_digest(repository_hash, "repository")?
@@ -423,34 +406,83 @@ fn validate_record(record: &TriageRecord) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_pattern_identity(detector_id: &str, pattern_index: u32) -> Result<(), String> {
-    if detector_id.is_empty()
-        || detector_id.len() > 128
-        || !detector_id
+fn validate_provenance(
+    detector_id: &str,
+    provenance: FindingProvenance,
+    expected_detector_digest: u64,
+) -> Result<(), String> {
+    let canonical_detector_id = canonical_report_detector_id(detector_id)?;
+    if provenance.detector_digest() != Some(expected_detector_digest) {
+        return Err("stale or unattributed finding provenance".to_owned());
+    }
+    if matches!(
+        provenance.context_class(),
+        crate::EvidenceReasonCode::Unattributed | crate::EvidenceReasonCode::LiveVerification
+    ) {
+        return Err("invalid scanner provenance context".to_owned());
+    }
+    match provenance.candidate_channel() {
+        FindingCandidateChannel::Pattern => {
+            let detector = crate::detector_spec_by_id(canonical_detector_id)
+                .ok_or_else(|| "stale detector identifier".to_owned())?;
+            let pattern_index = provenance
+                .pattern_index()
+                .ok_or_else(|| "missing pattern identity".to_owned())?;
+            let current = usize::try_from(pattern_index)
+                .ok()
+                .is_some_and(|index| index < detector.patterns.len());
+            if !current {
+                return Err("stale pattern identity".to_owned());
+            }
+        }
+        FindingCandidateChannel::GenericAssignment => {
+            let detector = crate::detector_spec_by_id(canonical_detector_id)
+                .ok_or_else(|| "stale detector identifier".to_owned())?;
+            if detector.kind != crate::DetectorKind::Phase2Generic {
+                return Err("detector does not own generic-assignment findings".to_owned());
+            }
+        }
+        FindingCandidateChannel::Entropy => {
+            let owns_entropy_id = crate::embedded_detector_specs().iter().any(|detector| {
+                detector
+                    .entropy_fallback
+                    .as_ref()
+                    .is_some_and(|fallback| fallback.id == canonical_detector_id)
+            });
+            if !owns_entropy_id {
+                return Err("stale entropy detector identifier".to_owned());
+            }
+        }
+        FindingCandidateChannel::Unattributed => {
+            return Err("unattributed findings cannot produce triage feedback".to_owned());
+        }
+    }
+    Ok(())
+}
+
+fn canonical_report_detector_id(detector_id: &str) -> Result<&str, String> {
+    let canonical = detector_id
+        .strip_suffix(crate::REASSEMBLED_DETECTOR_SUFFIX)
+        .unwrap_or(detector_id);
+    if canonical.is_empty()
+        || canonical.len() > 128
+        || canonical.contains(':')
+        || !canonical
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
     {
         return Err("invalid detector identifier".to_owned());
     }
-    let detector = crate::detector_spec_by_id(detector_id)
-        .ok_or_else(|| "stale detector identifier".to_owned())?;
-    let pattern_count = detector.patterns.len().max(1);
-    let current = usize::try_from(pattern_index)
-        .ok()
-        .is_some_and(|index| index < pattern_count);
-    if !current {
-        return Err("stale pattern identity".to_owned());
-    }
-    Ok(())
+    Ok(canonical)
 }
 
-fn validate_active_detector_digest(actual: &str, expected: &str) -> Result<(), String> {
-    validate_detector_digest(actual)?;
-    validate_detector_digest(expected)?;
+fn validate_active_detector_digest(actual: &str, expected: &str) -> Result<u64, String> {
+    let actual = parse_detector_digest(actual)?;
+    let expected = parse_detector_digest(expected)?;
     if actual != expected {
         return Err("stale detector corpus identity".to_owned());
     }
-    Ok(())
+    Ok(expected)
 }
 
 fn validate_detector_digest(value: &str) -> Result<(), String> {
@@ -463,6 +495,11 @@ fn validate_detector_digest(value: &str) -> Result<(), String> {
     } else {
         Err("invalid detector corpus digest".to_owned())
     }
+}
+
+fn parse_detector_digest(value: &str) -> Result<u64, String> {
+    validate_detector_digest(value)?;
+    u64::from_str_radix(value, 16).map_err(|_| "invalid detector corpus digest".to_owned())
 }
 
 fn validate_digest(value: &str, label: &str) -> Result<(), String> {
@@ -490,10 +527,39 @@ mod tests {
     fn detector_id() -> &'static str {
         crate::embedded_detector_specs()
             .iter()
-            .find(|detector| !detector.patterns.is_empty())
+            .find(|detector| {
+                detector.kind == crate::DetectorKind::Regex && !detector.patterns.is_empty()
+            })
             .expect("embedded corpus has a regex detector")
             .id
             .as_str()
+    }
+
+    fn generic_detector_id() -> &'static str {
+        crate::embedded_detector_specs()
+            .iter()
+            .find(|detector| detector.kind == crate::DetectorKind::Phase2Generic)
+            .expect("embedded corpus has a generic-assignment owner")
+            .id
+            .as_str()
+    }
+
+    fn entropy_detector_id() -> &'static str {
+        crate::embedded_detector_specs()
+            .iter()
+            .find_map(|detector| detector.entropy_fallback.as_ref())
+            .expect("embedded corpus has an entropy owner")
+            .id
+            .as_str()
+    }
+
+    fn provenance(pattern_index: u32) -> FindingProvenance {
+        FindingProvenance::pattern(
+            u64::from_str_radix(DETECTOR_DIGEST, 16).expect("test detector digest"),
+            pattern_index,
+            crate::SemanticSourceRole::StandaloneToken,
+            crate::EvidenceReasonCode::UnsupportedContext,
+        )
     }
 
     fn envelope(scope: TriageScope) -> TriageEnvelope {
@@ -503,10 +569,7 @@ mod tests {
             records: vec![TriageRecord {
                 finding_hash: digest('1'),
                 detector_id: detector_id().to_owned(),
-                pattern_index: 0,
-                candidate_channel: CandidateChannel::NamedPattern,
-                source_role: SemanticSourceRole::StandaloneToken,
-                context_class: ContextClass::StringLiteral,
+                provenance: provenance(0),
                 context_digest: digest('2'),
                 disposition: TriageDisposition::Dismissed,
                 reason: TriageReason::FalsePositive,
@@ -547,21 +610,33 @@ mod tests {
     #[test]
     fn unknown_secret_fields_and_missing_provenance_are_rejected() {
         let base = serde_json::to_value(envelope(TriageScope::Exact)).expect("serialize envelope");
+        let mut missing_all = base.clone();
+        missing_all["records"][0]
+            .as_object_mut()
+            .expect("record object")
+            .remove("provenance");
+        assert!(TriageEnvelope::from_json(
+            &serde_json::to_vec(&missing_all).expect("serialize missing provenance"),
+            DETECTOR_DIGEST,
+        )
+        .is_err());
         for field in [
+            "schema_version",
+            "detector_digest",
             "pattern_index",
             "candidate_channel",
             "source_role",
             "context_class",
         ] {
             let mut missing = base.clone();
-            missing["records"][0]
+            missing["records"][0]["provenance"]
                 .as_object_mut()
-                .expect("record object")
+                .expect("provenance object")
                 .remove(field);
-            let bytes = serde_json::to_vec(&missing).expect("serialize missing provenance");
+            let bytes = serde_json::to_vec(&missing).expect("serialize missing provenance field");
             assert!(
                 TriageEnvelope::from_json(&bytes, DETECTOR_DIGEST).is_err(),
-                "missing authoritative field {field} was accepted"
+                "missing authoritative provenance field {field} was accepted"
             );
         }
 
@@ -587,7 +662,7 @@ mod tests {
         assert!(stale_detector.validate(DETECTOR_DIGEST).is_err());
 
         let mut stale_pattern = envelope(TriageScope::Exact);
-        stale_pattern.records[0].pattern_index = u32::MAX;
+        stale_pattern.records[0].provenance = provenance(u32::MAX);
         assert!(stale_pattern.validate(DETECTOR_DIGEST).is_err());
 
         let (mut runtime, mut feedback) = envelope(TriageScope::Exact).into_outputs();
@@ -603,6 +678,73 @@ mod tests {
             DETECTOR_DIGEST,
         )
         .is_err());
+    }
+
+    #[test]
+    fn public_provenance_digest_channel_and_context_fail_closed() {
+        let digest = u64::from_str_radix(DETECTOR_DIGEST, 16).expect("test detector digest");
+        let mut generic = envelope(TriageScope::Exact);
+        generic.records[0].detector_id = generic_detector_id().to_owned();
+        generic.records[0].provenance = FindingProvenance::generic_assignment(
+            digest,
+            crate::SemanticSourceRole::StructuredAssignmentValue,
+            crate::EvidenceReasonCode::GenericAssignment,
+        );
+        generic
+            .validate(DETECTOR_DIGEST)
+            .expect("attributed generic provenance");
+
+        let mut entropy = envelope(TriageScope::Exact);
+        entropy.records[0].detector_id = entropy_detector_id().to_owned();
+        entropy.records[0].provenance = FindingProvenance::entropy(
+            digest,
+            crate::SemanticSourceRole::StandaloneToken,
+            crate::EvidenceReasonCode::EntropyOnly,
+        );
+        entropy
+            .validate(DETECTOR_DIGEST)
+            .expect("attributed entropy provenance");
+
+        let mut reassembled = envelope(TriageScope::Exact);
+        reassembled.records[0].detector_id =
+            format!("{}{}", detector_id(), crate::REASSEMBLED_DETECTOR_SUFFIX);
+        reassembled
+            .validate(DETECTOR_DIGEST)
+            .expect("reassembled finding retains its canonical detector owner");
+
+        let mut wrong_channel = envelope(TriageScope::Exact);
+        wrong_channel.records[0].provenance = FindingProvenance::generic_assignment(
+            digest,
+            crate::SemanticSourceRole::StructuredAssignmentValue,
+            crate::EvidenceReasonCode::GenericAssignment,
+        );
+        assert!(wrong_channel.validate(DETECTOR_DIGEST).is_err());
+
+        let mut unsupported_suffix = envelope(TriageScope::Exact);
+        unsupported_suffix.records[0].detector_id = format!("{}:other", detector_id());
+        assert!(unsupported_suffix.validate(DETECTOR_DIGEST).is_err());
+
+        let mut stale_digest = envelope(TriageScope::Exact);
+        stale_digest.records[0].provenance = FindingProvenance::pattern(
+            0xfedcba9876543210,
+            0,
+            crate::SemanticSourceRole::StandaloneToken,
+            crate::EvidenceReasonCode::UnsupportedContext,
+        );
+        assert!(stale_digest.validate(DETECTOR_DIGEST).is_err());
+
+        let mut unattributed = envelope(TriageScope::Exact);
+        unattributed.records[0].provenance = FindingProvenance::unattributed();
+        assert!(unattributed.validate(DETECTOR_DIGEST).is_err());
+
+        let mut post_verification = envelope(TriageScope::Exact);
+        post_verification.records[0].provenance = FindingProvenance::pattern(
+            digest,
+            0,
+            crate::SemanticSourceRole::StandaloneToken,
+            crate::EvidenceReasonCode::LiveVerification,
+        );
+        assert!(post_verification.validate(DETECTOR_DIGEST).is_err());
     }
 
     #[test]

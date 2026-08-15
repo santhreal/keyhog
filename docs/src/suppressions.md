@@ -170,9 +170,12 @@ training observations. A `pattern-feedback-only` decision appears only in
 training feedback and can never become runtime suppression.
 
 The envelope and both outputs have independent version fields. Each record
-carries a finding hash, the 16-hex active detector digest, a stable detector
-ID, the authoritative scanner pattern index, candidate channel, source role
-and context class, a bounded context digest, a typed reason, and one scope.
+carries a finding hash, a stable detector ID, the exact public
+`evidence.provenance` object from the scanner, a bounded context digest, a typed
+reason, and one scope. Provenance binds the 16-hex active detector digest,
+nullable pattern index, candidate channel, source role, context class, and the
+channel-specific detector owner. A reported `:reassembled` suffix resolves to
+the same embedded detector; every other synthetic suffix fails closed.
 Path and repository scopes carry BLAKE3 identities. None of these files accepts
 a credential value, context text, filesystem path, repository URL, or free-form
 reason.
@@ -184,10 +187,14 @@ reason.
   "records": [{
     "finding_hash": "blake3:<64-lowercase-hex>",
     "detector_id": "<stable-detector-id>",
-    "pattern_index": 0,
-    "candidate_channel": "named-pattern",
-    "source_role": "standalone-token",
-    "context_class": "string-literal",
+    "provenance": {
+      "schema_version": 1,
+      "detector_digest": "0123456789abcdef",
+      "pattern_index": 0,
+      "candidate_channel": "pattern",
+      "source_role": "standalone-token",
+      "context_class": "unsupported-context"
+    },
     "context_digest": "blake3:<64-lowercase-hex>",
     "disposition": "dismissed",
     "reason": "false-positive",

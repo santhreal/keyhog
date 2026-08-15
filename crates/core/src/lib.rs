@@ -248,6 +248,9 @@ pub fn embedded_detector_specs() -> &'static [DetectorSpec] {
     &SPECS
 }
 
+/// Suffix attached to findings reconstructed from bounded source fragments.
+pub const REASSEMBLED_DETECTOR_SUFFIX: &str = ":reassembled";
+
 /// Canonical `id → DetectorSpec` lookup over the embedded corpus, built EXACTLY
 /// ONCE.
 ///

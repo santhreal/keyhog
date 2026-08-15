@@ -622,12 +622,13 @@ must use `keyhog scan --binary`; artifact diff never decodes them implicitly.
 ## `keyhog triage`
 
 Import a current versioned redacted finding envelope and write separate
-runtime-suppression and pattern-training artifacts. Every record must carry
-the scanner's authoritative pattern index, candidate channel, source role, and
-context class. The input accepts the 16-hex active detector digest, stable
-detector IDs, and BLAKE3 finding/context/scope identities only. It rejects
-unknown fields, stale detector or pattern identities, free-form reasons, raw
-paths, raw context, and credential values.
+runtime-suppression and pattern-training artifacts. Every record must carry the
+scanner's exact public `evidence.provenance` object. Provenance binds the
+16-hex active detector digest, nullable pattern index, candidate channel,
+source role, and context class. The input accepts stable detector IDs and
+BLAKE3 finding/context/scope identities only. It rejects unknown fields, stale
+detector or pattern identities, free-form reasons, raw paths, raw context, and
+credential values.
 
 ```sh
 keyhog triage \

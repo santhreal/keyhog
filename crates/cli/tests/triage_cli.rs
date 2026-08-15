@@ -1,10 +1,10 @@
 #![cfg(unix)]
 
 use keyhog_core::triage::{
-    CandidateChannel, ContextClass, TriageDisposition, TriageEnvelope, TriageReason, TriageRecord,
-    TriageScope, MAX_TRIAGE_INPUT_BYTES, TRIAGE_ENVELOPE_VERSION,
+    TriageDisposition, TriageEnvelope, TriageReason, TriageRecord, TriageScope,
+    MAX_TRIAGE_INPUT_BYTES, TRIAGE_ENVELOPE_VERSION,
 };
-use keyhog_core::SemanticSourceRole;
+use keyhog_core::{EvidenceReasonCode, FindingProvenance, SemanticSourceRole};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::LazyLock;
@@ -44,10 +44,12 @@ fn record(scope: TriageScope, finding: &str) -> TriageRecord {
     TriageRecord {
         finding_hash: digest(finding),
         detector_id: detector_id.to_owned(),
-        pattern_index: 0,
-        candidate_channel: CandidateChannel::NamedPattern,
-        source_role: SemanticSourceRole::StandaloneToken,
-        context_class: ContextClass::StringLiteral,
+        provenance: FindingProvenance::pattern(
+            u64::from_str_radix(active_detector_digest(), 16).expect("active detector digest"),
+            0,
+            SemanticSourceRole::StandaloneToken,
+            EvidenceReasonCode::UnsupportedContext,
+        ),
         context_digest: digest("private-context-never-emit"),
         disposition: TriageDisposition::Dismissed,
         reason: TriageReason::FalsePositive,
@@ -180,10 +182,25 @@ fn triage_emitted_bytes_are_redacted_and_scopes_stay_separate() {
     )
     .expect("runtime contract");
     assert_eq!(runtime.suppressions.len(), 3);
+    let expected_provenance = record(TriageScope::Exact, "identity-only").provenance;
+    assert!(
+        runtime
+            .suppressions
+            .iter()
+            .all(|record| record.provenance == expected_provenance),
+        "runtime output changed scanner provenance"
+    );
     let pattern =
         keyhog_core::triage::PatternFeedback::from_json(&feedback_bytes, active_detector_digest())
             .expect("feedback contract");
     assert_eq!(pattern.feedback.len(), 5);
+    assert!(
+        pattern
+            .feedback
+            .iter()
+            .all(|record| record.provenance == expected_provenance),
+        "training output changed scanner provenance"
+    );
     assert!(
         keyhog_core::triage::RuntimeSuppressions::from_json(
             &feedback_bytes,
