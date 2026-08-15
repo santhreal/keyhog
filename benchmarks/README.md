@@ -180,6 +180,7 @@ registry. Each class uses an opaque `rc-NNN` ID and its derived
 label tokens, content SHA-256 digests, line counts, explicit match outcomes,
 and canonical evidence tiers and reasons. Unknown fields fail schema
 validation.
+Repeated occurrences of identical credential content share one label digest.
 
 Each class must provide at least one labeled finding and one deterministic
 canary record. Operational capture owns canary injection. The gate validates
@@ -212,8 +213,10 @@ runs this target against its source-built release binary.
 Run these commands from `benchmarks/`. The identity receipt binds the
 executable SHA-256, source commit, workspace version, and detector-set digest.
 The gate recalculates the identity from the supplied binary and current clean
-source tree. A stale or mismatched receipt fails before scoring. Replace the
-committed synthetic evidence directory with an untracked redacted evidence
+source tree. A stale or mismatched receipt fails before scoring. The persisted
+receipt is a temporal checkpoint; recalculation detects binary or source
+changes between capture and scoring. Replace the committed synthetic evidence
+directory with an untracked redacted evidence
 directory for operational measurements. Do not copy repository paths, names,
 plaintext labels, or raw findings into the evidence.
 Operational capture also owns the source line count and source-content digest.
