@@ -475,6 +475,13 @@ impl CompiledScanner {
                 let line_number = absolute_line(chunk.metadata.base_line, mapped_line);
                 let provenance =
                     crate::candidate_provenance::CandidateProvenance::generic_assignment();
+                let enrich_provenance = |scan_state: &mut ScanState| {
+                    scan_state
+                        .structured_source_evidence(chunk, source_offset, value)
+                        .map_or(provenance, |evidence| {
+                            provenance.with_source_semantics(evidence)
+                        })
+                };
                 let build_raw = |scan_state: &mut ScanState, confidence| {
                     crate::pipeline::build_synthetic_raw_match(
                         (
@@ -514,6 +521,7 @@ impl CompiledScanner {
                         ml_policy.features,
                         crate::ml_scorer::MlCandidateChannel::Pattern,
                     );
+                    let provenance = enrich_provenance(scan_state);
                     let pending_raw_match = crate::pipeline::build_pending_synthetic_raw_match(
                         (
                             Arc::clone(&metadata.0),
@@ -575,6 +583,7 @@ impl CompiledScanner {
                 ) else {
                     continue;
                 };
+                let provenance = enrich_provenance(scan_state);
                 let raw = build_raw(scan_state, report_conf);
                 scan_state.push_match_with_provenance(
                     raw,

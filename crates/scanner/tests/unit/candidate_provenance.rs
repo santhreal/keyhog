@@ -3,7 +3,7 @@ use crate::compiler::compiler_build::build_compile_state;
 use crate::scan_state::ScanState;
 use keyhog_core::{
     Chunk, ChunkMetadata, CompanionMap, DetectorSpec, MatchLocation, PatternSpec, RawMatch,
-    Severity,
+    SemanticSourceRole, Severity,
 };
 use std::sync::Arc;
 
@@ -252,7 +252,9 @@ fn phase2_named_match_retains_exact_pattern_identity() {
         },
     };
 
-    let matches = scanner.debug_scan_phase2_with_provenance(&chunk);
+    let matches = scanner
+        .debug_scan_phase2_with_provenance(&chunk)
+        .expect("phase-2 provenance scan");
     let finding = matches
         .iter()
         .find(|finding| finding.detector_id.as_ref() == "provenance-fixture")
@@ -265,6 +267,34 @@ fn phase2_named_match_retains_exact_pattern_identity() {
     assert_eq!(pattern.detector_index, 0);
     assert_eq!(pattern.pattern_index, 1);
 }
+/// WHY: typed source evidence must survive the same compact sidecar as pattern
+/// identity. Parser abstention remains explicit rather than inventing a role.
+#[test]
+fn source_semantics_are_explicit_and_well_formed() {
+    let source = r#"{"token":"CFGPROV_UNIT_123456"}"#;
+    let start = source.find("CFGPROV_UNIT_123456").unwrap();
+    let evidence = crate::source_semantics::classify_structured_candidate(
+        source,
+        Some("config.json"),
+        start,
+        start + "CFGPROV_UNIT_123456".len(),
+    )
+    .expect("structured source evidence");
+    let parsed = CandidateProvenance::named(7, 11).with_source_semantics(evidence);
+    assert_eq!(
+        parsed.source_role(),
+        SemanticSourceRole::StructuredAssignmentValue
+    );
+    assert_eq!(
+        parsed.parser_confidence(),
+        crate::source_semantics::SemanticParserConfidence::Parsed
+    );
+    assert!(parsed.is_well_formed());
+    assert_eq!(
+        CandidateProvenance::named(7, 11).source_role(),
+        SemanticSourceRole::Unknown
+    );
+}
 
 /// WHY: provenance is diagnostic metadata only. Its debug form must contain no
 /// credential or source bytes that could leak a scanned secret.
@@ -273,7 +303,7 @@ fn provenance_debug_representation_is_secret_free() {
     let rendered = format!("{:?}", CandidateProvenance::named(7, 11));
     assert_eq!(
         rendered,
-        "CandidateProvenance { detector_index: 7, pattern_index: 11, channel: NamedPattern }"
+        "CandidateProvenance { detector_index: 7, pattern_index: 11, channel: NamedPattern, source_role: Unknown, parser_confidence: Abstained }"
     );
     assert!(!rendered.contains("credential"));
 }

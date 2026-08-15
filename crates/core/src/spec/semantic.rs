@@ -89,6 +89,7 @@ impl AnchorSemanticRole {
 }
 
 /// Candidate-bounded semantic classification of the source containing a match.
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SemanticSourceRole {

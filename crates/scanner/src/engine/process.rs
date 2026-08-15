@@ -454,6 +454,11 @@ impl CompiledScanner {
                 };
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
+                let provenance = scan_state
+                    .structured_source_evidence(chunk, source_offset, credential)
+                    .map_or(provenance, |evidence| {
+                        provenance.with_source_semantics(evidence)
+                    });
                 let raw_match = build_raw_match(
                     execution_policy.severity,
                     detector_plan.cloned_metadata(),
@@ -482,8 +487,6 @@ impl CompiledScanner {
                 context_multiplier,
                 mode,
             } => {
-                let source_offset =
-                    preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
                 let ml_features = crate::types::ml_features_for_candidate(
                     data,
                     line_index,
@@ -496,6 +499,13 @@ impl CompiledScanner {
                     detector_ml_policy.features,
                     crate::ml_scorer::MlCandidateChannel::Pattern,
                 );
+                let source_offset =
+                    preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
+                let provenance = scan_state
+                    .structured_source_evidence(chunk, source_offset, credential)
+                    .map_or(provenance, |evidence| {
+                        provenance.with_source_semantics(evidence)
+                    });
                 let pending_raw_match = crate::pipeline::build_pending_raw_match(
                     execution_policy.severity,
                     detector_plan.cloned_metadata(),

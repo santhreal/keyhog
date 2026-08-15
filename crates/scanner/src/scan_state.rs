@@ -566,6 +566,23 @@ impl Ord for AttributedRawMatch {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StructuredSourceCacheKey {
+    text_address: usize,
+    text_len: usize,
+    path_address: usize,
+    path_len: usize,
+}
+
+#[derive(Debug)]
+struct StructuredSourceCacheEntry {
+    key: StructuredSourceCacheKey,
+    /// Retains the source allocation so its cache-key address cannot be reused
+    /// by a different bounded source while this entry is live.
+    _text_owner: SensitiveString,
+    index: Option<crate::source_semantics::StructuredSourceIndex>,
+}
+
 /// Internal state for a single scan operation.
 #[derive(Default)]
 pub(crate) struct ScanState {
@@ -604,6 +621,10 @@ pub(crate) struct ScanState {
     /// Lock-free on read so concurrent rayon workers share one
     /// instance without contention.
     pub(crate) static_intern: Option<Arc<crate::static_intern::StaticInterner>>,
+    /// Parsed structured values for the bounded source owned by this scan state.
+    /// The first candidate builds the index once; every later producer/candidate
+    /// performs an exact span lookup and reuses cached abstention.
+    structured_source_cache: Option<StructuredSourceCacheEntry>,
     /// Detector matches queued for batch ML scoring at the end of the scan.
     #[cfg(feature = "ml")]
     pub(crate) ml_pending: Vec<MlPendingMatch>,
@@ -624,6 +645,48 @@ pub(crate) struct ProducedMatchRef<'a> {
 }
 
 impl ScanState {
+    pub(crate) fn structured_source_evidence(
+        &mut self,
+        chunk: &keyhog_core::Chunk,
+        candidate_start: usize,
+        candidate: &str,
+    ) -> Option<crate::source_semantics::StructuredSourceEvidence> {
+        let candidate_end = candidate_start.checked_add(candidate.len())?;
+        if chunk.data.get(candidate_start..candidate_end) != Some(candidate) {
+            return None;
+        }
+        let path = chunk.metadata.path.as_deref();
+        let key = StructuredSourceCacheKey {
+            text_address: chunk.data.as_ptr() as usize,
+            text_len: chunk.data.len(),
+            path_address: path.map_or(0, |value| value.as_ptr() as usize),
+            path_len: path.map_or(0, str::len),
+        };
+        if self
+            .structured_source_cache
+            .as_ref()
+            .is_none_or(|entry| entry.key != key)
+        {
+            self.structured_source_cache = Some(StructuredSourceCacheEntry {
+                key,
+                _text_owner: chunk.data.clone(),
+                index: crate::source_semantics::build_structured_source_index(&chunk.data, path),
+            });
+        }
+        self.structured_source_cache
+            .as_ref()?
+            .index
+            .as_ref()?
+            .classify(crate::source_semantics::SourceSpan {
+                start: candidate_start,
+                end: candidate_end,
+            })
+    }
+
+    pub(crate) fn has_structured_source_cache(&self) -> bool {
+        self.structured_source_cache.is_some()
+    }
+
     /// Intern a credential string, returning a shared zeroizing allocation.
     pub(crate) fn intern_credential(&mut self, s: &str) -> SensitiveString {
         if let Some(existing) = self.credential_interner.get(s) {
