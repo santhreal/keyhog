@@ -853,8 +853,21 @@ fn cross_detector_folds_same_credential_into_winner() {
             d.remove(0)
         },
     ];
-    deduped[0].evidence = EvidenceVerdict::from_reason(EvidenceReasonCode::Documentation);
-    deduped[1].evidence = EvidenceVerdict::from_reason(EvidenceReasonCode::ChecksumValid);
+    let winner_provenance = keyhog_core::FindingProvenance::pattern(
+        1,
+        7,
+        keyhog_core::SemanticSourceRole::ProseDocumentation,
+        EvidenceReasonCode::Documentation,
+    );
+    deduped[0].evidence = EvidenceVerdict::from_reason(EvidenceReasonCode::Documentation)
+        .with_provenance(winner_provenance);
+    deduped[1].evidence = EvidenceVerdict::from_reason(EvidenceReasonCode::ChecksumValid)
+        .with_provenance(keyhog_core::FindingProvenance::pattern(
+            1,
+            3,
+            keyhog_core::SemanticSourceRole::StructuredAssignmentValue,
+            EvidenceReasonCode::ChecksumValid,
+        ));
     let out = dedup_cross_detector(deduped);
     assert_eq!(
         out.len(),
@@ -879,6 +892,11 @@ fn cross_detector_folds_same_credential_into_winner() {
         winner.evidence.reason_code(),
         EvidenceReasonCode::ChecksumValid,
         "a lower-score detector's stronger proof must survive grouping"
+    );
+    assert_eq!(
+        winner.evidence.provenance(),
+        winner_provenance,
+        "cross-detector evidence must retain provenance owned by the reported detector"
     );
 }
 

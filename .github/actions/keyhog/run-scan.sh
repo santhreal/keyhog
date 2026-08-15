@@ -348,19 +348,39 @@ cleanup_action_state() {
 trap cleanup_action_state EXIT
 
 
+evidence_policy_args=(--evidence-policy "$evidence_policy")
+if [[ "${ACTION_RELEASE_REQUIRED:-false}" == "true" ]]; then
+  set +e
+  evidence_help="$("$keyhog_bin" scan --help 2>&1)"
+  evidence_help_exit=$?
+  set -e
+  if [[ "$evidence_help_exit" != "0" ]]; then
+    gha_error "Published keyhog could not report whether it supports --evidence-policy."
+    exit 2
+  fi
+  if [[ "$evidence_help" != *"--evidence-policy"* ]]; then
+    if [[ "$evidence_policy" != "paranoid" ]]; then
+      gha_error "Published keyhog lacks --evidence-policy and cannot implement the requested default blocking policy."
+      exit 2
+    fi
+    evidence_policy_args=()
+    gha_notice "Published keyhog predates --evidence-policy; its blocking behavior is equivalent to paranoid."
+  fi
+fi
+
 args=(scan
   --path "$scan_path"
   --severity "$severity"
   --format "$format"
   --output "$report"
   --action-receipt "$action_receipt")
-args+=(--evidence-policy "$evidence_policy")
+args+=("${evidence_policy_args[@]}")
 config_args=(config
   --effective
   --path "$scan_path"
   --severity "$severity"
   --format "$format")
-config_args+=(--evidence-policy "$evidence_policy")
+config_args+=("${evidence_policy_args[@]}")
 if [[ "$verify" == "true" ]]; then
   config_args+=(--verify)
 else
