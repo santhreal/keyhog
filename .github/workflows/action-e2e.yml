@@ -383,6 +383,7 @@ jobs:
           verify: 'false'
           upload-sarif: 'false'
           fail-on-findings: 'true'
+          evidence-policy: paranoid
           analysis-category: e2e-${{ matrix.platform }}-findings
 
       - name: Invoke nested composite with precision finding policy from published crates.io release
@@ -400,6 +401,7 @@ jobs:
           verify: 'false'
           upload-sarif: 'false'
           fail-on-findings: 'true'
+          evidence-policy: paranoid
           analysis-category: e2e-${{ matrix.platform }}-findings
 
       - name: Assert findings failure receipt and SARIF

@@ -78,7 +78,15 @@ fn raw_wire_value() -> serde_json::Value {
         "confidence": 0.9,
         "evidence": {
             "tier": "review",
-            "reason_code": "unattributed"
+            "reason_code": "unattributed",
+            "provenance": {
+                "schema_version": 1,
+                "detector_digest": null,
+                "pattern_index": null,
+                "candidate_channel": "unattributed",
+                "source_role": "unknown",
+                "context_class": "unattributed"
+            }
         }
     })
 }

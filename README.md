@@ -630,9 +630,9 @@ Browse detector authoring and inspection in the
   strong vendor-specific shape in a credential-bearing role produces likely
   evidence; weak anchors, generic assignments, entropy-only candidates, and
   test, documentation, rule, or identifier contexts remain review evidence.
-  An optional `evidence_score` supplements the verdict when measured. The
-  scanner's internal confidence floor remains configurable with
-  `--min-confidence`.
+  An optional `evidence_score` supplements the verdict when measured.
+  Default threshold `0.40` controls the scanner's internal confidence floor
+  and remains configurable with `--min-confidence`.
 - **Bayesian per-detector calibration.** `keyhog calibrate --fp generic-api-key`
   writes a Beta(α,β) posterior. Scans use it only when `--calibration-cache`
   or `[system].calibration_cache` points at that file, so confidence tuning is

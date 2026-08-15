@@ -21,6 +21,7 @@ fn diagnostic_match() -> CanonicalMatch<'static> {
         confidence_bits: Some(0.9_f64.to_bits()),
         evidence_tier: EvidenceTier::Review,
         evidence_reason_code: EvidenceReasonCode::Unattributed,
+        evidence_provenance: FindingProvenance::unattributed(),
     }
 }
 
@@ -109,6 +110,15 @@ fn diagnostic_reports_only_differing_field_names() {
     let mut changed = base.clone();
     changed.evidence_reason_code = EvidenceReasonCode::UnsupportedContext;
     variants.push(("evidence_reason_code", changed));
+
+    let mut changed = base.clone();
+    changed.evidence_provenance = keyhog_core::FindingProvenance::pattern(
+        0x0123_4567_89ab_cdef,
+        0,
+        keyhog_core::SemanticSourceRole::Unknown,
+        EvidenceReasonCode::UnsupportedContext,
+    );
+    variants.push(("evidence_provenance", changed));
 
     for (field, changed) in variants {
         assert_eq!(

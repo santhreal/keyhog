@@ -503,13 +503,17 @@ impl DefaultScanFilter {
         }
     }
 
-    pub(crate) fn finalize_count(
+    pub(crate) fn finalize_default_policy_blocker_count(
         &self,
         scanner: &CompiledScanner,
         matches: Vec<RawMatch>,
     ) -> Option<usize> {
-        self.finalize_matches(scanner, matches)
-            .map(|finalized| finalized.len())
+        self.finalize_matches(scanner, matches).map(|finalized| {
+            finalized
+                .iter()
+                .filter(|finding| finding.evidence.tier().blocks(false))
+                .count()
+        })
     }
 }
 

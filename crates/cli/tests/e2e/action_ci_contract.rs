@@ -854,8 +854,9 @@ fn hosted_action_e2e_splits_source_and_published_crate_modes() {
     assert!(
         source_precision.contains("preset: precision")
             && source_precision.contains("lockdown: 'false'")
+            && source_precision.contains("evidence-policy: paranoid")
             && source_precision.contains("\n          backend: cpu"),
-        "portable precision source smoke must select CPU explicitly"
+        "portable precision source smoke must select CPU and an explicit blocking policy"
     );
     let release_precision = workflow
         .split("- name: Invoke nested composite with precision finding policy from published crates.io release")
@@ -865,8 +866,9 @@ fn hosted_action_e2e_splits_source_and_published_crate_modes() {
     assert!(
         release_precision.contains("preset: precision")
             && release_precision.contains("lockdown: 'false'")
+            && release_precision.contains("evidence-policy: paranoid")
             && !release_precision.contains("\n          backend:"),
-        "published production crate smoke must prove default proof-backed backend:auto"
+        "published production crate smoke must prove default proof-backed backend:auto with an explicit blocking policy"
     );
     for (name, explicit_cpu) in [
         (

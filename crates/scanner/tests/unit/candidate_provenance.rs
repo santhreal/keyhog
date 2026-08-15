@@ -66,22 +66,52 @@ fn provenance_sidecar_sets_only_the_public_evidence_verdict() {
     let mut public = ScanState::default();
     public.push_unattributed_match(low, 1);
     public.push_unattributed_match(high, 1);
-    let public = public.into_matches();
+    let public = public.into_matches(0);
     assert_eq!(
         public[0].evidence.reason_code(),
         EvidenceReasonCode::Unattributed
     );
 
     let mut expected = public;
-    expected[0].evidence =
-        keyhog_core::EvidenceVerdict::from_reason(EvidenceReasonCode::UnsupportedContext);
+    expected[0].evidence = CandidateProvenance::named(0, 1).evidence(0);
     assert_eq!(
         retained
             .into_iter()
-            .map(crate::scan_state::AttributedRawMatch::into_raw)
+            .map(|matched| matched.into_raw(0))
             .collect::<Vec<_>>(),
         expected
     );
+}
+
+/// WHY: multiple patterns may produce the same raw identity in different backend
+/// orders. The retained public provenance must always belong to the strongest
+/// evidence, with a stable pattern ordinal tiebreak.
+#[test]
+fn duplicate_pattern_routes_choose_strongest_exact_provenance_deterministically() {
+    for reverse in [false, true] {
+        let weak = CandidateProvenance::named(0, 9);
+        let strong = CandidateProvenance::named(0, 3).with_checksum_proof(true);
+        let routes = if reverse {
+            [strong, weak]
+        } else {
+            [weak, strong]
+        };
+        let mut state = ScanState::default();
+        for provenance in routes {
+            state.push_match_with_provenance(raw_match(0.8, "same", 1), provenance, 8);
+        }
+        let findings = state.into_matches(0x0123_4567_89ab_cdef);
+        assert_eq!(findings.len(), 1);
+        let evidence = findings[0].evidence;
+        assert_eq!(evidence.reason_code(), EvidenceReasonCode::ChecksumValid);
+        let provenance = evidence.provenance();
+        assert_eq!(provenance.detector_digest(), Some(0x0123_4567_89ab_cdef));
+        assert_eq!(provenance.pattern_index(), Some(3));
+        assert_eq!(
+            provenance.candidate_channel(),
+            keyhog_core::FindingCandidateChannel::Pattern
+        );
+    }
 }
 
 /// WHY: the same candidate can be proven by multiple routes. When the existing
@@ -344,7 +374,7 @@ fn named_evidence_reason_precedence_is_fail_closed() {
             parsed_source_role(SemanticSourceRole::StructuredAssignmentValue),
             Some(&exact),
         )
-        .evidence();
+        .evidence(0);
     assert_eq!(supported.reason_code(), EvidenceReasonCode::VendorPattern);
     assert_eq!(supported.tier(), EvidenceTier::Likely);
 
@@ -354,7 +384,7 @@ fn named_evidence_reason_precedence_is_fail_closed() {
             parsed_source_role(SemanticSourceRole::StringLiteral),
             Some(&exact),
         )
-        .evidence();
+        .evidence(0);
     assert_eq!(
         mismatched.reason_code(),
         EvidenceReasonCode::SourceRoleMismatch
@@ -364,14 +394,14 @@ fn named_evidence_reason_precedence_is_fail_closed() {
     assert_eq!(
         CandidateProvenance::named(0, 0)
             .with_named_evidence(&weak, false, false, false)
-            .evidence()
+            .evidence(0)
             .reason_code(),
         EvidenceReasonCode::WeakAnchor
     );
     assert_eq!(
         CandidateProvenance::named(0, 0)
             .with_named_evidence(&exact, true, false, false)
-            .evidence()
+            .evidence(0)
             .reason_code(),
         EvidenceReasonCode::GenericDetector
     );
@@ -381,30 +411,19 @@ fn named_evidence_reason_precedence_is_fail_closed() {
         RequiredSemanticEvidence::RequiredCompanion,
         RequiredSemanticEvidence::PrivateKeyCompanion,
         RequiredSemanticEvidence::LiveVerification,
+        RequiredSemanticEvidence::StructuralGrammar,
     ] {
         let policy = semantic_policy(AnchorSemanticRole::ExactKey, Vec::new(), vec![requirement]);
         assert_eq!(
             CandidateProvenance::named(0, 0)
                 .with_named_evidence(&policy, false, false, false)
-                .evidence()
+                .evidence(0)
                 .reason_code(),
             EvidenceReasonCode::RequiredEvidenceMissing,
             "{requirement:?} must fail closed without proof"
         );
     }
 
-    let structural = semantic_policy(
-        AnchorSemanticRole::StructuredEnvelope,
-        Vec::new(),
-        vec![RequiredSemanticEvidence::StructuralGrammar],
-    );
-    assert_eq!(
-        CandidateProvenance::named(0, 0)
-            .with_named_evidence(&structural, false, false, false)
-            .evidence()
-            .reason_code(),
-        EvidenceReasonCode::StructuralGrammar
-    );
     let checksum = semantic_policy(
         AnchorSemanticRole::ExactKey,
         Vec::new(),
@@ -416,7 +435,7 @@ fn named_evidence_reason_precedence_is_fail_closed() {
             parsed_source_role(SemanticSourceRole::TestFixture),
             Some(&checksum),
         )
-        .evidence();
+        .evidence(0);
     assert_eq!(confirmed.reason_code(), EvidenceReasonCode::ChecksumValid);
     assert_eq!(confirmed.tier(), EvidenceTier::Confirmed);
 
@@ -428,7 +447,7 @@ fn named_evidence_reason_precedence_is_fail_closed() {
     assert_eq!(
         CandidateProvenance::named(0, 0)
             .with_named_evidence(&companion, false, false, true)
-            .evidence()
+            .evidence(0)
             .reason_code(),
         EvidenceReasonCode::RequiredCompanion
     );
@@ -440,17 +459,19 @@ fn named_evidence_reason_precedence_is_fail_closed() {
 fn synthetic_channels_emit_exact_review_reasons() {
     assert_eq!(
         CandidateProvenance::generic_assignment()
-            .evidence()
+            .evidence(0)
             .reason_code(),
         EvidenceReasonCode::GenericAssignment
     );
     #[cfg(feature = "entropy")]
     assert_eq!(
-        CandidateProvenance::entropy().evidence().reason_code(),
+        CandidateProvenance::entropy().evidence(0).reason_code(),
         EvidenceReasonCode::EntropyOnly
     );
     assert_eq!(
-        CandidateProvenance::unattributed().evidence().reason_code(),
+        CandidateProvenance::unattributed()
+            .evidence(0)
+            .reason_code(),
         EvidenceReasonCode::Unattributed
     );
 }

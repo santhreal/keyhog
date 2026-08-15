@@ -585,7 +585,9 @@ pub struct ScanArgs {
     pub format: OutputFormat,
     #[arg(skip)]
     pub(crate) format_cli_explicit: bool,
-    /// Finding evidence tiers that produce a non-zero CI exit.
+    /// Finding evidence tiers that produce a non-zero CI exit. `default` blocks
+    /// `likely` and `confirmed`; `paranoid` also blocks `review`. Findings
+    /// remain visible under either policy.
     #[arg(long, value_name = "POLICY", value_enum)]
     pub evidence_policy: Option<EvidencePolicy>,
 

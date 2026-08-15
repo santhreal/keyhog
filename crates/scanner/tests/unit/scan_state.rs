@@ -86,7 +86,7 @@ fn push_match_keeps_highest_confidence_when_capped() {
     state.push_unattributed_match(raw_match(0.50, "mid", 3), 2);
 
     let kept: Vec<_> = state
-        .into_matches()
+        .into_matches(0)
         .into_iter()
         .map(|m| m.credential.as_str().to_string())
         .collect();
@@ -140,7 +140,7 @@ fn push_match_lazy_builds_only_for_admitted_candidates() {
         "lazy admission must build exactly when the candidate enters the heap"
     );
     let kept: Vec<_> = state
-        .into_matches()
+        .into_matches(0)
         .into_iter()
         .map(|m| m.credential.as_str().to_string())
         .collect();
@@ -172,7 +172,7 @@ fn push_match_lazy_zero_limit_never_builds_or_retains() {
         !built,
         "a zero-capacity heap must reject before construction"
     );
-    assert_eq!(state.into_matches(), Vec::<RawMatch>::new());
+    assert_eq!(state.into_matches(0), Vec::<RawMatch>::new());
 }
 
 #[test]

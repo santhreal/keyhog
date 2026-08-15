@@ -532,13 +532,13 @@ impl AttributedRawMatch {
         Self { raw, provenance }
     }
 
-    pub(crate) fn into_raw(self) -> keyhog_core::RawMatch {
+    pub(crate) fn into_raw(self, detector_digest: u64) -> keyhog_core::RawMatch {
         let Self {
             mut raw,
             provenance,
         } = self;
         debug_assert!(provenance.is_well_formed());
-        raw.evidence = provenance.evidence();
+        raw.evidence = provenance.evidence(detector_digest);
         raw
     }
 }
@@ -553,7 +553,7 @@ impl std::ops::Deref for AttributedRawMatch {
 
 impl PartialEq for AttributedRawMatch {
     fn eq(&self, other: &Self) -> bool {
-        self.raw == other.raw
+        self.raw == other.raw && self.provenance == other.provenance
     }
 }
 
@@ -567,7 +567,9 @@ impl PartialOrd for AttributedRawMatch {
 
 impl Ord for AttributedRawMatch {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.raw.cmp(&other.raw)
+        self.raw
+            .cmp(&other.raw)
+            .then_with(|| self.provenance.preference_cmp(other.provenance))
     }
 }
 
@@ -1043,12 +1045,12 @@ impl ScanState {
         }
     }
 
-    /// Drain all matches into the unchanged public finding vector.
+    /// Drain all matches into the public finding vector with exact corpus provenance.
     /// The ABI projection moves owned handles; it does not clone credential bytes.
-    pub(crate) fn into_matches(self) -> Vec<keyhog_core::RawMatch> {
+    pub(crate) fn into_matches(self, detector_digest: u64) -> Vec<keyhog_core::RawMatch> {
         self.into_attributed_matches()
             .into_iter()
-            .map(AttributedRawMatch::into_raw)
+            .map(|matched| matched.into_raw(detector_digest))
             .collect()
     }
 

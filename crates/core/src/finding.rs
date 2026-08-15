@@ -478,7 +478,9 @@ impl VerifiedFinding {
         metadata: HashMap<String, String>,
     ) -> Self {
         let evidence = if matches!(verification, VerificationResult::Live) {
-            EvidenceVerdict::from_reason(EvidenceReasonCode::LiveVerification)
+            group
+                .evidence
+                .with_reason(EvidenceReasonCode::LiveVerification)
         } else {
             group.evidence
         };

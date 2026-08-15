@@ -53,13 +53,14 @@ fn run(args: &[&str]) -> (Option<i32>, String, String) {
     )
 }
 
-/// Scan a temp file containing `content` with the extra flags, returning
-/// `(exit_code, stdout, stderr)`.
+/// Scan a temp dotenv file containing `content` with the extra flags, returning
+/// `(exit_code, stdout, stderr)`. The supported `.env.*` basename gives
+/// assignment values their exact structured source role.
 fn scan_file(content: &str, extra: &[&str]) -> (Option<i32>, String, String) {
     let dir = TempDir::new().unwrap();
-    let path = dir.path().join("planted.txt");
+    let path = dir.path().join(".env.test");
     std::fs::write(&path, content).unwrap();
-    let mut args: Vec<&str> = vec!["scan", "--daemon=off", "--backend", "simd"];
+    let mut args: Vec<&str> = vec!["scan", "--daemon=off", "--backend", "cpu"];
     args.extend_from_slice(extra);
     let path_str = path.to_string_lossy().into_owned();
     args.push(&path_str);

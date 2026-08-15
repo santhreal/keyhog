@@ -198,7 +198,18 @@ the artifact without scraping console progress.
       "verification": "skipped",
       "metadata": {},
       "additional_locations": [],
-      "evidence": {"tier": "likely", "reason_code": "vendor-pattern"},
+      "evidence": {
+        "tier": "likely",
+        "reason_code": "vendor-pattern",
+        "provenance": {
+          "schema_version": 1,
+          "detector_digest": "0123456789abcdef",
+          "pattern_index": 0,
+          "candidate_channel": "pattern",
+          "source_role": "environment-assignment-value",
+          "context_class": "vendor-pattern"
+        }
+      },
       "entropy": 4.5,
       "evidence_score": 1.0,
       "remediation": {

@@ -284,12 +284,12 @@ fn raw_match_sanitize_floats_keeps_finite() {
 }
 
 // ---------------------------------------------------------------------------
-// RawMatch serde boundary (fail-closed output + compatible input).
+// RawMatch serde boundary (fail-closed output + exact current input).
 // ---------------------------------------------------------------------------
 
-/// Prevents raw-match output from leaking a credential while retaining legacy input compatibility.
+/// Prevents raw-match output from leaking a credential while accepting the exact current input schema.
 #[test]
-fn raw_match_serde_refuses_plaintext_but_deserializes_legacy_wire() {
+fn raw_match_serde_refuses_plaintext_but_accepts_current_wire() {
     let m = raw(
         "github-pat",
         "GitHub PAT",
@@ -321,7 +321,19 @@ fn raw_match_serde_refuses_plaintext_but_deserializes_legacy_wire() {
             "author": null,
             "date": null
         },
-        "confidence": 0.83
+        "confidence": 0.83,
+        "evidence": {
+            "tier": "review",
+            "reason_code": "unattributed",
+            "provenance": {
+                "schema_version": 1,
+                "detector_digest": null,
+                "pattern_index": null,
+                "candidate_channel": "unattributed",
+                "source_role": "unknown",
+                "context_class": "unattributed"
+            }
+        }
     });
     let back: RawMatch = serde_json::from_value(wire).unwrap();
     assert_eq!(back, m);
