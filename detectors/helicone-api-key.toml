@@ -1,5 +1,10 @@
 # Docs: https://docs.helicone.ai/helicone-headers/helicone-auth
-# Format: sk-* for read keys, pk-* for write keys, eu-* for EU region keys
+# Format: sk-* for read keys, pk-* for write keys, eu-* for EU region keys.
+# Bare legacy read keys require at least a 20-byte body; bare write and EU keys
+# require the observed 32-byte body. The exact 48-byte OpenAI legacy shape is
+# owned by OpenAI unless a Helicone environment key, authentication header, or
+# gateway URL proves Helicone ownership. Bare keys cannot follow an assignment;
+# quoted values require a start-of-input or structured-value boundary.
 # Verify: no public verification endpoint
 # Prefix: sk-, pk-, or eu-
 
@@ -17,20 +22,72 @@ keywords = ["sk-", "pk-", "eu-", "HELICONE_API_KEY", "Helicone-Auth"]
 # source and inside Caesar-decoded natural-language runs (sqlite
 # GNUmakefile via /caesar fired 1 FP in dogfood 2026-05-26).
 [[detector.patterns]]
-regex = '(?:^|[^A-Za-z0-9_])(sk-[a-zA-Z0-9]{20,})'
-description = "Helicone read API key (sk- prefix, anchored)"
+regex = '''(?:^|[^A-Za-z0-9_="'=])(sk-(?:[a-zA-Z0-9]{20,47}\b|[a-zA-Z0-9]{49,}))'''
+description = "Helicone read API key (anchored, assignment-aware, exact OpenAI legacy length excluded)"
 group = 1
 
 [[detector.patterns]]
-regex = '(?:^|[^A-Za-z0-9_])(pk-[a-zA-Z0-9]{20,})'
+regex = '''(?:^|[^A-Za-z0-9_="'=])(pk-[a-zA-Z0-9]{32,})'''
 description = "Helicone write API key (pk- prefix, anchored)"
 group = 1
 
 [[detector.patterns]]
-regex = '(?:^|[^A-Za-z0-9_])(eu-[a-zA-Z0-9]{20,})'
+regex = '''(?:^|[^A-Za-z0-9_="'=])(eu-[a-zA-Z0-9]{32,})'''
 description = "Helicone EU region API key (eu- prefix, anchored)"
 group = 1
 
+[[detector.patterns]]
+regex = '''(?:^["']|[:,(\[{]\s*["'])((?:sk-(?:[a-zA-Z0-9]{20,47}\b|[a-zA-Z0-9]{49,})|eu-[a-zA-Z0-9]{32,}))'''
+required_literals = ["sk-", "eu-"]
+description = "Quoted Helicone read or EU key at a start-of-input or structured-value boundary"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?i)(?:HELICONE(?:[_-]?API)?[_-]?KEY\s*(?:=|:)|HELICONE-AUTH\s*:\s*(?:BEARER\s+)?|gateway\.helicone\.ai/)\s*["']?((?:sk|pk|eu)-[a-zA-Z0-9]{20,})'''
+description = "Helicone key with provider-owned assignment, header, or gateway context"
+group = 1
+
 [[detector.tests]]
+pattern_index = 0
 test_positive = "sk-0ocqX7mxUDlWFHzlNiC0oKONoezJ9vAX"
-test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+test_negative = "OPENAI_API_KEY=sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ"
+negative_class = "sibling-prefix"
+
+
+[[detector.tests]]
+pattern_index = 1
+test_positive = "pk-0ocqX7mxUDlWFHzlNiC0oKONoezJ9vAX"
+test_negative = "pk-abc123def456ghi789jklmnopqrs"
+negative_class = "boundary"
+
+[[detector.tests]]
+pattern_index = 2
+test_positive = "eu-0ocqX7mxUDlWFHzlNiC0oKONoezJ9vAX"
+test_negative = "eu-abc123def456ghi789jklmnopqrs"
+negative_class = "boundary"
+
+[[detector.tests]]
+pattern_index = 3
+test_positive = '''{"api_key": "sk-0ocqX7mxUDlWFHzlNiC0oKONoezJ9vAX"}'''
+test_negative = '''OPENAI_API_KEY="sk-abc123def456ghi789jklmnopqrs"'''
+negative_class = "sibling-prefix"
+
+[[detector.tests]]
+pattern_index = 4
+test_positive = "Helicone-Auth: Bearer sk-Ab3xY7zQ9mK2wL5jH8nR4pT6"
+test_negative = "OPENAI_API_KEY=sk-abc123def456ghi789jklmnopqrstu"
+negative_class = "sibling-prefix"
+
+[[detector.tests]]
+pattern_index = 4
+test_positive = "HELICONE_API_KEY=sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ"
+test_negative = "OPENAI_API_KEY=sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ"
+negative_class = "sibling-prefix"
+
+[[detector.tests]]
+pattern_index = 4
+test_positive = '''helicone_api_key: "pk-Ab3xY7zQ9mK2wL5jH8nR4pT6cV1sF"'''
+
+[[detector.tests]]
+pattern_index = 4
+test_positive = '''HELICONE_API_KEY = "eu-Ab3xY7zQ9mK2wL5jH8nR4pT6cV1sF"'''
