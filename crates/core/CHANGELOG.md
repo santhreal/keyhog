@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.76 - 2026-08-16
+
+- fix(core): rerun build script on GITHUB_SHA changes to prevent stale git hash in CI cache.
+
 ## 0.5.75 - 2026-08-14
 
 - Added canonical `EvidenceTier`, `EvidenceReasonCode`, `EvidenceVerdict`, and `FindingProvenance` contracts. Findings, correlations, and report projections expose exact evidence tier and reason; JSON and JSONL also retain the detector-corpus digest, pattern ordinal, producer channel, source role, and pre-verification context class. Optional public scores are named `evidence_score`. JSON/JSONL report schema 2 rejects stale schema-1 findings, and deduplication preserves the strongest evidence and its provenance independently from internal scanner confidence.

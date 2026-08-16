@@ -5,7 +5,7 @@ collector after KeyHog sends a detector-defined probe. It is useful for
 webhook, mail, and callback credentials. A callback proves the behavior named
 by the detector. It does not prove the credential's full permissions.
 
-OOB is off by default. In v0.5.75, the shipped detector corpus contains no
+OOB is off by default. In v0.5.76, the shipped detector corpus contains no
 `[detector.verify.oob]` block. `--verify-oob` therefore changes no shipped
 finding. Use it only with a reviewed custom detector corpus that declares an
 OOB probe.
@@ -113,7 +113,7 @@ interaction counts. Use `"any"` only when any of those callbacks proves the
 detector's intended behavior.
 
 `--oob-timeout` is the default wait for a detector that omits `timeout_secs`.
-A detector-specific timeout replaces that default. In v0.5.75, the CLI value is
+A detector-specific timeout replaces that default. In v0.5.76, the CLI value is
 not a strict upper bound on detector-specific timeouts. The runtime cap is
 120 seconds or the CLI value, whichever is larger.
 

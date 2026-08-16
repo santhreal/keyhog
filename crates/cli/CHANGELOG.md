@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.76 - 2026-08-16
+
+- fix(core): rerun build script on GITHUB_SHA changes to prevent stale git hash in CI cache.
+
 ## 0.5.75 - 2026-08-14
 
 - Added default and paranoid evidence exit policies. Default blocks `likely` and `confirmed`; paranoid also blocks `review`, without hiding non-blocking findings. Baseline schema 2 stores required evidence and secret-safe candidate provenance and rejects v1 and the removed `status` alias. Daemon wire 15 carries exact evidence plus staged-guard blocking counts, preserving one-shot, daemon, and guard exit semantics.

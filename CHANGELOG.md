@@ -2,6 +2,12 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.76] - 2026-08-16
+
+### Changed
+
+- fix(core): rerun build script on GITHUB_SHA changes to prevent stale git hash in CI cache.
+
 ## [0.5.75] - 2026-08-14
 
 ### Changed
