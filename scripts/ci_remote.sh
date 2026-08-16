@@ -34,7 +34,7 @@ cargo test -p keyhog-scanner --test perf_alloc_batch_topology --no-default-featu
 cargo test -p keyhog-scanner --test perf_alloc_trigger_scratch --no-default-features --features ci-lean --profile ci-test
 cargo test -p keyhog-scanner --test adversarial_suite --no-default-features --features ci-lean --profile ci-test
 cargo test -p keyhog-scanner --test all_detectors_self_validate --profile ci-test
-cargo test -p keyhog-scanner --lib --no-default-features --features ci-lean -- --test-threads=4
+cargo test -p keyhog-scanner --lib --no-default-features --features ci-lean -- --test-threads=16
 
 echo "=== [Remote CI] 5. CLI & Profile Test Suites ==="
 cargo test -p keyhog-profile
