@@ -60,6 +60,7 @@ detectors/.keyhog-cache.json
 /scratchpad/
 /planning/
 /BACKLOG.md
+/.internal/
 
 # Root-level review output, throwaway compiler probes, and process state.
 # Operator working notes stay outside the public release tree. Durable product

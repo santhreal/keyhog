@@ -497,3 +497,26 @@ fn provenance_sidecar_stays_compact() {
         "candidate provenance grew beyond its allocation-free compact contract"
     );
 }
+
+/// WHY: .env files under any prefix (e.g. `visible.env`, `production.env`, `.env.production`)
+/// must classify assignments as EnvironmentAssignmentValue rather than abstaining to Unknown.
+#[test]
+fn dotenv_source_roles_recognize_prefixed_and_named_env_files() {
+    for path in ["visible.env", ".env", ".env.local", "staging.env"] {
+        let source = "TOKEN=sk_live_DogfoodOneA1B2C3D4E5F6G7H8\n";
+        let start = source.find("sk_live_").unwrap();
+        let evidence = crate::source_semantics::classify_structured_candidate(
+            source,
+            Some(path),
+            start,
+            start + "sk_live_DogfoodOneA1B2C3D4E5F6G7H8".len(),
+        )
+        .unwrap_or_else(|| panic!("structured source evidence must parse for {path}"));
+        let parsed = CandidateProvenance::named(7, 11).with_source_semantics(evidence, None);
+        assert_eq!(
+            parsed.source_role(),
+            SemanticSourceRole::EnvironmentAssignmentValue,
+            "failed for path {path}"
+        );
+    }
+}

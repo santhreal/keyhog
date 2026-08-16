@@ -66,6 +66,15 @@
         "detectors/cockroachdb-api-key.toml:34"
       ]
     },
+    "020e6dafe13d0a09e2d1add0e60ab5ad04d34b90ef49d1bc6a5b77e67b7283f3": {
+      "detector_ids": [
+        "helicone-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/helicone-api-key.toml:93"
+      ]
+    },
     "028e00b7914f977c910967a0ed3f3d72d5f712726c9d873e9cd89d28e031fa6e": {
       "detector_ids": [
         "langsmith-api-key"
@@ -122,7 +131,7 @@
     },
     "03d9b0176b613ae2d260551031989eedc17fad365d7505d905388eb5c4ca19cb": {
       "detector_ids": [
-        "presto-trino-credentials"
+        "url-credentials"
       ],
       "on_declared_fixture_line": true,
       "sites": [
@@ -165,6 +174,15 @@
         "detectors/generic-password.toml:121"
       ]
     },
+    "04bd14d4f97bc9ac7eeec40110277cf47d12c7deb357eeb806c12d1485134fbe": {
+      "detector_ids": [
+        "entropy-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/supabase-jwt-secret.toml:16"
+      ]
+    },
     "0522d231e79b5054892312dfda62fc684cda5025b5d2717353f09da59100110d": {
       "detector_ids": [
         "weatherstack-access-key"
@@ -199,6 +217,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/loom-api-token.toml:39"
+      ]
+    },
+    "05a8ba2b12b0d6d7fc6b18bf88806167c5fe37c8938361bddf790d9e5824c0bd": {
+      "detector_ids": [
+        "scalr-api-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/scalr-api-token.toml:44"
       ]
     },
     "05beb5750b3de7731d3af0624a828d5e614ec954a90f3f04b6f197e216f8bab6": {
@@ -374,11 +401,11 @@
     },
     "0ac5151018085aebb45d7f78c0f2f085bb76c4bb1b744d8504e9ae5e93f1b2ef": {
       "detector_ids": [
-        "generic-api-key"
+        "honeybadger-api-key"
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/honeybadger-api-key.toml:48"
+        "detectors/honeybadger-api-key.toml:47"
       ]
     },
     "0b5d8930cdcf6ddadbcf69cfec9d466f1756f0366717c6f94839ab2f4eab5f02": {
@@ -543,6 +570,15 @@
         "detectors/snowflake-account-info.toml:51"
       ]
     },
+    "11799b7fd49593a893ab1875fb6e95576385079426f5d1b3789fc415b9bc09eb": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/goto-connect-api-credentials.toml:27"
+      ]
+    },
     "11fdf742a3971b748dd363670aa9a13fc68de6328f8ae17ace29d05ab8145f9f": {
       "detector_ids": [
         "riotgames-api-key"
@@ -675,7 +711,7 @@
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/jwt-token.toml:42"
+        "detectors/jwt-token.toml:45"
       ]
     },
     "190a352c439c6804b807a82d067047544d156f483fac6b4b0572e5515a530211": {
@@ -939,6 +975,15 @@
         "detectors/jumio-api-credentials.toml:34"
       ]
     },
+    "230f61d41df152edf39f683af661d10e36de5b4c89beef8784e046b8cc73a108": {
+      "detector_ids": [
+        "pipedream-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/n8n-api-credentials.toml:25"
+      ]
+    },
     "236c7227130a59c47bc1a8fd9b5792342254a48eb9a4df800b455ba5c8882b49": {
       "detector_ids": [
         "deepl-api-key"
@@ -982,6 +1027,24 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/eppo-api-key.toml:33"
+      ]
+    },
+    "25d80f1af54ee62dd380424a394f6dddb980fa7710e0da72f06616ffcb7d1a7f": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/windmill-credentials.toml:21"
+      ]
+    },
+    "261b9f49f21c94187e8ee91260c211755251183cb18b7463f5361816d54507ec": {
+      "detector_ids": [
+        "bearer-authorization"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/helicone-api-key.toml:77"
       ]
     },
     "2670afab81f79af6bd79fb430e7f3efb9b4f5407e59889eafa33666036351141": {
@@ -1031,7 +1094,7 @@
     },
     "26ffb95dde10c73c3a0bcd4422592eeb277f927f70c626f78e98fba2302591f4": {
       "detector_ids": [
-        "bigcommerce-access-token"
+        "bigcommerce-store-api-credentials"
       ],
       "on_declared_fixture_line": true,
       "sites": [
@@ -1141,7 +1204,7 @@
     },
     "2ac5a024e748e5bcb0549732ce5e35c0b9eb17360cfb5163ac6617a8cce27876": {
       "detector_ids": [
-        "sonarcloud-token"
+        "sonarqube-token"
       ],
       "on_declared_fixture_line": true,
       "sites": [
@@ -1161,10 +1224,10 @@
       "detector_ids": [
         "aerisweather-api-credentials",
         "chromadb-api-key",
-        "clickhouse-credentials",
         "cratedb-credentials",
         "eloqua-api-credentials",
-        "generic-api-key"
+        "generic-api-key",
+        "url-credentials"
       ],
       "on_declared_fixture_line": true,
       "sites": [
@@ -1349,6 +1412,15 @@
         "detectors/trello-api-key.toml:33"
       ]
     },
+    "3167641564530a213bc56a0eeef02272092e09811d833d2b8244fc1ef3104551": {
+      "detector_ids": [
+        "entropy-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/ssh2-private-key.toml:37"
+      ]
+    },
     "32277534b210ff5df10ef086a445c87b370cb8e32e8a571f32aaed6543060e1f": {
       "detector_ids": [
         "google-artifact-registry-key"
@@ -1410,6 +1482,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/twocheckout-api-credentials.toml:31"
+      ]
+    },
+    "33d171e545bddd08c71a0749c783dfdb171447c836a8c418b332216c83781f4e": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/aws-ecr-token.toml:16"
       ]
     },
     "343b96fc37502c83f13f866df24791f333a5c58cafdaa3721e83fed5fa64706e": {
@@ -1535,7 +1616,7 @@
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/scalr-api-token.toml:31"
+        "detectors/scalr-api-token.toml:32"
       ]
     },
     "3994445f5a900c9f83dfa9756ee95eb37c3b988e0b1506f6f4e93f70056b7454": {
@@ -1608,6 +1689,24 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/drake-api-credentials.toml:26"
+      ]
+    },
+    "3b4b8daf6da3afc853d44eb36b363f58020df4440929599119ef347c09a29ab2": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/shippo-api-token.toml:30"
+      ]
+    },
+    "3b4ec1d8970898d75429ab421e70e420730d253153063daf611028ed7f89d0c5": {
+      "detector_ids": [
+        "entropy-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/superblocks-credentials.toml:21"
       ]
     },
     "3c032ad7822fada8caaf826d01d1b51026d21836425aa5f949458145ef25509d": {
@@ -1758,6 +1857,15 @@
         "detectors/taxjar-api-token.toml:37"
       ]
     },
+    "4199ad9c40205a744e95eaef78a81696d8e896389450e57413efa2c0a860fcfa": {
+      "detector_ids": [
+        "entropy-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/aweber-api-credentials.toml:29"
+      ]
+    },
     "42132d577b3988e96a0f3358e62a936f58408de7eaa8ed13bbad64cf1c4b2929": {
       "detector_ids": [
         "travisci-token"
@@ -1765,15 +1873,6 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/travisci-token.toml:35"
-      ]
-    },
-    "42ca75a22322e5873708359261126d956ba8a353e500a34bb55d9721af0836e4": {
-      "detector_ids": [
-        "nats-credentials"
-      ],
-      "on_declared_fixture_line": true,
-      "sites": [
-        "detectors/nats-credentials.toml:44"
       ]
     },
     "42d58222b328681b9923634991312932089876a0242f78cf488157aa24969c1a": {
@@ -1816,11 +1915,13 @@
     },
     "44172b4d8be1e60351dccc186ff197bb8ce73d1b5751b9d76e8fbe80749d89b8": {
       "detector_ids": [
-        "elastic-cloud-api-key"
+        "elastic-cloud-api-key",
+        "elasticsearch-api-key"
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/elastic-cloud-api-key.toml:40"
+        "detectors/elastic-cloud-api-key.toml:40",
+        "detectors/elasticsearch-api-key.toml:29"
       ]
     },
     "442542ad23707dfe7421f66b2006952bf2b6ace2cc6cccaa888d161ddc3fbfec": {
@@ -1969,7 +2070,7 @@
     },
     "47ff1db7852b14342e186f26dc95f7844e5ecb312edd54dd664c880144980e9c": {
       "detector_ids": [
-        "klaviyo-api-key"
+        "clickup-api-token"
       ],
       "on_declared_fixture_line": true,
       "sites": [
@@ -2009,7 +2110,7 @@
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/mongodb-atlas-api-key.toml:26"
+        "detectors/mongodb-atlas-api-key.toml:29"
       ]
     },
     "49dfc2a9c53e238f71f823c060b8f9657a688fe82dc39b0e246b6b2d25e79a08": {
@@ -2068,7 +2169,7 @@
     },
     "4ac97011ca61af4eab93f9c04c73f8d413cfc2a96d9217dc7715bf92a002b271": {
       "detector_ids": [
-        "gitlab-deploy-token"
+        "gitlab-package-registry-token"
       ],
       "on_declared_fixture_line": true,
       "sites": [
@@ -2463,7 +2564,7 @@
     },
     "545d4f21d14e00062e047100da93a5332669a168f4c708dfc12b3c53d7e0cd2d": {
       "detector_ids": [
-        "vercel-edge-config-token"
+        "vercel-edge-function-credentials"
       ],
       "on_declared_fixture_line": true,
       "sites": [
@@ -2530,6 +2631,15 @@
         "detectors/circleci-api-token.toml:45"
       ]
     },
+    "56b840975a55313f6de273da436f06d5eb5ce291338df93ed8cd9568dc864335": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/swetrix-api-key.toml:28"
+      ]
+    },
     "56c5a753271ee65c7cef67e37193cdd401a6782695684ac5db89878e7a9171c3": {
       "detector_ids": [
         "sparkpost-api-key"
@@ -2555,6 +2665,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/easypost-api-key.toml:29"
+      ]
+    },
+    "5750a4106a76e7ac7ed2034e667fa7bb4874df01dc3002814496d89aff2f78de": {
+      "detector_ids": [
+        "url-credentials"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/mongodb-connection-string.toml:32"
       ]
     },
     "5791fa6671217bbb0b06c3c2ef78f967aa98c13071bbf50e1c43dd9e47017b34": {
@@ -2622,6 +2741,15 @@
         "detectors/particle-api-token.toml:26"
       ]
     },
+    "5a3b6e720995163dacbcdc269840ca4c21c1c41ea571ba5bfab9383a7df2c150": {
+      "detector_ids": [
+        "entropy-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/internalio-credentials.toml:16"
+      ]
+    },
     "5a48a233b71e0dfe57b6e122274dbe5a89c4a117c925fbf23481d7f459f324bd": {
       "detector_ids": [
         "aws-govcloud-access-key"
@@ -2629,6 +2757,15 @@
       "on_declared_fixture_line": false,
       "sites": [
         "detectors/aws-govcloud-access-key.toml:52"
+      ]
+    },
+    "5a6c19888d986355bc2bf1242065ed91c55fb7c25bb35a28fd24ee32d01d17db": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/integromat-webhook-credentials.toml:25"
       ]
     },
     "5ad723e78998e1b2b0df88ec8cba939abb9adf47d04cf604b859fb2f94fca1d4": {
@@ -2772,7 +2909,7 @@
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/helicone-api-key.toml:35"
+        "detectors/helicone-api-key.toml:71"
       ]
     },
     "600142e2181a90657b2f9758f506f4a881106ae88e1b63ce371bf312c7155da2": {
@@ -2786,7 +2923,7 @@
     },
     "6085e89bfdf518c9287af86ffc07d188d9f19d912010b42f29f8285288259703": {
       "detector_ids": [
-        "resend-webhook-signing-secret"
+        "stripe-webhook-signing-secret"
       ],
       "on_declared_fixture_line": true,
       "sites": [
@@ -2829,6 +2966,15 @@
         "detectors/shutterstock-api-key.toml:33"
       ]
     },
+    "62236ee6267b1c16458ff7a6d64cdc584c1190867877c58bae72efa0ea78f405": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/netrc-password.toml:37"
+      ]
+    },
     "622fb155c21742b7184aab5dff331645640500ad721fb1a998322762d8b8bac1": {
       "detector_ids": [
         "make-api-token"
@@ -2845,6 +2991,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/pandora-api-credentials.toml:26"
+      ]
+    },
+    "64f778c6d742c045ebdec689765ac6d8f518655d93544f30f3f56586cb22acb1": {
+      "detector_ids": [
+        "cli-password-flag"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/cli-password-flag.toml:68"
       ]
     },
     "651b5aea6dda3f3a728368b9d25d95daab5199b4af8137fa885959f8347d8eb3": {
@@ -2909,7 +3064,7 @@
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/openai-api-key.toml:59"
+        "detectors/helicone-api-key.toml:53"
       ]
     },
     "670740630b4e6035c8900edf367585f6b868bdb85d21496cca759c2423a500a5": {
@@ -2964,6 +3119,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/zendesk-api-token.toml:2"
+      ]
+    },
+    "68fb8fa988d3495659298269eb54441eaa89cba153ba331d973568e886b2c919": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/vercel-blob-credentials.toml:21"
       ]
     },
     "692367ac32fc975b85214870844a9a209a110407ee48b484a9e87899e019d501": {
@@ -3029,7 +3193,6 @@
         "azure-functions-key",
         "buildkite-agent-token",
         "datocms-api-token",
-        "elasticsearch-basic-auth",
         "epa-api-key",
         "fortinet-fortigate-token",
         "squarespace-api-key"
@@ -3043,7 +3206,6 @@
         "detectors/azure-functions-key.toml:31",
         "detectors/buildkite-agent-token.toml:39",
         "detectors/datocms-api-token.toml:40",
-        "detectors/elasticsearch-api-key.toml:29",
         "detectors/epa-api-key.toml:26",
         "detectors/fortinet-fortigate-token.toml:29",
         "detectors/squarespace-api-key.toml:39"
@@ -3092,6 +3254,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/miro-api-token.toml:39"
+      ]
+    },
+    "6bc9b3ab6320652c359bca1f431e392fec416fcf39a257dfc29a28b608804b7f": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/applitools-api-key.toml:16"
       ]
     },
     "6cabe679dc013dce0c548bccfec1016b10d803b6800aeacb212869a9ae97f1ea": {
@@ -3159,11 +3330,11 @@
     },
     "6dd5f09276dc9985291dc661b7bed9c2b30a52dc2b156e4468c9cb0b308ad393": {
       "detector_ids": [
-        "opensea-api-key"
+        "generic-secret"
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/opensea-api-key.toml:39"
+        "detectors/opensea-api-key.toml:38"
       ]
     },
     "6e7360f2a6fe2725627ff539e27bafe660fd64b306dca04ce43ebd71c0213b87": {
@@ -3276,7 +3447,7 @@
     },
     "719f68c0b951afa167bb76dc46ad7a488026df430c9db184a1c75043834dd878": {
       "detector_ids": [
-        "twitter-oauth-secret"
+        "oauth-client-secret"
       ],
       "on_declared_fixture_line": true,
       "sites": [
@@ -3299,6 +3470,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/twilio-api-key.toml:64"
+      ]
+    },
+    "72475ae045fcc9827acd42416dcc7064837b4475ba0df79bef058eb888c26d5f": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/google-meet-api.toml:26"
       ]
     },
     "72858b0f92ba48f092df464aeeaee65781361d0eb0c380669168cce279892a77": {
@@ -3355,6 +3535,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/netlify-build-hook.toml:25"
+      ]
+    },
+    "74ec93f2dfba16df966caa69d65ebc34d19dfb8a57a6eee11c6a8fa7c0c5d739": {
+      "detector_ids": [
+        "scalr-api-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/scalr-api-token.toml:38"
       ]
     },
     "755a444900b063468c8aa5beef6886ff59d53862ffda892d2bb53ac76b7efd03": {
@@ -3521,6 +3710,15 @@
         "detectors/meilisearch-api-key.toml:21"
       ]
     },
+    "79bb3dd2d267a55d38a8a38b4d7d38e5c05d345ac678a2d63aa2236929d35579": {
+      "detector_ids": [
+        "entropy-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/magento-rest-api-token.toml:19"
+      ]
+    },
     "79c636f5ee9fbcd4f5d6504630fe6c8d97122637e49ad7f23a74a435cc36e4f0": {
       "detector_ids": [
         "elevenlabs-api-key"
@@ -3528,6 +3726,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/elevenlabs-api-key.toml:47"
+      ]
+    },
+    "7a7dd0dd05e2b8e3bfccf9959661d28861bb0fbcc5669cc1ccc51597ee7a1f9e": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/uptimerobot-api-key.toml:26"
       ]
     },
     "7a82667cb43cd28b4eca0838c263c7a2a9830be14ec90e2c6fd0b47ed061ac75": {
@@ -3595,7 +3802,7 @@
     },
     "7d52a41c471e401f6a1269fe2ce50626787dc2a4cc2e0dfe5763e1192569f7b8": {
       "detector_ids": [
-        "telegram-bot-token"
+        "generic-secret"
       ],
       "on_declared_fixture_line": true,
       "sites": [
@@ -3609,6 +3816,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/google-classroom-api-credentials.toml:35"
+      ]
+    },
+    "7e13827ba53783898b47264e20965bcb06807f3df020e718953de42eac89d3f9": {
+      "detector_ids": [
+        "entropy-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/chef-automate-token.toml:33"
       ]
     },
     "7e2d149a7458342d08e898a2c489740c440d587ac062f7109b2160ff74aeb981": {
@@ -3737,15 +3953,6 @@
         "detectors/oxylabs-credentials.toml:33"
       ]
     },
-    "829b3373b7c1bb7fa45acc8fa4a50c2c2e8a9a2502d3e7f81332825a4054673f": {
-      "detector_ids": [
-        "mongodb-connection-string"
-      ],
-      "on_declared_fixture_line": true,
-      "sites": [
-        "detectors/mongodb-connection-string.toml:32"
-      ]
-    },
     "82e86bca82e4e1ce8fbca8cc5a2495af31e4539be21b32e628e88b2530daa7a2": {
       "detector_ids": [
         "getresponse-api-key"
@@ -3793,11 +4000,11 @@
     },
     "85b99f33c30c06ca5dc83e8904fba9724ffd0f2911a20566b27e7421c8309e9e": {
       "detector_ids": [
-        "generic-secret"
+        "skyscanner-api-key"
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/skyscanner-api-key.toml:52"
+        "detectors/skyscanner-api-key.toml:48"
       ]
     },
     "85ba9e2325d3865aeacef3fde3c8c1f02698f11e64d2766590a55f285713bdbd": {
@@ -3834,6 +4041,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/vercel-edge-function-credentials.toml:45"
+      ]
+    },
+    "86226fb9160adbbf6bf1a09fd9e62da292de465bc0bece70f4298bcff3622a6e": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/octopus-deploy-api-key.toml:32"
       ]
     },
     "868eea7b8096acc5ee6fc5a79ec016c2eb4a17b22fb9ecbd9936f119ba0e67a4": {
@@ -3974,15 +4190,6 @@
         "detectors/okta-oidc-client-secret.toml:60"
       ]
     },
-    "89cd65d3224ff77851f33b0ff386591777bc0a1760062c7a0caeab7f4a1e7d19": {
-      "detector_ids": [
-        "turso-embedded-replica-token"
-      ],
-      "on_declared_fixture_line": true,
-      "sites": [
-        "detectors/turso-embedded-replica-token.toml:30"
-      ]
-    },
     "8a32ac33122869d185a2aea6b42c8869c9d10f45359338de8ec16cb5e1733f82": {
       "detector_ids": [
         "ngrok-api-key"
@@ -3999,6 +4206,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/crisp-api-key.toml:26"
+      ]
+    },
+    "8a9a812323d85b15243ff1531833a245006c054879093342e4a123e27b6949cd": {
+      "detector_ids": [
+        "url-credentials"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/mysql-connection-string.toml:26"
       ]
     },
     "8aa5f067837662a07c5496ef537e61c596903fa1ab3799896bcd5b2143addcd0": {
@@ -4055,6 +4271,15 @@
         "detectors/perfecto-api-credentials.toml:26"
       ]
     },
+    "8b51a18943921d48a087e81df5bff9072e2f092b1a76d15cee3f5dd63686a33b": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/greptile-api-key.toml:17"
+      ]
+    },
     "8bb0cf6eb9b17d0f7d22b456f121257dc1254e1f01665370476383ea776df414": {
       "detector_ids": [
         "finicity-partner-credentials"
@@ -4073,6 +4298,15 @@
       "sites": [
         "detectors/clever-api-credentials.toml:45",
         "detectors/countly-api-key.toml:27"
+      ]
+    },
+    "8bffd76e1329e5ebe0ce4f95cd8143e43e466a650265b440cf55c96429395e37": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/prometheus-alertmanager-webhook.toml:16"
       ]
     },
     "8c17b3c46ed131434b9e4cf3f0331a1aea06cb0cbc07638a09216d46d51a8626": {
@@ -4109,6 +4343,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/carbon-black-api-key.toml:60"
+      ]
+    },
+    "8d0fc844b4645b90c3ece26cf02eabd4021705bff75367663f3fa150747782c0": {
+      "detector_ids": [
+        "entropy-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/trackjs-token.toml:21"
       ]
     },
     "8dadb2a85a5e44999ae1a4c3ab291562d7cb7c5b4c189f59a88cd6857a605d80": {
@@ -4172,6 +4415,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/drata-api-token.toml:38"
+      ]
+    },
+    "8ff64f9b1259442b42d7e82d54a6e37d804cdd0e784d355f26e5b198b44d4bab": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/onelogin-client-id.toml:21"
       ]
     },
     "8ff9a9e8f5af4b9f2f3f7ed343345b149802b5866296875b44c1869d602877e6": {
@@ -4298,6 +4550,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/cohere-api-key.toml:43"
+      ]
+    },
+    "92b6fb12a9e977fe3e64e85fa2737f2450322925fd56ce5c31bfced8bcba1db3": {
+      "detector_ids": [
+        "entropy-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/jetadmin-credentials.toml:16"
       ]
     },
     "930bed38f424e51eca95ffcf430a5a64ae73bf262df7229e48688aa43f68caf2": {
@@ -4453,6 +4714,15 @@
         "detectors/oracle-cloud-government-credentials.toml:36"
       ]
     },
+    "97dd0cff097eb2b57e9fe4aad8a8635a4030e516c9d4b9c03ab3608c23aaa8cd": {
+      "detector_ids": [
+        "entropy-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/datocms-api-token.toml:21"
+      ]
+    },
     "97fa5968e5cd30bb695b8f1752b5ca7b618ce90604d22c32c71742854373fb86": {
       "detector_ids": [
         "vanta-oauth-credentials"
@@ -4567,7 +4837,7 @@
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/lastpass-dev-creds.toml:15"
+        "detectors/lastpass-dev-creds.toml:16"
       ]
     },
     "9ae6e8ee454987649faa04a81beb27bdbaef7a59b08a3ee4679b96a2961bf3c5": {
@@ -4642,6 +4912,15 @@
         "detectors/huggingface-org-token.toml:52"
       ]
     },
+    "9e3bebbd71ccf003318d0d8d93f73bd67060a536403e83ff0129a8400fd2a6c3": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/cmcom-api-key.toml:24"
+      ]
+    },
     "9ed207ef2dd011d51818eb728ec3d95c33b8c4ed3ed85bbc62d732ba49635e73": {
       "detector_ids": [
         "livekit-api-credentials"
@@ -4649,6 +4928,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/livekit-api-credentials.toml:34"
+      ]
+    },
+    "9f28c408de75ecc48fbcda40687675599587957036629fe22f076486c35d7511": {
+      "detector_ids": [
+        "libsql-credentials"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/libsql-credentials.toml:34"
       ]
     },
     "9f8c6500a7521da4cf4f248b33542fee691afd75af49cbcb6f676c87da1c194e": {
@@ -4750,6 +5038,15 @@
         "detectors/rocketmatter-api-key.toml:21"
       ]
     },
+    "a2099f102a099b14c2a852ef61123440618a13c33d8f45f92746480b749e96bb": {
+      "detector_ids": [
+        "jwt-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/scalr-api-token.toml:39"
+      ]
+    },
     "a20fcd4a44c42d639f562b8417ec3ffc18e6c26188d5ae0da88270044026151c": {
       "detector_ids": [
         "stytch-project-id"
@@ -4804,6 +5101,24 @@
         "detectors/figma-api-token.toml:29"
       ]
     },
+    "a3a5900171a556f1bf40e96ea3c83ecfaa1fe1a3671649f8cf66c8f77144ea2d": {
+      "detector_ids": [
+        "portkey-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/helicone-api-key.toml:60"
+      ]
+    },
+    "a40d3ab2e47db17f26f98accdfc01a0375679f56d93b45eb0477231e5fb71f7a": {
+      "detector_ids": [
+        "url-credentials"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/cloudinary-api-key.toml:21"
+      ]
+    },
     "a4333a93152dd6eb06e3214be05744a537aa4b4598f0e1dcbdc7ecf0adbd1c8e": {
       "detector_ids": [
         "matomo-api-token"
@@ -4829,6 +5144,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/devto-api-key.toml:35"
+      ]
+    },
+    "a52acdb5e0703afa670ef8066a9f5039e3ea236e2434366e848738577af83088": {
+      "detector_ids": [
+        "entropy-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/putty-private-key.toml:63"
       ]
     },
     "a5a8c5c67beafa7ff6c35d455ecb3e3a22c2f5d049215c15fd04cfc231daebc4": {
@@ -4966,6 +5290,15 @@
         "detectors/tidb-cloud-credentials.toml:26"
       ]
     },
+    "ad305d0dffde261081cf25d59f4fbc48f073ba182f7aac8af017293370736fd1": {
+      "detector_ids": [
+        "libsql-credentials"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/turso-embedded-replica-token.toml:30"
+      ]
+    },
     "ad62d48d8b069026a2a0d0291f857a77e1975edf610aa3502e8bc71bd96f513a": {
       "detector_ids": [
         "basic-auth-credentials"
@@ -5023,12 +5356,21 @@
     "ae2cff93f84c840a91d59199f339b563f57695cec38058fc79539b050607e080": {
       "detector_ids": [
         "kafka-sasl-credentials",
-        "rabbitmq-credentials"
+        "url-credentials"
       ],
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/kafka-sasl-credentials.toml:40",
-        "detectors/rabbitmq-credentials.toml:36"
+        "detectors/nats-credentials.toml:44"
+      ]
+    },
+    "ae90ec8210f282ffdafb346e8fe6cb3f54506c1ef4576a6311c868d264581572": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/aws-ecr-token.toml:44"
       ]
     },
     "af0cd6ac021c32bdd00c2d3fc44c3dd2393fd1d606f82e86b39bbfc6168a62ad": {
@@ -5451,7 +5793,7 @@
     },
     "b9e79c1dc1c533d13738112bacfb6cfba751a3cb283b94c8ab55b892f4982f59": {
       "detector_ids": [
-        "terraform-enterprise-token"
+        "terraform-cloud-api-token"
       ],
       "on_declared_fixture_line": true,
       "sites": [
@@ -5461,6 +5803,7 @@
     "bad49ac7cc106b048c4b54ebd9793a4b3a1df326a75fdc0627eb168d80a19530": {
       "detector_ids": [
         "500px-api-key",
+        "8x8-api-credentials",
         "activecampaign-api-key",
         "africastalking-api-key",
         "airbyte-api-credentials",
@@ -5471,9 +5814,10 @@
         "avaya-api-credentials",
         "azure-government-credentials",
         "betterstack-source-token",
-        "bitbucket-pipeline-variable",
+        "bitbucket-app-password",
         "bluejeans-api",
         "bluesnap-api-credentials",
+        "budibase-credentials",
         "bugherd-api-key",
         "census-api-key",
         "cherryservers-api-key",
@@ -5485,14 +5829,12 @@
         "fastly-api-token",
         "fathom-api-key",
         "fedex-api-credentials",
-        "generic-api-key",
-        "internalio-credentials",
         "mistral-api-key"
       ],
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/500px-api-key.toml:31",
-        "detectors/8x8-api-credentials.toml:57",
+        "detectors/8x8-api-credentials.toml:52",
         "detectors/activecampaign-api-key.toml:58",
         "detectors/africastalking-api-key.toml:44",
         "detectors/airbyte-api-credentials.toml:39",
@@ -5665,6 +6007,15 @@
         "detectors/vonage-api-key.toml:24"
       ]
     },
+    "c0b6d48b6ae3e3c0830cb39600c0584ce36830ace6c3452e7ac2ba27703fe10e": {
+      "detector_ids": [
+        "basic-auth-credentials"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/http-basic-auth.toml:36"
+      ]
+    },
     "c14239a5b6f2fba0d9ff511b95b86026c987139999867e8d5e5ccf4c56f82e9f": {
       "detector_ids": [
         "filebase-api-key"
@@ -5681,6 +6032,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/deno-kv-credentials.toml:20"
+      ]
+    },
+    "c306191e1a3e7efd9bb267090db2e6adeeb80d62616ec71335304d6902c1420c": {
+      "detector_ids": [
+        "helicone-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/helicone-api-key.toml:89"
       ]
     },
     "c371680dab338d635d03004a9df2a1a673e94a541ef172f81beb48d838d7262a": {
@@ -5735,6 +6095,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/uk-gov-notify-api-key.toml:33"
+      ]
+    },
+    "c554c3e8a32e33312c0fcbbdc7ec932178ab2f13f5dea633e11abc47a72a8d00": {
+      "detector_ids": [
+        "entropy-token"
+      ],
+      "on_declared_fixture_line": false,
+      "sites": [
+        "detectors/blockcypher-api-token.toml:35"
       ]
     },
     "c66cf78f2da635d13dd607b5d6171ad80d3a895274264f37036368eddb6dc922": {
@@ -5899,6 +6268,24 @@
         "detectors/tumblr-api-credentials.toml:31"
       ]
     },
+    "cbbee10d155d26cade3a4946c92d385b3687e94f98a12dd7368e97f62b152683": {
+      "detector_ids": [
+        "entropy-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/clickatell-api-key.toml:26"
+      ]
+    },
+    "cbe0c3b6c107b0a76460731275e9ce6a505425c117160be46c6203c27eb9804a": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/goto-meeting-api.toml:26"
+      ]
+    },
     "cbff07aee64302d996d14d6faed00dd1e2022eed135b9e45a58a4d28b1692e81": {
       "detector_ids": [
         "bluesky-app-password"
@@ -5935,22 +6322,13 @@
         "detectors/cryptocompare-api-key.toml:40"
       ]
     },
-    "cce215c241aa9eefcbfaa5a56a4bdd62beb1f6bddab1fe5a3c23f9c1b1bd40ee": {
+    "ce7a7c10b0dfd96808cca64c88cf5c5e13b7775283bdc924767887bfa32c8fa1": {
       "detector_ids": [
-        "redis-connection-string"
+        "mongodb-atlas-api-key"
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/vercel-kv-credentials.toml:26"
-      ]
-    },
-    "cea27d427fdf9c563e761797fa9555855861a38cdc000fbbee4cc4b0365c164f": {
-      "detector_ids": [
-        "postgresql-connection-string"
-      ],
-      "on_declared_fixture_line": true,
-      "sites": [
-        "detectors/neon-db-connection-string.toml:2"
+        "detectors/mongodb-atlas-api-key.toml:4"
       ]
     },
     "cf105e25f3d38d6170b1b4823cdf94883f1437dfd82bc40e019c3c88d7783948": {
@@ -6061,6 +6439,15 @@
         "detectors/leptonai-api-token.toml:26"
       ]
     },
+    "d2380e539be457ea7a8ca4f9ecccacc88ed02ca69a8b8cc10cb3b2c942d9054b": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/swetrix-api-key.toml:33"
+      ]
+    },
     "d2544839c9935c020d83505276a1f128fe5560f12a6ba56e4437d15e15bf9881": {
       "detector_ids": [
         "podio-client-credentials"
@@ -6151,6 +6538,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/kamatera-api-credentials.toml:26"
+      ]
+    },
+    "d4b85a59efad1cb9b4b4d767fdb9d460ee466e7bda77657b60468d19df0ed475": {
+      "detector_ids": [
+        "entropy-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/aweber-api-credentials.toml:24"
       ]
     },
     "d4b99a849dd593bb155418acee9d0e64a84d2db6f9fe83af1fc4a0d77c419bfc": {
@@ -6244,7 +6640,7 @@
     },
     "d6657c0cbab64f911a797e851540e97a751ac9b33e9652bdf2039ab660954647": {
       "detector_ids": [
-        "azure-client-secret"
+        "oauth-client-secret"
       ],
       "on_declared_fixture_line": true,
       "sites": [
@@ -6280,15 +6676,6 @@
         "detectors/accuweather-api-key.toml:35",
         "detectors/aws-codecommit-credentials.toml:30",
         "detectors/figma-oauth-secret.toml:21"
-      ]
-    },
-    "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71": {
-      "detector_ids": [
-        "github-classic-pat"
-      ],
-      "on_declared_fixture_line": true,
-      "sites": [
-        "detectors/github-classic-pat.toml:50"
       ]
     },
     "d8233dc3d44a0ce6931d5397211d8f29cee3001e47ab1aa47da84404d74072f5": {
@@ -6336,13 +6723,22 @@
         "detectors/gitlab-agent-token.toml:26"
       ]
     },
+    "d8e5329079855734c3623b1e9459c523e848e9e5692ec8de2c185ac81f7a30fc": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/corbado-api-credentials.toml:26"
+      ]
+    },
     "d9202df6abd045a1b716c37776fd4cadb9e4e5809930226179b5ae1388eb6e12": {
       "detector_ids": [
         "transifex-api-token"
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/transifex-api-token.toml:44"
+        "detectors/transifex-api-token.toml:52"
       ]
     },
     "d96bb16176691593d13cfa3d4ec717e15fb8685a722d44fa8c61bfef5a15ebe1": {
@@ -6396,7 +6792,7 @@
     },
     "d9f5c55de7e9a7d07289c72bdf802e3a2db3d79fc3f9a8ece2868b281dbfd94f": {
       "detector_ids": [
-        "gentrace-api-key"
+        "bearer-authorization"
       ],
       "on_declared_fixture_line": true,
       "sites": [
@@ -6601,6 +6997,15 @@
         "detectors/oracle-cloud-api-key.toml:45"
       ]
     },
+    "e0a0539c31f9fd794fbbff036f5b66a32a371d0295d211ab7c03f4930130c35b": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/discord-bot-token.toml:46"
+      ]
+    },
     "e0b57446d07abe135422bee681c346ce0b8400ea041cf85f197910e8464f079c": {
       "detector_ids": [
         "powerschool-api-credentials",
@@ -6627,7 +7032,16 @@
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/oauth-client-secret.toml:66"
+        "detectors/oauth-client-secret.toml:72"
+      ]
+    },
+    "e1528155b4a0af30817c30128ce628e81fa0875069e890ddd2d372a9c07df5fc": {
+      "detector_ids": [
+        "entropy-token"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/putty-private-key.toml:65"
       ]
     },
     "e1681b5c91155a4b7050836a9bad87c101efca86e00180843c56b156ed24f45d": {
@@ -6642,11 +7056,13 @@
     "e1a325ae1fc78036e9895900cec7de92db002e408d6279ebfd1c4c8025b2a9de": {
       "detector_ids": [
         "docusign-api-credentials",
+        "docusign-api-key",
         "doordash-api-credentials"
       ],
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/docusign-api-credentials.toml:36",
+        "detectors/docusign-api-key.toml:28",
         "detectors/doordash-api-credentials.toml:36"
       ]
     },
@@ -6679,7 +7095,7 @@
     },
     "e27443fcd75f2df8f7aaa4f0b6f47174befff698d23e159388ab47c41eb42a2e": {
       "detector_ids": [
-        "sonarqube-token"
+        "sonarcloud-token"
       ],
       "on_declared_fixture_line": true,
       "sites": [
@@ -6794,13 +7210,22 @@
         "detectors/deepl-api-key.toml:50"
       ]
     },
+    "e69b8609efeb6d2c49a44cc513011c7ded7d4e5c17cebc0e8d03a4fe914fa289": {
+      "detector_ids": [
+        "portkey-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/helicone-api-key.toml:59"
+      ]
+    },
     "e6e9d554bdec5b354e3fa08cd5f14147dbbe7ef25afbaf7ae6bab4a7fe4b5eac": {
       "detector_ids": [
         "cli-password-flag"
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/cli-password-flag.toml:46"
+        "detectors/cli-password-flag.toml:47"
       ]
     },
     "e715a58a49365b445f237a1c7f4fb90f08cd3558787a5cb64877cb2bded3724b": {
@@ -6902,6 +7327,15 @@
         "detectors/solana-rpc-credentials.toml:26"
       ]
     },
+    "eacf4c0fcbe1bc53daf2caf77fb175e08b130003afba39b24ee81c9c6f5f11c5": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/lokalise-api-key.toml:25"
+      ]
+    },
     "eadd6592b21a612f96120baf9e2f46a7871aa18ed1bac53051fa32945a1a6623": {
       "detector_ids": [
         "generic-secret"
@@ -6965,7 +7399,7 @@
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/cli-password-flag.toml:52",
+        "detectors/cli-password-flag.toml:54",
         "detectors/saltstack-credentials.toml:40",
         "detectors/sql-password.toml:58",
         "detectors/url-credentials.toml:71"
@@ -7052,15 +7486,6 @@
         "detectors/gotify-token.toml:21"
       ]
     },
-    "f06e34d8bc95e8a0d520bc803f8514dbf2398d24582963c2c7d9bf4053f49d3e": {
-      "detector_ids": [
-        "turso-embedded-replica-token"
-      ],
-      "on_declared_fixture_line": true,
-      "sites": [
-        "detectors/libsql-credentials.toml:34"
-      ]
-    },
     "f13841bd699b02f3df292d4b9fff1b24e1245cdda7a3018387fa2a588ddfa870": {
       "detector_ids": [
         "resend-api-key"
@@ -7115,15 +7540,6 @@
         "detectors/near-api-credentials.toml:36"
       ]
     },
-    "f305d3f3452439f9698bdce008e49748b137faa7c8bea0f631353bebb831fd27": {
-      "detector_ids": [
-        "cloudinary-api-key"
-      ],
-      "on_declared_fixture_line": true,
-      "sites": [
-        "detectors/cloudinary-api-key.toml:21"
-      ]
-    },
     "f3bb42ecbbf0dee1fa195ecb8232e2e4b49648ae236b9439dc6fad3aa367ca1f": {
       "detector_ids": [
         "generic-secret"
@@ -7167,6 +7583,24 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/cratedb-credentials.toml:19"
+      ]
+    },
+    "f543ac6868a28d9c2c7c7235cb31fb26afebff37c3995e13f82e8fb12352b662": {
+      "detector_ids": [
+        "url-credentials"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/vercel-kv-credentials.toml:26"
+      ]
+    },
+    "f553768f8b0e080d631c9757a1f9d5134122638bbcc412cc106e956cd4ff3675": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/rudder-api-token.toml:28"
       ]
     },
     "f57b213fcd4866740ead9dfa66d17c13a85c38460de237c8579313a880a0fa98": {
@@ -7297,15 +7731,6 @@
         "detectors/dnsimple-api-token.toml:39"
       ]
     },
-    "f857664edd4ead3d18e43ff392939f88753965c9cc0805d2a126b21cda27e48c": {
-      "detector_ids": [
-        "mysql-connection-string"
-      ],
-      "on_declared_fixture_line": true,
-      "sites": [
-        "detectors/mysql-connection-string.toml:26"
-      ]
-    },
     "f8578adb1f92df8781c4cbf86fe5fa2d58010021d5b0cc97a5dfd6de00e17d5e": {
       "detector_ids": [
         "hibp-api-key"
@@ -7373,6 +7798,15 @@
         "detectors/twilio-webhook-signing-secret.toml:29"
       ]
     },
+    "f99e7908a03e5231d89f29b84cc0a76f23a8713f4a50ff7501ff2aef445df768": {
+      "detector_ids": [
+        "cli-password-flag"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/cli-password-flag.toml:62"
+      ]
+    },
     "f9c1f2213fe9635d4ae0bdd408e92fb89a01451dd1ef8df838be6f4296c725be": {
       "detector_ids": [
         "scrapeops-api-key"
@@ -7380,15 +7814,6 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/scrapeops-api-key.toml:40"
-      ]
-    },
-    "f9dd6420baf5b29d5bfb7ae18da6c8439a4af46012e8186cbd0cd3ac6e2b25e7": {
-      "detector_ids": [
-        "n8n-api-credentials"
-      ],
-      "on_declared_fixture_line": true,
-      "sites": [
-        "detectors/n8n-api-credentials.toml:25"
       ]
     },
     "fa55b5ff106ded163f0b90d3d42ed08b93c8781b2a2f6a107eff8cc85c6ae3f6": {
@@ -7524,6 +7949,15 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/litellm-credentials.toml:26"
+      ]
+    },
+    "ff48e36a1854ffb329f5ffc3c5b5255dba8c2543a28a086f875e740c73787514": {
+      "detector_ids": [
+        "entropy-api-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/minio-presigned-credentials.toml:26"
       ]
     },
     "ffa1d660ac92e9da2dd884d1a46aee3bf42e19605b3073b6de6bbfb5eee5cfcc": {

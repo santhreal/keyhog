@@ -367,16 +367,30 @@ pub(crate) fn build_candidate_source_index(
     text: &str,
     path: Option<&str>,
 ) -> Option<CandidateSourceIndex> {
-    let path = path?;
-    if syntax_for_path(path).is_some() {
-        build_structured_source_index(text, Some(path)).map(CandidateSourceIndex::Structured)
-    } else if let Some(index) =
-        crate::documentation_semantics::build_document_source_index(text, path)
-    {
-        Some(CandidateSourceIndex::Document(index))
-    } else {
-        crate::code_semantics::build_code_source_index(text, path).map(CandidateSourceIndex::Code)
+    if let Some(path) = path {
+        if syntax_for_path(path).is_some() {
+            if let Some(index) = build_structured_source_index(text, Some(path)) {
+                return Some(CandidateSourceIndex::Structured(index));
+            }
+        } else if let Some(index) =
+            crate::documentation_semantics::build_document_source_index(text, path)
+        {
+            return Some(CandidateSourceIndex::Document(index));
+        } else if let Some(index) = crate::code_semantics::build_code_source_index(text, path) {
+            return Some(CandidateSourceIndex::Code(index));
+        }
     }
+    if let Some(mut index) = index_dotenv(text) {
+        if !index.values.is_empty() {
+            index.apply_field_roles(text, path.unwrap_or(""));
+            return Some(CandidateSourceIndex::Structured(index));
+        }
+    }
+    if let Some(mut index) = index_json(text, 0) {
+        index.apply_field_roles(text, path.unwrap_or(""));
+        return Some(CandidateSourceIndex::Structured(index));
+    }
+    None
 }
 
 fn syntax_for_path(path: &str) -> Option<StructuredSyntax> {
@@ -398,7 +412,9 @@ fn syntax_for_path(path: &str) -> Option<StructuredSyntax> {
         return Some(StructuredSyntax::Dotenv);
     }
     let extension = name.rsplit_once('.')?.1;
-    if extension.eq_ignore_ascii_case("json") {
+    if extension.eq_ignore_ascii_case("env") {
+        Some(StructuredSyntax::Dotenv)
+    } else if extension.eq_ignore_ascii_case("json") {
         Some(StructuredSyntax::Json)
     } else if extension.eq_ignore_ascii_case("jsonl") || extension.eq_ignore_ascii_case("ndjson") {
         Some(StructuredSyntax::JsonLines)
