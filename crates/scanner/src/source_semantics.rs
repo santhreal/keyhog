@@ -369,28 +369,29 @@ pub(crate) fn build_candidate_source_index(
 ) -> Option<CandidateSourceIndex> {
     if let Some(path) = path {
         if syntax_for_path(path).is_some() {
-            if let Some(index) = build_structured_source_index(text, Some(path)) {
-                return Some(CandidateSourceIndex::Structured(index));
-            }
+            build_structured_source_index(text, Some(path)).map(CandidateSourceIndex::Structured)
         } else if let Some(index) =
             crate::documentation_semantics::build_document_source_index(text, path)
         {
-            return Some(CandidateSourceIndex::Document(index));
+            Some(CandidateSourceIndex::Document(index))
         } else if let Some(index) = crate::code_semantics::build_code_source_index(text, path) {
-            return Some(CandidateSourceIndex::Code(index));
+            Some(CandidateSourceIndex::Code(index))
+        } else {
+            None
         }
-    }
-    if let Some(mut index) = index_dotenv(text) {
-        if !index.values.is_empty() {
-            index.apply_field_roles(text, path.unwrap_or(""));
+    } else {
+        if let Some(mut index) = index_dotenv(text) {
+            if !index.values.is_empty() {
+                index.apply_field_roles(text, "");
+                return Some(CandidateSourceIndex::Structured(index));
+            }
+        }
+        if let Some(mut index) = index_json(text, 0) {
+            index.apply_field_roles(text, "");
             return Some(CandidateSourceIndex::Structured(index));
         }
+        None
     }
-    if let Some(mut index) = index_json(text, 0) {
-        index.apply_field_roles(text, path.unwrap_or(""));
-        return Some(CandidateSourceIndex::Structured(index));
-    }
-    None
 }
 
 fn syntax_for_path(path: &str) -> Option<StructuredSyntax> {

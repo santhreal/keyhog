@@ -665,7 +665,11 @@ impl ScanState {
         if chunk.data.get(candidate_start..candidate_end) != Some(candidate) {
             return None;
         }
-        let path = chunk.metadata.path.as_deref();
+        let path = if chunk.metadata.decoded_span.is_some() {
+            None
+        } else {
+            chunk.metadata.path.as_deref()
+        };
         let key = SourceSemanticCacheKey {
             text_address: chunk.data.as_ptr() as usize,
             text_len: chunk.data.len(),

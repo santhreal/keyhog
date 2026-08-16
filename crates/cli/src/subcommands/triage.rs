@@ -272,7 +272,7 @@ fn openat(
     flags: libc::c_int,
     mode: libc::mode_t,
 ) -> std::io::Result<OwnedFd> {
-    let descriptor = unsafe { libc::openat(directory, name.as_ptr(), flags, mode) };
+    let descriptor = unsafe { libc::openat(directory, name.as_ptr(), flags, mode as libc::c_uint) };
     owned_fd(descriptor)
 }
 
