@@ -1,6 +1,10 @@
 # Changelog
 
 
+## 0.5.77 - 2026-08-16
+
+- fix(ci): format scan_postprocess, update dogfood hashes for doc fixtures, and bump action version.
+
 ## 0.5.76 - 2026-08-16
 
 - fix(core): rerun build script on GITHUB_SHA changes to prevent stale git hash in CI cache.
