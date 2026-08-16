@@ -739,3 +739,190 @@ fn entropy_ghidra_decompiled_source_is_not_raw_binary() {
         Some(EntropyShapeStage::SuppressionStage("native_binary_strings")),
     );
 }
+
+#[cfg(feature = "decode")]
+#[test]
+fn decoded_reverse_placeholder_suppression_detects_markers_without_allocating() {
+    let _telemetry_guard = super::telemetry_serial::lock();
+    use keyhog_core::{MatchLocation, RawMatch, SensitiveString, Severity};
+    use std::sync::Arc;
+    let make_match = |credential: &str| RawMatch {
+        detector_id: Arc::from("test-detector"),
+        detector_name: Arc::from("Test Detector"),
+        service: Arc::from("test-service"),
+        severity: Severity::High,
+        confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
+        credential: SensitiveString::from(credential),
+        credential_hash: [0u8; 32].into(),
+        companions: std::collections::HashMap::new(),
+        location: MatchLocation {
+            source: Arc::from("source"),
+            file_path: Some(Arc::from("test.txt")),
+            offset: 0,
+            line: Some(1),
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: None,
+    };
+
+    let m = make_match("secret_elpmaxe_123");
+    assert!(
+        crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+            &m,
+            None,
+            "archive/tar/reverse"
+        )
+    );
+
+    let m = make_match("tok_redlohecalp_val");
+    assert!(
+        crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+            &m,
+            None,
+            "archive/zip/reverse"
+        )
+    );
+
+    let m = make_match("tok_elpmas_val");
+    assert!(
+        crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+            &m,
+            None,
+            "source/reverse"
+        )
+    );
+
+    let m = make_match("token_ruoy_abc");
+    assert!(
+        crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+            &m,
+            None,
+            "source/reverse"
+        )
+    );
+
+    let m = make_match("secret_elpmaxe_123");
+    assert!(
+        !crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+            &m,
+            None,
+            "archive/tar/base64"
+        )
+    );
+
+    let m = make_match("akiasomerealcreds123");
+    assert!(
+        !crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+            &m,
+            None,
+            "source/reverse"
+        )
+    );
+}
+
+#[cfg(feature = "decode")]
+#[test]
+fn decoded_parent_example_suppression_avoids_cloning() {
+    let _telemetry_guard = super::telemetry_serial::lock();
+    use keyhog_core::{MatchLocation, RawMatch, SensitiveString, Severity};
+    use std::sync::Arc;
+    let m = RawMatch {
+        detector_id: Arc::from("test-detector"),
+        detector_name: Arc::from("Test Detector"),
+        service: Arc::from("test-service"),
+        severity: Severity::High,
+        confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
+        credential: SensitiveString::from("AKIAIOSFODNN7EXAMPLE"),
+        credential_hash: [0u8; 32].into(),
+        companions: std::collections::HashMap::new(),
+        location: MatchLocation {
+            source: Arc::from("source"),
+            file_path: Some(Arc::from("test.txt")),
+            offset: 0,
+            line: Some(1),
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: None,
+    };
+
+    let parent_data = "Here is an example: AKIAIOSFODNN7EXAMPLE in code";
+    assert!(crate::adjudicate::record_decoded_parent_example_suppression(&m, None, parent_data));
+
+    let clean_parent = "Here is clean text without the secret";
+    assert!(!crate::adjudicate::record_decoded_parent_example_suppression(&m, None, clean_parent));
+}
+#[cfg(feature = "decode")]
+#[test]
+fn scan_collapses_decoded_duplicate_matches_identically() {
+    let _telemetry_guard = super::telemetry_serial::lock();
+    use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, SensitiveString, Severity};
+    use keyhog_scanner::{CompiledScanner, ScannerConfig};
+
+    let detector = DetectorSpec {
+        id: "duplicate-test-key".into(),
+        name: "Duplicate Test Key".into(),
+        service: "test".into(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            regex: "(dup_[a-zA-Z0-9]{16})".into(),
+            description: Some("duplicate pattern".into()),
+            group: Some(1),
+            required_literals: Vec::new(),
+            client_safe: false,
+            weak_anchor: false,
+            structural_password_slot: false,
+        }],
+        keywords: vec!["dup_".into()],
+        min_confidence: Some(0.0),
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
+    };
+
+    let mut config = ScannerConfig::default();
+    config.max_decode_depth = 1;
+    config.min_confidence = 0.0;
+    let scanner = CompiledScanner::compile(vec![detector])
+        .expect("detector compiles")
+        .with_config(config);
+
+    // Negative control: distinct encoded secret emits both raw and decoded findings.
+    // "a2V5ID0gZHVwXzk4NzY1NDMyMTA5ODc2NTQ=" decodes to "key = dup_9876543210987654".
+    let distinct_data = "dup_abcdef1234567890 a2V5ID0gZHVwXzk4NzY1NDMyMTA5ODc2NTQ=";
+    let distinct_chunk = Chunk {
+        data: SensitiveString::from(distinct_data),
+        metadata: ChunkMetadata {
+            path: Some("dedup-test-distinct.txt".into()),
+            ..Default::default()
+        },
+    };
+    let distinct_matches = scanner.scan(&distinct_chunk).expect("scan succeeds");
+    assert_eq!(
+        distinct_matches.len(),
+        2,
+        "raw finding and distinct decoded finding must both survive, got {distinct_matches:?}"
+    );
+
+    // Dedup verification: identical encoded secret collapses to 1 match.
+    // "a2V5ID0gZHVwX2FiY2RlZjEyMzQ1Njc4OTA=" decodes to "key = dup_abcdef1234567890".
+    let data = "dup_abcdef1234567890 a2V5ID0gZHVwX2FiY2RlZjEyMzQ1Njc4OTA=";
+    let chunk = Chunk {
+        data: SensitiveString::from(data),
+        metadata: ChunkMetadata {
+            path: Some("dedup-test.txt".into()),
+            ..Default::default()
+        },
+    };
+
+    let matches = scanner.scan(&chunk).expect("scan succeeds");
+    assert_eq!(
+        matches.len(),
+        1,
+        "raw finding and decoded finding must be collapsed to 1 match by digest dedup, got {matches:?}"
+    );
+    assert_eq!(matches[0].credential.as_ref(), "dup_abcdef1234567890");
+}
