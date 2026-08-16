@@ -177,29 +177,18 @@ impl CompiledScanner {
                         }
                         for m in decoded_matches {
                             // Generic decoded matches retain structural assignment evidence.
-                            if crate::adjudicate::record_decoded_unanchored_entropy_suppression(
+                            let path = chunk.metadata.path.as_deref();
+                            let is_entropy = self.detector_plans.is_entropy(m.detector_id.as_ref());
+                            let suppressed = crate::adjudicate::record_decoded_unanchored_entropy_suppression(
+                                &m, path, is_entropy,
+                            ) || crate::adjudicate::record_decoded_parent_example_suppression(
+                                &m, path, chunk.data.as_ref(),
+                            ) || crate::adjudicate::record_decoded_reverse_placeholder_suppression(
                                 &m,
-                                chunk.metadata.path.as_deref(),
-                                self.detector_plans.is_entropy(m.detector_id.as_ref()),
-                            ) {
-                                continue;
-                            }
-                            if crate::adjudicate::record_decoded_parent_example_suppression(
-                                &m,
-                                chunk.metadata.path.as_deref(),
-                                chunk.data.as_ref(),
-                            ) {
-                                continue;
-                            }
-                            if crate::adjudicate::record_decoded_reverse_placeholder_suppression(
-                                &m,
-                                decoded_chunk
-                                    .metadata
-                                    .path
-                                    .as_deref()
-                                    .or(chunk.metadata.path.as_deref()),
+                                decoded_chunk.metadata.path.as_deref().or(path),
                                 &decoded_chunk.metadata.source_type,
-                            ) {
+                            );
+                            if suppressed {
                                 continue;
                             }
                             decoded_candidates.push(m);
@@ -208,29 +197,36 @@ impl CompiledScanner {
                     if decoded_candidates.is_empty() {
                         return Ok(());
                     }
-                    // Decoding is monotonic: keep raw findings and union resolved decoded evidence.
-                    let raw_findings = matches.clone();
-                    let mut seen: HashSet<(Arc<str>, SensitiveString)> =
-                        matches.iter().map(|m| (Arc::clone(&m.detector_id), m.credential.clone())).collect();
-                    decoded_candidates.sort_by(|a, b| a.location.offset.cmp(&b.location.offset).then_with(|| a.cmp(b)));
-                    for m in decoded_candidates {
-                        if seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
-                            matches.push(m);
+                    let mut append_unique = |target: &mut Vec<RawMatch>, items: Vec<RawMatch>| {
+                        let mut seen: HashSet<_> = target
+                            .iter()
+                            .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
+                            .collect();
+                        for m in items {
+                            if seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
+                                target.push(m);
+                            }
                         }
-                    }
+                    };
+                    let raw_findings = matches.clone();
+                    decoded_candidates.sort_by(|a, b| {
+                        a.location
+                            .offset
+                            .cmp(&b.location.offset)
+                            .then_with(|| a.cmp(b))
+                    });
+                    append_unique(matches, decoded_candidates);
                     let resolved = crate::resolution::try_resolve_matches_with_compiled_plan(
                         std::mem::take(matches),
                         &self.detector_plans,
                     )
-                    .map_err(|error| crate::ScanError::Config(format!("compiled detector resolution failed: {error}")))?;
+                    .map_err(|error| {
+                        crate::ScanError::Config(format!(
+                            "compiled detector resolution failed: {error}"
+                        ))
+                    })?;
                     let mut merged = raw_findings;
-                    let mut merged_seen: HashSet<(Arc<str>, SensitiveString)> =
-                        merged.iter().map(|m| (Arc::clone(&m.detector_id), m.credential.clone())).collect();
-                    for m in resolved {
-                        if merged_seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
-                            merged.push(m);
-                        }
-                    }
+                    append_unique(&mut merged, resolved);
                     *matches = merged;
                 }
                 Ok(())

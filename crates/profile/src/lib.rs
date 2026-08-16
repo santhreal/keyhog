@@ -90,6 +90,7 @@ mod allocation;
 mod analysis;
 mod collector;
 mod comparison;
+mod config;
 mod detail;
 mod hardware;
 mod identity;
@@ -114,6 +115,11 @@ pub use collector::{
 pub use comparison::{
     compare_profiles, ComparisonDifference, ProfileComparison, StageComparison,
     COMPARISON_DIFFERENCE_VERSION, PROFILE_COMPARISON_VERSION, STAGE_COMPARISON_VERSION,
+};
+pub use config::{
+    constant_time_bytes_eq, lookup_profile_name, resolve_profile_from_env,
+    resolve_profile_from_env_value, resolve_profile_from_env_var, KnownProfile, ProfileConfig,
+    ProfileName, SensitiveString, PROFILE_ENV_VARS,
 };
 pub use detail::{detail, set_detail, Detail};
 pub use hardware::{
