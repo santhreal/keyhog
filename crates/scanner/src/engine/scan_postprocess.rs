@@ -56,7 +56,7 @@ impl CompiledScanner {
         matches: &mut Vec<RawMatch>,
         deadline: Option<std::time::Instant>,
         route: crate::ScanExecutionRoute,
-        decoder_absence: bool,
+        #[cfg_attr(not(feature = "decode"), allow(unused_variables))] decoder_absence: bool,
     ) -> crate::error::Result<()> {
         if crate::deadline::expired(deadline) {
             return Ok(());
@@ -228,7 +228,6 @@ impl CompiledScanner {
         Ok(())
     }
 
-    #[cfg(feature = "decode")]
     pub(crate) fn expand_triggered_patterns(&self, triggered_patterns: &[u64]) -> Vec<u64> {
         // Propagate ONLY via `same_prefix_patterns`: when AC matches a
         // literal prefix shared by patterns X and Y, both X and Y need

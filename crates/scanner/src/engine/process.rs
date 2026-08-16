@@ -90,6 +90,7 @@ impl CompiledScanner {
         let credential_shape = self.detector_plans.credential_shape(entry.detector_index);
         let suppression = self.detector_plans.suppression(entry.detector_index);
         let entropy_floor = self.detector_plans.entropy_floor(entry.detector_index);
+        #[cfg(feature = "entropy")]
         let entropy_policy = self.detector_plans.entropy(entry.detector_index);
         let is_generic = execution_policy.is_generic;
         let whole_value = is_generic.then(|| {

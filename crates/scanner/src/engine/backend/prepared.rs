@@ -50,7 +50,7 @@ impl CompiledScanner {
         &'a self,
         chunk: &'a Chunk,
         normalization_passthrough: bool,
-        multiline_absence: bool,
+        #[cfg_attr(not(feature = "multiline"), allow(unused_variables))] multiline_absence: bool,
         line_context_index: Option<&std::sync::Arc<crate::context::LineContextIndex>>,
     ) -> PreparedChunk<'a> {
         let _g = super::super::profile::span(keyhog_profile::Stage::Preprocess);

@@ -9,11 +9,12 @@ impl CompiledScanner {
         triggered_patterns: &[u64],
         deadline: Option<std::time::Instant>,
         confirmed_patterns_absence: bool,
-        entropy_absence: bool,
+        #[cfg_attr(not(feature = "entropy"), allow(unused_variables))] entropy_absence: bool,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
+        #[cfg_attr(not(feature = "ml"), allow(unused_variables))]
         backend: crate::hw_probe::ScanBackend,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
@@ -45,7 +46,7 @@ impl CompiledScanner {
         triggered_patterns: &[u64],
         deadline: Option<std::time::Instant>,
         confirmed_patterns_absence: bool,
-        entropy_absence: bool,
+        #[cfg_attr(not(feature = "entropy"), allow(unused_variables))] entropy_absence: bool,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
@@ -124,6 +125,7 @@ impl CompiledScanner {
             confirmed_anchor_literal_matches.filter(|_| raw_text_unchanged);
         let generic_keyword_positions = generic_keyword_positions.filter(|_| raw_text_unchanged);
         let confirmed_patterns_absence = confirmed_patterns_absence && raw_text_unchanged;
+        #[cfg_attr(not(feature = "entropy"), allow(unused_variables))]
         let entropy_absence = entropy_absence && raw_text_unchanged;
         // Repetitive multi-line corpora share a stable unique-line vocabulary across
         // overlapping windows. After the first window proves confirmed/entropy
@@ -141,9 +143,9 @@ impl CompiledScanner {
             .flatten();
         let confirmed_patterns_absence =
             confirmed_patterns_absence || vocab_absence.is_some_and(|absence| absence.confirmed);
+        #[cfg_attr(not(feature = "entropy"), allow(unused_variables))]
         let entropy_absence =
             entropy_absence || vocab_absence.is_some_and(|absence| absence.entropy);
-
         if !confirmed_patterns_absence && expanded_patterns.iter().any(|&w| w != 0) {
             let _g = profile::span(keyhog_profile::Stage::ConfirmedPatterns);
             #[cfg(debug_assertions)]
