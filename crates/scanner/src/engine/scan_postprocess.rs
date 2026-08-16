@@ -164,29 +164,18 @@ impl CompiledScanner {
                         }
                         for m in decoded_matches {
                             // Generic decoded matches retain structural assignment evidence.
-                            if crate::adjudicate::record_decoded_unanchored_entropy_suppression(
+                            let path = chunk.metadata.path.as_deref();
+                            let is_entropy = self.detector_plans.is_entropy(m.detector_id.as_ref());
+                            let suppressed = crate::adjudicate::record_decoded_unanchored_entropy_suppression(
+                                &m, path, is_entropy,
+                            ) || crate::adjudicate::record_decoded_parent_example_suppression(
+                                &m, path, chunk.data.as_ref(),
+                            ) || crate::adjudicate::record_decoded_reverse_placeholder_suppression(
                                 &m,
-                                chunk.metadata.path.as_deref(),
-                                self.detector_plans.is_entropy(m.detector_id.as_ref()),
-                            ) {
-                                continue;
-                            }
-                            if crate::adjudicate::record_decoded_parent_example_suppression(
-                                &m,
-                                chunk.metadata.path.as_deref(),
-                                chunk.data.as_ref(),
-                            ) {
-                                continue;
-                            }
-                            if crate::adjudicate::record_decoded_reverse_placeholder_suppression(
-                                &m,
-                                decoded_chunk
-                                    .metadata
-                                    .path
-                                    .as_deref()
-                                    .or(chunk.metadata.path.as_deref()),
+                                decoded_chunk.metadata.path.as_deref().or(path),
                                 &decoded_chunk.metadata.source_type,
-                            ) {
+                            );
+                            if suppressed {
                                 continue;
                             }
                             decoded_candidates.push(m);
@@ -197,7 +186,6 @@ impl CompiledScanner {
                     }
                     // Decoding is monotonic: keep raw findings and union resolved decoded evidence.
                     let raw_findings = matches.clone();
-
                     decoded_candidates.sort_by(|a, b| {
                         a.location
                             .offset

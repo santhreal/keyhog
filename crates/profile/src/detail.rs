@@ -44,9 +44,14 @@
 
 use std::sync::atomic::{AtomicU8, Ordering::Relaxed};
 
+use serde::{Deserialize, Serialize};
+
 /// How much performance measurement this process performs.
-#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Hash)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Hash, Serialize, Deserialize,
+)]
 #[repr(u8)]
+#[serde(rename_all = "lowercase")]
 pub enum Detail {
     /// Measure nothing. No clock is read on any hot path.
     #[default]

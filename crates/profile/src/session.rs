@@ -1,4 +1,5 @@
 use crate::collector::SnapshotCollector;
+use crate::config::ProfileConfig;
 use crate::hardware::HardwareSession;
 use crate::resources::{resource_usage, state_measurements, ProcessResourceCollector};
 use crate::runtime::{ContextGuard, Runtime};
@@ -67,6 +68,24 @@ impl Session {
             system: Some(SystemSession::new()),
             finished: false,
         })
+    }
+
+    /// Start a fresh isolated session configured by [`ProfileConfig`].
+    ///
+    /// If [`ProfileConfig::enabled`] is false, `Ok(None)` is returned without
+    /// initializing a profiling session or entering a runtime context.
+    ///
+    /// When enabled, the process-wide measurement detail is configured to match
+    /// [`ProfileConfig::detail`].
+    pub fn start_with_config(
+        config: &ProfileConfig,
+        identity: RunIdentity,
+    ) -> Result<Option<Self>, SessionActive> {
+        if !config.enabled {
+            return Ok(None);
+        }
+        crate::set_detail(config.detail);
+        Self::start(identity).map(Some)
     }
 
     /// Clone the runtime handle for propagation to a worker or async task.
