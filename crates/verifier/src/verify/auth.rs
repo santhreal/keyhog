@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use keyhog_core::{AuthSpec, VerificationResult};
 use reqwest::Client;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::interpolate::{
     interpolate_http_value, missing_companion_field, missing_companion_refs,
@@ -36,8 +37,8 @@ pub(crate) async fn build_request_for_auth(
             // interpolate_http_value().
             // A raw newline in a bearer token would silently terminate the
             // header line and inject the next byte into the request stream.
-            let token = resolve_and_sanitize_field(field, credential, companions);
-            RequestBuildResult::Ready(request.bearer_auth(token))
+            let token = Zeroizing::new(resolve_and_sanitize_field(field, credential, companions));
+            RequestBuildResult::Ready(request.bearer_auth(&*token))
         }
         AuthSpec::Basic { username, password } => {
             let missing = missing_auth_fields([username.as_str(), password.as_str()], companions);
@@ -49,9 +50,9 @@ pub(crate) async fn build_request_for_auth(
             // a NUL byte in the raw username/password still propagates as
             // a `\0` byte through the encoding round-trip and can confuse
             // C-FFI HTTP parsers downstream. Strip controls first.
-            let u = resolve_and_sanitize_field(username, credential, companions);
-            let p = resolve_and_sanitize_field(password, credential, companions);
-            RequestBuildResult::Ready(request.basic_auth(u, Some(p)))
+            let u = Zeroizing::new(resolve_and_sanitize_field(username, credential, companions));
+            let p = Zeroizing::new(resolve_and_sanitize_field(password, credential, companions));
+            RequestBuildResult::Ready(request.basic_auth(&*u, Some(&*p)))
         }
         AuthSpec::Header { name, template } => {
             let missing = missing_companion_refs(template, companions);
@@ -59,7 +60,8 @@ pub(crate) async fn build_request_for_auth(
                 return missing_auth_companion("header auth template", missing);
             }
             let value = interpolate_http_value(template, credential, companions);
-            RequestBuildResult::Ready(request.header(name, value))
+            let value = Zeroizing::new(value);
+            RequestBuildResult::Ready(request.header(name, &*value))
         }
         AuthSpec::Query { param, field } => {
             if let Some(missing) = missing_companion_field(field, companions) {
@@ -68,8 +70,8 @@ pub(crate) async fn build_request_for_auth(
             // SECURITY: same finding - query params land in the URL.
             // reqwest percent-encodes safe chars but control bytes can
             // still survive in raw form depending on serializer path.
-            let value = resolve_and_sanitize_field(field, credential, companions);
-            RequestBuildResult::Ready(request.query(&[(param, value)]))
+            let value = Zeroizing::new(resolve_and_sanitize_field(field, credential, companions));
+            RequestBuildResult::Ready(request.query(&[(param, &*value)]))
         }
         AuthSpec::AwsV4 {
             access_key,
@@ -136,7 +138,7 @@ pub(crate) async fn build_request_for_auth(
                     transient: false,
                 };
             }
-            let variables: HashMap<String, String> = companions
+            let mut variables: HashMap<String, String> = companions
                 .iter()
                 .map(|(name, value)| {
                     (
@@ -145,7 +147,7 @@ pub(crate) async fn build_request_for_auth(
                     )
                 })
                 .collect();
-            match codewalk::sandbox::execute_script(
+            let script_run = codewalk::sandbox::execute_script(
                 engine.as_str(),
                 code,
                 "verification_target",
@@ -153,8 +155,11 @@ pub(crate) async fn build_request_for_auth(
                 &variables,
                 timeout,
             )
-            .await
-            {
+            .await;
+            for v in variables.values_mut() {
+                v.zeroize();
+            }
+            match script_run {
                 Ok(output) => RequestBuildResult::Final {
                     result: script_auth_result(&output),
                     metadata: HashMap::new(),

@@ -10,6 +10,7 @@ mod bogon;
 /// Shared in-memory verification cache.
 mod cache;
 mod domain_allowlist;
+pub mod engine;
 mod interpolate;
 pub mod oob;
 pub mod rate_limit;
@@ -27,6 +28,7 @@ use keyhog_core::{DedupedMatch, DetectorSpec, VerificationResult, VerifiedFindin
 
 // Re-export dedup types from core so existing consumers (`use keyhog_verifier::DedupedMatch`)
 // continue to work without source changes.
+pub use engine::{VerificationDeadline, ZeroizingAuthHeader};
 pub use keyhog_core::{dedup_matches, DedupScope};
 use reqwest::{Client, Error as ReqwestError};
 use thiserror::Error;
@@ -286,6 +288,8 @@ pub(crate) fn build_pinned_verifier_client(
     harden_verifier_client_builder(
         reqwest::Client::builder()
             .timeout(timeout)
+            .connect_timeout(timeout)
+            .read_timeout(timeout)
             .danger_accept_invalid_certs(insecure_tls)
             .no_proxy(),
     )

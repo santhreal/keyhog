@@ -302,27 +302,28 @@ async fn verify_group_task(shared: Arc<VerifyTaskShared>, group: DedupedMatch) -
     let inflight = &shared.inflight;
     let inflight_count = &shared.inflight_count;
     let max_inflight_keys = shared.max_inflight_keys;
+    let deadline = crate::engine::VerificationDeadline::new(shared.timeout);
     let Ok(_global_permit) = keyhog_profile::instrument_future(
         keyhog_profile::Stage::LiveVerification,
-        global.acquire(),
+        crate::engine::acquire_permit_bounded(global, &deadline),
     )
     .await
     else {
         return into_finding(
             group,
-            VerificationResult::Error("semaphore closed".into()),
+            VerificationResult::Error(crate::verify::request::TIMEOUT_ERROR.into()),
             HashMap::new(),
         );
     };
     let Ok(_service_permit) = keyhog_profile::instrument_future(
         keyhog_profile::Stage::LiveVerification,
-        service_sem.acquire(),
+        crate::engine::acquire_permit_bounded(&service_sem, &deadline),
     )
     .await
     else {
         return into_finding(
             group,
-            VerificationResult::Error("service semaphore closed".into()),
+            VerificationResult::Error(crate::verify::request::TIMEOUT_ERROR.into()),
             HashMap::new(),
         );
     };
@@ -369,7 +370,23 @@ async fn verify_group_task(shared: Arc<VerifyTaskShared>, group: DedupedMatch) -
             }
         };
 
-        notify_to_await.notified().await;
+        let Ok(remaining) = deadline.remaining() else {
+            return into_finding(
+                group,
+                VerificationResult::Error(crate::verify::request::TIMEOUT_ERROR.into()),
+                HashMap::new(),
+            );
+        };
+        if tokio::time::timeout(remaining, notify_to_await.notified())
+            .await
+            .is_err()
+        {
+            return into_finding(
+                group,
+                VerificationResult::Error(crate::verify::request::TIMEOUT_ERROR.into()),
+                HashMap::new(),
+            );
+        }
     };
 
     let (verification, metadata) = if let Some(verify_spec) = detector
@@ -460,6 +477,8 @@ impl VerificationEngine {
         let mut builder = crate::harden_verifier_client_builder(
             Client::builder()
                 .timeout(config.timeout)
+                .connect_timeout(config.timeout)
+                .read_timeout(config.timeout)
                 .danger_accept_invalid_certs(config.insecure_tls),
         );
         builder = crate::apply_proxy_config(builder, config.proxy.as_deref())
