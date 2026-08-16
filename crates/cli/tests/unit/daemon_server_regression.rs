@@ -299,11 +299,25 @@ fn is_work_request_accepts_mass_end() {
 
 // ── compute_git_blob_oid ─────────────────────────────────────────────
 
+fn test_blob_chunks(data: &str) -> (u64, Vec<keyhog_core::Chunk>) {
+    let size = data.len() as u64;
+    let chunks = if data.is_empty() {
+        Vec::new()
+    } else {
+        vec![keyhog_core::Chunk {
+            data: data.to_string().into(),
+            metadata: keyhog_core::ChunkMetadata::default(),
+        }]
+    };
+    (size, chunks)
+}
+
 /// WHY: the Git blob OID for an empty payload must match Git's canonical
 /// hash. SHA-1 of `blob 0\0` is the well-known empty-tree blob hash.
 #[test]
 fn git_blob_oid_sha1_empty_payload() {
-    let oid = compute_git_blob_oid(GitHashAlgorithm::Sha1, b"");
+    let (size, chunks) = test_blob_chunks("");
+    let oid = compute_git_blob_oid(GitHashAlgorithm::Sha1, size, &chunks);
     assert_eq!(oid, "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
 }
 
@@ -311,7 +325,8 @@ fn git_blob_oid_sha1_empty_payload() {
 /// "hello world" (without newline) has a well-known SHA-1 blob hash.
 #[test]
 fn git_blob_oid_sha1_known_payload() {
-    let oid = compute_git_blob_oid(GitHashAlgorithm::Sha1, b"hello world");
+    let (size, chunks) = test_blob_chunks("hello world");
+    let oid = compute_git_blob_oid(GitHashAlgorithm::Sha1, size, &chunks);
     assert_eq!(oid, "95d09f2b10159347eece71399a7e2e907ea3df4f");
 }
 
@@ -319,13 +334,14 @@ fn git_blob_oid_sha1_known_payload() {
 /// payload, and it must match Git's SHA-256 blob format.
 #[test]
 fn git_blob_oid_sha256_known_payload() {
-    let oid = compute_git_blob_oid(GitHashAlgorithm::Sha256, b"hello world");
+    let (size, chunks) = test_blob_chunks("hello world");
+    let oid = compute_git_blob_oid(GitHashAlgorithm::Sha256, size, &chunks);
     assert_eq!(
         oid,
         "fee53a18d32820613c0527aa79be5cb30173c823a9b448fa4817767cc84c6f03"
     );
     assert_eq!(oid.len(), 64, "SHA-256 OID must be 64 hex chars");
-    let sha1 = compute_git_blob_oid(GitHashAlgorithm::Sha1, b"hello world");
+    let sha1 = compute_git_blob_oid(GitHashAlgorithm::Sha1, size, &chunks);
     assert_ne!(oid, sha1, "SHA-256 and SHA-1 must differ");
 }
 
@@ -333,11 +349,12 @@ fn git_blob_oid_sha256_known_payload() {
 /// different sizes produce different OIDs.
 #[test]
 fn git_blob_oid_distinguishes_sizes() {
-    let a = compute_git_blob_oid(GitHashAlgorithm::Sha1, b"a");
-    let aa = compute_git_blob_oid(GitHashAlgorithm::Sha1, b"aa");
+    let (size_a, chunks_a) = test_blob_chunks("a");
+    let (size_aa, chunks_aa) = test_blob_chunks("aa");
+    let a = compute_git_blob_oid(GitHashAlgorithm::Sha1, size_a, &chunks_a);
+    let aa = compute_git_blob_oid(GitHashAlgorithm::Sha1, size_aa, &chunks_aa);
     assert_ne!(a, aa, "different sizes must produce different OIDs");
 }
-
 // ── file_type_label ──────────────────────────────────────────────────
 
 /// WHY: each file type must produce a human-readable label so the refusal
