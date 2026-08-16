@@ -838,17 +838,14 @@ impl Phase2AlwaysActivePrefilter {
             if plan.skip_homoglyph_batch(batch) {
                 continue;
             }
-            let (matcher, gated) = match plan.matcher_for(batch, phase2_patterns) {
-                BatchMatcher::Run { set, plain_gate } => {
-                    if !plan.run_gateable_batch(batch, plain_gate, gates) {
-                        if prof && batch.gateable {
-                            GATE_BATCH_SKIPS.fetch_add(1, Relaxed);
-                        }
-                        continue;
-                    }
-                    (set, batch.gateable)
+            if batch.gateable && !plan.run_gateable_batch(batch, !batch.case_insensitive, &gates) {
+                if prof {
+                    GATE_BATCH_SKIPS.fetch_add(1, Relaxed);
                 }
-                BatchMatcher::RunUngated(set) => (set, false),
+                continue;
+            }
+            let matcher = match plan.matcher_for(batch, phase2_patterns) {
+                BatchMatcher::Run(set) => set,
                 BatchMatcher::Unavailable => {
                     for &index in &batch.phase2_indices {
                         scratch.mark(index);
@@ -856,7 +853,7 @@ impl Phase2AlwaysActivePrefilter {
                     continue;
                 }
             };
-            if prof && gated {
+            if prof && batch.gateable {
                 GATE_BATCH_RUNS.fetch_add(1, Relaxed);
             }
             // `RegexSet::matches` has no lazy-DFA implementation: reporting
@@ -943,14 +940,11 @@ impl Phase2AlwaysActivePrefilter {
             if plan.skip_homoglyph_batch(batch) {
                 continue;
             }
+            if batch.gateable && !plan.run_gateable_batch(batch, !batch.case_insensitive, &gates) {
+                continue;
+            }
             let matcher = match plan.matcher_for(batch, phase2_patterns) {
-                BatchMatcher::Run { set, plain_gate } => {
-                    if !plan.run_gateable_batch(batch, plain_gate, gates) {
-                        continue;
-                    }
-                    set
-                }
-                BatchMatcher::RunUngated(set) => set,
+                BatchMatcher::Run(set) => set,
                 // Marking would mark every pattern in the batch, so the active
                 // set is non-empty by construction.
                 BatchMatcher::Unavailable => return true,

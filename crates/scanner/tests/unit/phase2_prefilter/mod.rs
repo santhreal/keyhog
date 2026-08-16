@@ -39,9 +39,7 @@ const NO_PATTERNS: &[(crate::types::CompiledPattern, Vec<String>)] = &[];
 
 fn run_matcher(matcher: BatchMatcher<'_>, text: &str) -> Vec<usize> {
     match matcher {
-        BatchMatcher::Run { set, .. } | BatchMatcher::RunUngated(set) => {
-            set.matches(text).iter().collect()
-        }
+        BatchMatcher::Run(set) => set.matches(text).iter().collect(),
         BatchMatcher::Unavailable => panic!("seeded batch must resolve a matcher"),
     }
 }
@@ -167,7 +165,7 @@ fn portable_partition_gates_are_independent_and_fail_closed() {
         ),
     };
 
-    let ci_only = PortableGateEvidence::observe(
+    let ci_only = PortableGateEvidence::new(
         ChunkTriggerEvidence::inspect("CLIENT_SECRET=value"),
         true,
         true,
@@ -176,7 +174,7 @@ fn portable_partition_gates_are_independent_and_fail_closed() {
     assert!(ci_only.run_gateable_batch(false));
     assert!(!ci_only.run_gateable_batch(true));
 
-    let absent = PortableGateEvidence::observe(
+    let absent = PortableGateEvidence::new(
         ChunkTriggerEvidence::inspect("irrelevant"),
         true,
         true,
@@ -185,7 +183,7 @@ fn portable_partition_gates_are_independent_and_fail_closed() {
     assert!(!absent.run_gateable_batch(false));
     assert!(!absent.run_gateable_batch(true));
 
-    let unavailable = PortableGateEvidence::observe(
+    let unavailable = PortableGateEvidence::new(
         ChunkTriggerEvidence::inspect("é irrelevant"),
         true,
         false,

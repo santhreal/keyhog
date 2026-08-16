@@ -9,6 +9,7 @@
 - Public testing surface in `testing` exposes `url_decode_for_test` for direct URL percent-decode assertions.
 - Standalone bounded, zeroizing RFC 4648 and Crockford Base32 byte-stream decoders (`base32_decode` and `crockford_base32_decode`) with const lookup tables are exported from `decode::base32` without modifying the default automated scan pipeline composition.
 - Exact literal path and prefix/suffix suppression rules compile to direct string and set comparisons, bypassing regex engine construction on non-metacharacter patterns.
+- Phase-two anchor and literal prefilter verification reuses candidate scratch buffers across sequential chunks, coalesces candidate collection under shared evaluation closures, evaluates portable gate prefix evidence lazily on first need per partition, and checks gateable batch prefix evidence before compiling RegexSet matchers.
 
 ## 0.5.76 - 2026-08-16
 

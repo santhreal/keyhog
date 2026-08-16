@@ -442,6 +442,37 @@ impl Phase2AnchorIndex {
         })
     }
 
+    #[inline]
+    fn collect_ac_candidates<'a>(
+        ac: impl FnOnce() -> Option<&'a AhoCorasick>,
+        first_bigram: Option<&FirstBigramSet>,
+        literal_patterns: &super::CsrU32,
+        text: &str,
+        mut predicate: impl FnMut(usize) -> bool,
+        out: &mut Vec<(u32, u32)>,
+    ) {
+        out.clear();
+        if first_bigram.is_some_and(|gate| !gate.may_have_match(text)) {
+            return;
+        }
+        let Some(ac) = ac() else {
+            return;
+        };
+        for m in ac.find_overlapping_iter(text) {
+            let lit_id = m.pattern().as_usize();
+            let pos = m.start() as u32;
+            if let Some(pats) = literal_patterns.get(lit_id) {
+                for &pat in pats {
+                    if predicate(pat as usize) {
+                        out.push((pat, pos));
+                    }
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+    }
+
     /// Collect candidate `(phase2_idx, byte_pos)` anchors for the eligible
     /// patterns that are marked active in `is_active`. One shared AC pass over
     /// `text`. Results are pushed into `out` (caller-owned, reused scratch);
@@ -460,31 +491,14 @@ impl Phase2AnchorIndex {
         is_allowed: impl Fn(usize) -> bool,
         out: &mut Vec<(u32, u32)>,
     ) {
-        out.clear();
-        if self
-            .anchor_first_bigram
-            .as_ref()
-            .is_some_and(|gate| !gate.may_have_match(text))
-        {
-            return;
-        }
-        let Some(ac) = self.anchor_ac.as_ref().and_then(|anchor| anchor.get().0) else {
-            return;
-        };
-        for m in ac.find_overlapping_iter(text) {
-            let lit_id = m.pattern().as_usize();
-            let pos = m.start() as u32;
-            if let Some(pats) = self.literal_patterns.get(lit_id) {
-                for &pat in pats {
-                    let p = pat as usize;
-                    if is_allowed(p) && (self.is_always_active_eligible(p) || is_active(p)) {
-                        out.push((pat, pos));
-                    }
-                }
-            }
-        }
-        out.sort_unstable();
-        out.dedup();
+        Self::collect_ac_candidates(
+            || self.anchor_ac.as_ref().and_then(|anchor| anchor.get().0),
+            self.anchor_first_bigram.as_ref(),
+            &self.literal_patterns,
+            text,
+            |pat| is_allowed(pat) && (self.is_always_active_eligible(pat) || is_active(pat)),
+            out,
+        );
     }
 
     pub(crate) fn collect_always_active_candidates(
@@ -493,30 +507,14 @@ impl Phase2AnchorIndex {
         is_allowed: impl Fn(usize) -> bool,
         out: &mut Vec<(u32, u32)>,
     ) {
-        out.clear();
-        let Some(ac) = &self.always_anchor_ac else {
-            return;
-        };
-        if self
-            .always_anchor_first_bigram
-            .as_ref()
-            .is_some_and(|gate| !gate.may_have_match(text))
-        {
-            return;
-        }
-        for m in ac.find_overlapping_iter(text) {
-            let lit_id = m.pattern().as_usize();
-            let pos = m.start() as u32;
-            if let Some(pats) = self.always_literal_patterns.get(lit_id) {
-                for &pat in pats {
-                    if is_allowed(pat as usize) {
-                        out.push((pat, pos));
-                    }
-                }
-            }
-        }
-        out.sort_unstable();
-        out.dedup();
+        Self::collect_ac_candidates(
+            || self.always_anchor_ac.as_ref(),
+            self.always_anchor_first_bigram.as_ref(),
+            &self.always_literal_patterns,
+            text,
+            is_allowed,
+            out,
+        );
     }
 
     /// Expand complete literal positions from the fused GPU matcher into the
@@ -583,34 +581,14 @@ impl Phase2AnchorIndex {
         is_allowed: impl Fn(usize) -> bool,
         out: &mut Vec<(u32, u32)>,
     ) {
-        out.clear();
-        if self
-            .plain_anchor_first_bigram
-            .as_ref()
-            .is_some_and(|gate| !gate.may_have_match(text))
-        {
-            return;
-        }
-        let Some(ac) = self
-            .plain_anchor_ac
-            .as_ref()
-            .and_then(|anchor| anchor.get().0)
-        else {
-            return;
-        };
-        for m in ac.find_overlapping_iter(text) {
-            let lit_id = m.pattern().as_usize();
-            let pos = m.start() as u32;
-            if let Some(pats) = self.plain_literal_patterns.get(lit_id) {
-                for &pat in pats {
-                    if is_allowed(pat as usize) {
-                        out.push((pat, pos));
-                    }
-                }
-            }
-        }
-        out.sort_unstable();
-        out.dedup();
+        Self::collect_ac_candidates(
+            || self.plain_anchor_ac.as_ref().and_then(|a| a.get().0),
+            self.plain_anchor_first_bigram.as_ref(),
+            &self.plain_literal_patterns,
+            text,
+            is_allowed,
+            out,
+        );
     }
 }
 
