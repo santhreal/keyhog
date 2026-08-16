@@ -1,8 +1,15 @@
-//! RFC 4648 and Crockford Base32 decoding routines.
+//! RFC 4648 and Crockford Base32 byte-stream decoding routines.
 //!
-//! Provides bounded, zeroizing Base32 decoding. Decoded byte buffers are
-//! securely zeroized on invalid character or padding errors.
-
+//! Provides bounded, zeroizing Base32 decoding for arbitrary binary payloads.
+//! On decode error (invalid character, padding mismatch, or non-zero trailing
+//! bits), intermediate allocated byte buffers are securely zeroized before
+//! returning `Err(())`. On success, ownership of the decoded buffer is transferred
+//! to the caller.
+//!
+//! These decoders provide standalone byte-stream recovery and do not participate
+//! in the default automated scan pipeline. Unlike `keyhog_core::aws::aws_account_from_key_id`
+//! (which is a specialized u48 bit-extractor for the 10-char account segment of an
+//! AWS key ID), these routines perform full-payload RFC 4648 and Crockford decoding.
 use super::limits::MAX_BASE32_INPUT_LEN;
 use zeroize::Zeroize;
 
@@ -98,7 +105,7 @@ pub fn base32_decode(input: &str) -> Result<Vec<u8>, ()> {
     let bytes = input.as_bytes();
     let (data, padding_len) = match bytes.iter().position(|&b| b == b'=') {
         Some(pos) => {
-            if input.len() % 8 != 0 {
+            if !input.len().is_multiple_of(8) {
                 return Err(());
             }
             let pad_count = input.len() - pos;
@@ -271,9 +278,14 @@ pub fn base32_decode(input: &str) -> Result<Vec<u8>, ()> {
     }
 }
 
-/// Decode a Crockford base32 string, bounded to `MAX_BASE32_INPUT_LEN` bytes
-/// for DoS safety. Hyphens are ignored as separators. Returns `Err(())` on
-/// invalid character, invalid length, or over-length input.
+/// Decode a byte-stream Crockford base32 string, bounded to `MAX_BASE32_INPUT_LEN` bytes
+/// for DoS safety. Hyphens are ignored as separators, and character aliases (`O`/`o` -> 0,
+/// `I`/`i`/`L`/`l` -> 1) are normalized.
+///
+/// Uses standard byte-aligned framing (5-byte blocks per 8 characters) with trailing-bit
+/// zero checks on fractional blocks. Note: Non-byte-aligned numerical Crockford payloads
+/// (such as ULIDs where slack bits are placed in the leading character) are not byte streams
+/// and are rejected. Returns `Err(())` on invalid character, invalid length, or over-length input.
 #[allow(clippy::result_unit_err)]
 pub fn crockford_base32_decode(input: &str) -> Result<Vec<u8>, ()> {
     if input.len() > MAX_BASE32_INPUT_LEN {
