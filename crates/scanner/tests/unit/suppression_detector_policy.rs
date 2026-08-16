@@ -157,3 +157,76 @@ fn detector_policy_allowlist_matching() {
     let no_match = policy.allowlist_stage(Some("src/main.rs"), None, "real_secret");
     assert!(no_match.is_none());
 }
+
+#[test]
+fn test_filter_pattern_differential_against_regex() {
+    use super::FilterPattern;
+
+    let patterns = [
+        "^exact_val$",
+        "^exact$",
+        "^$",
+        "^",
+        "$",
+        "raw_needle",
+        "",
+        "  ",
+        "^prefix_.*",
+        "^prefix_",
+        "_suffix$",
+        ".*needle.*",
+        ".*",
+        ".*.*",
+        "^a$b",
+        "^a^b$",
+        "a|b",
+        "[0-9]+",
+        r"\.min\.js$",
+        "a.b",
+        "a*b",
+        "a+b",
+        "with spaces",
+        "^with spaces$",
+    ];
+
+    let haystacks = [
+        "",
+        " ",
+        "  ",
+        "exact_val",
+        "exact_val_extra",
+        "pre_exact_val",
+        "prefix_123",
+        "other_prefix_123",
+        "file_suffix",
+        "file_suffix_extra",
+        "haystack_needle_end",
+        "raw_needle",
+        "raw",
+        "needle",
+        "a$b",
+        "^a$b",
+        "app.min.js",
+        "appminjs",
+        "aXb",
+        "ab",
+        "42",
+        "abc",
+        "with spaces",
+        "path/with spaces/file.rs",
+    ];
+
+    for pat in patterns {
+        let compiled_filter = FilterPattern::compile(pat).expect("compile filter pattern");
+        let compiled_re = regex::Regex::new(pat).expect("compile regex");
+
+        for haystack in haystacks {
+            let filter_result = compiled_filter.is_match(haystack);
+            let regex_result = compiled_re.is_match(haystack);
+            assert_eq!(
+                filter_result, regex_result,
+                "differential match mismatch for pattern {pat:?} and haystack {haystack:?}: FilterPattern={filter_result}, Regex={regex_result}"
+            );
+        }
+    }
+}

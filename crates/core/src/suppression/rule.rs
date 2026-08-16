@@ -94,45 +94,23 @@ impl<'a> RuleEvaluationContext for FindingContext<'a> {
             "service" => Some(self.service),
             "path" => Some(self.path),
             "credential_hash" => Some(self.credential_hash),
+            // `Severity::as_str` is the single source of truth for the
+            // kebab-case wire form; rehand-rolling the match here drifted
+            // from it once already (the `client-safe` tier).
             "severity" => Some(self.severity.as_str()),
             _ => None,
         }
     }
 }
 
-/// Trim leading and trailing ASCII whitespace from a byte slice.
-#[inline]
-pub fn trim_ascii_whitespace(bytes: &[u8]) -> &[u8] {
-    let mut start = 0;
-    while start < bytes.len() && bytes[start].is_ascii_whitespace() {
-        start += 1;
-    }
-    let mut end = bytes.len();
-    while end > start && bytes[end - 1].is_ascii_whitespace() {
-        end -= 1;
-    }
-    &bytes[start..end]
-}
-
-/// Trim leading and trailing ASCII whitespace from a string slice without allocation.
-#[inline]
-pub fn trim_ascii_str(s: &str) -> &str {
-    let bytes = s.as_bytes();
-    let trimmed = trim_ascii_whitespace(bytes);
-    let start = trimmed.as_ptr() as usize - bytes.as_ptr() as usize;
-    &s[start..start + trimmed.len()]
-}
-
-/// Split a byte slice by delimiter, trimming ASCII whitespace from each non-empty slice.
-#[inline]
-pub fn split_byte_tokens(bytes: &[u8], delimiter: u8) -> impl Iterator<Item = &[u8]> {
-    bytes
-        .split(move |&b| b == delimiter)
-        .map(trim_ascii_whitespace)
-        .filter(|slice| !slice.is_empty())
-}
-
 /// Return severity rank using canonical Severity table.
+///
+/// Rank ordering MUST match the `Severity` enum's derived `Ord`
+/// (Info < ClientSafe < Low < Medium < High < Critical). `severity_lte`
+/// expands to the set of every label at or below the threshold rank, so a
+/// drift between this table and the enum would suppress the wrong tiers - in
+/// particular, omitting `client-safe` made `severity_lte = "low"` silently
+/// skip client-safe findings that rank *below* low.
 pub(crate) fn severity_rank_from_str(s: &str) -> Result<usize, String> {
     Severity::from_filter_label(s)
         .map(|sev| sev.rank())
@@ -156,7 +134,7 @@ fn is_regex_meta(c: char) -> bool {
 
 impl RuleSuppressor {
     /// Build an empty suppressor that matches no findings.
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self::default()
     }
 
@@ -235,7 +213,11 @@ impl RuleSuppressor {
         if self.rules.is_empty() {
             return false;
         }
-        let path = file_path.unwrap_or("");
+        // Law 10: recall-safe (fail-OPEN for suppression), a finding with no
+        // file_path yields `""`, which a path-scoped suppression rule will not
+        // match, so the finding is LESS likely to be suppressed and MORE likely
+        // to be reported. A missing path can never silently drop a real finding.
+        let path = file_path.unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
         let credential_hash_hex = crate::finding::hex_encode(credential_hash);
         let ctx = FindingContext {
             detector_id,
@@ -269,12 +251,10 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
     }
 
     if let Some(d) = entry.detector.as_deref() {
-        let trimmed = trim_ascii_str(d);
-        conditions.push(eq_field("detector_id", trimmed));
+        conditions.push(eq_field("detector_id", d));
     }
     if let Some(s) = entry.service.as_deref() {
-        let trimmed = trim_ascii_str(s);
-        conditions.push(eq_field("service", trimmed));
+        conditions.push(eq_field("service", s));
     }
     if let Some(s) = entry.severity.as_deref() {
         let normalized = Severity::from_filter_label(s)
@@ -402,8 +382,7 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
         }
     }
     if let Some(h) = entry.credential_hash.as_deref() {
-        let trimmed = trim_ascii_str(h);
-        conditions.push(eq_field("credential_hash", trimmed));
+        conditions.push(eq_field("credential_hash", h));
     }
 
     if conditions.is_empty() {

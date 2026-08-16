@@ -15,7 +15,6 @@ pub mod report_json_no_unwrap_expect;
 pub mod report_no_unwrap_expect;
 pub mod report_sarif_no_unwrap_expect;
 pub mod report_text_no_unwrap_expect;
-pub mod rule_filter_no_unwrap_expect;
 pub mod safe_bin_no_unwrap_expect;
 pub mod source_no_unwrap_expect;
 pub mod spec_load_no_unwrap_expect;

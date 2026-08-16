@@ -20,7 +20,7 @@ pipeline.
 | GPU regex-DFA admission | `keyhog-scanner::engine::phase2_gpu_dfa` | Narrows eligible prefixless phase-two work; host extraction remains authoritative. KeyHog first compiles one catalog shard, then recursively splits only when VYRE proves that the DFA exceeds its state cap. Each resulting shard requires one full-batch dispatch. |
 | Quantized confidence scoring | `keyhog-scanner::confidence::{quantized,quantized_vyre}` | Runs the authenticated fixed-point model through one bounded asynchronous VYRE score program for GPU-owned rows. CPU and SIMD routes use the same integer artifact. The score dispatch has its own slot, fence, and retirement lifecycle; it is not fused into the resident literal program. Invalid UTF-8, empty, oversized, and unquantizable rows remain explicitly CPU-owned. |
 | Ordered GPU device sets | `keyhog-scanner::gpu::device_set`, `keyhog-cli::orchestrator::dispatch::backend` | Deduplicates cross-API aliases by physical topology, authenticates every required adapter, allocates bounded resident slots all-or-nothing, assigns contiguous weighted source ranges, dispatches devices concurrently, and retires results in source order. One member failure invalidates the complete set. |
-| Declarative rule evaluation | `keyhog-core::rule_filter` | Evaluates `.keyhogignore.toml` rules through the shared rule representation. |
+| Declarative rule evaluation | `keyhog-core::suppression::rule` | Evaluates `.keyhogignore.toml` rules through the shared rule representation. |
 
 The portable build retains the CPU-side VYRE support libraries used by these
 shared primitives while omitting WGPU/CUDA drivers and their startup probes.

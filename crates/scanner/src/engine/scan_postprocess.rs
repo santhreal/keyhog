@@ -3,6 +3,8 @@ pub(crate) mod confirmed_anchor;
 use super::CompiledScanner;
 #[cfg(feature = "decode")]
 use crate::types::MAX_SCAN_CHUNK_BYTES;
+#[cfg(feature = "decode")]
+use keyhog_core::SensitiveString;
 use keyhog_core::{Chunk, RawMatch};
 #[cfg(feature = "decode")]
 use std::collections::HashSet;
@@ -174,22 +176,30 @@ impl CompiledScanner {
                             break;
                         }
                         for m in decoded_matches {
-                            let path = chunk.metadata.path.as_deref();
-                            let is_entropy = self.detector_plans.is_entropy(m.detector_id.as_ref());
-                            let decoded_path = decoded_chunk.metadata.path.as_deref().or(path);
+                            // Generic decoded matches retain structural assignment evidence.
                             if crate::adjudicate::record_decoded_unanchored_entropy_suppression(
-                                &m, path, is_entropy,
-                            ) || crate::adjudicate::record_decoded_parent_example_suppression(
                                 &m,
-                                path,
+                                chunk.metadata.path.as_deref(),
+                                self.detector_plans.is_entropy(m.detector_id.as_ref()),
+                            ) {
+                                continue;
+                            }
+                            if crate::adjudicate::record_decoded_parent_example_suppression(
+                                &m,
+                                chunk.metadata.path.as_deref(),
                                 chunk.data.as_ref(),
-                            )
-                                || crate::adjudicate::record_decoded_reverse_placeholder_suppression(
-                                    &m,
-                                    decoded_path,
-                                    &decoded_chunk.metadata.source_type,
-                                )
-                            {
+                            ) {
+                                continue;
+                            }
+                            if crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+                                &m,
+                                decoded_chunk
+                                    .metadata
+                                    .path
+                                    .as_deref()
+                                    .or(chunk.metadata.path.as_deref()),
+                                &decoded_chunk.metadata.source_type,
+                            ) {
                                 continue;
                             }
                             decoded_candidates.push(m);
@@ -199,8 +209,8 @@ impl CompiledScanner {
                         return Ok(());
                     }
                     // Decoding is monotonic: keep raw findings and union resolved decoded evidence.
-                    let mut raw_findings = matches.clone();
-                    let mut seen: HashSet<_> = matches
+                    let raw_findings = matches.clone();
+                    let mut seen: HashSet<(Arc<str>, SensitiveString)> = matches
                         .iter()
                         .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
                         .collect();
@@ -210,26 +220,31 @@ impl CompiledScanner {
                             .cmp(&b.location.offset)
                             .then_with(|| a.cmp(b))
                     });
-                    matches.extend(decoded_candidates.into_iter().filter(|m| {
-                        seen.insert((Arc::clone(&m.detector_id), m.credential.clone()))
-                    }));
+                    for m in decoded_candidates {
+                        if seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
+                            matches.push(m);
+                        }
+                    }
                     let resolved = crate::resolution::try_resolve_matches_with_compiled_plan(
                         std::mem::take(matches),
                         &self.detector_plans,
                     )
-                    .map_err(|e| {
+                    .map_err(|error| {
                         crate::ScanError::Config(format!(
-                            "compiled detector resolution failed: {e}"
+                            "compiled detector resolution failed: {error}"
                         ))
                     })?;
-                    let mut merged_seen: HashSet<_> = raw_findings
+                    let mut merged = raw_findings;
+                    let mut merged_seen: HashSet<(Arc<str>, SensitiveString)> = merged
                         .iter()
                         .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
                         .collect();
-                    raw_findings.extend(resolved.into_iter().filter(|m| {
-                        merged_seen.insert((Arc::clone(&m.detector_id), m.credential.clone()))
-                    }));
-                    *matches = raw_findings;
+                    for m in resolved {
+                        if merged_seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
+                            merged.push(m);
+                        }
+                    }
+                    *matches = merged;
                 }
                 Ok(())
             };

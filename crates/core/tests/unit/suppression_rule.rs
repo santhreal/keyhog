@@ -1,8 +1,6 @@
-//! Unit tests for zero-allocation byte slicing and rule suppression logic.
+//! Unit tests for declarative rule suppression logic.
 
-use keyhog_core::suppression::rule::{
-    split_byte_tokens, trim_ascii_str, trim_ascii_whitespace, RuleSuppressor,
-};
+use keyhog_core::suppression::RuleSuppressor;
 use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -36,30 +34,37 @@ fn test_finding(path: &str, sev: Severity) -> VerifiedFinding {
 }
 
 #[test]
-fn test_trim_ascii_whitespace_and_str() {
-    assert_eq!(
-        trim_ascii_whitespace(b"   hello world  \r\n"),
-        b"hello world"
-    );
-    assert_eq!(trim_ascii_whitespace(b""), b"");
-    assert_eq!(trim_ascii_whitespace(b"   \t\r\n"), b"");
-    assert_eq!(trim_ascii_whitespace(b"no_space"), b"no_space");
+fn test_suppression_rule_preserves_whitespace_verbatim() {
+    let toml = r#"
+[[suppress]]
+detector = "  spaced-detector  "
 
-    assert_eq!(trim_ascii_str("   hello world  \r\n"), "hello world");
-    assert_eq!(trim_ascii_str(""), "");
-    assert_eq!(trim_ascii_str("   \t\r\n"), "");
-    assert_eq!(trim_ascii_str("no_space"), "no_space");
-}
+[[suppress]]
+service = "  spaced-service  "
 
-#[test]
-fn test_split_byte_tokens() {
-    let raw = b"  token1 ;  token2 ; token3  ";
-    let tokens: Vec<&[u8]> = split_byte_tokens(raw, b';').collect();
-    assert_eq!(tokens, vec![&b"token1"[..], &b"token2"[..], &b"token3"[..]]);
+[[suppress]]
+path_contains = " with spaces "
+"#;
+    let s: RuleSuppressor = toml.parse().expect("rule should parse");
 
-    let empty = b"  ; ;  ";
-    let tokens_empty: Vec<&[u8]> = split_byte_tokens(empty, b';').collect();
-    assert!(tokens_empty.is_empty());
+    // Rule with spaced detector should NOT match finding with trimmed detector
+    let mut finding_trimmed_det = test_finding("src/lib.rs", Severity::Low);
+    finding_trimmed_det.detector_id = "spaced-detector".into();
+    assert!(!s.matches(&finding_trimmed_det));
+
+    // Rule with spaced detector MUST match finding with exact spaced detector
+    let mut finding_exact_det = test_finding("src/lib.rs", Severity::Low);
+    finding_exact_det.detector_id = "  spaced-detector  ".into();
+    assert!(s.matches(&finding_exact_det));
+
+    // Rule with path_contains = " with spaces " should only match paths containing " with spaces "
+    let finding_no_spaces = test_finding("src/with_underscores/file.rs", Severity::Low);
+    let finding_without_surrounding_spaces = test_finding("src/with spaces/file.rs", Severity::Low);
+    let finding_with_surrounding_spaces =
+        test_finding("src/path with spaces in name/file.rs", Severity::Low);
+    assert!(!s.matches(&finding_no_spaces));
+    assert!(!s.matches(&finding_without_surrounding_spaces));
+    assert!(s.matches(&finding_with_surrounding_spaces));
 }
 
 #[test]
