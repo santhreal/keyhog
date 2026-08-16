@@ -138,144 +138,7 @@ pub fn base32_decode(input: &str) -> Result<Vec<u8>, ()> {
         }
     }
 
-    let full_blocks = data.len() / 8;
-    let tail_bytes = match rem_len {
-        0 => 0,
-        2 => 1,
-        4 => 2,
-        5 => 3,
-        7 => 4,
-        _ => return Err(()),
-    };
-    let total_len = full_blocks * 5 + tail_bytes;
-    let mut out = Vec::with_capacity(total_len);
-
-    for chunk in data.chunks_exact(8) {
-        let v0 = BASE32_DECODE_TABLE[chunk[0] as usize];
-        let v1 = BASE32_DECODE_TABLE[chunk[1] as usize];
-        let v2 = BASE32_DECODE_TABLE[chunk[2] as usize];
-        let v3 = BASE32_DECODE_TABLE[chunk[3] as usize];
-        let v4 = BASE32_DECODE_TABLE[chunk[4] as usize];
-        let v5 = BASE32_DECODE_TABLE[chunk[5] as usize];
-        let v6 = BASE32_DECODE_TABLE[chunk[6] as usize];
-        let v7 = BASE32_DECODE_TABLE[chunk[7] as usize];
-
-        if (v0 | v1 | v2 | v3 | v4 | v5 | v6 | v7) & 0xE0 != 0 {
-            out.zeroize();
-            return Err(());
-        }
-
-        let combined = ((v0 as u64) << 35)
-            | ((v1 as u64) << 30)
-            | ((v2 as u64) << 25)
-            | ((v3 as u64) << 20)
-            | ((v4 as u64) << 15)
-            | ((v5 as u64) << 10)
-            | ((v6 as u64) << 5)
-            | (v7 as u64);
-
-        out.push((combined >> 32) as u8);
-        out.push((combined >> 24) as u8);
-        out.push((combined >> 16) as u8);
-        out.push((combined >> 8) as u8);
-        out.push(combined as u8);
-    }
-
-    let rem = data.chunks_exact(8).remainder();
-    match rem.len() {
-        0 => Ok(out),
-        2 => {
-            let v0 = BASE32_DECODE_TABLE[rem[0] as usize];
-            let v1 = BASE32_DECODE_TABLE[rem[1] as usize];
-            if (v0 | v1) & 0xE0 != 0 {
-                out.zeroize();
-                return Err(());
-            }
-            let combined = ((v0 as u16) << 5) | (v1 as u16);
-            if combined & 0x03 != 0 {
-                out.zeroize();
-                return Err(());
-            }
-            out.push((combined >> 2) as u8);
-            Ok(out)
-        }
-        4 => {
-            let v0 = BASE32_DECODE_TABLE[rem[0] as usize];
-            let v1 = BASE32_DECODE_TABLE[rem[1] as usize];
-            let v2 = BASE32_DECODE_TABLE[rem[2] as usize];
-            let v3 = BASE32_DECODE_TABLE[rem[3] as usize];
-            if (v0 | v1 | v2 | v3) & 0xE0 != 0 {
-                out.zeroize();
-                return Err(());
-            }
-            let combined =
-                ((v0 as u32) << 15) | ((v1 as u32) << 10) | ((v2 as u32) << 5) | (v3 as u32);
-            if combined & 0x0F != 0 {
-                out.zeroize();
-                return Err(());
-            }
-            out.push((combined >> 12) as u8);
-            out.push((combined >> 4) as u8);
-            Ok(out)
-        }
-        5 => {
-            let v0 = BASE32_DECODE_TABLE[rem[0] as usize];
-            let v1 = BASE32_DECODE_TABLE[rem[1] as usize];
-            let v2 = BASE32_DECODE_TABLE[rem[2] as usize];
-            let v3 = BASE32_DECODE_TABLE[rem[3] as usize];
-            let v4 = BASE32_DECODE_TABLE[rem[4] as usize];
-            if (v0 | v1 | v2 | v3 | v4) & 0xE0 != 0 {
-                out.zeroize();
-                return Err(());
-            }
-            let combined = ((v0 as u32) << 20)
-                | ((v1 as u32) << 15)
-                | ((v2 as u32) << 10)
-                | ((v3 as u32) << 5)
-                | (v4 as u32);
-            if combined & 0x01 != 0 {
-                out.zeroize();
-                return Err(());
-            }
-            out.push((combined >> 17) as u8);
-            out.push((combined >> 9) as u8);
-            out.push((combined >> 1) as u8);
-            Ok(out)
-        }
-        7 => {
-            let v0 = BASE32_DECODE_TABLE[rem[0] as usize];
-            let v1 = BASE32_DECODE_TABLE[rem[1] as usize];
-            let v2 = BASE32_DECODE_TABLE[rem[2] as usize];
-            let v3 = BASE32_DECODE_TABLE[rem[3] as usize];
-            let v4 = BASE32_DECODE_TABLE[rem[4] as usize];
-            let v5 = BASE32_DECODE_TABLE[rem[5] as usize];
-            let v6 = BASE32_DECODE_TABLE[rem[6] as usize];
-            if (v0 | v1 | v2 | v3 | v4 | v5 | v6) & 0xE0 != 0 {
-                out.zeroize();
-                return Err(());
-            }
-            let combined = ((v0 as u64) << 30)
-                | ((v1 as u64) << 25)
-                | ((v2 as u64) << 20)
-                | ((v3 as u64) << 15)
-                | ((v4 as u64) << 10)
-                | ((v5 as u64) << 5)
-                | (v6 as u64);
-            if combined & 0x07 != 0 {
-                out.zeroize();
-                return Err(());
-            }
-            out.push((combined >> 27) as u8);
-            out.push((combined >> 19) as u8);
-            out.push((combined >> 11) as u8);
-            out.push((combined >> 3) as u8);
-            Ok(out)
-        }
-        _ => {
-            out.zeroize();
-            Err(())
-        }
-    }
+    decode_base32_slice(data, &BASE32_DECODE_TABLE)
 }
 
 /// Decode a byte-stream Crockford base32 string, bounded to `MAX_BASE32_INPUT_LEN` bytes
@@ -283,9 +146,8 @@ pub fn base32_decode(input: &str) -> Result<Vec<u8>, ()> {
 /// `I`/`i`/`L`/`l` -> 1) are normalized.
 ///
 /// Uses standard byte-aligned framing (5-byte blocks per 8 characters) with trailing-bit
-/// zero checks on fractional blocks. Note: Non-byte-aligned numerical Crockford payloads
-/// (such as ULIDs where slack bits are placed in the leading character) are not byte streams
-/// and are rejected. Returns `Err(())` on invalid character, invalid length, or over-length input.
+/// zero checks on fractional blocks. Returns `Err(())` on invalid character, invalid length,
+/// or over-length input.
 #[allow(clippy::result_unit_err)]
 pub fn crockford_base32_decode(input: &str) -> Result<Vec<u8>, ()> {
     if input.len() > MAX_BASE32_INPUT_LEN {
@@ -297,7 +159,7 @@ pub fn crockford_base32_decode(input: &str) -> Result<Vec<u8>, ()> {
     }
 
     if !input.as_bytes().contains(&b'-') {
-        return decode_crockford_slice(input.as_bytes());
+        return decode_base32_slice(input.as_bytes(), &CROCKFORD_DECODE_TABLE);
     }
 
     if input.len() <= 256 {
@@ -309,7 +171,7 @@ pub fn crockford_base32_decode(input: &str) -> Result<Vec<u8>, ()> {
                 len += 1;
             }
         }
-        let res = decode_crockford_slice(&buf[..len]);
+        let res = decode_base32_slice(&buf[..len], &CROCKFORD_DECODE_TABLE);
         buf.zeroize();
         res
     } else {
@@ -319,13 +181,13 @@ pub fn crockford_base32_decode(input: &str) -> Result<Vec<u8>, ()> {
                 cleaned.push(b);
             }
         }
-        let res = decode_crockford_slice(&cleaned);
+        let res = decode_base32_slice(&cleaned, &CROCKFORD_DECODE_TABLE);
         cleaned.zeroize();
         res
     }
 }
 
-fn decode_crockford_slice(data: &[u8]) -> Result<Vec<u8>, ()> {
+fn decode_base32_slice(data: &[u8], table: &[u8; 256]) -> Result<Vec<u8>, ()> {
     let rem_len = data.len() % 8;
     if !matches!(rem_len, 0 | 2 | 4 | 5 | 7) {
         return Err(());
@@ -344,14 +206,14 @@ fn decode_crockford_slice(data: &[u8]) -> Result<Vec<u8>, ()> {
     let mut out = Vec::with_capacity(total_len);
 
     for chunk in data.chunks_exact(8) {
-        let v0 = CROCKFORD_DECODE_TABLE[chunk[0] as usize];
-        let v1 = CROCKFORD_DECODE_TABLE[chunk[1] as usize];
-        let v2 = CROCKFORD_DECODE_TABLE[chunk[2] as usize];
-        let v3 = CROCKFORD_DECODE_TABLE[chunk[3] as usize];
-        let v4 = CROCKFORD_DECODE_TABLE[chunk[4] as usize];
-        let v5 = CROCKFORD_DECODE_TABLE[chunk[5] as usize];
-        let v6 = CROCKFORD_DECODE_TABLE[chunk[6] as usize];
-        let v7 = CROCKFORD_DECODE_TABLE[chunk[7] as usize];
+        let v0 = table[chunk[0] as usize];
+        let v1 = table[chunk[1] as usize];
+        let v2 = table[chunk[2] as usize];
+        let v3 = table[chunk[3] as usize];
+        let v4 = table[chunk[4] as usize];
+        let v5 = table[chunk[5] as usize];
+        let v6 = table[chunk[6] as usize];
+        let v7 = table[chunk[7] as usize];
 
         if (v0 | v1 | v2 | v3 | v4 | v5 | v6 | v7) & 0xE0 != 0 {
             out.zeroize();
@@ -378,8 +240,8 @@ fn decode_crockford_slice(data: &[u8]) -> Result<Vec<u8>, ()> {
     match rem.len() {
         0 => Ok(out),
         2 => {
-            let v0 = CROCKFORD_DECODE_TABLE[rem[0] as usize];
-            let v1 = CROCKFORD_DECODE_TABLE[rem[1] as usize];
+            let v0 = table[rem[0] as usize];
+            let v1 = table[rem[1] as usize];
             if (v0 | v1) & 0xE0 != 0 {
                 out.zeroize();
                 return Err(());
@@ -393,10 +255,10 @@ fn decode_crockford_slice(data: &[u8]) -> Result<Vec<u8>, ()> {
             Ok(out)
         }
         4 => {
-            let v0 = CROCKFORD_DECODE_TABLE[rem[0] as usize];
-            let v1 = CROCKFORD_DECODE_TABLE[rem[1] as usize];
-            let v2 = CROCKFORD_DECODE_TABLE[rem[2] as usize];
-            let v3 = CROCKFORD_DECODE_TABLE[rem[3] as usize];
+            let v0 = table[rem[0] as usize];
+            let v1 = table[rem[1] as usize];
+            let v2 = table[rem[2] as usize];
+            let v3 = table[rem[3] as usize];
             if (v0 | v1 | v2 | v3) & 0xE0 != 0 {
                 out.zeroize();
                 return Err(());
@@ -412,11 +274,11 @@ fn decode_crockford_slice(data: &[u8]) -> Result<Vec<u8>, ()> {
             Ok(out)
         }
         5 => {
-            let v0 = CROCKFORD_DECODE_TABLE[rem[0] as usize];
-            let v1 = CROCKFORD_DECODE_TABLE[rem[1] as usize];
-            let v2 = CROCKFORD_DECODE_TABLE[rem[2] as usize];
-            let v3 = CROCKFORD_DECODE_TABLE[rem[3] as usize];
-            let v4 = CROCKFORD_DECODE_TABLE[rem[4] as usize];
+            let v0 = table[rem[0] as usize];
+            let v1 = table[rem[1] as usize];
+            let v2 = table[rem[2] as usize];
+            let v3 = table[rem[3] as usize];
+            let v4 = table[rem[4] as usize];
             if (v0 | v1 | v2 | v3 | v4) & 0xE0 != 0 {
                 out.zeroize();
                 return Err(());
@@ -436,13 +298,13 @@ fn decode_crockford_slice(data: &[u8]) -> Result<Vec<u8>, ()> {
             Ok(out)
         }
         7 => {
-            let v0 = CROCKFORD_DECODE_TABLE[rem[0] as usize];
-            let v1 = CROCKFORD_DECODE_TABLE[rem[1] as usize];
-            let v2 = CROCKFORD_DECODE_TABLE[rem[2] as usize];
-            let v3 = CROCKFORD_DECODE_TABLE[rem[3] as usize];
-            let v4 = CROCKFORD_DECODE_TABLE[rem[4] as usize];
-            let v5 = CROCKFORD_DECODE_TABLE[rem[5] as usize];
-            let v6 = CROCKFORD_DECODE_TABLE[rem[6] as usize];
+            let v0 = table[rem[0] as usize];
+            let v1 = table[rem[1] as usize];
+            let v2 = table[rem[2] as usize];
+            let v3 = table[rem[3] as usize];
+            let v4 = table[rem[4] as usize];
+            let v5 = table[rem[5] as usize];
+            let v6 = table[rem[6] as usize];
             if (v0 | v1 | v2 | v3 | v4 | v5 | v6) & 0xE0 != 0 {
                 out.zeroize();
                 return Err(());
@@ -470,7 +332,6 @@ fn decode_crockford_slice(data: &[u8]) -> Result<Vec<u8>, ()> {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
