@@ -25,7 +25,7 @@ fn binary() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// A real named token whose example-path confidence sits inside `(0.40, 0.99)`.
+/// A real named token whose example-path confidence sits inside `(0.20, 0.99)`.
 /// The low-floor control keeps it and the strict floor drops it, so stream/report
 /// parity cannot pass vacuously. If detector scoring moves it outside the band,
 /// both preconditions below fail and require a new straddle fixture.
@@ -89,7 +89,7 @@ fn stream_preview_must_not_show_findings_dropped_by_min_confidence() {
                 "scan",
                 "--daemon=off",
                 "--backend",
-                "simd",
+                "cpu",
                 "--stream",
                 "--min-confidence",
                 min_confidence,
@@ -101,7 +101,7 @@ fn stream_preview_must_not_show_findings_dropped_by_min_confidence() {
             .expect("spawn keyhog scan")
     };
 
-    let control = run("0.40");
+    let control = run("0.20");
     let control_stdout = String::from_utf8_lossy(&control.stdout);
     assert_eq!(
         count_json_findings(&control_stdout),
@@ -172,7 +172,7 @@ fn stream_preview_must_not_show_test_fixture_suppressed_credential() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            "cpu",
             "--stream",
             "--format",
             "json",
@@ -223,7 +223,7 @@ fn empty_detector_scan_fails_closed_without_phantom_list_guidance() {
     .unwrap();
 
     let scan = Command::new(binary())
-        .args(["scan", "--daemon=off", "--backend", "simd", "-d"])
+        .args(["scan", "--daemon=off", "--backend", "cpu", "-d"])
         .arg(&empty_detectors)
         .arg(&target)
         .output()
