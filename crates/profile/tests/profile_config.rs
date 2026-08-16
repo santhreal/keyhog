@@ -121,8 +121,31 @@ fn resolve_profile_from_env_value_handles_known_and_custom() {
     assert_eq!(resolved_custom.as_str(), "custom-profile");
 }
 
+struct EnvGuard {
+    saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        for (k, v) in &self.saved {
+            if let Some(val) = v {
+                std::env::set_var(k, val);
+            } else {
+                std::env::remove_var(k);
+            }
+        }
+    }
+}
+
 #[test]
 fn resolve_profile_from_env_vars_honors_precedence() {
+    let _guard = EnvGuard {
+        saved: PROFILE_ENV_VARS
+            .iter()
+            .map(|&var| (var, std::env::var_os(var)))
+            .collect(),
+    };
+
     for &var in PROFILE_ENV_VARS {
         std::env::remove_var(var);
     }
@@ -267,11 +290,51 @@ fn session_start_with_config_applies_settings() {
         "test-backend",
     );
     let session = keyhog_profile::Session::start_with_config(&config, identity)
-        .expect("start session with config");
+        .expect("start session with config")
+        .expect("session is enabled");
     assert_eq!(keyhog_profile::detail(), Detail::Diagnostic);
     let profile = session.finish(keyhog_profile::RunState::Completed);
     assert_eq!(profile.status, keyhog_profile::RunState::Completed);
     keyhog_profile::set_detail(Detail::Off);
+
+    // Disabled config returns Ok(None) and sets Detail::Off
+    config.enabled = false;
+    let disabled_identity = keyhog_profile::RunIdentity::new(
+        "0.5.76",
+        "test-detectors",
+        "test-config",
+        "test-source",
+        "test-workload",
+        "test-backend",
+    );
+    let disabled_session = keyhog_profile::Session::start_with_config(&config, disabled_identity)
+        .expect("start disabled session");
+    assert!(disabled_session.is_none());
+    assert_eq!(keyhog_profile::detail(), Detail::Off);
+}
+
+#[test]
+fn profile_config_serialization_never_leaks_secrets() {
+    let mut config = ProfileConfig::new(KnownProfile::Production);
+    config.auth_token = Some(Zeroizing::new("bearer-secret-token".to_string()));
+    config.api_key = Some(Zeroizing::new("api-secret-key".to_string()));
+    config.secret_key = Some(Zeroizing::new("signing-secret-key".to_string()));
+    let mut headers = HashMap::new();
+    headers.insert(
+        "Authorization".to_string(),
+        Zeroizing::new("Bearer secret-header".to_string()),
+    );
+    config.headers = headers;
+
+    let serialized = serde_json::to_string(&config).expect("serialize profile config");
+    assert!(!serialized.contains("bearer-secret-token"));
+    assert!(!serialized.contains("api-secret-key"));
+    assert!(!serialized.contains("signing-secret-key"));
+    assert!(!serialized.contains("secret-header"));
+    assert!(!serialized.contains("auth_token"));
+    assert!(!serialized.contains("api_key"));
+    assert!(!serialized.contains("secret_key"));
+    assert!(!serialized.contains("headers"));
 }
 
 #[test]

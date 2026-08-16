@@ -71,16 +71,19 @@ impl Session {
     }
 
     /// Start a fresh isolated session configured by [`ProfileConfig`].
+    ///
+    /// If [`ProfileConfig::enabled`] is false, measurement detail is set to [`Detail::Off`](crate::Detail::Off)
+    /// and `Ok(None)` is returned without initializing a profiling session or entering a runtime context.
     pub fn start_with_config(
         config: &ProfileConfig,
         identity: RunIdentity,
-    ) -> Result<Self, SessionActive> {
-        if config.enabled {
-            crate::set_detail(config.detail);
-        } else {
+    ) -> Result<Option<Self>, SessionActive> {
+        if !config.enabled {
             crate::set_detail(crate::Detail::Off);
+            return Ok(None);
         }
-        Self::start(identity)
+        crate::set_detail(config.detail);
+        Self::start(identity).map(Some)
     }
 
     /// Clone the runtime handle for propagation to a worker or async task.

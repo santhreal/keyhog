@@ -391,14 +391,14 @@ pub struct ProfileConfig {
     /// Remote collector endpoint URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
-    /// Authentication bearer or session token.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Authentication bearer or session token (never serialized).
+    #[serde(default, skip_serializing)]
     pub auth_token: Option<Zeroizing<String>>,
-    /// API key for authenticated profile reporting.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// API key for authenticated profile reporting (never serialized).
+    #[serde(default, skip_serializing)]
     pub api_key: Option<Zeroizing<String>>,
-    /// Secret transport or signing key.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Secret transport or signing key (never serialized).
+    #[serde(default, skip_serializing)]
     pub secret_key: Option<Zeroizing<String>>,
     /// Target environment tag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -412,8 +412,8 @@ pub struct ProfileConfig {
     /// Custom metadata tags.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub tags: HashMap<String, String>,
-    /// Sensitive HTTP request headers.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    /// Sensitive HTTP request headers (never serialized).
+    #[serde(default, skip_serializing)]
     pub headers: HashMap<String, Zeroizing<String>>,
 }
 
