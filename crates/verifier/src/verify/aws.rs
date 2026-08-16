@@ -7,6 +7,7 @@ use quick_xml::events::Event;
 use reqwest::Client;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+use zeroize::Zeroizing;
 
 use crate::interpolate::CompanionKey;
 use crate::verify::request::{execute_request, resolved_client_for_url, RequestError};
@@ -51,11 +52,11 @@ pub(crate) async fn build_aws_probe(
             field, credential, companions,
         ))
     };
-    let access_key = resolve(access_key);
-    let secret_key = resolve(secret_key);
+    let access_key = Zeroizing::new(resolve(access_key));
+    let secret_key = Zeroizing::new(resolve(secret_key));
     let session_token = session_token_template
         .as_ref()
-        .map(|template| resolve(template))
+        .map(|template| Zeroizing::new(resolve(template)))
         .filter(|token| !token.is_empty());
     let region = resolve(region);
 
@@ -145,7 +146,7 @@ pub(crate) async fn build_aws_probe(
         body,
         &access_key,
         &secret_key,
-        session_token.as_deref(),
+        session_token.as_deref().map(|t| t.as_str()),
         &region,
         "sts",
         timeout,
@@ -233,10 +234,11 @@ async fn build_sigv4_request(
         result: VerificationResult::Error(error),
         transient: false,
     })?;
+    let auth_header = Zeroizing::new(auth_header);
 
     let mut request = client
         .post(url)
-        .header("Authorization", auth_header)
+        .header("Authorization", &*auth_header)
         .header("x-amz-date", amz_date)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body.to_string())

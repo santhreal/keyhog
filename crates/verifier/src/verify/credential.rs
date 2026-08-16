@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,6 +10,7 @@ use reqwest::Client;
 use crate::interpolate::{companions_with_oob, interpolate_url};
 use crate::oob::{OobObservation, OobSession};
 use crate::verify::multi_step::verify_multi_step;
+use crate::verify::request::TIMEOUT_ERROR;
 use crate::verify::{
     apply_header_body_templates, build_request_for_step, evaluate_success,
     execute_and_read_response, extract_provider_evidence, resolve_live_verdict,
@@ -109,11 +111,32 @@ pub(crate) async fn verify_with_retry(
     allow_script_verify: bool,
     oob_session: Option<&Arc<OobSession>>,
 ) -> (VerificationResult, HashMap<String, String>) {
+    let effective_timeout = verification_timeout(spec, timeout);
+    let oob_timeout = spec
+        .oob
+        .as_ref()
+        .and_then(|o| o.timeout_secs)
+        .map(Duration::from_secs)
+        .unwrap_or_else(|| {
+            if spec.oob.is_some() {
+                Duration::from_secs(30)
+            } else {
+                Duration::ZERO
+            }
+        });
+    let per_attempt_timeout = effective_timeout.saturating_add(oob_timeout);
+    let max_backoff = cumulative_max_backoff(MAX_VERIFY_ATTEMPTS, RETRY_DELAY_MS);
+    let deadline = crate::engine::VerificationDeadline::for_attempts(
+        per_attempt_timeout,
+        MAX_VERIFY_ATTEMPTS,
+        max_backoff,
+    );
     retry_loop(
         MAX_VERIFY_ATTEMPTS,
         RETRY_DELAY_MS,
         Some(crate::rate_limit::get_rate_limiter()),
         &spec.service,
+        Some(deadline),
         |_| {
             verify_credential(
                 client,
@@ -146,15 +169,27 @@ async fn retry_loop<F, Fut>(
     base_delay_ms: u64,
     limiter: Option<&crate::rate_limit::RateLimiter>,
     service: &str,
+    deadline: Option<crate::engine::VerificationDeadline>,
     mut attempt_fn: F,
 ) -> (VerificationResult, HashMap<String, String>)
 where
     F: FnMut(usize) -> Fut,
-    Fut: std::future::Future<Output = VerificationAttempt>,
+    Fut: Future<Output = VerificationAttempt>,
 {
     let mut last_attempt: Option<(VerificationResult, HashMap<String, String>)> = None;
 
     for attempt in 0..max_attempts {
+        if let Some(d) = &deadline {
+            if d.is_expired() {
+                return last_attempt.unwrap_or_else(|| {
+                    (
+                        VerificationResult::Error(TIMEOUT_ERROR.into()),
+                        HashMap::new(),
+                    )
+                });
+            }
+        }
+
         if attempt > 0 {
             // Profile: each scheduled retry is annotated with its attempt index.
             keyhog_profile::record_annotation(
@@ -168,7 +203,38 @@ where
             } else {
                 rand::thread_rng().gen_range(min_delay_ms..=max_delay_ms)
             };
-            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+            let delay = Duration::from_millis(delay_ms);
+            if let Some(d) = &deadline {
+                if let Ok(remaining) = d.remaining() {
+                    if delay >= remaining {
+                        return last_attempt.unwrap_or_else(|| {
+                            (
+                                VerificationResult::Error(TIMEOUT_ERROR.into()),
+                                HashMap::new(),
+                            )
+                        });
+                    }
+                } else {
+                    return last_attempt.unwrap_or_else(|| {
+                        (
+                            VerificationResult::Error(TIMEOUT_ERROR.into()),
+                            HashMap::new(),
+                        )
+                    });
+                }
+            }
+            tokio::time::sleep(delay).await;
+        }
+
+        if let Some(d) = &deadline {
+            if d.is_expired() {
+                return last_attempt.unwrap_or_else(|| {
+                    (
+                        VerificationResult::Error(TIMEOUT_ERROR.into()),
+                        HashMap::new(),
+                    )
+                });
+            }
         }
 
         let result = attempt_fn(attempt).await;
@@ -220,9 +286,18 @@ pub(crate) fn retry_delay_bounds_for_attempt(attempt: usize, base_delay_ms: u64)
     (base, base.saturating_add(jitter))
 }
 
+pub(crate) fn cumulative_max_backoff(max_attempts: usize, base_delay_ms: u64) -> Duration {
+    let mut total_ms = 0u64;
+    for attempt in 1..max_attempts {
+        let (_min, max) = retry_delay_bounds_for_attempt(attempt, base_delay_ms);
+        total_ms = total_ms.saturating_add(max);
+    }
+    Duration::from_millis(total_ms)
+}
+
 pub(crate) async fn retry_loop_preserves_metadata_on_exhaustion_for_test(
 ) -> (VerificationResult, HashMap<String, String>) {
-    retry_loop(2, 0, None, "test-service", |_| async {
+    retry_loop(2, 0, None, "test-service", None, |_| async {
         let mut metadata = HashMap::new();
         metadata.insert("oob_id".to_string(), "abc".to_string());
         VerificationAttempt {
@@ -304,7 +379,7 @@ pub(crate) fn rate_limit_feedback_sequence_for_test() -> (usize, usize, usize, u
 pub(crate) async fn retry_loop_records_rate_limit_feedback_for_test() -> usize {
     let limiter = crate::rate_limit::RateLimiter::new(1_000.0);
     let before = limiter.error_count_for_test();
-    let _result = retry_loop(1, 0, Some(&limiter), "test-service", |_| async {
+    let _result = retry_loop(1, 0, Some(&limiter), "test-service", None, |_| async {
         VerificationAttempt {
             result: VerificationResult::RateLimited,
             metadata: HashMap::new(),

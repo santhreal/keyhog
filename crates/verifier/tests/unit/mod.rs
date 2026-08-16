@@ -60,3 +60,4 @@ pub mod sigv4_timestamp_year_boundary;
 pub mod sigv4_uri_encode;
 pub mod ssrf;
 pub mod status_success_policy;
+pub mod verifier_deadlines_and_zeroization;

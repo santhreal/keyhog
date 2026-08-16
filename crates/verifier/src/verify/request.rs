@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use dashmap::DashMap;
 use keyhog_core::{HeaderSpec, HttpMethod, VerificationResult};
 use reqwest::Client;
+use zeroize::Zeroizing;
 
 use crate::interpolate::{interpolate_http_value, missing_companion_refs, CompanionKey};
 use crate::ssrf::{is_private_ip_addr, is_private_url};
@@ -437,7 +438,8 @@ pub(crate) fn apply_header_body_templates(
     let _span = keyhog_profile::span(keyhog_profile::Stage::LiveVerification);
     for header in headers {
         let value = interpolate_http_value(&header.value, credential, companions);
-        request = request.header(&header.name, &value);
+        let value = Zeroizing::new(value);
+        request = request.header(&header.name, &*value);
     }
 
     if let Some(body_template) = body_template {

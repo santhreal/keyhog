@@ -10,6 +10,7 @@ mod bogon;
 /// Shared in-memory verification cache.
 mod cache;
 mod domain_allowlist;
+pub mod engine;
 mod interpolate;
 pub mod oob;
 pub mod rate_limit;
@@ -27,6 +28,7 @@ use keyhog_core::{DedupedMatch, DetectorSpec, VerificationResult, VerifiedFindin
 
 // Re-export dedup types from core so existing consumers (`use keyhog_verifier::DedupedMatch`)
 // continue to work without source changes.
+pub use engine::VerificationDeadline;
 pub use keyhog_core::{dedup_matches, DedupScope};
 use reqwest::{Client, Error as ReqwestError};
 use thiserror::Error;
