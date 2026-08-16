@@ -74,6 +74,9 @@ impl Session {
     ///
     /// If [`ProfileConfig::enabled`] is false, `Ok(None)` is returned without
     /// initializing a profiling session or entering a runtime context.
+    ///
+    /// When enabled, the process-wide measurement detail is configured to match
+    /// [`ProfileConfig::detail`].
     pub fn start_with_config(
         config: &ProfileConfig,
         identity: RunIdentity,
@@ -81,9 +84,7 @@ impl Session {
         if !config.enabled {
             return Ok(None);
         }
-        if config.detail != crate::Detail::Off {
-            crate::set_detail(config.detail);
-        }
+        crate::set_detail(config.detail);
         Self::start(identity).map(Some)
     }
 

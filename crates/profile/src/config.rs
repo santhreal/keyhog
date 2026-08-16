@@ -376,6 +376,12 @@ const fn default_max_events() -> usize {
 }
 
 /// Profile configuration controlling execution mode, telemetry, and credentials.
+///
+/// Note: To prevent accidental credential leakage in logs, reports, or serialized
+/// configuration echoes, sensitive fields (`auth_token`, `api_key`, `secret_key`, `headers`)
+/// are marked `skip_serializing` and are never emitted when serialized to JSON.
+/// Consequently, `ProfileConfig` is asymmetric and intentionally does not round-trip
+/// populated credentials back to JSON.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProfileConfig {

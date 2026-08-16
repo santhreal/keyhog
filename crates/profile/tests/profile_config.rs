@@ -279,6 +279,7 @@ fn profile_config_zeroization_clears_sensitive_fields() {
 
 #[test]
 fn session_start_with_config_applies_settings() {
+    // 1. Raising detail to Diagnostic
     let mut config = ProfileConfig::new(KnownProfile::Dev);
     config.detail = Detail::Diagnostic;
     let identity = keyhog_profile::RunIdentity::new(
@@ -295,9 +296,25 @@ fn session_start_with_config_applies_settings() {
     assert_eq!(keyhog_profile::detail(), Detail::Diagnostic);
     let profile = session.finish(keyhog_profile::RunState::Completed);
     assert_eq!(profile.status, keyhog_profile::RunState::Completed);
-    keyhog_profile::set_detail(Detail::Off);
 
-    // Disabled config returns Ok(None) without starting a session
+    // 2. Lowering detail to Off via start_with_config
+    config.detail = Detail::Off;
+    let identity2 = keyhog_profile::RunIdentity::new(
+        "0.5.76",
+        "test-detectors",
+        "test-config",
+        "test-source",
+        "test-workload",
+        "test-backend",
+    );
+    let session2 = keyhog_profile::Session::start_with_config(&config, identity2)
+        .expect("start session with config")
+        .expect("session is enabled");
+    assert_eq!(keyhog_profile::detail(), Detail::Off);
+    let profile2 = session2.finish(keyhog_profile::RunState::Completed);
+    assert_eq!(profile2.status, keyhog_profile::RunState::Completed);
+
+    // 3. Disabled config returns Ok(None) without starting a session
     config.enabled = false;
     let disabled_identity = keyhog_profile::RunIdentity::new(
         "0.5.76",
@@ -311,7 +328,6 @@ fn session_start_with_config_applies_settings() {
         .expect("start disabled session");
     assert!(disabled_session.is_none());
 }
-
 #[test]
 fn profile_config_debug_formatting_redacts_secrets() {
     let mut config = ProfileConfig::new(KnownProfile::Production);
