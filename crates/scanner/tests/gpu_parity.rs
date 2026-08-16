@@ -46,7 +46,11 @@ fn gpu_and_simd_produce_identical_findings_on_same_corpus() {
     require_gpu_or_panic("gpu_and_simd_produce_identical_findings_on_same_corpus");
     let detectors =
         keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let simd_scanner =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::SimdCpu)
+            .expect("simd scanner compile");
+    let gpu_scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::GpuWgpu)
+        .expect("gpu scanner compile");
 
     // Synthetic corpus designed to exercise: AKIA/ASIA prefix path,
     // ghp_ prefix path, generic high-entropy fallback, and a chunk
@@ -65,12 +69,12 @@ fn gpu_and_simd_produce_identical_findings_on_same_corpus() {
         ),
     ];
 
-    let simd_results = scanner
+    let simd_results = simd_scanner
         .scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu)
         .expect("selected backend scan succeeds");
     let simd_keys = collect_keys(&simd_results);
 
-    let gpu_results = scanner
+    let gpu_results = gpu_scanner
         .scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu)
         .expect("selected backend scan succeeds");
     let gpu_keys = collect_keys(&gpu_results);
@@ -111,7 +115,8 @@ fn gpu_path_finds_boundary_straddled_secret() {
     require_gpu_or_panic("gpu_path_finds_boundary_straddled_secret");
     let detectors =
         keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::GpuWgpu)
+        .expect("scanner compile");
 
     let secret = concat!("AK", "IAQYLPMN5HFIQR7CCC");
     assert_eq!(secret.len(), 20);

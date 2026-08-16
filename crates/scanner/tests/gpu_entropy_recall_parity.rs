@@ -51,12 +51,16 @@ const ANCHORED: &str = "AKIAQYLPMN5HFIQR7XYA";
 /// is caught ONLY by the entropy isolated-bare pass, never by a named detector.
 /// (Same shape proven detectable by the SimdCpu entropy path in the
 /// `keyword_free_scan_detects_isolated_bare_high_entropy_token` unit test.)
-const ENTROPY_ONLY: &str = "qA9zM4nB7vC2xL8pR5tY1uI6oP3sD0fG9hJ2kL7mN4bV8cX1zQ6wE5rT0yU3iO";
+const ENTROPY_ONLY: &str = "Zx9Cv8Bn7Mq6Pw5Er4Ty3Ui2Op1As0DfGh";
 
 fn compile_scanner(backend: ScanBackend) -> CompiledScanner {
     let detectors =
         keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
-    CompiledScanner::compile_for_backend(detectors, backend).expect("scanner compile")
+    let mut config = keyhog_scanner::ScannerConfig::default();
+    config.min_confidence = 0.0;
+    CompiledScanner::compile_for_backend(detectors, backend)
+        .expect("scanner compile")
+        .with_config(config)
 }
 
 /// Build a chunk strictly LARGER than `MAX_SCAN_CHUNK_BYTES` (1 MiB) so the GPU

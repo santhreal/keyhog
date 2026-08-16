@@ -50,7 +50,13 @@ fn locked_scanner() -> MutexGuard<'static, &'static CompiledScanner> {
         .get_or_init(|| {
             keyhog_core::load_detectors(&detector_dir())
                 .ok()
-                .and_then(|d| CompiledScanner::compile(d).ok())
+                .and_then(|d| {
+                    CompiledScanner::compile_with_gpu_policy(
+                        d,
+                        keyhog_scanner::GpuInitPolicy::ForceEnabled,
+                    )
+                    .ok()
+                })
         })
         .as_ref()
         .expect("scanner compile failed; detectors dir unavailable");

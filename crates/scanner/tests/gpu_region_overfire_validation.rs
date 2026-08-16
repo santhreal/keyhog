@@ -80,7 +80,8 @@ fn scan_gpu_without_degrade(
 fn scanner() -> CompiledScanner {
     let detectors =
         keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
-    CompiledScanner::compile(detectors).expect("scanner compile")
+    CompiledScanner::compile_with_gpu_policy(detectors, keyhog_scanner::GpuInitPolicy::ForceEnabled)
+        .expect("scanner compile")
 }
 
 /// The core lane gate: GPU finding set ≡ SIMD finding set on a corpus that

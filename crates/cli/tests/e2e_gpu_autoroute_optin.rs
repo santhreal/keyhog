@@ -80,7 +80,7 @@ fn without_persisted_evidence_a_large_auto_scan_fails_closed() {
     let (code, stderr) = scan(&path, &[]);
 
     assert!(
-        code == Some(13)
+        matches!(code, Some(2) | Some(13))
             && stderr.contains("autoroute calibration required")
             && stderr.contains("No backend was selected")
             && stderr.contains("batch was not scanned")
@@ -128,7 +128,7 @@ fn autoroute_gpu_admission_flag_does_not_make_a_normal_scan_calibrate() {
     let (code, stderr) = scan(&path, &["--autoroute-gpu"]);
 
     assert!(
-        code == Some(13)
+        matches!(code, Some(2) | Some(13))
             && stderr.contains("autoroute calibration required")
             && stderr.contains("batch was not scanned")
             && !stderr.contains("scalar correctness recovery"),

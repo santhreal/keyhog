@@ -3,7 +3,7 @@
 mod support;
 
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
-use keyhog_scanner::{CompiledScanner, ScanBackend};
+use keyhog_scanner::{CompiledScanner, GpuInitPolicy, ScanBackend};
 use support::paths::detector_dir;
 
 fn canonical(matches: &[keyhog_core::RawMatch]) -> Vec<(String, Option<usize>, usize, String)> {
@@ -62,7 +62,9 @@ fn every_available_gpu_peer_matches_the_cpu_reference() {
         keywords: vec!["KHGPUPEER".into()],
         ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector]).expect("compile parity scanner");
+    let scanner =
+        CompiledScanner::compile_with_gpu_policy(vec![detector], GpuInitPolicy::ForceEnabled)
+            .expect("compile parity scanner");
     let chunk = Chunk {
         data: "first=KHGPUPEER_A1b2C3d4E5f6G7h8I9j0\nsecond=KHGPUPEER_Z9y8X7w6V5u4T3s2R1q0".into(),
         metadata: ChunkMetadata {
@@ -143,7 +145,9 @@ fn compilation_censuses_gpu_peers_without_materializing_execution_backends() {
         keywords: vec!["KHGPULAZY".into()],
         ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector]).expect("compile lazy-peer scanner");
+    let scanner =
+        CompiledScanner::compile_with_gpu_policy(vec![detector], GpuInitPolicy::ForceEnabled)
+            .expect("compile lazy-peer scanner");
     let before = scanner.gpu_backend_candidates();
     let selected = before
         .iter()
@@ -203,7 +207,8 @@ fn compilation_censuses_gpu_peers_without_materializing_execution_backends() {
 fn gpu_routes_do_not_borrow_the_phase_two_hyperscan_engine() {
     let detectors =
         keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load");
-    let scanner = CompiledScanner::compile(detectors).expect("compile embedded detector plan");
+    let scanner = CompiledScanner::compile_with_gpu_policy(detectors, GpuInitPolicy::ForceEnabled)
+        .expect("compile embedded detector plan");
     let chunk = Chunk::from("const api_key = \"sk_live_0123456789abcdefghijklmnopqrstuv\";\n");
     let reference = scanner
         .scan_coalesced_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
@@ -259,7 +264,8 @@ fn detector_required_literals_preserve_every_backend_finding() {
         ["deepl-api-key", "url-credentials"],
         "the backend parity contract must execute both shipped TOML owners"
     );
-    let scanner = CompiledScanner::compile(detectors).expect("compile required-literal scanner");
+    let scanner = CompiledScanner::compile_with_gpu_policy(detectors, GpuInitPolicy::ForceEnabled)
+        .expect("compile required-literal scanner");
     let chunks = [
         Chunk {
             data: "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d:fx".into(),
@@ -348,8 +354,11 @@ fn service_scoped_api_headers_match_on_every_acquired_backend() {
         "skyscanner-api-key",
         "x2y2-api-key",
     ];
-    let scanner = CompiledScanner::compile(production_detectors(&ids))
-        .expect("compile service-scoped API header detectors");
+    let scanner = CompiledScanner::compile_with_gpu_policy(
+        production_detectors(&ids),
+        GpuInitPolicy::ForceEnabled,
+    )
+    .expect("compile service-scoped API header detectors");
     let positives = [
         (
             "8x8-api-credentials",

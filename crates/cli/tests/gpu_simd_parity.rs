@@ -41,6 +41,8 @@ fn findings(path: &str, backend: &str, no_gpu: bool) -> BTreeSet<(String, String
         "json",
         "--show-secrets",
         "--no-suppress-test-fixtures",
+        "--evidence-policy",
+        "paranoid",
         "--daemon=off",
         "--backend",
         backend,

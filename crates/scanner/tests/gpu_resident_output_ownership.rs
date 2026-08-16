@@ -36,7 +36,11 @@ fn resident_gpu_readback_reuse_preserves_owned_results_and_parity() {
         keywords: vec!["KHRESIDENT".into()],
         ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector]).expect("compile resident scanner");
+    let scanner = CompiledScanner::compile_with_gpu_policy(
+        vec![detector],
+        keyhog_scanner::GpuInitPolicy::ForceEnabled,
+    )
+    .expect("compile resident scanner");
     let chunks = [
         Chunk {
             data: "first=KHRESIDENT_A1b2C3d4E5f6G7h8I9j0".into(),

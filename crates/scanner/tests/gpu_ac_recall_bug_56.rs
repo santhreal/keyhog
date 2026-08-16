@@ -212,7 +212,8 @@ fn baseline_simd_finds_stackblitz_token() {
 fn gpu_ac_kernel_finds_stackblitz_token_in_narrow_window() {
     let window = read_window();
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors load");
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::GpuWgpu)
+        .expect("scanner compile");
 
     if !wgpu_device_available_or_policy_allows_absence(
         "gpu_ac_kernel_finds_stackblitz_token_in_narrow_window",
@@ -260,7 +261,8 @@ fn bisect_gpu_ac_recall_by_window_size() {
     let needle_off = require_stackblitz_token(bytes);
 
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors load");
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::GpuWgpu)
+        .expect("scanner compile");
     if !wgpu_device_available_or_policy_allows_absence("bisect_gpu_ac_recall_by_window_size") {
         return;
     }
@@ -366,7 +368,8 @@ fn gpu_ac_kernel_must_find_stackblitz_token_on_full_corpus() {
     require_stackblitz_token(&bytes);
 
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors load");
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::GpuWgpu)
+        .expect("scanner compile");
 
     if !wgpu_device_available_or_policy_allows_absence(
         "gpu_ac_kernel_must_find_stackblitz_token_on_full_corpus",
