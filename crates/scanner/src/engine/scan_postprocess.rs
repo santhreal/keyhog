@@ -3,8 +3,6 @@ pub(crate) mod confirmed_anchor;
 use super::CompiledScanner;
 #[cfg(feature = "decode")]
 use crate::types::MAX_SCAN_CHUNK_BYTES;
-#[cfg(feature = "decode")]
-use keyhog_core::SensitiveString;
 use keyhog_core::{Chunk, RawMatch};
 #[cfg(feature = "decode")]
 use std::collections::HashSet;
@@ -55,17 +53,6 @@ impl CompiledScanner {
     }
 
     pub(crate) fn post_process_matches_with_decoder_absence(
-        &self,
-        chunk: &Chunk,
-        matches: &mut Vec<RawMatch>,
-        deadline: Option<std::time::Instant>,
-        route: crate::ScanExecutionRoute,
-        decoder_absence: bool,
-    ) -> crate::error::Result<()> {
-        self.post_process_matches_inner(chunk, matches, deadline, route, decoder_absence)
-    }
-
-    pub(crate) fn post_process_matches_inner(
         &self,
         chunk: &Chunk,
         matches: &mut Vec<RawMatch>,
@@ -209,7 +196,6 @@ impl CompiledScanner {
                         return Ok(());
                     }
                     // Decoding is monotonic: keep raw findings and union resolved decoded evidence.
-                    let raw_findings = matches.clone();
                     let mut seen: HashSet<(Arc<str>, SensitiveString)> = matches
                         .iter()
                         .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
@@ -220,13 +206,14 @@ impl CompiledScanner {
                             .cmp(&b.location.offset)
                             .then_with(|| a.cmp(b))
                     });
+                    let mut union_matches = matches.clone();
                     for m in decoded_candidates {
                         if seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
-                            matches.push(m);
+                            union_matches.push(m);
                         }
                     }
                     let resolved = crate::resolution::try_resolve_matches_with_compiled_plan(
-                        std::mem::take(matches),
+                        union_matches,
                         &self.detector_plans,
                     )
                     .map_err(|error| {
@@ -234,31 +221,27 @@ impl CompiledScanner {
                             "compiled detector resolution failed: {error}"
                         ))
                     })?;
-                    let mut merged = raw_findings;
-                    let mut merged_seen: HashSet<(Arc<str>, SensitiveString)> = merged
+                    let mut merged_seen: HashSet<(Arc<str>, SensitiveString)> = matches
                         .iter()
                         .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
                         .collect();
                     for m in resolved {
                         if merged_seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
-                            merged.push(m);
+                            matches.push(m);
                         }
                     }
-                    *matches = merged;
                 }
                 Ok(())
             };
-            if chunk.data.len() <= self.config.max_decode_bytes {
-                if self.chunk_needs_decode_postprocess_with_absence(chunk, decoder_absence) {
-                    decode_parent(chunk, matches)?;
-                }
+            if chunk.data.len() <= self.config.max_decode_bytes
+                && self.chunk_needs_decode_postprocess_with_absence(chunk, decoder_absence)
+            {
+                decode_parent(chunk, matches)?;
             } else if self.chunk_uses_bounded_decode_windows(chunk) {
-                self.decode_source_windows(chunk, |window| {
-                    if self.chunk_needs_decode_postprocess(window) {
-                        decode_parent(window, matches)
-                    } else {
-                        Ok(())
-                    }
+                self.decode_source_windows(chunk, |w| {
+                    self.chunk_needs_decode_postprocess(w)
+                        .then(|| decode_parent(w, matches))
+                        .unwrap_or(Ok(()))
                 })?;
             }
         }
@@ -266,7 +249,7 @@ impl CompiledScanner {
             target: "keyhog::routing",
             chunk_bytes = chunk.data.len(),
             matches = matches.len(),
-            "post_process_matches_inner done",
+            "post_process_matches done",
         );
         Ok(())
     }

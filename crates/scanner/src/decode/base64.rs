@@ -8,6 +8,7 @@ use super::pipeline::{
 use super::{DecodeAdmissionSketch, DecodeOutputSink, Decoder, EncodedString};
 use keyhog_core::Chunk;
 use std::collections::HashMap;
+use zeroize::Zeroize;
 
 pub(super) struct Base64Decoder;
 
@@ -124,18 +125,24 @@ impl Decoder for Z85Decoder {
             }
             if let Ok(decoded) = z85_decode(value.as_ref()) {
                 // LAW10: failed trial decode means this span is not valid z85; recall-preserving (the original chunk stays scanned unchanged).
-                if let Ok(mut text) = String::from_utf8(decoded) {
-                    // LAW10: non-UTF8 decoded bytes are not source text; recall-preserving (the original encoded text stays scanned unchanged).
-                    let trimmed_len = text.trim_end_matches('\0').len();
-                    text.truncate(trimmed_len);
-                    open = push_decoded_text_chunk_spliced_at(
-                        sink,
-                        chunk,
-                        Some(z_match.span()),
-                        value.as_ref(),
-                        text,
-                        self.name(),
-                    );
+                match String::from_utf8(decoded) {
+                    Ok(mut text) => {
+                        // LAW10: non-UTF8 decoded bytes are not source text; recall-preserving (the original encoded text stays scanned unchanged).
+                        let trimmed_len = text.trim_end_matches('\0').len();
+                        text.truncate(trimmed_len);
+                        open = push_decoded_text_chunk_spliced_at(
+                            sink,
+                            chunk,
+                            Some(z_match.span()),
+                            value.as_ref(),
+                            text,
+                            self.name(),
+                        );
+                    }
+                    Err(err) => {
+                        let mut bytes = err.into_bytes();
+                        bytes.zeroize();
+                    }
                 }
             }
         });
@@ -447,9 +454,14 @@ pub fn z85_decode(input: &str) -> Result<Vec<u8>, ()> {
     for chunk in bytes.chunks_exact(5) {
         let mut value = 0u64;
         for &byte in chunk {
-            value = value * 85 + z85_val(byte)? as u64;
+            let Ok(val) = z85_val(byte) else {
+                decoded.zeroize();
+                return Err(());
+            };
+            value = value * 85 + val as u64;
         }
         if value > u32::MAX as u64 {
+            decoded.zeroize();
             return Err(());
         }
         let value = value as u32;
