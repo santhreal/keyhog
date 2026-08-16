@@ -227,9 +227,11 @@ impl CompiledScanner {
                 }
             } else if self.chunk_uses_bounded_decode_windows(chunk) {
                 self.decode_source_windows(chunk, |window| {
-                    self.chunk_needs_decode_postprocess(window)
-                        .then(|| decode_parent(window, matches))
-                        .unwrap_or(Ok(()))
+                    if self.chunk_needs_decode_postprocess(window) {
+                        decode_parent(window, matches)
+                    } else {
+                        Ok(())
+                    }
                 })?;
             }
         }
@@ -237,7 +239,7 @@ impl CompiledScanner {
             target: "keyhog::routing",
             chunk_bytes = chunk.data.len(),
             matches = matches.len(),
-            "post_process_matches_inner done",
+            "post_process_matches done",
         );
         Ok(())
     }

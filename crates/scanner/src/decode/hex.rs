@@ -102,14 +102,31 @@ fn hex_decode_to_stack_buf(input: &str, stack_dst: &mut [u8; 128]) -> Result<usi
 fn try_decode_hex_candidate_to_utf8(value: &str) -> Option<String> {
     if value.len() <= 256 {
         let mut stack_dst = Zeroizing::new([0u8; 128]);
-        let decoded_len = hex_decode_to_stack_buf(value, &mut *stack_dst).ok()?;
-        let text = std::str::from_utf8(&stack_dst[..decoded_len]).ok()?;
+        let Ok(decoded_len) = hex_decode_to_stack_buf(value, &mut *stack_dst) else {
+            // LAW10: recall-preserving: trial decode failure leaves encoded span scanned unchanged.
+            return None;
+        };
+        let Ok(text) = std::str::from_utf8(&stack_dst[..decoded_len]) else {
+            // LAW10: binary output is not source text; the encoded span remains scanned unchanged.
+            return None;
+        };
         return Some(text.to_string());
     }
 
     // Large inputs fallback to heap-allocated decode with zeroized buffers.
-    let decoded = hex_decode(value).ok()?;
-    String::from_utf8(decoded).ok()
+    let Ok(decoded) = hex_decode(value) else {
+        // LAW10: recall-preserving: trial decode failure leaves encoded span scanned unchanged.
+        return None;
+    };
+    match String::from_utf8(decoded) {
+        Ok(text) => Some(text),
+        Err(err) => {
+            // LAW10: binary output is not source text; the encoded span remains scanned unchanged.
+            let mut bytes = err.into_bytes();
+            bytes.zeroize();
+            None
+        }
+    }
 }
 
 /// Find every hex substring of at least `min_length` bytes in `text`, returned
@@ -177,13 +194,19 @@ pub fn hex_decode(input: &str) -> Result<Vec<u8>, ()> {
         return Ok(out);
     }
 
-    let mut cleaned = Zeroizing::new(Vec::with_capacity(input.len()));
+    if input.len() > MAX_HEX_INPUT_LEN * 2 {
+        return Err(());
+    }
+    let mut cleaned = Zeroizing::new(Vec::with_capacity(input.len().min(MAX_HEX_INPUT_LEN)));
     for &b in input.as_bytes() {
         if b != b'_' {
+            if cleaned.len() >= MAX_HEX_INPUT_LEN {
+                return Err(());
+            }
             cleaned.push(b);
         }
     }
-    if !cleaned.len().is_multiple_of(2) || cleaned.len() > MAX_HEX_INPUT_LEN {
+    if !cleaned.len().is_multiple_of(2) {
         return Err(());
     }
     let decoded_len = cleaned.len() / 2;

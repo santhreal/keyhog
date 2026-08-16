@@ -2,8 +2,8 @@
 //! `scan_postprocess.rs` (Law 5). `scan_cross_chunk_fragments` records each
 //! `var = "value"` fragment into the `FragmentCache` and rescans any
 //! reassembled same-path candidate, stamping the trigger fragment's real
-//! source line+offset. `pub(crate)` so `post_process_matches_inner` (still in
-//! `scan_postprocess.rs`) can call it across the module boundary. Pure move.
+//! source line+offset. `pub(crate)` so `post_process_matches_with_decoder_absence`
+//! (in `scan_postprocess.rs`) can call it across the module boundary. Pure move.
 use super::{absolute_line, CompiledScanner};
 use keyhog_core::{Chunk, RawMatch};
 
