@@ -1,12 +1,16 @@
 # Changelog
 
 
-## 0.5.76 - 2026-08-16
+## 0.5.77 - 2026-08-16
 
-- fix(core): rerun build script on GITHUB_SHA changes to prevent stale git hash in CI cache.
+- fix(ci): format scan_postprocess, update dogfood hashes for doc fixtures, and bump action version.
 - Intermediate decoded byte buffers in URL, Quoted-Printable, and MIME decoders are now wrapped in `Zeroizing` and zeroized on invalid escape and UTF-8 error exits before deallocation.
 - Percent and Quoted-Printable escape detection and counting now use SIMD-accelerated `memchr` scanning to bypass intermediate allocations and line-view splitting on ASCII pass-through chunks without `%` or `=` characters.
 - Public testing surface in `testing` exposes `url_decode_for_test` for direct URL percent-decode assertions.
+
+## 0.5.76 - 2026-08-16
+
+- fix(core): rerun build script on GITHUB_SHA changes to prevent stale git hash in CI cache.
 
 ## 0.5.75 - 2026-08-14
 
