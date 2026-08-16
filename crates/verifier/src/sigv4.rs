@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 const ALGORITHM: &str = "AWS4-HMAC-SHA256";
 
@@ -155,11 +155,9 @@ pub(crate) fn signature(
     service: &str,
     string_to_sign: &str,
 ) -> Result<String, String> {
-    let mut signing_key = signing_key(secret, date_stamp, region, service)?;
-    let mut sig_bytes = hmac_sha256(&signing_key, string_to_sign.as_bytes())?;
-    signing_key.zeroize();
-    let sig_hex = hex::encode(&sig_bytes);
-    sig_bytes.zeroize();
+    let signing_key = signing_key(secret, date_stamp, region, service)?;
+    let sig_bytes = Zeroizing::new(hmac_sha256(&signing_key, string_to_sign.as_bytes())?);
+    let sig_hex = hex::encode(&*sig_bytes);
     Ok(sig_hex)
 }
 
@@ -168,17 +166,16 @@ fn signing_key(
     date_stamp: &str,
     region: &str,
     service: &str,
-) -> Result<Vec<u8>, String> {
-    let mut secret_prefix = format!("AWS4{key}");
-    let mut k_date = hmac_sha256(secret_prefix.as_bytes(), date_stamp.as_bytes())?;
-    secret_prefix.zeroize();
-    let mut k_region = hmac_sha256(&k_date, region.as_bytes())?;
-    k_date.zeroize();
-    let mut k_service = hmac_sha256(&k_region, service.as_bytes())?;
-    k_region.zeroize();
-    let k_signing = hmac_sha256(&k_service, b"aws4_request");
-    k_service.zeroize();
-    k_signing
+) -> Result<Zeroizing<Vec<u8>>, String> {
+    let secret_prefix = Zeroizing::new(format!("AWS4{key}"));
+    let k_date = Zeroizing::new(hmac_sha256(
+        secret_prefix.as_bytes(),
+        date_stamp.as_bytes(),
+    )?);
+    let k_region = Zeroizing::new(hmac_sha256(&k_date, region.as_bytes())?);
+    let k_service = Zeroizing::new(hmac_sha256(&k_region, service.as_bytes())?);
+    let k_signing = Zeroizing::new(hmac_sha256(&k_service, b"aws4_request")?);
+    Ok(k_signing)
 }
 
 fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<Vec<u8>, String> {

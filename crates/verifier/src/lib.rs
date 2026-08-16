@@ -288,8 +288,6 @@ pub(crate) fn build_pinned_verifier_client(
     harden_verifier_client_builder(
         reqwest::Client::builder()
             .timeout(timeout)
-            .connect_timeout(timeout)
-            .read_timeout(timeout)
             .danger_accept_invalid_certs(insecure_tls)
             .no_proxy(),
     )

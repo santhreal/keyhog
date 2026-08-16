@@ -31,17 +31,22 @@ impl VerificationDeadline {
         }
     }
 
-    /// Create a bounded deadline for a multi-attempt task.
-    pub fn for_attempts(timeout: Duration, max_attempts: usize) -> Self {
+    /// Create a bounded deadline for a multi-attempt task, accounting for per-attempt timeouts and retry backoff.
+    pub fn for_attempts(
+        per_attempt_timeout: Duration,
+        max_attempts: usize,
+        max_backoff: Duration,
+    ) -> Self {
         let start = Instant::now();
-        let total_duration = timeout
+        let total_duration = per_attempt_timeout
             .saturating_mul(max_attempts as u32)
+            .saturating_add(max_backoff)
             .max(Duration::from_secs(1));
         let deadline = start.checked_add(total_duration).unwrap_or(start);
         Self {
             start,
             deadline,
-            timeout,
+            timeout: per_attempt_timeout,
         }
     }
 
@@ -93,4 +98,3 @@ impl VerificationDeadline {
         }
     }
 }
-

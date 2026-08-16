@@ -1,10 +1,11 @@
-use keyhog_core::{AuthSpec, CompanionMap, HttpMethod, OobPolicy, VerificationResult};
-use rand::Rng;
-use reqwest::Client;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
+
+use keyhog_core::{AuthSpec, CompanionMap, HttpMethod, OobPolicy, VerificationResult};
+use rand::Rng;
+use reqwest::Client;
 
 use crate::interpolate::{companions_with_oob, interpolate_url};
 use crate::oob::{OobObservation, OobSession};
@@ -111,8 +112,25 @@ pub(crate) async fn verify_with_retry(
     oob_session: Option<&Arc<OobSession>>,
 ) -> (VerificationResult, HashMap<String, String>) {
     let effective_timeout = verification_timeout(spec, timeout);
-    let deadline =
-        crate::engine::VerificationDeadline::for_attempts(effective_timeout, MAX_VERIFY_ATTEMPTS);
+    let oob_timeout = spec
+        .oob
+        .as_ref()
+        .and_then(|o| o.timeout_secs)
+        .map(Duration::from_secs)
+        .unwrap_or_else(|| {
+            if spec.oob.is_some() {
+                Duration::from_secs(30)
+            } else {
+                Duration::ZERO
+            }
+        });
+    let per_attempt_timeout = effective_timeout.saturating_add(oob_timeout);
+    let max_backoff = cumulative_max_backoff(MAX_VERIFY_ATTEMPTS, RETRY_DELAY_MS);
+    let deadline = crate::engine::VerificationDeadline::for_attempts(
+        per_attempt_timeout,
+        MAX_VERIFY_ATTEMPTS,
+        max_backoff,
+    );
     retry_loop(
         MAX_VERIFY_ATTEMPTS,
         RETRY_DELAY_MS,
@@ -125,7 +143,7 @@ pub(crate) async fn verify_with_retry(
                 spec,
                 credential,
                 companions,
-                effective_timeout,
+                timeout,
                 allow_private_ips,
                 allow_http,
                 proxy_in_use,
@@ -266,6 +284,15 @@ pub(crate) fn retry_delay_bounds_for_attempt(attempt: usize, base_delay_ms: u64)
     let base = base_delay_ms.saturating_mul(1u64 << exponent);
     let jitter = (base / 4).max(1);
     (base, base.saturating_add(jitter))
+}
+
+pub(crate) fn cumulative_max_backoff(max_attempts: usize, base_delay_ms: u64) -> Duration {
+    let mut total_ms = 0u64;
+    for attempt in 1..max_attempts {
+        let (_min, max) = retry_delay_bounds_for_attempt(attempt, base_delay_ms);
+        total_ms = total_ms.saturating_add(max);
+    }
+    Duration::from_millis(total_ms)
 }
 
 pub(crate) async fn retry_loop_preserves_metadata_on_exhaustion_for_test(

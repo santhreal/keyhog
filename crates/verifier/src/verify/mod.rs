@@ -460,8 +460,6 @@ impl VerificationEngine {
         let mut builder = crate::harden_verifier_client_builder(
             Client::builder()
                 .timeout(config.timeout)
-                .connect_timeout(config.timeout)
-                .read_timeout(config.timeout)
                 .danger_accept_invalid_certs(config.insecure_tls),
         );
         builder = crate::apply_proxy_config(builder, config.proxy.as_deref())

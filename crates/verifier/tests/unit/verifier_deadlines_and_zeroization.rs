@@ -7,7 +7,7 @@ use keyhog_verifier::engine::VerificationDeadline;
 use keyhog_verifier::testing::TIMEOUT_ERROR;
 #[test]
 fn deadline_remaining_decreases_and_expires() {
-    let timeout = Duration::from_millis(50);
+    let timeout = Duration::from_millis(20);
     let deadline = VerificationDeadline::new(timeout);
     assert!(!deadline.is_expired());
     assert!(deadline.remaining().is_ok());
@@ -27,12 +27,13 @@ fn deadline_remaining_decreases_and_expires() {
 
 #[test]
 fn deadline_for_attempts_scales_budget() {
-    let timeout = Duration::from_millis(20);
-    let deadline = VerificationDeadline::for_attempts(timeout, 3);
+    let timeout = Duration::from_secs(2);
+    let max_backoff = Duration::from_secs(1);
+    let deadline = VerificationDeadline::for_attempts(timeout, 3, max_backoff);
     assert!(!deadline.is_expired());
     assert_eq!(deadline.timeout(), timeout);
     let remaining = deadline.remaining().expect("deadline must not be expired");
-    assert!(remaining >= Duration::from_millis(40));
+    assert!(remaining >= Duration::from_secs(6));
 }
 
 #[tokio::test]
@@ -63,4 +64,3 @@ async fn deadline_run_bounded_times_out() {
         other => panic!("expected timeout error, got {other:?}"),
     }
 }
-

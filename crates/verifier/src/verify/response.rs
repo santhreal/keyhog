@@ -7,7 +7,7 @@ use keyhog_core::{
 };
 use sha2::{Digest, Sha256};
 
-use crate::verify::request::{execute_request, RequestError, TIMEOUT_ERROR};
+use crate::verify::request::{execute_request, RequestError};
 
 pub(crate) const MAX_RESPONSE_BODY_BYTES: usize = 1024 * 1024;
 const MAX_PROVIDER_EVIDENCE_VALUE_BYTES: usize = 256;
@@ -155,14 +155,11 @@ pub(crate) async fn read_response_body(
     let mut body = Vec::with_capacity(capacity_hint);
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|error| {
-            let is_timeout = error.is_timeout();
             let cause = error.without_url();
             RequestError {
-                result: if is_timeout {
-                    VerificationResult::Error(TIMEOUT_ERROR.into())
-                } else {
-                    VerificationResult::Error(format!("{BODY_READ_FAILED_ERROR}. Cause: {cause}"))
-                },
+                result: VerificationResult::Error(format!(
+                    "{BODY_READ_FAILED_ERROR}. Cause: {cause}"
+                )),
                 transient: true,
             }
         })?;
