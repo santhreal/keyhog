@@ -3,6 +3,7 @@
 
 ## 0.5.76 - 2026-08-16
 
+- Short-circuit decoded-match suppression checks in scan post-processing and preserve exact deduplication ordering.
 - fix(core): rerun build script on GITHUB_SHA changes to prevent stale git hash in CI cache.
 
 ## 0.5.75 - 2026-08-14

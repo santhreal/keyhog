@@ -6,6 +6,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Stream JSON and SARIF finding envelopes directly into buffered writers during CLI report generation, eliminating intermediate allocations in JSON/JSONL envelope reporters and sorting allocations in SARIF reporter.
+- Update CLI scan format matrix regression suite to assert canonical 22-field CSV rows with metadata and additional-locations columns.
+- Short-circuit decoded-match suppression checks in scan post-processing and preserve exact deduplication ordering.
 - fix(core): rerun build script on GITHUB_SHA changes to prevent stale git hash in CI cache.
 
 ## [0.5.75] - 2026-08-14
