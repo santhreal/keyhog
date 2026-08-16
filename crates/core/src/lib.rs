@@ -96,11 +96,8 @@ mod calibration;
 /// Incremental scan state via BLAKE3 Merkle index.
 mod merkle_index;
 mod merkle_spec_hash;
-/// Declarative `.keyhogignore.toml` rule-based finding suppression.
-/// Wraps VYRE's CPU rule evaluator with a TOML schema scoped to
-/// keyhog's finding shape (detector / service / severity / path /
-/// credential_hash predicates).
-mod rule_filter;
+/// Finding suppression rules and filters.
+pub mod suppression;
 
 // Embedded detectors compiled into the binary at build time.
 // These are used when no external detectors directory is found.

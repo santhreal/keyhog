@@ -2,10 +2,9 @@
 //!
 //! Loads a `.keyhogignore.toml` file alongside the legacy line-based
 //! `.keyhogignore`. Each `[[suppress]]` table compiles into a vyre
-//! `RuleFormula` evaluated per-finding via VYRE's CPU evaluator
+//! `RuleFormula` evaluated per-finding via VYRE CPU evaluator
 //! (`vyre_libs::rule::evaluate_formula`). Findings whose rules
-//! evaluate to `true` are dropped from the report - same semantics
-//! as the line-based allowlist, just composable.
+//! evaluate to `true` are dropped from the report.
 //!
 //! Schema (one or more `[[suppress]]` tables):
 //!
@@ -32,11 +31,6 @@
 //! suppress matching the finding drops it). All conditions are
 //! optional; a `[[suppress]]` table with no condition is rejected.
 //! Use `literal_true = true` to request an explicit match-everything rule.
-//!
-//! Why this lives in `keyhog-core`: the rule engine is general
-//! infra (it consumes VYRE's CPU evaluator) but the schema is
-//! keyhog-specific (FindingContext shape). The vyre side stays
-//! consumer-agnostic.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -46,7 +40,7 @@ use vyre_libs::rule::{evaluate_formula, RuleCondition, RuleEvaluationContext, Ru
 
 use crate::{RawMatch, Severity, VerifiedFinding};
 
-/// Parsed `.keyhogignore.toml` - a list of `[[suppress]]` rules,
+/// Parsed `.keyhogignore.toml` containing a list of `[[suppress]]` rules,
 /// each compiled into a `RuleFormula`.
 #[derive(Debug, Default)]
 pub struct RuleSuppressor {
@@ -58,7 +52,7 @@ pub struct RuleSuppressor {
 #[serde(deny_unknown_fields)]
 struct SuppressEntry {
     /// Explicit match-everything predicate. Kept noisy on purpose: an empty
-    /// table is rejected so a missing/typoed condition cannot suppress every
+    /// table is rejected so a missing or typoed condition cannot suppress every
     /// finding accidentally.
     #[serde(default)]
     literal_true: bool,
@@ -66,10 +60,9 @@ struct SuppressEntry {
     detector: Option<String>,
     /// Service exact match (e.g. `"stripe"`).
     service: Option<String>,
-    /// Severity equals - case-insensitive
-    /// (info / client-safe / low / medium / high / critical).
+    /// Severity equals (case-insensitive: info, client-safe, low, medium, high, critical).
     severity: Option<String>,
-    /// Severity ≤ - finding's severity must be at most this rank.
+    /// Severity <= (finding severity must be at most this rank).
     severity_lte: Option<String>,
     /// File path exact match.
     path_eq: Option<String>,
@@ -81,12 +74,11 @@ struct SuppressEntry {
     path_ends_with: Option<String>,
     /// File path matches regex.
     path_regex: Option<String>,
-    /// Credential SHA-256 hash exact match (mirrors legacy
-    /// `.keyhogignore` `hash:<sha>` entries).
+    /// Credential SHA-256 hash exact match.
     credential_hash: Option<String>,
 }
 
-/// File around which a `RuleFormula` is evaluated. One per finding.
+/// File context around which a `RuleFormula` is evaluated. One per finding.
 struct FindingContext<'a> {
     detector_id: &'a str,
     service: &'a str,
@@ -111,15 +103,43 @@ impl<'a> RuleEvaluationContext for FindingContext<'a> {
     }
 }
 
+/// Return severity rank using canonical Severity table.
+///
+/// Rank ordering MUST match the `Severity` enum's derived `Ord`
+/// (Info < ClientSafe < Low < Medium < High < Critical). `severity_lte`
+/// expands to the set of every label at or below the threshold rank, so a
+/// drift between this table and the enum would suppress the wrong tiers - in
+/// particular, omitting `client-safe` made `severity_lte = "low"` silently
+/// skip client-safe findings that rank *below* low.
+pub(crate) fn severity_rank_from_str(s: &str) -> Result<usize, String> {
+    Severity::from_filter_label(s)
+        .map(|sev| sev.rank())
+        .ok_or_else(|| {
+            format!(
+                "unknown severity {:?}; expected {}",
+                s.trim().to_ascii_lowercase(),
+                Severity::FILTER_EXPECTED_LABELS
+            )
+        })
+}
+
+/// Check if character is a regular expression metacharacter.
+#[inline]
+fn is_regex_meta(c: char) -> bool {
+    matches!(
+        c,
+        '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '|' | '[' | ']' | '{' | '}' | '^' | '$'
+    )
+}
+
 impl RuleSuppressor {
-    /// Build an empty suppressor - matches no findings.
-    fn empty() -> Self {
+    /// Build an empty suppressor that matches no findings.
+    pub(crate) fn empty() -> Self {
         Self::default()
     }
 
     /// Load from a TOML path. Returns `Ok(empty())` when the file
-    /// is missing (matches the legacy `.keyhogignore` behaviour) so
-    /// callers don't need to gate on existence.
+    /// is missing so callers do not need to gate on existence.
     pub(crate) fn load(path: &Path) -> Result<Self, RuleSuppressorError> {
         if !path.exists() {
             return Ok(Self::empty());
@@ -136,7 +156,7 @@ impl RuleSuppressor {
         Self::parse(&raw)
     }
 
-    /// Parse a TOML string. Useful for tests.
+    /// Parse a TOML string.
     pub(crate) fn parse(toml_text: &str) -> Result<Self, RuleSuppressorError> {
         #[derive(Deserialize)]
         struct Doc {
@@ -156,9 +176,7 @@ impl RuleSuppressor {
         Ok(Self { rules })
     }
 
-    /// `true` when at least one rule matches and the finding should
-    /// be dropped. Empty suppressor → always `false` (no
-    /// suppressions, which matches `Self::empty()`'s contract).
+    /// True when at least one rule matches and the finding should be dropped.
     #[must_use]
     pub fn matches(&self, finding: &VerifiedFinding) -> bool {
         self.matches_identity(
@@ -171,7 +189,6 @@ impl RuleSuppressor {
     }
 
     /// Same predicate as [`Self::matches`] for a pre-verify [`RawMatch`].
-    /// Used by `keyhog watch`, which filters before building VerifiedFinding.
     #[must_use]
     pub fn matches_raw_match(&self, matched: &RawMatch) -> bool {
         self.matches_identity(
@@ -183,8 +200,7 @@ impl RuleSuppressor {
         )
     }
 
-    /// Shared rule evaluation over the identity fields every suppress surface
-    /// has (detector, service, severity, path, credential hash).
+    /// Shared rule evaluation over identity fields.
     #[must_use]
     pub fn matches_identity(
         &self,
@@ -222,9 +238,7 @@ impl std::str::FromStr for RuleSuppressor {
     }
 }
 
-/// Single owner for the "empty `[[suppress]]` table" rejection message. Emitted
-/// both at the primary empty-conditions guard and at the defensive fall-through
-/// below, so the two sites cannot drift into differently-worded errors.
+/// Single owner for the empty table rejection message.
 const NO_CONDITIONS_ERR: &str = "no conditions specified in [[suppress]] entry; \
      use `[[suppress]]\\nliteral_true = true` if you really want \
      to drop every finding";
@@ -243,13 +257,21 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
         conditions.push(eq_field("service", s));
     }
     if let Some(s) = entry.severity.as_deref() {
-        conditions.push(eq_field("severity", &normalise_severity(s)?));
+        let normalized = Severity::from_filter_label(s)
+            .map(|sev| sev.as_str())
+            .ok_or_else(|| {
+                format!(
+                    "unknown severity {:?}; expected {}",
+                    s.trim().to_ascii_lowercase(),
+                    Severity::FILTER_EXPECTED_LABELS
+                )
+            })?;
+        conditions.push(eq_field("severity", normalized));
     }
     if let Some(s) = entry.severity_lte.as_deref() {
-        // severity_lte over the curated rank set.
-        let max = severity_rank(&normalise_severity(s)?)?;
+        let max = severity_rank_from_str(s)?;
         let allowed: smallvec::SmallVec<[Arc<str>; 4]> = (0..=max)
-            .map(|r| Arc::from(severity_label_for_rank(r)))
+            .map(|r| Arc::from(Severity::label_for_rank(r)))
             .collect();
         conditions.push(RuleCondition::FieldInSet {
             field: "severity".into(),
@@ -281,29 +303,93 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
         });
     }
     if let Some(p) = entry.path_regex.as_deref() {
-        conditions.push(RuleCondition::RegexMatch {
-            field: "path".into(),
-            pattern: Arc::from(p),
-        });
+        // Optimize exact literal path rules to avoid regex allocation and evaluation.
+        if p.starts_with('^') && p.ends_with('$') && p.len() >= 2 {
+            let inner = &p[1..p.len() - 1];
+            if !inner.is_empty() && !inner.chars().any(is_regex_meta) {
+                conditions.push(RuleCondition::FieldInSet {
+                    field: "path".into(),
+                    set: smallvec::smallvec![Arc::from(inner)],
+                });
+            } else {
+                conditions.push(RuleCondition::RegexMatch {
+                    field: "path".into(),
+                    pattern: Arc::from(p),
+                });
+            }
+        } else if p.starts_with('^') && p.ends_with(".*") && p.len() >= 3 {
+            let inner = &p[1..p.len() - 2];
+            if !inner.is_empty() && !inner.chars().any(is_regex_meta) {
+                conditions.push(RuleCondition::PrefixMatch {
+                    value: "path".into(),
+                    prefix: Arc::from(inner),
+                });
+            } else {
+                conditions.push(RuleCondition::RegexMatch {
+                    field: "path".into(),
+                    pattern: Arc::from(p),
+                });
+            }
+        } else if p.starts_with('^') && p.len() > 1 {
+            let inner = &p[1..];
+            if !inner.is_empty() && !inner.chars().any(is_regex_meta) {
+                conditions.push(RuleCondition::PrefixMatch {
+                    value: "path".into(),
+                    prefix: Arc::from(inner),
+                });
+            } else {
+                conditions.push(RuleCondition::RegexMatch {
+                    field: "path".into(),
+                    pattern: Arc::from(p),
+                });
+            }
+        } else if p.ends_with('$') && p.len() > 1 {
+            let inner = &p[..p.len() - 1];
+            if !inner.is_empty() && !inner.chars().any(is_regex_meta) {
+                conditions.push(RuleCondition::SuffixMatch {
+                    value: "path".into(),
+                    suffix: Arc::from(inner),
+                });
+            } else {
+                conditions.push(RuleCondition::RegexMatch {
+                    field: "path".into(),
+                    pattern: Arc::from(p),
+                });
+            }
+        } else if p.starts_with(".*") && p.ends_with(".*") && p.len() >= 4 {
+            let inner = &p[2..p.len() - 2];
+            if !inner.is_empty() && !inner.chars().any(is_regex_meta) {
+                conditions.push(RuleCondition::SubstringMatch {
+                    haystack: "path".into(),
+                    needle: Arc::from(inner),
+                });
+            } else {
+                conditions.push(RuleCondition::RegexMatch {
+                    field: "path".into(),
+                    pattern: Arc::from(p),
+                });
+            }
+        } else if !p.is_empty() && !p.chars().any(is_regex_meta) {
+            conditions.push(RuleCondition::SubstringMatch {
+                haystack: "path".into(),
+                needle: Arc::from(p),
+            });
+        } else {
+            conditions.push(RuleCondition::RegexMatch {
+                field: "path".into(),
+                pattern: Arc::from(p),
+            });
+        }
     }
     if let Some(h) = entry.credential_hash.as_deref() {
         conditions.push(eq_field("credential_hash", h));
     }
 
     if conditions.is_empty() {
-        // Empty `[[suppress]]` table is almost always a typo. Refuse
-        // rather than silently matching every finding.
         return Err(NO_CONDITIONS_ERR.into());
     }
 
-    // AND of all conditions inside one [[suppress]] table.
     let mut iter = conditions.into_iter();
-    // The `if conditions.is_empty() { return Err(...) }` guard ~9
-    // lines above proves non-empty here, but a future refactor that
-    // tightens the guard (or drops it) shouldn't panic the rule
-    // compiler - fall through to the same error path so the user
-    // gets the parsable "no conditions" message instead of a
-    // backtrace.
     let Some(first) = iter.next() else {
         return Err(NO_CONDITIONS_ERR.into());
     };
@@ -321,40 +407,12 @@ fn eq_field(field: &'static str, value: &str) -> RuleCondition {
     }
 }
 
-fn normalise_severity(s: &str) -> Result<String, String> {
-    Severity::from_filter_label(s)
-        .map(|severity| severity.as_str().to_string())
-        .ok_or_else(|| {
-            format!(
-                "unknown severity {:?}; expected {}",
-                s.trim().to_ascii_lowercase(),
-                Severity::FILTER_EXPECTED_LABELS
-            )
-        })
-}
-
-/// Rank ordering MUST match the `Severity` enum's derived `Ord`
-/// (Info < ClientSafe < Low < Medium < High < Critical). `severity_lte`
-/// expands to the set of every label at or below the threshold rank, so a
-/// drift between this table and the enum would suppress the wrong tiers - in
-/// particular, omitting `client-safe` made `severity_lte = "low"` silently
-/// skip client-safe findings that rank *below* low.
-fn severity_rank(s: &str) -> Result<usize, String> {
-    Severity::from_filter_label(s)
-        .map(Severity::rank)
-        .ok_or_else(|| format!("unknown severity rank {s:?}"))
-}
-
-fn severity_label_for_rank(rank: usize) -> &'static str {
-    Severity::label_for_rank(rank)
-}
-
 /// Errors from loading or parsing `.keyhogignore.toml`.
 #[derive(Debug)]
 pub enum RuleSuppressorError {
     /// Filesystem read failed.
     Io(std::io::Error),
-    /// TOML deserialisation failed.
+    /// TOML deserialization failed.
     Toml(toml::de::Error),
     /// One `[[suppress]]` entry failed schema validation.
     Schema {

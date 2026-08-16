@@ -57,7 +57,7 @@ anyhow = "=1.0.103"
 # stale `tmp.NNN` next to the real cache file.
 tempfile = { workspace = true }
 # `vyre_libs::rule` for the declarative `.keyhogignore.toml` engine
-# (see `crates/core/src/rule_filter.rs`). Pulls in the `rule`
+# (see `crates/core/src/suppression/rule.rs`). Pulls in the `rule`
 # feature which compiles the CPU evaluator + the `regex` dep used
 # by `RuleCondition::RegexMatch`.
 vyre_libs = { workspace = true, features = ["rule"] }
