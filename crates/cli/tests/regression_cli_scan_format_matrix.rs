@@ -295,7 +295,7 @@ fn text_clean_run_honest_no_secrets_line() {
 // CSV
 // ---------------------------------------------------------------------------
 
-/// csv: the first non-comment line is EXACTLY the documented 20-field header.
+/// csv: the first non-comment line is EXACTLY the canonical 22-field header.
 #[test]
 fn csv_format_header_is_exact() {
     let (_dir, path) = leak_fixture();

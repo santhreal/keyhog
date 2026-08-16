@@ -179,7 +179,7 @@ impl_writer_backed!(JsonArrayReporter);
 pub(crate) struct JsonEnvelopeReporter<'a, W: Write + Send> {
     writer: W,
     first: bool,
-    correlations: &'a [CorrelatedCredential],
+    correlations: Option<&'a [CorrelatedCredential]>,
     access_targets: Option<&'a AccessTargetReport>,
 }
 
@@ -222,6 +222,7 @@ impl<'a, W: Write + Send> JsonEnvelopeReporter<'a, W> {
         }
         write!(writer, "]")?;
         write!(writer, ",\"findings\":[")?;
+        let correlations = (!correlations.is_empty()).then_some(correlations);
         Ok(Self {
             writer,
             first: true,
@@ -243,11 +244,11 @@ impl<'a, W: Write + Send> Reporter for JsonEnvelopeReporter<'a, W> {
 
     fn finish(&mut self) -> Result<(), ReportError> {
         write!(self.writer, "]")?;
-        if !self.correlations.is_empty() {
+        if let Some(correlations) = self.correlations.take() {
             write!(self.writer, ",\"correlations\":")?;
-            serde_json::to_writer(&mut self.writer, self.correlations)?;
+            serde_json::to_writer(&mut self.writer, correlations)?;
         }
-        if let Some(access_targets) = self.access_targets {
+        if let Some(access_targets) = self.access_targets.take() {
             write!(self.writer, ",\"access_targets\":")?;
             serde_json::to_writer(&mut self.writer, access_targets)?;
         }

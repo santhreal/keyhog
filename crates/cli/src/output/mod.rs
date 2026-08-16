@@ -6,7 +6,6 @@
 
 use std::io::BufWriter;
 
-pub(crate) use crate::reporting::report_findings_with_metadata;
 /// Default buffer capacity in bytes for streaming report writers.
 pub(crate) const REPORT_BUFFER_CAPACITY: usize = 64 * 1024;
 

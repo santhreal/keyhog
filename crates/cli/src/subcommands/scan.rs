@@ -1514,7 +1514,7 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
     if !source_coverage_gaps.is_empty() {
         report_metadata.scan_status = ScanCompletionStatus::Partial;
     }
-    crate::output::report_findings_with_metadata(&findings, args, &report_metadata)?;
+    crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
     if let Some(profile) = &profile {
         crate::orchestrator::render_daemon_request_profile(profile);
     }
@@ -1610,7 +1610,7 @@ fn finish_guard_commit_scan(
     if result.coverage_gaps > 0 || result.fingerprint_changed {
         report_metadata.scan_status = keyhog_core::ScanCompletionStatus::Partial;
     }
-    crate::output::report_findings_with_metadata(&findings, args, &report_metadata)?;
+    crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
 
     let finding_exit = crate::orchestrator::scan_exit_code(
         &findings,
