@@ -182,18 +182,14 @@ impl<'a> DispatchPlan<'a> {
                 self.truncate,
             )
         } else {
-            Phase2AlwaysActivePrefilter::batch_folded_matcher(
-                phase2_patterns,
-                batch,
-                self.truncate,
-            )
-            .or_else(|| {
-                Phase2AlwaysActivePrefilter::batch_unicode_matcher(
-                    phase2_patterns,
-                    batch,
-                    self.truncate,
-                )
-            })
+            Phase2AlwaysActivePrefilter::batch_folded_matcher(phase2_patterns, batch, self.truncate)
+                .or_else(|| {
+                    Phase2AlwaysActivePrefilter::batch_unicode_matcher(
+                        phase2_patterns,
+                        batch,
+                        self.truncate,
+                    )
+                })
         };
         match set {
             Some(set) => BatchMatcher::Run(set),
