@@ -89,6 +89,10 @@ pub(crate) fn decode_chunk(
 pub(crate) fn unicode_escape_decode(input: &str) -> Result<String, ()> {
     unicode_escape::unicode_escape_decode(input)
 }
+#[cfg(feature = "decode")]
+pub(crate) fn url_decode(input: &str) -> Result<String, ()> {
+    url::url_decode(input)
+}
 
 #[cfg(feature = "decode")]
 pub(crate) fn quoted_printable_decode(input: &str) -> Result<String, ()> {

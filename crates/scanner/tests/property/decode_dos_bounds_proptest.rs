@@ -14,7 +14,7 @@
 
 use keyhog_scanner::testing::{
     caesar_shift_for_test, mime_encoded_word_decode_for_test, octal_escape_decode_for_test,
-    quoted_printable_decode_for_test, reverse_str_for_test,
+    quoted_printable_decode_for_test, reverse_str_for_test, url_decode_for_test,
 };
 use proptest::prelude::*;
 
@@ -92,6 +92,7 @@ fn pathological_shapes_do_not_panic() {
         let _ = mime_encoded_word_decode_for_test(s);
         let _ = octal_escape_decode_for_test(s);
         let _ = reverse_str_for_test(s);
+        let _ = url_decode_for_test(s);
     }
 }
 
@@ -124,6 +125,9 @@ proptest! {
             prop_assert!(d.len() <= s.len());
         }
         if let Some(d) = mime_encoded_word_decode_for_test(&s) {
+            prop_assert!(d.len() <= s.len());
+        }
+        if let Some(d) = url_decode_for_test(&s) {
             prop_assert!(d.len() <= s.len());
         }
     }
