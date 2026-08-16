@@ -743,9 +743,9 @@ fn entropy_ghidra_decompiled_source_is_not_raw_binary() {
 #[cfg(feature = "decode")]
 #[test]
 fn decoded_reverse_placeholder_suppression_detects_markers_without_allocating() {
+    let _telemetry_guard = super::telemetry_serial::lock();
     use keyhog_core::{MatchLocation, RawMatch, SensitiveString, Severity};
     use std::sync::Arc;
-
     let make_match = |credential: &str| RawMatch {
         detector_id: Arc::from("test-detector"),
         detector_name: Arc::from("Test Detector"),
@@ -826,9 +826,9 @@ fn decoded_reverse_placeholder_suppression_detects_markers_without_allocating() 
 #[cfg(feature = "decode")]
 #[test]
 fn decoded_parent_example_suppression_avoids_cloning() {
+    let _telemetry_guard = super::telemetry_serial::lock();
     use keyhog_core::{MatchLocation, RawMatch, SensitiveString, Severity};
     use std::sync::Arc;
-
     let m = RawMatch {
         detector_id: Arc::from("test-detector"),
         detector_name: Arc::from("Test Detector"),
@@ -860,6 +860,7 @@ fn decoded_parent_example_suppression_avoids_cloning() {
 #[cfg(feature = "decode")]
 #[test]
 fn scan_collapses_decoded_duplicate_matches_identically() {
+    let _telemetry_guard = super::telemetry_serial::lock();
     use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, SensitiveString, Severity};
     use keyhog_scanner::{CompiledScanner, ScannerConfig};
 
