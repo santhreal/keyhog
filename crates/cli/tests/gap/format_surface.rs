@@ -644,7 +644,7 @@ fn csv_empty_corpus_is_header_only() {
 }
 
 /// Non-empty corpus -> header + >=1 data row. Each data row has exactly
-/// 20 logical fields (matching the header column count), parsed as RFC-4180
+/// 22 logical fields (matching the header column count), parsed as RFC-4180
 /// because JSON remediation cells contain commas.
 #[test]
 fn csv_planted_finding_has_header_plus_data_rows() {
