@@ -1404,7 +1404,9 @@ fn doctor_reports_corpus_and_passes_scan_self_test() {
     // end-to-end scan self-test (plant -> scan -> match). Asserting the
     // displayed count equals the binary's own embedded count proves the
     // report reflects reality, not a hardcoded banner number.
+    let cache_dir = tempfile::tempdir().expect("create isolated cache dir");
     let output = Command::new(binary())
+        .env("XDG_CACHE_HOME", cache_dir.path())
         .arg("doctor")
         .output()
         .expect("run keyhog doctor");
