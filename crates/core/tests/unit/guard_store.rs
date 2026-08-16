@@ -595,7 +595,7 @@ fn durable_store_rejects_unsupported_schema_version() {
         let db = redb::Database::open(&path).expect("open db");
         let txn = db.begin_write().expect("begin write");
         {
-            let mut meta: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new("meta");
+            let meta: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new("meta");
             let mut table = txn.open_table(meta).expect("open meta");
             table
                 .insert("schema_version", 9999u32.to_le_bytes().as_slice())

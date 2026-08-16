@@ -3,13 +3,9 @@ pub(crate) mod confirmed_anchor;
 pub(crate) mod decode;
 
 use super::CompiledScanner;
-#[cfg(feature = "decode")]
-use {
-    crate::types::MAX_SCAN_CHUNK_BYTES,
-    keyhog_core::SensitiveString,
-    std::{collections::HashSet, sync::Arc},
-};
 use keyhog_core::{Chunk, RawMatch};
+#[cfg(feature = "decode")]
+use crate::types::MAX_SCAN_CHUNK_BYTES;
 
 /// Deduplicate a literal into a shared `literals` Vec, returning its index.
 /// Avoids the `entry(lit.clone()).or_insert_with(|| push(lit.clone()))`
@@ -195,7 +191,7 @@ impl CompiledScanner {
                             .cmp(&b.location.offset)
                             .then_with(|| a.cmp(b))
                     });
-                    union_matches(matches, decoded_candidates);
+                    decode::union_unique_matches(matches, decoded_candidates);
                     let resolved = crate::resolution::try_resolve_matches_with_compiled_plan(
                         std::mem::take(matches),
                         &self.detector_plans,
@@ -206,7 +202,7 @@ impl CompiledScanner {
                         ))
                     })?;
                     let mut merged = raw_findings;
-                    union_matches(&mut merged, resolved);
+                    decode::union_unique_matches(&mut merged, resolved);
                     *matches = merged;
                 }
                 Ok(())
@@ -216,7 +212,7 @@ impl CompiledScanner {
             {
                 decode_parent(chunk, matches)?;
             } else if self.chunk_uses_bounded_decode_windows(chunk) {
-                self.decode_source_windows(chunk, |w| {
+                decode::decode_source_windows(self.config.max_decode_bytes, chunk, |w| {
                     self.chunk_needs_decode_postprocess(w)
                         .then(|| decode_parent(w, matches))
                         .unwrap_or(Ok(()))
@@ -279,17 +275,5 @@ impl CompiledScanner {
             }
         });
         expanded
-    }
-}
-#[cfg(feature = "decode")]
-fn union_matches(target: &mut Vec<keyhog_core::RawMatch>, incoming: Vec<keyhog_core::RawMatch>) {
-    let mut seen: HashSet<(Arc<str>, SensitiveString)> = target
-        .iter()
-        .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
-        .collect();
-    for m in incoming {
-        if seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
-            target.push(m);
-        }
     }
 }

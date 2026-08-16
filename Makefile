@@ -1,4 +1,12 @@
-.PHONY: release-check docs-check docs-build
+.PHONY: release-check docs-check docs-build ci-remote ci-local ci
+
+ci-remote:
+	bash scripts/ci_remote.sh
+
+ci-local:
+	bash scripts/ci_local.sh
+
+ci: ci-local
 
 release-check:
 	python3 -B -m unittest \
