@@ -6,6 +6,15 @@ use keyhog_profile::{
     CollectorAvailability, CollectorId, Evidence, EvidenceGap, HardwareFieldSourceV2, RunIdentity,
     RunState, Session, SnapshotCollector, SystemIoCollector,
 };
+use std::sync::{Mutex, MutexGuard};
+
+static SYSTEM_IO_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock() -> MutexGuard<'static, ()> {
+    SYSTEM_IO_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+}
 
 fn session(name: &str) -> Session {
     Session::start(RunIdentity::new(
@@ -24,6 +33,7 @@ fn session(name: &str) -> Session {
 #[cfg(not(feature = "process-metrics"))]
 #[test]
 fn disabled_process_metrics_gap_every_system_family() {
+    let _guard = lock();
     let mut collector = SystemIoCollector::new();
     let capability = collector.capability();
     assert_eq!(capability.availability, CollectorAvailability::Disabled);
@@ -99,6 +109,7 @@ mod linux {
     /// /proc files within the slack of back-to-back reads.
     #[test]
     fn faults_and_io_match_independent_procfs_reads() {
+        let _guard = lock();
         let mut collector = SystemIoCollector::new();
         assert_eq!(
             collector.capability().availability,
@@ -150,6 +161,7 @@ mod linux {
     /// session deltas.
     #[test]
     fn session_deltas_register_known_faults_and_writes() {
+        let _guard = lock();
         let session = session("system-deltas");
         let runtime = session.runtime();
         let touched = vec![1_u8; 32 * 1024 * 1024];
@@ -198,6 +210,7 @@ mod linux {
     /// equal the maximum of its own samples exactly.
     #[test]
     fn resident_high_water_tracks_known_growth() {
+        let _guard = lock();
         let before_hwm = status_field("VmHWM:") * 1_024;
         let session = session("system-hwm");
         let grown = vec![3_u8; 256 * 1024 * 1024];
@@ -247,6 +260,7 @@ mod linux {
     /// honest host reports.
     #[test]
     fn pressure_and_thermal_collect_or_report_capability() {
+        let _guard = lock();
         let mut collector = PressureThermalCollector::new();
         let sample = collector.sample();
         if std::path::Path::new("/proc/pressure/cpu").exists() {
@@ -316,6 +330,7 @@ mod linux {
     /// explicit gap when no TrackingAllocator is installed.
     #[test]
     fn session_system_evidence_reports_network_gap_and_stage_slots() {
+        let _guard = lock();
         let session = session("system-network");
         {
             let _read = keyhog_profile::span(Stage::SourceRead);
