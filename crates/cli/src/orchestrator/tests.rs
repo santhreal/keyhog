@@ -21,6 +21,7 @@ use crate::exit_codes::{
     EXIT_FINDINGS, EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC, EXIT_SOURCE_FAILED, EXIT_SUCCESS,
     EXIT_SYSTEM_ERROR, EXIT_USER_ERROR,
 };
+use crate::testing::CliTestApi;
 
 #[test]
 fn collect_detector_signatures_unifies_primary_and_companion_regexes() {
@@ -204,6 +205,8 @@ fn unavailable_daemon_gpu_is_typed_and_exits_twelve() {
 /// Regression: fallible scanner backends keep the stable CLI exit-code contract.
 #[test]
 fn selected_backend_scan_errors_map_to_backend_exit_codes() {
+    let guard = crate::testing::API.scan_runtime_guard_for_test();
+    crate::testing::API.reset_scan_runtime_state_for_test(&guard);
     let gpu = anyhow::Error::new(keyhog_scanner::ScanError::Gpu(
         "selected GPU runtime is unavailable".into(),
     ));
@@ -217,6 +220,8 @@ fn selected_backend_scan_errors_map_to_backend_exit_codes() {
 
 #[test]
 fn incompatible_daemon_gpu_compile_and_initialization_are_typed() {
+    let guard = crate::testing::API.scan_runtime_guard_for_test();
+    crate::testing::API.reset_scan_runtime_state_for_test(&guard);
     let compile_error = daemon_compile_failure(&keyhog_scanner::ScanError::Gpu(
         "adapter limits cannot create the literal-set pipeline".into(),
     ));
@@ -243,6 +248,8 @@ fn incompatible_daemon_gpu_compile_and_initialization_are_typed() {
 
 #[test]
 fn degraded_daemon_gpu_warmup_is_typed_and_exits_twelve() {
+    let guard = crate::testing::API.scan_runtime_guard_for_test();
+    crate::testing::API.reset_scan_runtime_state_for_test(&guard);
     let error = validate_daemon_gpu_warmup(true, 4, 5)
         .expect_err("a GPU degradation during warmup must fail readiness");
     assert_eq!(crate::cli_error_exit_code(&error), EXIT_REQUIRE_GPU_UNMET);
@@ -254,6 +261,8 @@ fn degraded_daemon_gpu_warmup_is_typed_and_exits_twelve() {
 
 #[test]
 fn non_gpu_daemon_configuration_remains_a_user_error() {
+    let guard = crate::testing::API.scan_runtime_guard_for_test();
+    crate::testing::API.reset_scan_runtime_state_for_test(&guard);
     use keyhog_scanner::ScanBackend;
 
     assert!(!daemon_requires_gpu(Some(ScanBackend::CpuFallback), false)
