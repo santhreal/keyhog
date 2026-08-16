@@ -89,7 +89,7 @@ pub(super) fn archive_metadata_chunks(
             metadata: ChunkMetadata {
                 base_offset: 0,
                 base_line: 0,
-                source_type: "docker".into(),
+                source_type: keyhog_core::intern_source_type("docker"),
                 path: Some(format!("{image}:metadata:{file_name}").into()),
                 commit: None,
                 author: None,
@@ -179,7 +179,7 @@ pub(super) fn manifest_config_chunks(
                 metadata: ChunkMetadata {
                     base_offset: 0,
                     base_line: 0,
-                    source_type: "docker".into(),
+                    source_type: keyhog_core::intern_source_type("docker"),
                     path: Some(format!("{image}:manifest[{idx}]:{config}").into()),
                     commit: None,
                     author: None,
@@ -256,7 +256,7 @@ fn find_fallback_config_chunks(
             metadata: ChunkMetadata {
                 base_offset: 0,
                 base_line: 0,
-                source_type: "docker".into(),
+                source_type: keyhog_core::intern_source_type("docker"),
                 path: Some(format!("{image}:fallback-config[{idx}]:{label}").into()),
                 commit: None,
                 author: None,

@@ -478,7 +478,7 @@ fn make_git_history_chunk(
         metadata: ChunkMetadata {
             base_offset: 0,
             base_line,
-            source_type: "git-history".into(),
+            source_type: keyhog_core::intern_source_type("git-history"),
             path: Some(path.into()),
             commit: Some(commit.into()),
             author: Some(author.into()),

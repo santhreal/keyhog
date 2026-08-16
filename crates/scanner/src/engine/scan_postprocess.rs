@@ -197,6 +197,7 @@ impl CompiledScanner {
                     }
                     // Decoding is monotonic: keep raw findings and union resolved decoded evidence.
                     let raw_findings = matches.clone();
+
                     decoded_candidates.sort_by(|a, b| {
                         a.location
                             .offset

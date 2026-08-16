@@ -489,7 +489,7 @@ fn fetch_object_chunk(
         metadata: ChunkMetadata {
             base_offset: 0,
             base_line: 0,
-            source_type: "s3".into(),
+            source_type: keyhog_core::intern_source_type("s3"),
             path: Some(format!("{bucket}/{key}").into()),
             commit: None,
             author: None,

@@ -127,7 +127,7 @@ pub(super) fn extract_pdf_chunks_from_bytes(
     emit(Ok(Chunk {
         data: text.to_owned().into(),
         metadata: ChunkMetadata {
-            source_type: "filesystem/pdf".into(),
+            source_type: keyhog_core::intern_source_type("filesystem/pdf"),
             path: Some(path_display.to_owned().into()),
             mtime_ns: live_mtime_ns,
             size_bytes: Some(file_size),
@@ -196,7 +196,7 @@ fn emit_non_pdf_extension_fallback(
     emit(Ok(Chunk {
         data,
         metadata: ChunkMetadata {
-            source_type: source_type.into(),
+            source_type: keyhog_core::intern_source_type(source_type),
             path: Some(path_display.into()),
             mtime_ns: live_mtime_ns,
             size_bytes: Some(file_size),

@@ -236,7 +236,7 @@ fn stdin_chunk(text: String, base_offset: usize, base_line: usize) -> Chunk {
         metadata: ChunkMetadata {
             base_offset,
             base_line,
-            source_type: "stdin".into(),
+            source_type: keyhog_core::intern_source_type("stdin"),
             path: None,
             commit: None,
             author: None,

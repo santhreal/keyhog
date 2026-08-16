@@ -482,7 +482,7 @@ fn make_git_diff_chunk(
         metadata: ChunkMetadata {
             base_offset: 0,
             base_line,
-            source_type: "git-diff".into(),
+            source_type: keyhog_core::intern_source_type("git-diff"),
             path: Some(path.into()),
             commit: Some(commit.into()),
             author: Some(author.into()),
@@ -747,7 +747,7 @@ fn read_untracked_worktree_chunk(
         metadata: ChunkMetadata {
             base_offset: 0,
             base_line: 0,
-            source_type: "git-diff".into(),
+            source_type: keyhog_core::intern_source_type("git-diff"),
             path: Some(rel.into()),
             commit: Some(metadata_commit.into()),
             author: Some(author.into()),

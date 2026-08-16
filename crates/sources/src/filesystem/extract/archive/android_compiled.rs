@@ -195,7 +195,7 @@ impl<'a> OutputBuilder<'a> {
         self.chunks.push(Chunk {
             data: data.into(),
             metadata: ChunkMetadata {
-                source_type: self.source_type.into(),
+                source_type: keyhog_core::intern_source_type(self.source_type),
                 path: Some(path.into()),
                 size_bytes: Some(self.input_size as u64),
                 ..Default::default()

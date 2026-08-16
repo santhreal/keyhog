@@ -398,7 +398,7 @@ fn fetch_azure_blob_chunk(
         metadata: ChunkMetadata {
             base_offset: 0,
             base_line: 0,
-            source_type: "azure_blob".into(),
+            source_type: keyhog_core::intern_source_type("azure_blob"),
             path: Some(display_path.into()),
             commit: None,
             author: None,

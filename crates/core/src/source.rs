@@ -6,7 +6,7 @@
 
 use crate::SensitiveString;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use thiserror::Error;
 
 /// Machine-readable reason a requested source surface was not fully scanned.
@@ -138,6 +138,100 @@ pub struct ChunkMetadata {
     /// `None` for all non-decode chunks (whole-file, windowed, git-diff, …).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decoded_span: Option<(usize, usize)>,
+}
+
+macro_rules! define_intern_table {
+    (
+        $(#[$intern_meta:meta])*
+        pub fn $fn_intern:ident,
+        $(#[$list_meta:meta])*
+        pub fn $fn_list:ident,
+        $(
+            $(#[$item_meta:meta])*
+            ($name:ident, $str_val:literal)
+        ),* $(,)?
+    ) => {
+        $(
+            $(#[$item_meta])*
+            #[doc = concat!("Canonical `source_type` for `", $str_val, "` chunks.")]
+            pub static $name: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from($str_val));
+        )*
+
+        $(#[$list_meta])*
+        pub fn $fn_list() -> &'static [&'static str] {
+            &[
+                $( $str_val ),*
+            ]
+        }
+
+        $(#[$intern_meta])*
+        pub fn $fn_intern(val: &str) -> Arc<str> {
+            match val {
+                $(
+                    $str_val => Arc::clone(&$name),
+                )*
+                other => Arc::from(other),
+            }
+        }
+    };
+}
+
+define_intern_table! {
+    /// Intern a source type string reference into an `Arc<str>`.
+    ///
+    /// Returns a clone of a pre-allocated static `Arc<str>` for canonical source types,
+    /// avoiding heap allocation and string duplication.
+    pub fn intern_source_type,
+    /// Pre-interned common source type names.
+    pub fn common_source_types,
+    (SOURCE_TYPE_AZURE_BLOB, "azure_blob"),
+    (SOURCE_TYPE_BINARY, "binary"),
+    (SOURCE_TYPE_BINARY_GHIDRA_DECOMPILED, "binary:ghidra:decompiled"),
+    (SOURCE_TYPE_BINARY_GHIDRA_STRINGS, "binary:ghidra:strings"),
+    (SOURCE_TYPE_BINARY_STRINGS, "binary:strings"),
+    (SOURCE_TYPE_DOCKER, "docker"),
+    (SOURCE_TYPE_FILESYSTEM, "filesystem"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE, "filesystem/archive"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_BINARY, "filesystem/archive-binary"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_BINARY_TEX_ORPHANED, "filesystem/archive-binary/tex-orphaned"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_BINARY_TEX_REFERENCED, "filesystem/archive-binary/tex-referenced"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_BINARY_TEX_ROOT, "filesystem/archive-binary/tex-root"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_ANDROID, "filesystem/archive/android"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_ANDROID_RESOURCE, "filesystem/archive/android-resource"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_ANDROID_XML, "filesystem/archive/android-xml"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_TEX_COMMENT_ORPHANED, "filesystem/archive/tex-comment/orphaned"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_TEX_COMMENT_REFERENCED, "filesystem/archive/tex-comment/referenced"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_TEX_COMMENT_ROOT, "filesystem/archive/tex-comment/root"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_TEX_ORPHANED, "filesystem/archive/tex-orphaned"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_TEX_REFERENCED, "filesystem/archive/tex-referenced"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_TEX_ROOT, "filesystem/archive/tex-root"),
+    (SOURCE_TYPE_FILESYSTEM_COMPRESSED, "filesystem/compressed"),
+    (SOURCE_TYPE_FILESYSTEM_COMPRESSED_BINARY, "filesystem/compressed-binary"),
+    (SOURCE_TYPE_FILESYSTEM_PDF, "filesystem/pdf"),
+    (SOURCE_TYPE_FILESYSTEM_WINDOWED, "filesystem/windowed"),
+    (SOURCE_TYPE_FILESYSTEM_BINARY_STRINGS, "filesystem:binary-strings"),
+    (SOURCE_TYPE_GCS, "gcs"),
+    (SOURCE_TYPE_GIT, "git"),
+    (SOURCE_TYPE_GIT_DIFF, "git-diff"),
+    (SOURCE_TYPE_GIT_HISTORY, "git-history"),
+    (SOURCE_TYPE_GIT_STAGED, "git-staged"),
+    (SOURCE_TYPE_GIT_DIFF_SLASH, "git/diff"),
+    (SOURCE_TYPE_GIT_HEAD, "git/head"),
+    (SOURCE_TYPE_GIT_HISTORY_SLASH, "git/history"),
+    (SOURCE_TYPE_GIT_STAGED_SLASH, "git/staged"),
+    (SOURCE_TYPE_GIT_TAG, "git/tag"),
+    (SOURCE_TYPE_GIT_UNREACHABLE, "git/unreachable"),
+    (SOURCE_TYPE_GITHUB, "github"),
+    (SOURCE_TYPE_S3, "s3"),
+    (SOURCE_TYPE_SLACK, "slack"),
+    (SOURCE_TYPE_STDIN, "stdin"),
+    (SOURCE_TYPE_WEB, "web"),
+    (SOURCE_TYPE_WEB_JS, "web:js"),
+    (SOURCE_TYPE_WEB_SOURCEMAP, "web:sourcemap"),
+    (SOURCE_TYPE_WEB_SOURCEMAP_RAW, "web:sourcemap:raw"),
+    (SOURCE_TYPE_WEB_WASM, "web:wasm"),
+    (SOURCE_TYPE_WIRE_HAR_REQUEST, "wire:har:request"),
+    (SOURCE_TYPE_WIRE_HAR_RESPONSE, "wire:har:response"),
 }
 
 /// Produces chunks of text for the scanner to process.

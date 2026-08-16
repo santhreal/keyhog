@@ -932,7 +932,7 @@ impl GitBlobChunkDecoder<'_> {
             metadata: ChunkMetadata {
                 base_offset: 0,
                 base_line: 0,
-                source_type: source_type.into(),
+                source_type: keyhog_core::intern_source_type(source_type),
                 path: Some(path.into()),
                 commit: commit.map(Into::into),
                 author: author.map(Into::into),
