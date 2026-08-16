@@ -330,6 +330,7 @@ fn percent_decode(input: &str) -> Result<String, ()> {
     }
 }
 
+#[cfg(any(feature = "decode", test))]
 pub(crate) fn url_decode(input: &str) -> Result<String, ()> {
     // Bail before doing any work when there is no valid `%XX` percent-escape
     // in the candidate.
