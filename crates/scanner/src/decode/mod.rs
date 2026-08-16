@@ -29,9 +29,7 @@ pub use base64::is_base64_candidate_byte;
 pub(crate) use base64::{
     contains_non_padding_equals, is_standard_base64_byte, standard_base64_shape,
 };
-pub use hex::{
-    find_hex_strings, hex_decode, hex_decode_fixed, validate_hex_hash_16, validate_hex_hash_32,
-};
+pub use hex::{find_hex_strings, hex_decode};
 pub(crate) use pipeline::{
     bytecount_newlines, decoder_profile_dump, splice_decoded_payload_at, with_extracted_value_spans,
 };

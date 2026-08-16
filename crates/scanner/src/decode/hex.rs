@@ -2,7 +2,7 @@ use super::limits::{MAX_HEX_INPUT_LEN, MIN_HEX_CANDIDATE_LEN};
 use super::pipeline::{with_extracted_value_spans, DecodedReplacementBatcher, ExtractedValue};
 use super::{DecodeAdmissionSketch, DecodeOutputSink, Decoder, EncodedString};
 use keyhog_core::Chunk;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 pub(super) struct HexDecoder;
 
 impl Decoder for HexDecoder {
@@ -150,41 +150,6 @@ fn is_hex_candidate(candidate: &ExtractedValue, min_length: usize) -> bool {
             .all(|byte| byte == b'_' || byte.is_ascii_hexdigit())
 }
 
-/// Validate and decode a fixed `N`-byte hex hash candidate into a stack buffer.
-/// Intermediate and destination buffers are zeroized on drop or validation error.
-#[allow(clippy::result_unit_err)]
-pub fn hex_decode_fixed<const N: usize>(input: &str) -> Result<[u8; N], ()> {
-    if N <= 128 && input.len() <= 256 {
-        let mut stack_dst = Zeroizing::new([0u8; 128]);
-        let len = hex_decode_to_stack_buf(input, &mut *stack_dst)?;
-        if len != N {
-            return Err(());
-        }
-        let mut out = [0u8; N];
-        out.copy_from_slice(&stack_dst[..N]);
-        return Ok(out);
-    }
-    let bytes = hex_decode(input)?;
-    if bytes.len() != N {
-        return Err(());
-    }
-    let mut out = [0u8; N];
-    out.copy_from_slice(&bytes);
-    Ok(out)
-}
-
-/// Validate and decode a 16-byte hex hash candidate (e.g. 32-hex-digit MD5 digest) into a stack buffer.
-#[allow(clippy::result_unit_err)]
-pub fn validate_hex_hash_16(input: &str) -> Result<[u8; 16], ()> {
-    hex_decode_fixed::<16>(input)
-}
-
-/// Validate and decode a 32-byte hex hash candidate (e.g. 64-hex-digit SHA-256 digest) into a stack buffer.
-#[allow(clippy::result_unit_err)]
-pub fn validate_hex_hash_32(input: &str) -> Result<[u8; 32], ()> {
-    hex_decode_fixed::<32>(input)
-}
-
 /// Decode a hex string (optionally `_`-separated), bounded to
 /// `MAX_HEX_INPUT_LEN` bytes for DoS safety. `Err(())` on odd length or
 /// non-hex input.
@@ -201,9 +166,12 @@ pub fn hex_decode(input: &str) -> Result<Vec<u8>, ()> {
             return Err(());
         }
         let decoded_len = input.len() / 2;
-        let mut out = Zeroizing::new(vec![0u8; decoded_len]);
-        hex_simd::decode(input.as_bytes(), hex_simd::Out::from_slice(&mut out)).map_err(|_| ())?;
-        return Ok((*out).clone());
+        let mut out = vec![0u8; decoded_len];
+        if hex_simd::decode(input.as_bytes(), hex_simd::Out::from_slice(&mut out)).is_err() {
+            out.zeroize();
+            return Err(());
+        }
+        return Ok(out);
     }
 
     let mut cleaned = Zeroizing::new(Vec::with_capacity(input.len()));
@@ -216,9 +184,12 @@ pub fn hex_decode(input: &str) -> Result<Vec<u8>, ()> {
         return Err(());
     }
     let decoded_len = cleaned.len() / 2;
-    let mut out = Zeroizing::new(vec![0u8; decoded_len]);
-    hex_simd::decode(&cleaned, hex_simd::Out::from_slice(&mut out)).map_err(|_| ())?;
-    Ok((*out).clone())
+    let mut out = vec![0u8; decoded_len];
+    if hex_simd::decode(&cleaned, hex_simd::Out::from_slice(&mut out)).is_err() {
+        out.zeroize();
+        return Err(());
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

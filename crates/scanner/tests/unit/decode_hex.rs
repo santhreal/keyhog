@@ -28,53 +28,58 @@ fn hex_decode_rejects_malformed_and_odd_sequences() {
 }
 
 #[test]
-fn hex_decode_fixed_validates_16_byte_hashes() {
+fn hex_decode_to_stack_buf_validates_16_byte_hashes() {
     let md5_hex = "d41d8cd98f00b204e9800998ecf8427e";
-    let decoded = validate_hex_hash_16(md5_hex).expect("valid 16-byte hash must decode");
+    let mut dst = [0u8; 128];
+    let len = hex_decode_to_stack_buf(md5_hex, &mut dst).expect("valid 16-byte hash must decode");
+    assert_eq!(len, 16);
     assert_eq!(
-        decoded,
-        [
+        &dst[..16],
+        &[
             0xd4, 0x1d, 0x8c, 0xd9, 0x8f, 0x00, 0xb2, 0x04, 0xe9, 0x80, 0x09, 0x98, 0xec, 0xf8,
             0x42, 0x7e
         ]
     );
 
     let md5_with_underscores = "d4_1d_8c_d9_8f_00_b2_04_e9_80_09_98_ec_f8_42_7e";
-    let decoded_underscores = validate_hex_hash_16(md5_with_underscores)
+    let mut dst_underscores = [0u8; 128];
+    let len_underscores = hex_decode_to_stack_buf(md5_with_underscores, &mut dst_underscores)
         .expect("underscore-separated 16-byte hash must decode");
-    assert_eq!(decoded_underscores, decoded);
+    assert_eq!(len_underscores, 16);
+    assert_eq!(&dst_underscores[..16], &dst[..16]);
 
-    // Rejections: wrong length or non-hex
-    assert!(validate_hex_hash_16("d41d8cd98f00b204e9800998ecf8427").is_err());
-    assert!(validate_hex_hash_16("d41d8cd98f00b204e9800998ecf8427ea").is_err());
-    assert!(validate_hex_hash_16("d41d8cd98f00b204e9800998ecf842zz").is_err());
+    // Rejections: odd length or non-hex
+    assert!(hex_decode_to_stack_buf("d41d8cd98f00b204e9800998ecf8427", &mut dst).is_err());
+    assert!(hex_decode_to_stack_buf("d41d8cd98f00b204e9800998ecf842zz", &mut dst).is_err());
 }
 
 #[test]
-fn hex_decode_fixed_validates_32_byte_hashes() {
+fn hex_decode_to_stack_buf_validates_32_byte_hashes() {
     let sha256_hex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-    let decoded = validate_hex_hash_32(sha256_hex).expect("valid 32-byte hash must decode");
-    assert_eq!(decoded.len(), 32);
-    assert_eq!(decoded[0], 0xe3);
-    assert_eq!(decoded[31], 0x55);
+    let mut dst = [0u8; 128];
+    let len =
+        hex_decode_to_stack_buf(sha256_hex, &mut dst).expect("valid 32-byte hash must decode");
+    assert_eq!(len, 32);
+    assert_eq!(dst[0], 0xe3);
+    assert_eq!(dst[31], 0x55);
 
     let sha256_underscores =
         "e3b0c442_98fc1c14_9afbf4c8_996fb924_27ae41e4_649b934c_a495991b_7852b855";
-    let decoded_underscores = validate_hex_hash_32(sha256_underscores)
+    let mut dst_underscores = [0u8; 128];
+    let len_underscores = hex_decode_to_stack_buf(sha256_underscores, &mut dst_underscores)
         .expect("underscore-separated 32-byte hash must decode");
-    assert_eq!(decoded_underscores, decoded);
+    assert_eq!(len_underscores, 32);
+    assert_eq!(&dst_underscores[..32], &dst[..32]);
 
-    // Rejections: wrong length or non-hex
-    assert!(validate_hex_hash_32(
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85"
+    // Rejections: odd length or non-hex
+    assert!(hex_decode_to_stack_buf(
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85",
+        &mut dst
     )
     .is_err());
-    assert!(validate_hex_hash_32(
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855a"
-    )
-    .is_err());
-    assert!(validate_hex_hash_32(
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8zz"
+    assert!(hex_decode_to_stack_buf(
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8zz",
+        &mut dst
     )
     .is_err());
 }
