@@ -3,6 +3,7 @@
 
 ## 0.5.76 - 2026-08-16
 
+- Hex decoding now zeroizes intermediate decode buffers on malformed trailing characters or invalid hex byte sequences and validates 16-byte and 32-byte hex hashes using a stack buffer, eliminating heap allocations for candidate token validation.
 - fix(core): rerun build script on GITHUB_SHA changes to prevent stale git hash in CI cache.
 
 ## 0.5.75 - 2026-08-14

@@ -55,6 +55,42 @@ impl Decoder for HexDecoder {
     }
 }
 
+/// Decode a hex string into a stack-allocated buffer (up to 128 decoded bytes).
+/// Intermediate buffers are zeroized on drop.
+fn hex_decode_to_stack_buf(input: &str, stack_dst: &mut [u8; 128]) -> Result<usize, ()> {
+    if !input.as_bytes().contains(&b'_') {
+        if !input.len().is_multiple_of(2) || input.len() > 256 {
+            return Err(());
+        }
+        let len = input.len() / 2;
+        hex_simd::decode(
+            input.as_bytes(),
+            hex_simd::Out::from_slice(&mut stack_dst[..len]),
+        )
+        .map_err(|_| ())?;
+        Ok(len)
+    } else {
+        let mut cleaned = Zeroizing::new([0u8; 256]);
+        let mut len = 0usize;
+        for &b in input.as_bytes() {
+            if b != b'_' {
+                cleaned[len] = b;
+                len += 1;
+            }
+        }
+        if !len.is_multiple_of(2) {
+            return Err(());
+        }
+        let decoded_len = len / 2;
+        hex_simd::decode(
+            &cleaned[..len],
+            hex_simd::Out::from_slice(&mut stack_dst[..decoded_len]),
+        )
+        .map_err(|_| ())?;
+        Ok(decoded_len)
+    }
+}
+
 /// Fast-path trial decode and UTF-8 validation for hex candidate strings.
 ///
 /// Decodes into a stack buffer for inputs up to 256 bytes (covering standard 16-byte
@@ -63,46 +99,7 @@ impl Decoder for HexDecoder {
 fn try_decode_hex_candidate_to_utf8(value: &str) -> Option<String> {
     if value.len() <= 256 {
         let mut stack_dst = Zeroizing::new([0u8; 128]);
-        let decoded_len = if !value.as_bytes().contains(&b'_') {
-            if !value.len().is_multiple_of(2) || value.len() > MAX_HEX_INPUT_LEN {
-                return None;
-            }
-            let len = value.len() / 2;
-            if len > 128 {
-                return None;
-            }
-            hex_simd::decode(
-                value.as_bytes(),
-                hex_simd::Out::from_slice(&mut stack_dst[..len]),
-            )
-            .ok()?;
-            len
-        } else {
-            let mut cleaned = Zeroizing::new([0u8; 256]);
-            let mut len = 0usize;
-            for &b in value.as_bytes() {
-                if b != b'_' {
-                    cleaned[len] = b;
-                    len += 1;
-                }
-            }
-            if !len.is_multiple_of(2) || len > MAX_HEX_INPUT_LEN {
-                return None;
-            }
-            let decoded_len = len / 2;
-            if decoded_len > 128 {
-                return None;
-            }
-            hex_simd::decode(
-                &cleaned[..len],
-                hex_simd::Out::from_slice(&mut stack_dst[..decoded_len]),
-            )
-            .ok()?;
-            decoded_len
-        };
-
-        // Validate UTF-8 on the stack buffer. Binary hashes return None immediately
-        // without heap-allocating intermediate byte buffers or Strings.
+        let decoded_len = hex_decode_to_stack_buf(value, &mut *stack_dst).ok()?;
         let text = std::str::from_utf8(&stack_dst[..decoded_len]).ok()?;
         return Some(text.to_string());
     }
@@ -157,44 +154,23 @@ fn is_hex_candidate(candidate: &ExtractedValue, min_length: usize) -> bool {
 /// Intermediate and destination buffers are zeroized on drop or validation error.
 #[allow(clippy::result_unit_err)]
 pub fn hex_decode_fixed<const N: usize>(input: &str) -> Result<[u8; N], ()> {
-    let expected_hex_len = N.checked_mul(2).ok_or(())?;
-    let mut out = Zeroizing::new([0u8; N]);
-    if !input.as_bytes().contains(&b'_') {
-        if input.len() != expected_hex_len {
+    if N <= 128 && input.len() <= 256 {
+        let mut stack_dst = Zeroizing::new([0u8; 128]);
+        let len = hex_decode_to_stack_buf(input, &mut *stack_dst)?;
+        if len != N {
             return Err(());
         }
-        hex_simd::decode(input.as_bytes(), hex_simd::Out::from_slice(&mut *out)).map_err(|_| ())?;
-        Ok(*out)
-    } else if input.len() <= 256 {
-        let mut cleaned = Zeroizing::new([0u8; 256]);
-        let mut len = 0usize;
-        for &b in input.as_bytes() {
-            if b != b'_' {
-                if len >= 256 {
-                    return Err(());
-                }
-                cleaned[len] = b;
-                len += 1;
-            }
-        }
-        if len != expected_hex_len {
-            return Err(());
-        }
-        hex_simd::decode(&cleaned[..len], hex_simd::Out::from_slice(&mut *out)).map_err(|_| ())?;
-        Ok(*out)
-    } else {
-        let mut cleaned = Zeroizing::new(Vec::with_capacity(input.len()));
-        for &b in input.as_bytes() {
-            if b != b'_' {
-                cleaned.push(b);
-            }
-        }
-        if cleaned.len() != expected_hex_len {
-            return Err(());
-        }
-        hex_simd::decode(&cleaned, hex_simd::Out::from_slice(&mut *out)).map_err(|_| ())?;
-        Ok(*out)
+        let mut out = [0u8; N];
+        out.copy_from_slice(&stack_dst[..N]);
+        return Ok(out);
     }
+    let bytes = hex_decode(input)?;
+    if bytes.len() != N {
+        return Err(());
+    }
+    let mut out = [0u8; N];
+    out.copy_from_slice(&bytes);
+    Ok(out)
 }
 
 /// Validate and decode a 16-byte hex hash candidate (e.g. 32-hex-digit MD5 digest) into a stack buffer.
@@ -214,47 +190,20 @@ pub fn validate_hex_hash_32(input: &str) -> Result<[u8; 32], ()> {
 /// non-hex input.
 #[allow(clippy::result_unit_err)]
 pub fn hex_decode(input: &str) -> Result<Vec<u8>, ()> {
+    if input.len() <= 256 {
+        let mut stack_dst = Zeroizing::new([0u8; 128]);
+        let len = hex_decode_to_stack_buf(input, &mut *stack_dst)?;
+        return Ok(stack_dst[..len].to_vec());
+    }
+
     if !input.as_bytes().contains(&b'_') {
         if !input.len().is_multiple_of(2) || input.len() > MAX_HEX_INPUT_LEN {
             return Err(());
         }
-        if input.len() <= 256 {
-            let decoded_len = input.len() / 2;
-            let mut stack_dst = Zeroizing::new([0u8; 128]);
-            hex_simd::decode(
-                input.as_bytes(),
-                hex_simd::Out::from_slice(&mut stack_dst[..decoded_len]),
-            )
-            .map_err(|_| ())?;
-            return Ok(stack_dst[..decoded_len].to_vec());
-        }
-
         let decoded_len = input.len() / 2;
         let mut out = Zeroizing::new(vec![0u8; decoded_len]);
         hex_simd::decode(input.as_bytes(), hex_simd::Out::from_slice(&mut out)).map_err(|_| ())?;
         return Ok((*out).clone());
-    }
-
-    if input.len() <= 256 {
-        let mut cleaned = Zeroizing::new([0u8; 256]);
-        let mut len = 0usize;
-        for &b in input.as_bytes() {
-            if b != b'_' {
-                cleaned[len] = b;
-                len += 1;
-            }
-        }
-        if !len.is_multiple_of(2) || len > MAX_HEX_INPUT_LEN {
-            return Err(());
-        }
-        let decoded_len = len / 2;
-        let mut stack_dst = Zeroizing::new([0u8; 128]);
-        hex_simd::decode(
-            &cleaned[..len],
-            hex_simd::Out::from_slice(&mut stack_dst[..decoded_len]),
-        )
-        .map_err(|_| ())?;
-        return Ok(stack_dst[..decoded_len].to_vec());
     }
 
     let mut cleaned = Zeroizing::new(Vec::with_capacity(input.len()));
