@@ -175,53 +175,37 @@ impl<'a> DispatchPlan<'a> {
         batch: &'b PrefilterBatch,
         phase2_patterns: &[(crate::types::CompiledPattern, Vec<String>)],
     ) -> BatchMatcher<'b> {
-        let unicode = || {
+        let set = if !self.use_ascii_matcher || batch.case_insensitive {
             Phase2AlwaysActivePrefilter::batch_unicode_matcher(
                 phase2_patterns,
                 batch,
                 self.truncate,
             )
+        } else {
+            Phase2AlwaysActivePrefilter::batch_folded_matcher(
+                phase2_patterns,
+                batch,
+                self.truncate,
+            )
+            .or_else(|| {
+                Phase2AlwaysActivePrefilter::batch_unicode_matcher(
+                    phase2_patterns,
+                    batch,
+                    self.truncate,
+                )
+            })
         };
-        if !self.use_ascii_matcher || batch.case_insensitive {
-            return match unicode() {
-                Some(set) => BatchMatcher::Run {
-                    set,
-                    plain_gate: !batch.case_insensitive,
-                },
-                None => BatchMatcher::Unavailable,
-            };
-        }
-        match Phase2AlwaysActivePrefilter::batch_folded_matcher(
-            phase2_patterns,
-            batch,
-            self.truncate,
-        ) {
-            Some(set) => BatchMatcher::Run {
-                set,
-                plain_gate: true,
-            },
-            // The folded matcher the plain gate describes is unavailable, so its
-            // literal evidence no longer describes what runs. Run the unicode
-            // form ungated rather than skip on evidence about a matcher that is
-            // not executing.
-            None => match unicode() {
-                Some(set) => BatchMatcher::RunUngated(set),
-                None => BatchMatcher::Unavailable,
-            },
+        match set {
+            Some(set) => BatchMatcher::Run(set),
+            None => BatchMatcher::Unavailable,
         }
     }
 }
 
 /// What one batch contributes to marking on this chunk.
 pub(super) enum BatchMatcher<'b> {
-    /// Run `set`. `plain_gate` selects which combined prefix-literal evidence
-    /// describes it: the folded plain gate, or the case-insensitive gate.
-    Run {
-        set: &'b regex::RegexSet,
-        plain_gate: bool,
-    },
-    /// Run `set` without consulting the gate.
-    RunUngated(&'b regex::RegexSet),
+    /// Run `set`.
+    Run(&'b regex::RegexSet),
     /// No matcher compiled: mark every pattern in the batch, a recall-safe
     /// superset of what the matcher would have reported.
     Unavailable,

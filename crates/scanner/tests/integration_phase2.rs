@@ -173,7 +173,7 @@ fn test_phase2_localized_route_parity_with_whole_chunk() {
 }
 
 #[test]
-fn test_phase2_prefilter_no_candidate_zero_work() {
+fn test_phase2_prefilter_clean_chunk_produces_zero_findings() {
     let scanner = compile_scanner(TEST_DETECTORS);
     let clean_chunk = chunk_of(
         b"// This is completely clean text\nconst x = 42;\nfn compute() -> i32 { x * 2 }\n",

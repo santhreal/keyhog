@@ -39,9 +39,7 @@ const NO_PATTERNS: &[(crate::types::CompiledPattern, Vec<String>)] = &[];
 
 fn run_matcher(matcher: BatchMatcher<'_>, text: &str) -> Vec<usize> {
     match matcher {
-        BatchMatcher::Run { set, .. } | BatchMatcher::RunUngated(set) => {
-            set.matches(text).iter().collect()
-        }
+        BatchMatcher::Run(set) => set.matches(text).iter().collect(),
         BatchMatcher::Unavailable => panic!("seeded batch must resolve a matcher"),
     }
 }
