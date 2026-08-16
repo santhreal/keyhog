@@ -44,6 +44,11 @@ pub fn oracle_unicode_path_scan() {
             "cpu",
             "--format",
             "json",
+            "--no-suppress-test-fixtures",
+            "--evidence-policy",
+            "paranoid",
+            "--min-confidence",
+            "0.0",
         ])
         .arg(dir.path())
         .output()
