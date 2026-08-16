@@ -55,12 +55,19 @@ impl Decoder for HexDecoder {
     }
 }
 
+/// Maximum input byte length for stack-allocated fast-path hex decoding (up to 128 decoded bytes,
+/// covering standard 16-byte MD5 and 32-byte SHA256 hex string candidates).
+const HEX_STACK_INPUT_LIMIT: usize = if 256 < MAX_HEX_INPUT_LEN {
+    256
+} else {
+    MAX_HEX_INPUT_LEN
+};
+
 /// Decode a hex string into a stack-allocated buffer (up to 128 decoded bytes).
 /// Intermediate buffers are zeroized on drop.
 fn hex_decode_to_stack_buf(input: &str, stack_dst: &mut [u8; 128]) -> Result<usize, ()> {
-    let max_len = 256.min(MAX_HEX_INPUT_LEN);
     if !input.as_bytes().contains(&b'_') {
-        if !input.len().is_multiple_of(2) || input.len() > max_len {
+        if !input.len().is_multiple_of(2) || input.len() > HEX_STACK_INPUT_LIMIT {
             return Err(());
         }
         let len = input.len() / 2;
@@ -75,7 +82,7 @@ fn hex_decode_to_stack_buf(input: &str, stack_dst: &mut [u8; 128]) -> Result<usi
         let mut len = 0usize;
         for &b in input.as_bytes() {
             if b != b'_' {
-                if len >= max_len {
+                if len >= HEX_STACK_INPUT_LIMIT {
                     return Err(());
                 }
                 cleaned[len] = b;
@@ -101,7 +108,7 @@ fn hex_decode_to_stack_buf(input: &str, stack_dst: &mut [u8; 128]) -> Result<usi
 /// MD5 and 32-byte SHA256 hex string candidates) to validate UTF-8 without heap
 /// allocations for binary hash tokens.
 fn try_decode_hex_candidate_to_utf8(value: &str) -> Option<String> {
-    if value.len() <= 256.min(MAX_HEX_INPUT_LEN) {
+    if value.len() <= HEX_STACK_INPUT_LIMIT {
         let mut stack_dst = Zeroizing::new([0u8; 128]);
         let Ok(decoded_len) = hex_decode_to_stack_buf(value, &mut *stack_dst) else {
             // LAW10: recall-preserving: trial decode failure leaves encoded span scanned unchanged.
@@ -176,7 +183,7 @@ fn is_hex_candidate(candidate: &ExtractedValue, min_length: usize) -> bool {
 /// non-hex input.
 #[allow(clippy::result_unit_err)]
 pub fn hex_decode(input: &str) -> Result<Vec<u8>, ()> {
-    if input.len() <= 256.min(MAX_HEX_INPUT_LEN) {
+    if input.len() <= HEX_STACK_INPUT_LIMIT {
         let mut stack_dst = Zeroizing::new([0u8; 128]);
         let len = hex_decode_to_stack_buf(input, &mut *stack_dst)?;
         return Ok(stack_dst[..len].to_vec());
