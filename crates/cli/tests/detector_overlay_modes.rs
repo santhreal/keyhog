@@ -47,6 +47,9 @@ fn run_scan(root: &Path, extra: &[&str]) -> Output {
             "json-envelope",
             "--no-entropy",
             "--no-decode",
+            "--no-suppress-test-fixtures",
+            "--evidence-policy",
+            "paranoid",
             "--threads",
             "1",
         ])
