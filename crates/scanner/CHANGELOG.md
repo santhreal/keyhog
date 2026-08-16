@@ -1,10 +1,13 @@
 # Changelog
 
 
+## Unreleased
+
+- Standalone bounded, zeroizing RFC 4648 and Crockford Base32 byte-stream decoders (`base32_decode` and `crockford_base32_decode`) with const lookup tables are exported from `decode::base32` without modifying the default automated scan pipeline composition.
+
 ## 0.5.76 - 2026-08-16
 
 - fix(core): rerun build script on GITHUB_SHA changes to prevent stale git hash in CI cache.
-- Standalone bounded, zeroizing RFC 4648 and Crockford Base32 byte-stream decoders (`base32_decode` and `crockford_base32_decode`) with const lookup tables are exported from `decode::base32` without modifying the default automated scan pipeline composition.
 
 ## 0.5.75 - 2026-08-14
 

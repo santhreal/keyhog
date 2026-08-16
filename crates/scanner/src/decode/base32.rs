@@ -171,6 +171,9 @@ pub fn crockford_base32_decode(input: &str) -> Result<Vec<u8>, ()> {
                 len += 1;
             }
         }
+        if len == 0 {
+            return Err(());
+        }
         let res = decode_base32_slice(&buf[..len], &CROCKFORD_DECODE_TABLE);
         buf.zeroize();
         res
@@ -180,6 +183,9 @@ pub fn crockford_base32_decode(input: &str) -> Result<Vec<u8>, ()> {
             if b != b'-' {
                 cleaned.push(b);
             }
+        }
+        if cleaned.is_empty() {
+            return Err(());
         }
         let res = decode_base32_slice(&cleaned, &CROCKFORD_DECODE_TABLE);
         cleaned.zeroize();
@@ -437,6 +443,11 @@ mod tests {
         let dec3 = crockford_base32_decode("CS-QP-YR-K1").unwrap();
         assert_eq!(dec1, dec2);
         assert_eq!(dec1, dec3);
+    }
+    #[test]
+    fn crockford_hyphen_only_rejected() {
+        assert!(crockford_base32_decode("-").is_err());
+        assert!(crockford_base32_decode("---").is_err());
     }
     #[test]
     fn crockford_rejects_invalid_chars() {

@@ -1,13 +1,13 @@
-//! Regression: base32 decode is NOT part of the keyhog decode pipeline.
+//! Regression: base32 decode is NOT part of the default keyhog decode pipeline.
 //!
-//! keyhog ships NO base32 (RFC-4648) decoder, the only base-N style decoders in
-//! the default registry are `base64`, `hex` (base16), and `z85` (base85). This
-//! file pins that fact together with the full canonical composition/order/count
-//! of the default decoder registry, so that:
-//!   - a future "add base32" change cannot silently reshuffle the pipeline, and
-//!   - the base-N family stays exactly {base64, hex, z85} until deliberately
+//! keyhog's default decode pipeline has NO base32 (RFC-4648) stage; the only base-N style decoders in
+//! the default registry are `base64`, `hex` (base16), and `z85` (base85). Standalone
+//! bounded byte-stream Base32 decoding is exported from `keyhog_scanner::decode::base32`
+//! for on-demand decoding. This file pins the fact that the default pipeline composition,
+//! order, and count remain unchanged, so that:
+//!   - a future "add base32 to pipeline" change cannot silently reshuffle the pipeline, and
+//!   - the default base-N family stays exactly {base64, hex, z85} until deliberately
 //!     extended (base32/base16/base85/ascii85 literal names must stay absent).
-//!
 //! Everything here is host-independent: `default_decoder_names_for_test()`
 //! reconstructs the DEFAULT set from `default_decoders()` on every call and does
 //! not consult any accelerator (Hyperscan/SIMD/GPU), the global mutable registry,
