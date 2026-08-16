@@ -153,6 +153,7 @@ macro_rules! define_intern_table {
     ) => {
         $(
             $(#[$item_meta])*
+            #[doc = concat!("Canonical `source_type` for `", $str_val, "` chunks.")]
             pub static $name: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from($str_val));
         )*
 

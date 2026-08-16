@@ -13,11 +13,14 @@ fn intern_source_type_returns_cached_arc_for_known_sources() {
     assert!(Arc::ptr_eq(&s1, &s2));
     assert!(Arc::ptr_eq(&s1, &SOURCE_TYPE_FILESYSTEM));
 
+    let w1 = intern_source_type("filesystem/windowed");
+    let w2 = intern_source_type("filesystem/windowed");
+    assert!(Arc::ptr_eq(&w1, &w2));
+    assert!(Arc::ptr_eq(&w1, &SOURCE_TYPE_FILESYSTEM_WINDOWED));
     let g1 = intern_source_type("git");
     let g2 = intern_source_type("git");
     assert!(Arc::ptr_eq(&g1, &g2));
     assert!(Arc::ptr_eq(&g1, &SOURCE_TYPE_GIT));
-
     let gd1 = intern_source_type("git-diff");
     let gd2 = intern_source_type("git-diff");
     assert!(Arc::ptr_eq(&gd1, &gd2));
