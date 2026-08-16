@@ -1,10 +1,13 @@
 # Changelog
 
 
+## 0.5.77
+
+- Exact literal path and prefix/suffix suppression rules compile to direct string and set comparisons, bypassing regex engine construction on non-metacharacter patterns.
+
 ## 0.5.76 - 2026-08-16
 
 - fix(core): rerun build script on GITHUB_SHA changes to prevent stale git hash in CI cache.
-- Exact literal path and prefix/suffix suppression rules compile to direct string and set comparisons, bypassing regex engine construction on non-metacharacter patterns.
 
 ## 0.5.75 - 2026-08-14
 
