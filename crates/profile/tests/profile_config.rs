@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 
 use keyhog_profile::{
@@ -107,10 +106,10 @@ fn profile_name_from_static_borrows() {
 #[test]
 fn lookup_profile_name_returns_borrowed_slices() {
     let known_lookup = lookup_profile_name("RELEASE");
-    assert!(matches!(known_lookup, Cow::Borrowed("release")));
+    assert_eq!(known_lookup, "release");
 
     let custom_lookup = lookup_profile_name("custom-scan");
-    assert!(matches!(custom_lookup, Cow::Borrowed("custom-scan")));
+    assert_eq!(custom_lookup, "custom-scan");
 }
 
 #[test]
@@ -124,15 +123,41 @@ fn resolve_profile_from_env_value_handles_known_and_custom() {
 
 #[test]
 fn resolve_profile_from_env_vars_honors_precedence() {
-    let var_name = "KEYHOG_PROFILE_TEST_VAR_CONFIG";
-    std::env::set_var(var_name, "release-fast");
-    let resolved = resolve_profile_from_env_var(var_name);
-    assert_eq!(
-        resolved.and_then(|r| r.as_known()),
-        Some(KnownProfile::ReleaseFast)
-    );
-    std::env::remove_var(var_name);
+    for &var in PROFILE_ENV_VARS {
+        std::env::remove_var(var);
+    }
 
+    std::env::set_var("KEYHOG_ENV", "staging");
+    std::env::set_var("KEYHOG_PROFILE_NAME", "dev");
+    std::env::set_var("KEYHOG_PROFILE", "ci");
+
+    // Precedence 1: KEYHOG_PROFILE
+    let resolved = resolve_profile_from_env();
+    assert_eq!(
+        resolved.as_ref().and_then(|r| r.as_known()),
+        Some(KnownProfile::Ci)
+    );
+
+    // Precedence 2: KEYHOG_PROFILE_NAME
+    std::env::remove_var("KEYHOG_PROFILE");
+    let resolved = resolve_profile_from_env();
+    assert_eq!(
+        resolved.as_ref().and_then(|r| r.as_known()),
+        Some(KnownProfile::Dev)
+    );
+
+    // Precedence 3: KEYHOG_ENV
+    std::env::remove_var("KEYHOG_PROFILE_NAME");
+    let resolved = resolve_profile_from_env();
+    assert_eq!(
+        resolved.as_ref().and_then(|r| r.as_known()),
+        Some(KnownProfile::Staging)
+    );
+
+    std::env::remove_var("KEYHOG_ENV");
+    assert_eq!(resolve_profile_from_env(), None);
+
+    // Single var lookup and unset check
     assert_eq!(resolve_profile_from_env_var("UNSET_KEYHOG_VAR_12345"), None);
 }
 
@@ -221,15 +246,32 @@ fn profile_config_zeroization_clears_sensitive_fields() {
     );
     config.headers = headers;
 
-    config.zeroize();
+    Zeroize::zeroize(&mut config);
 
-    assert_eq!(config.auth_token.as_ref().map(|s| s.as_str()), Some(""));
-    assert_eq!(config.api_key.as_ref().map(|s| s.as_str()), Some(""));
-    assert_eq!(config.secret_key.as_ref().map(|s| s.as_str()), Some(""));
-    assert_eq!(
-        config.headers.get("Authorization").map(|s| s.as_str()),
-        Some("")
+    assert_eq!(config.auth_token, None);
+    assert_eq!(config.api_key, None);
+    assert_eq!(config.secret_key, None);
+    assert!(config.headers.is_empty());
+}
+
+#[test]
+fn session_start_with_config_applies_settings() {
+    let mut config = ProfileConfig::new(KnownProfile::Dev);
+    config.detail = Detail::Diagnostic;
+    let identity = keyhog_profile::RunIdentity::new(
+        "0.5.76",
+        "test-detectors",
+        "test-config",
+        "test-source",
+        "test-workload",
+        "test-backend",
     );
+    let session = keyhog_profile::Session::start_with_config(&config, identity)
+        .expect("start session with config");
+    assert_eq!(keyhog_profile::detail(), Detail::Diagnostic);
+    let profile = session.finish(keyhog_profile::RunState::Completed);
+    assert_eq!(profile.status, keyhog_profile::RunState::Completed);
+    keyhog_profile::set_detail(Detail::Off);
 }
 
 #[test]

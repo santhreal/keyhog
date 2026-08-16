@@ -125,6 +125,10 @@ impl AsRef<str> for KnownProfile {
 }
 
 /// Profile identifier supporting known profiles with zero heap allocations or custom names.
+///
+/// Note: Known profile names (such as `"ci"`, `"default"`, `"release"`) are normalized to
+/// their canonical lowercase representation during parsing, whereas custom profile names
+/// preserve their original case.
 #[derive(Clone, Debug)]
 pub enum ProfileName {
     /// Standard predefined profile backed by static memory.
@@ -132,7 +136,6 @@ pub enum ProfileName {
     /// Custom user-defined profile name.
     Custom(Cow<'static, str>),
 }
-
 impl ProfileName {
     /// Return the profile name as a string slice.
     #[must_use]
@@ -144,6 +147,9 @@ impl ProfileName {
     }
 
     /// Parse a profile name from a string slice without heap allocations if known.
+    ///
+    /// Standard profile names are matched case-insensitively and canonicalized to lowercase,
+    /// while custom profile names preserve case.
     #[must_use]
     pub fn parse(s: &str) -> Self {
         let trimmed = s.trim();
@@ -308,12 +314,7 @@ impl<'de> Deserialize<'de> for ProfileName {
 }
 
 /// Environment variable names checked in precedence order for profile resolution.
-pub const PROFILE_ENV_VARS: &[&str] = &[
-    "KEYHOG_PROFILE",
-    "KEYHOG_PROFILE_NAME",
-    "KEYHOG_ENV",
-    "PROFILE",
-];
+pub const PROFILE_ENV_VARS: &[&str] = &["KEYHOG_PROFILE", "KEYHOG_PROFILE_NAME", "KEYHOG_ENV"];
 
 /// Resolve the active profile name from environment variables without heap allocations for known names.
 ///
@@ -350,24 +351,28 @@ pub fn resolve_profile_from_env_value(val: &str) -> ProfileName {
 
 /// Look up a profile name in a borrowed slice without heap allocations for known names.
 #[must_use]
-pub fn lookup_profile_name<'a>(name: &'a str) -> Cow<'a, str> {
+pub fn lookup_profile_name(name: &str) -> &str {
     if let Some(known) = KnownProfile::from_str_case_insensitive(name) {
-        Cow::Borrowed(known.as_str())
+        known.as_str()
     } else {
-        Cow::Borrowed(name.trim())
+        name.trim()
     }
 }
 
-fn default_true() -> bool {
-    true
+const DEFAULT_ENABLED: bool = true;
+const DEFAULT_SAMPLE_RATE: f64 = 1.0;
+const DEFAULT_MAX_EVENTS: usize = 10_000;
+
+const fn default_enabled() -> bool {
+    DEFAULT_ENABLED
 }
 
-fn default_sample_rate() -> f64 {
-    1.0
+const fn default_sample_rate() -> f64 {
+    DEFAULT_SAMPLE_RATE
 }
 
-fn default_max_events() -> usize {
-    10_000
+const fn default_max_events() -> usize {
+    DEFAULT_MAX_EVENTS
 }
 
 /// Profile configuration controlling execution mode, telemetry, and credentials.
@@ -378,7 +383,7 @@ pub struct ProfileConfig {
     #[serde(default)]
     pub name: ProfileName,
     /// Whether profiling and telemetry collection are enabled.
-    #[serde(default = "default_true")]
+    #[serde(default = "default_enabled")]
     pub enabled: bool,
     /// Profiling detail level.
     #[serde(default)]
@@ -418,15 +423,15 @@ impl ProfileConfig {
     pub fn new(name: impl Into<ProfileName>) -> Self {
         Self {
             name: name.into(),
-            enabled: true,
+            enabled: DEFAULT_ENABLED,
             detail: Detail::Off,
             endpoint: None,
             auth_token: None,
             api_key: None,
             secret_key: None,
             environment: None,
-            sample_rate: 1.0,
-            max_events: 10_000,
+            sample_rate: DEFAULT_SAMPLE_RATE,
+            max_events: DEFAULT_MAX_EVENTS,
             tags: HashMap::new(),
             headers: HashMap::new(),
         }
@@ -444,16 +449,16 @@ impl ProfileConfig {
 
     /// Zeroize all sensitive credentials and headers held in this configuration.
     pub fn zeroize(&mut self) {
-        if let Some(token) = &mut self.auth_token {
+        if let Some(mut token) = self.auth_token.take() {
             token.zeroize();
         }
-        if let Some(key) = &mut self.api_key {
+        if let Some(mut key) = self.api_key.take() {
             key.zeroize();
         }
-        if let Some(secret) = &mut self.secret_key {
+        if let Some(mut secret) = self.secret_key.take() {
             secret.zeroize();
         }
-        for value in self.headers.values_mut() {
+        for (_, mut value) in self.headers.drain() {
             value.zeroize();
         }
     }
@@ -467,6 +472,11 @@ impl Default for ProfileConfig {
 
 impl Zeroize for ProfileConfig {
     fn zeroize(&mut self) {
+        self.zeroize();
+    }
+}
+impl Drop for ProfileConfig {
+    fn drop(&mut self) {
         self.zeroize();
     }
 }

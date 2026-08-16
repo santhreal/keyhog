@@ -1252,6 +1252,10 @@ impl ScanOrchestrator {
 
     pub(crate) fn new(mut args: ScanArgs) -> Result<Self> {
         let early_profile_session = if args.profile || args.profile_out.is_some() {
+            let profile_name = keyhog_profile::resolve_profile_from_env().unwrap_or_else(|| {
+                keyhog_profile::ProfileName::from(keyhog_profile::KnownProfile::Default)
+            });
+            let profile_cfg = keyhog_profile::ProfileConfig::new(profile_name);
             let identity = keyhog_profile::RunIdentity::new(
                 env!("CARGO_PKG_VERSION"),
                 "pending-detector-corpus",
@@ -1260,7 +1264,8 @@ impl ScanOrchestrator {
                 "orchestrator-construction",
                 "pending-backend-policy",
             );
-            let session = keyhog_profile::Session::start(identity).map_err(anyhow::Error::new)?;
+            let session = keyhog_profile::Session::start_with_config(&profile_cfg, identity)
+                .map_err(anyhow::Error::new)?;
             crate::set_operator_profile_active(true);
             Some(session)
         } else {

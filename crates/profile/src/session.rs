@@ -1,4 +1,5 @@
 use crate::collector::SnapshotCollector;
+use crate::config::ProfileConfig;
 use crate::hardware::HardwareSession;
 use crate::resources::{resource_usage, state_measurements, ProcessResourceCollector};
 use crate::runtime::{ContextGuard, Runtime};
@@ -67,6 +68,19 @@ impl Session {
             system: Some(SystemSession::new()),
             finished: false,
         })
+    }
+
+    /// Start a fresh isolated session configured by [`ProfileConfig`].
+    pub fn start_with_config(
+        config: &ProfileConfig,
+        identity: RunIdentity,
+    ) -> Result<Self, SessionActive> {
+        if config.enabled {
+            crate::set_detail(config.detail);
+        } else {
+            crate::set_detail(crate::Detail::Off);
+        }
+        Self::start(identity)
     }
 
     /// Clone the runtime handle for propagation to a worker or async task.

@@ -195,7 +195,7 @@ impl CompiledScanner {
                     if decoded_candidates.is_empty() {
                         return Ok(());
                     }
-                    let mut append_unique = |target: &mut Vec<RawMatch>, items: Vec<RawMatch>| {
+                    let append_unique = |target: &mut Vec<RawMatch>, items: Vec<RawMatch>| {
                         let mut seen: HashSet<_> = target
                             .iter()
                             .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
