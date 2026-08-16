@@ -140,30 +140,6 @@ pub struct ChunkMetadata {
     pub decoded_span: Option<(usize, usize)>,
 }
 
-impl ChunkMetadata {
-    /// Create a metadata record for the given source type and path.
-    ///
-    /// The source type is interned against canonical source names.
-    pub fn for_source(source_type: &str, path: Option<Arc<str>>) -> Self {
-        Self {
-            source_type: intern_source_type(source_type),
-            path,
-            ..Default::default()
-        }
-    }
-
-    /// Set the source type using interning against canonical source names.
-    pub fn with_source_type(mut self, source_type: &str) -> Self {
-        self.source_type = intern_source_type(source_type);
-        self
-    }
-
-    /// Update the source type in place using interning.
-    pub fn set_source_type(&mut self, source_type: &str) {
-        self.source_type = intern_source_type(source_type);
-    }
-}
-
 macro_rules! define_intern_table {
     (
         $(#[$intern_meta:meta])*
@@ -269,104 +245,6 @@ define_intern_table! {
     (SOURCE_TYPE_WEB_WASM, "web:wasm"),
     (SOURCE_TYPE_WIRE_HAR_REQUEST, "wire:har:request"),
     (SOURCE_TYPE_WIRE_HAR_RESPONSE, "wire:har:response"),
-}
-
-define_intern_table! {
-    /// Intern a common file extension into an `Arc<str>`.
-    ///
-    /// Returns a clone of a pre-allocated static `Arc<str>` for common extensions,
-    /// avoiding per-file allocation during directory traversal.
-    pub fn intern_file_extension,
-    /// Pre-interned common file extension names.
-    pub fn common_file_extensions,
-    (EXT_RS, "rs"),
-    (EXT_GO, "go"),
-    (EXT_PY, "py"),
-    (EXT_JS, "js"),
-    (EXT_TS, "ts"),
-    (EXT_JSX, "jsx"),
-    (EXT_TSX, "tsx"),
-    (EXT_C, "c"),
-    (EXT_CPP, "cpp"),
-    (EXT_H, "h"),
-    (EXT_HPP, "hpp"),
-    (EXT_JAVA, "java"),
-    (EXT_KT, "kt"),
-    (EXT_SCALA, "scala"),
-    (EXT_RB, "rb"),
-    (EXT_PHP, "php"),
-    (EXT_CS, "cs"),
-    (EXT_SWIFT, "swift"),
-    (EXT_DART, "dart"),
-    (EXT_LUA, "lua"),
-    (EXT_R, "r"),
-    (EXT_SH, "sh"),
-    (EXT_BASH, "bash"),
-    (EXT_ZSH, "zsh"),
-    (EXT_PS1, "ps1"),
-    (EXT_BAT, "bat"),
-    (EXT_CMD, "cmd"),
-    (EXT_JSON, "json"),
-    (EXT_YAML, "yaml"),
-    (EXT_YML, "yml"),
-    (EXT_TOML, "toml"),
-    (EXT_XML, "xml"),
-    (EXT_HTML, "html"),
-    (EXT_HTM, "htm"),
-    (EXT_CSS, "css"),
-    (EXT_SCSS, "scss"),
-    (EXT_ENV, "env"),
-    (EXT_INI, "ini"),
-    (EXT_CONF, "conf"),
-    (EXT_CFG, "cfg"),
-    (EXT_PROPERTIES, "properties"),
-    (EXT_TF, "tf"),
-    (EXT_HCL, "hcl"),
-    (EXT_PROTO, "proto"),
-    (EXT_GRAPHQL, "graphql"),
-    (EXT_SQL, "sql"),
-    (EXT_MD, "md"),
-    (EXT_TXT, "txt"),
-    (EXT_CSV, "csv"),
-    (EXT_LOG, "log"),
-    (EXT_TAR, "tar"),
-    (EXT_GZ, "gz"),
-    (EXT_TGZ, "tgz"),
-    (EXT_ZIP, "zip"),
-    (EXT_JAR, "jar"),
-    (EXT_WAR, "war"),
-    (EXT_APK, "apk"),
-    (EXT_IPA, "ipa"),
-    (EXT_CRX, "crx"),
-    (EXT_7Z, "7z"),
-    (EXT_RAR, "rar"),
-    (EXT_ZST, "zst"),
-    (EXT_LZ4, "lz4"),
-    (EXT_SZ, "sz"),
-    (EXT_BZ2, "bz2"),
-    (EXT_XZ, "xz"),
-    (EXT_HAR, "har"),
-    (EXT_PDF, "pdf"),
-    (EXT_PNG, "png"),
-    (EXT_JPG, "jpg"),
-    (EXT_JPEG, "jpeg"),
-    (EXT_GIF, "gif"),
-    (EXT_WEBP, "webp"),
-    (EXT_SVG, "svg"),
-    (EXT_ICO, "ico"),
-    (EXT_EXE, "exe"),
-    (EXT_DLL, "dll"),
-    (EXT_SO, "so"),
-    (EXT_DYLIB, "dylib"),
-    (EXT_BIN, "bin"),
-    (EXT_WASM, "wasm"),
-    (EXT_LOCK, "lock"),
-    (EXT_SUM, "sum"),
-}
-
-/// Alias for [`intern_file_extension`].
-pub fn intern_extension(ext: &str) -> Arc<str> {
-    intern_file_extension(ext)
 }
 
 /// Produces chunks of text for the scanner to process.

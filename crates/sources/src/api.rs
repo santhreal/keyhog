@@ -40,10 +40,7 @@ pub use crate::{
         ScanCounterScope, SkipCounts,
     },
 };
-pub use keyhog_core::{
-    common_file_extensions, common_source_types, intern_extension, intern_file_extension,
-    intern_source_type,
-};
+pub use keyhog_core::{common_source_types, intern_source_type};
 
 /// Fuzz-only PDF byte extractor.
 #[cfg(fuzzing)]

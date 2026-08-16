@@ -1,17 +1,13 @@
-//! Unit tests for source type and file extension interning in `keyhog-sources` and `keyhog-core`.
+//! Unit tests for source type interning in `keyhog-sources` and `keyhog-core`.
 //!
 //! Validates:
 //! 1. `intern_source_type` returns pointer-identical (`Arc::ptr_eq`) `Arc<str>` references
 //!    for canonical source types, eliminating per-chunk heap allocation during walks.
-//! 2. `intern_file_extension` returns pointer-identical `Arc<str>` references for common
-//!    file extensions.
-//! 3. Fallback path for unseeded/unknown source types and extensions safely allocates without panic.
-//! 4. `ChunkMetadata` constructor and builder helpers correctly utilize interned references.
-//! 5. `FilesystemSource` emits chunks whose `source_type` is pointer-identical to the static interned pool.
+//! 2. Fallback path for unseeded/unknown source types safely allocates without panic.
+//! 3. `FilesystemSource` emits chunks whose `source_type` is pointer-identical to the static interned pool.
 
 use keyhog_core::{
-    common_file_extensions, common_source_types, intern_extension, intern_file_extension,
-    intern_source_type, ChunkMetadata, Source, SOURCE_TYPE_DOCKER, SOURCE_TYPE_FILESYSTEM,
+    common_source_types, intern_source_type, Source, SOURCE_TYPE_DOCKER, SOURCE_TYPE_FILESYSTEM,
     SOURCE_TYPE_FILESYSTEM_ARCHIVE, SOURCE_TYPE_FILESYSTEM_BINARY_STRINGS,
     SOURCE_TYPE_FILESYSTEM_PDF, SOURCE_TYPE_FILESYSTEM_WINDOWED, SOURCE_TYPE_GIT,
     SOURCE_TYPE_GIT_DIFF, SOURCE_TYPE_GIT_HISTORY, SOURCE_TYPE_GIT_STAGED, SOURCE_TYPE_STDIN,
@@ -100,66 +96,13 @@ fn canonical_source_types_are_pointer_identical() {
 }
 
 #[test]
-fn common_file_extensions_are_pointer_identical() {
-    let exts = [
-        "rs", "go", "py", "js", "ts", "json", "yaml", "toml", "env", "md", "txt", "tar", "gz",
-        "zip", "7z", "pdf", "png", "lock",
-    ];
-    for ext in exts {
-        let e1 = intern_file_extension(ext);
-        let e2 = intern_file_extension(ext);
-        assert!(
-            Arc::ptr_eq(&e1, &e2),
-            "intern_file_extension must return pointer-identical Arc<str> for '{ext}'"
-        );
-        assert_eq!(&*e1, ext);
-
-        let e3 = intern_extension(ext);
-        assert!(
-            Arc::ptr_eq(&e1, &e3),
-            "intern_extension alias must match intern_file_extension for '{ext}'"
-        );
-    }
-}
-
-#[test]
-fn unknown_source_type_and_extension_fall_back_cleanly() {
+fn unknown_source_type_falls_back_cleanly() {
     let custom_source = "custom-backend-type-999";
     let c1 = intern_source_type(custom_source);
     let c2 = intern_source_type(custom_source);
     assert_eq!(&*c1, custom_source);
     assert_eq!(&*c2, custom_source);
-    // Dynamic fallbacks create distinct Arc allocations, but preserve exact string content.
     assert_eq!(&*c1, &*c2);
-
-    let custom_ext = "myrareextension123";
-    let e1 = intern_file_extension(custom_ext);
-    let e2 = intern_file_extension(custom_ext);
-    assert_eq!(&*e1, custom_ext);
-    assert_eq!(&*e2, custom_ext);
-}
-
-#[test]
-fn chunk_metadata_helpers_use_interning() {
-    let meta = ChunkMetadata::for_source("filesystem", Some(Arc::from("test.txt")));
-    assert!(
-        Arc::ptr_eq(&meta.source_type, &SOURCE_TYPE_FILESYSTEM),
-        "ChunkMetadata::for_source must intern source_type"
-    );
-    assert_eq!(meta.path.as_deref(), Some("test.txt"));
-
-    let meta2 = ChunkMetadata::default().with_source_type("git-diff");
-    assert!(
-        Arc::ptr_eq(&meta2.source_type, &SOURCE_TYPE_GIT_DIFF),
-        "ChunkMetadata::with_source_type must intern source_type"
-    );
-
-    let mut meta3 = ChunkMetadata::default();
-    meta3.set_source_type("docker");
-    assert!(
-        Arc::ptr_eq(&meta3.source_type, &SOURCE_TYPE_DOCKER),
-        "ChunkMetadata::set_source_type must intern source_type"
-    );
 }
 
 #[test]
@@ -195,9 +138,4 @@ fn common_catalog_enumerators_are_non_empty() {
     assert!(source_types.contains(&"web:js"));
     assert!(source_types.contains(&"wire:har:request"));
     assert!(source_types.contains(&"filesystem/archive-binary"));
-
-    let file_extensions = common_file_extensions();
-    assert!(file_extensions.len() >= 50);
-    assert!(file_extensions.contains(&"rs"));
-    assert!(file_extensions.contains(&"json"));
 }
