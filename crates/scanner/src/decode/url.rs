@@ -44,7 +44,7 @@ impl Decoder for UrlDecoder {
             sink,
             chunk,
             contains_percent_escape,
-            url_decode,
+            percent_decode,
             self.name(),
         );
     }
@@ -375,10 +375,6 @@ fn percent_escape_count(input: &str) -> usize {
 }
 
 pub(crate) fn quoted_printable_decode(input: &str) -> Result<String, ()> {
-    if memchr::memchr(b'=', input.as_bytes()).is_none() {
-        return Ok(input.to_string());
-    }
-
     let mut bytes = Zeroizing::new(Vec::with_capacity(input.len()));
     let mut index = 0;
     let input_bytes = input.as_bytes();
