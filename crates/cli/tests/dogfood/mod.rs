@@ -242,8 +242,7 @@ fn run_scenario(path: &Path, daemon_runtime_dir: Option<&Path>) -> Result<(), St
 #[test]
 fn dogfood_release_gate() {
     #[cfg(unix)]
-    let daemon = DaemonGuard::start();
-    #[cfg(unix)]
+    let daemon = DaemonGuard::start_embedded();
     let daemon_runtime_dir = Some(daemon.runtime_dir().to_path_buf());
     #[cfg(not(unix))]
     let daemon_runtime_dir: Option<PathBuf> = None;

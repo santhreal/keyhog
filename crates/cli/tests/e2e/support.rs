@@ -23,7 +23,13 @@ pub fn keyhog_command(args: &[&str]) -> Command {
 
 pub fn apply_default_scan_backend(cmd: &mut Command, args: &[&str]) {
     if args.first() == Some(&"scan") && !args.iter().any(|arg| *arg == "--backend") {
-        cmd.arg("scan").args(["--backend", "simd"]).args(&args[1..]);
+        #[cfg(feature = "simd")]
+        let default_backend = "simd";
+        #[cfg(not(feature = "simd"))]
+        let default_backend = "cpu";
+        cmd.arg("scan")
+            .args(["--backend", default_backend])
+            .args(&args[1..]);
     } else {
         cmd.args(args);
     }
@@ -122,6 +128,12 @@ impl DaemonGuard {
     pub fn start() -> Self {
         Self::start_impl(&[], false, false, None)
     }
+    /// Start daemon with embedded detectors (no --detectors flag), so scan
+    /// and guard subcommands that use default embedded detector identity
+    /// match the daemon's detector rules identity.
+    pub fn start_embedded() -> Self {
+        Self::start_impl_full(&[], false, false, None, true)
+    }
 
     /// Warm daemon on the portable CPU backend: daemon/profile e2e tests must
     /// pass on hosts without a Hyperscan/SIMD runtime.
@@ -181,11 +193,15 @@ impl DaemonGuard {
         for (key, value) in envs {
             cmd.env(key, value);
         }
+        #[cfg(feature = "simd")]
+        let fallback_backend = if mass { "cpu" } else { "simd" };
+        #[cfg(not(feature = "simd"))]
+        let fallback_backend = "cpu";
         let mut daemon_args = vec![
             "daemon",
             "start",
             "--backend",
-            backend.unwrap_or(if mass { "cpu" } else { "simd" }),
+            backend.unwrap_or(fallback_backend),
         ];
         if !skip_detectors {
             daemon_args.push("--detectors");
