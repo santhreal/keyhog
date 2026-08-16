@@ -39,7 +39,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64, release-runner]
     timeout-minutes: 45
     env:
       CI_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -85,12 +85,42 @@ jobs:
             exit 0
           fi
 
-  publish:
-    name: Publish crates.io packages
+  validate:
+    name: Complete CI validation on release runner (GPU + SIMD)
     if: >-
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
       github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64, release-runner]
+    timeout-minutes: 45
+    steps:
+      - name: Resolve ref
+        id: ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            printf 'ref=%s\n' "${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            printf 'ref=%s\n' "${GITHUB_REF}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out release ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Run complete CI battery (GPU + SIMD + full matrix)
+        shell: bash
+        run: bash scripts/ci_local.sh
+
+  publish:
+    name: Publish crates.io packages
+    needs: [validate]
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, linux, x64, release-runner]
     timeout-minutes: 45
     steps:
       - name: Resolve tag
