@@ -21,3 +21,4 @@ pub mod source_no_unwrap_expect;
 pub mod spec_load_no_unwrap_expect;
 pub mod spec_no_unwrap_expect;
 pub mod spec_validate_no_unwrap_expect;
+pub mod suppression_rule_no_unwrap_expect;

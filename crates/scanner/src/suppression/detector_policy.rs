@@ -1,12 +1,94 @@
 use super::token_randomness::TokenRandomness;
 
+/// Optimized compiled filter pattern for path and value suppression.
+#[derive(Debug, Clone)]
+pub(crate) enum FilterPattern {
+    /// Exact string equality.
+    Exact(String),
+    /// String prefix match.
+    Prefix(String),
+    /// String suffix match.
+    Suffix(String),
+    /// Substring containment.
+    Substring(String),
+    /// General regular expression fallback.
+    Regex(regex::Regex),
+}
+
+impl FilterPattern {
+    /// Compile pattern string, optimizing exact literals to avoid regex allocations.
+    pub(crate) fn compile(raw: &str) -> Result<Self, regex::Error> {
+        let re = regex::Regex::new(raw)?;
+        if let Some(optimized) = Self::try_optimize(raw) {
+            return Ok(optimized);
+        }
+        Ok(Self::Regex(re))
+    }
+
+    fn is_regex_meta(c: char) -> bool {
+        matches!(
+            c,
+            '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '|' | '[' | ']' | '{' | '}' | '^' | '$'
+        )
+    }
+
+    fn try_optimize(raw: &str) -> Option<Self> {
+        if raw.starts_with('^') && raw.ends_with('$') && raw.len() >= 2 {
+            let inner = &raw[1..raw.len() - 1];
+            if !inner.chars().any(Self::is_regex_meta) {
+                return Some(Self::Exact(inner.to_string()));
+            }
+        }
+        if raw.starts_with('^') && raw.ends_with(".*") && raw.len() >= 3 {
+            let inner = &raw[1..raw.len() - 2];
+            if !inner.chars().any(Self::is_regex_meta) {
+                return Some(Self::Prefix(inner.to_string()));
+            }
+        }
+        if raw.starts_with('^') && !raw.is_empty() {
+            let inner = &raw[1..];
+            if !inner.chars().any(Self::is_regex_meta) {
+                return Some(Self::Prefix(inner.to_string()));
+            }
+        }
+        if raw.ends_with('$') && !raw.is_empty() {
+            let inner = &raw[..raw.len() - 1];
+            if !inner.chars().any(Self::is_regex_meta) {
+                return Some(Self::Suffix(inner.to_string()));
+            }
+        }
+        if raw.starts_with(".*") && raw.ends_with(".*") && raw.len() >= 4 {
+            let inner = &raw[2..raw.len() - 2];
+            if !inner.chars().any(Self::is_regex_meta) {
+                return Some(Self::Substring(inner.to_string()));
+            }
+        }
+        if !raw.chars().any(Self::is_regex_meta) {
+            return Some(Self::Substring(raw.to_string()));
+        }
+        None
+    }
+
+    /// Check whether text matches this filter pattern.
+    #[inline]
+    pub(crate) fn is_match(&self, text: &str) -> bool {
+        match self {
+            Self::Exact(lit) => text == lit,
+            Self::Prefix(p) => text.starts_with(p),
+            Self::Suffix(s) => text.ends_with(s),
+            Self::Substring(sub) => text.contains(sub),
+            Self::Regex(re) => re.is_match(text),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct DetectorSuppressionPolicy {
-    allowlist_paths: Vec<regex::Regex>,
-    source_path_patterns: Vec<regex::Regex>,
+    allowlist_paths: Vec<FilterPattern>,
+    source_path_patterns: Vec<FilterPattern>,
     source_types: Vec<String>,
     file_extensions: Vec<String>,
-    allowlist_values: Vec<regex::Regex>,
+    allowlist_values: Vec<FilterPattern>,
     stopwords: Vec<String>,
 }
 
@@ -53,7 +135,7 @@ impl DetectorSuppressionPolicy {
             patterns
                 .iter()
                 .map(|pattern| {
-                    regex::Regex::new(pattern).map_err(|error| {
+                    FilterPattern::compile(pattern).map_err(|error| {
                         format!(
                             "detector {detector_id:?} {field} regex {pattern:?} failed to compile: {error}"
                         )
@@ -85,11 +167,7 @@ impl DetectorSuppressionPolicy {
             return Some(crate::adjudicate::StageId::ShapeGate(reason));
         }
         if let Some(path) = path {
-            if self
-                .allowlist_paths
-                .iter()
-                .any(|regex| regex.is_match(path))
-            {
+            if self.allowlist_paths.iter().any(|pat| pat.is_match(path)) {
                 crate::adjudicate::record_example_suppression(
                     "pipeline",
                     Some(path),
@@ -102,7 +180,7 @@ impl DetectorSuppressionPolicy {
         if self
             .allowlist_values
             .iter()
-            .any(|regex| regex.is_match(credential))
+            .any(|pat| pat.is_match(credential))
         {
             crate::adjudicate::record_example_suppression(
                 "pipeline",
@@ -194,8 +272,8 @@ impl DetectorSuppressionPolicy {
     #[cfg(test)]
     pub(crate) fn test_fixture() -> Self {
         Self {
-            allowlist_paths: vec![regex::Regex::new(".*allowlisted_path.*").unwrap()],
-            allowlist_values: vec![regex::Regex::new("^allowlisted_value_.*").unwrap()],
+            allowlist_paths: vec![FilterPattern::Substring("allowlisted_path".to_string())],
+            allowlist_values: vec![FilterPattern::Prefix("allowlisted_value_".to_string())],
             stopwords: vec!["stopword_here".to_string()],
             source_path_patterns: Vec::new(),
             source_types: Vec::new(),

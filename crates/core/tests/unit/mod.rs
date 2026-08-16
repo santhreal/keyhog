@@ -181,6 +181,7 @@ pub mod severity_lte_matches_at_or_below_threshold;
 pub mod source_error_other_includes_fix_hint;
 pub mod spec;
 pub mod state_file_read_capped;
+pub mod suppression_rule;
 pub mod timing;
 pub mod toml_compat_boundary_cases;
 pub mod toml_compat_error_messages;

@@ -101,6 +101,8 @@ mod merkle_spec_hash;
 /// keyhog's finding shape (detector / service / severity / path /
 /// credential_hash predicates).
 mod rule_filter;
+/// Finding suppression rules and filters.
+pub mod suppression;
 
 // Embedded detectors compiled into the binary at build time.
 // These are used when no external detectors directory is found.
