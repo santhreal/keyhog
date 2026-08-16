@@ -527,6 +527,22 @@ fn has_digit_and_long_alnum_run(bytes: &[u8]) -> bool {
 }
 
 pub(crate) fn caesar_shift(input: &str, shift: u8) -> String {
+    if input.is_ascii() {
+        let mut bytes = input.as_bytes().to_vec();
+        for b in &mut bytes {
+            match *b {
+                b'A'..=b'Z' => {
+                    *b = b'A' + (*b - b'A' + shift) % ALPHABET_LEN;
+                }
+                b'a'..=b'z' => {
+                    *b = b'a' + (*b - b'a' + shift) % ALPHABET_LEN;
+                }
+                _ => {}
+            }
+        }
+        // Safety: input was ASCII; ASCII letter rotations preserve valid 7-bit ASCII UTF-8.
+        return unsafe { String::from_utf8_unchecked(bytes) };
+    }
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
         let shifted = match ch {

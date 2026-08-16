@@ -97,6 +97,12 @@ fn is_reverse_candidate(
 }
 
 pub(crate) fn reverse_str(s: &str) -> String {
+    if s.is_ascii() {
+        let mut bytes = s.as_bytes().to_vec();
+        bytes.reverse();
+        // Safety: input is pure ASCII; in-place byte reversal preserves valid UTF-8.
+        return unsafe { String::from_utf8_unchecked(bytes) };
+    }
     s.chars().rev().collect()
 }
 

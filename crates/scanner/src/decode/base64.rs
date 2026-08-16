@@ -8,6 +8,7 @@ use super::pipeline::{
 use super::{DecodeAdmissionSketch, DecodeOutputSink, Decoder, EncodedString};
 use keyhog_core::Chunk;
 use std::collections::HashMap;
+use zeroize::Zeroize;
 
 pub(super) struct Base64Decoder;
 
@@ -447,9 +448,14 @@ pub fn z85_decode(input: &str) -> Result<Vec<u8>, ()> {
     for chunk in bytes.chunks_exact(5) {
         let mut value = 0u64;
         for &byte in chunk {
-            value = value * 85 + z85_val(byte)? as u64;
+            let Ok(val) = z85_val(byte) else {
+                decoded.zeroize();
+                return Err(());
+            };
+            value = value * 85 + val as u64;
         }
         if value > u32::MAX as u64 {
+            decoded.zeroize();
             return Err(());
         }
         let value = value as u32;

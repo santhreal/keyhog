@@ -206,6 +206,7 @@ fn extract_encoded_value_spans_raw(
         text: &str,
         container_start: usize,
         container_end: usize,
+        intern: &mut impl FnMut(&str) -> std::sync::Arc<str>,
     ) {
         let container = &text[container_start..container_end];
         if container.starts_with("=?") && container.ends_with("?=") {
@@ -227,7 +228,7 @@ fn extract_encoded_value_spans_raw(
                 if index.saturating_sub(start) >= MIN_B64_BLOCK_LEN
                     && (start != container_start || index != container_end)
                 {
-                    values.push(ExtractedValue::new(&text[start..index], start, index));
+                    values.push(ExtractedValue::new(intern(&text[start..index]), start, index));
                 }
             }
         }
@@ -235,7 +236,7 @@ fn extract_encoded_value_spans_raw(
             if container_end.saturating_sub(start) >= MIN_B64_BLOCK_LEN && start != container_start
             {
                 values.push(ExtractedValue::new(
-                    &text[start..container_end],
+                    intern(&text[start..container_end]),
                     start,
                     container_end,
                 ));
@@ -310,7 +311,7 @@ fn extract_encoded_value_spans_raw(
                 } else if current == quote {
                     if cleaned.len() >= MIN_EXTRACTED_VALUE_LEN {
                         if let Some(start) = value_start {
-                            push_b64_subruns(&mut values, text, start, value_end);
+                            push_b64_subruns(&mut values, text, start, value_end, &mut intern_value);
                             values.push(ExtractedValue::new(
                                 intern_value(&cleaned),
                                 start,
@@ -387,7 +388,7 @@ fn extract_encoded_value_spans_raw(
                     && value.len() < super::super::limits::MIN_BASE64_CANDIDATE_LEN
                     && value.bytes().all(|byte| byte.is_ascii_alphanumeric());
                 if value.len() >= MIN_EXTRACTED_VALUE_LEN && !default_impossible {
-                    push_b64_subruns(&mut values, text, start, value_end);
+                    push_b64_subruns(&mut values, text, start, value_end, &mut intern_value);
                     values.push(ExtractedValue::new(intern_value(value), start, value_end));
                 }
             }
