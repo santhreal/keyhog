@@ -76,6 +76,7 @@ pub mod context_tokio_test_attribute;
 pub mod context_unknown_no_quotes_no_assignment;
 pub mod crate_source_helper;
 pub mod decode;
+pub mod decode_base32;
 pub mod decode_caesar_shift_selection;
 pub mod decode_structure;
 pub mod detector_execution_policy;
