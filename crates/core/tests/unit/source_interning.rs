@@ -1,4 +1,4 @@
-//! Unit tests for source type and file extension interning in `keyhog-core`.
+//! Unit tests for source type interning in `keyhog-core`.
 
 use keyhog_core::{
     common_source_types, intern_source_type, SOURCE_TYPE_FILESYSTEM,

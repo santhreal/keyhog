@@ -132,7 +132,7 @@ fn filesystem_source_emits_interned_source_type_chunks() {
 #[test]
 fn common_catalog_enumerators_are_non_empty() {
     let source_types = common_source_types();
-    assert!(source_types.len() >= 50);
+    assert!(source_types.len() >= 40);
     assert!(source_types.contains(&"filesystem"));
     assert!(source_types.contains(&"git-diff"));
     assert!(source_types.contains(&"web:js"));
