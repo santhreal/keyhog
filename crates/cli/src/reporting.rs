@@ -14,10 +14,10 @@ use std::collections::BTreeMap;
 use std::io::{self, BufWriter, IsTerminal, Write};
 
 /// Default buffer capacity in bytes for streaming report writers.
-pub(crate) const REPORT_BUFFER_CAPACITY: usize = 64 * 1024;
+const REPORT_BUFFER_CAPACITY: usize = 64 * 1024;
 
 /// Wrap a writer in a standard buffered writer sized for report streaming.
-pub(crate) fn buffered_report_writer<W: Write>(writer: W) -> BufWriter<W> {
+fn buffered_report_writer<W: Write>(writer: W) -> BufWriter<W> {
     BufWriter::with_capacity(REPORT_BUFFER_CAPACITY, writer)
 }
 pub(crate) fn report_findings(findings: &[VerifiedFinding], args: &ScanArgs) -> Result<()> {

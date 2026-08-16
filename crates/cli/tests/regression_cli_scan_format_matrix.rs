@@ -317,7 +317,7 @@ fn csv_format_header_is_exact() {
 }
 
 /// csv: exactly one data row, and its leading cells are the detector id, name,
-/// service, and severity in order; the RFC-4180 row has exactly 20 fields.
+/// service, and severity in order; the RFC-4180 row has exactly 22 fields.
 #[test]
 fn csv_format_single_data_row_fields() {
     let (_dir, path) = leak_fixture();

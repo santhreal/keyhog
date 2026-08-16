@@ -18,7 +18,7 @@ use sarif_taxonomies::sarif_taxonomies_json;
 ///
 /// Writes the SARIF document skeleton on construction and emits each
 /// `runs[0].results[]` entry directly to the writer as `report()` is called.
-/// Rules accumulate in a small `HashMap` (one entry per unique detector_id,
+/// Rules accumulate in a small `BTreeMap` (one entry per unique detector_id,
 /// at most a few hundred), and are flushed in `finish()`. Peak memory is
 /// O(rules × ~500B) regardless of finding count, replacing the previous
 /// O(N findings × ~500B) buffer that audited as the SARIF OOM wall at 1M+
