@@ -76,6 +76,24 @@ fn chunk_metadata_builder_helpers() {
 
 #[test]
 fn common_lists_contain_canonical_entries() {
+    for &src in common_source_types() {
+        let a1 = intern_source_type(src);
+        let a2 = intern_source_type(src);
+        assert!(Arc::ptr_eq(&a1, &a2));
+        assert_eq!(&*a1, src);
+    }
+
+    for &ext in common_file_extensions() {
+        let e1 = intern_file_extension(ext);
+        let e2 = intern_file_extension(ext);
+        assert!(Arc::ptr_eq(&e1, &e2));
+        assert_eq!(&*e1, ext);
+    }
+
     assert!(common_source_types().contains(&"filesystem"));
+    assert!(common_source_types().contains(&"web:js"));
+    assert!(common_source_types().contains(&"wire:har:request"));
+    assert!(common_source_types().contains(&"filesystem/archive-binary"));
     assert!(common_file_extensions().contains(&"rs"));
+    assert!(common_file_extensions().contains(&"json"));
 }

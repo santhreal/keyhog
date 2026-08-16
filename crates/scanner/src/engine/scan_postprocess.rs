@@ -210,27 +210,26 @@ impl CompiledScanner {
                     }
                     // Decoding is monotonic: keep raw findings and union resolved decoded evidence.
                     let raw_findings = matches.clone();
-                    let mut seen: HashSet<(Arc<str>, SensitiveString)> =
-                        matches.iter().map(|m| (Arc::clone(&m.detector_id), m.credential.clone())).collect();
-                    decoded_candidates.sort_by(|a, b| a.location.offset.cmp(&b.location.offset).then_with(|| a.cmp(b)));
-                    for m in decoded_candidates {
-                        if seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
-                            matches.push(m);
-                        }
-                    }
+                    let key = |m: &crate::engine::RawMatch| {
+                        (Arc::clone(&m.detector_id), m.credential.clone())
+                    };
+                    let mut seen: HashSet<_> = matches.iter().map(key).collect();
+                    decoded_candidates.sort_by_key(|m| m.location.offset);
+                    matches.extend(
+                        decoded_candidates
+                            .into_iter()
+                            .filter(|m| seen.insert(key(m))),
+                    );
                     let resolved = crate::resolution::try_resolve_matches_with_compiled_plan(
                         std::mem::take(matches),
                         &self.detector_plans,
                     )
-                    .map_err(|error| crate::ScanError::Config(format!("compiled detector resolution failed: {error}")))?;
+                    .map_err(|e| {
+                        crate::ScanError::Config(format!("plan resolution failed: {e}"))
+                    })?;
+                    let mut merged_seen: HashSet<_> = raw_findings.iter().map(key).collect();
                     let mut merged = raw_findings;
-                    let mut merged_seen: HashSet<(Arc<str>, SensitiveString)> =
-                        merged.iter().map(|m| (Arc::clone(&m.detector_id), m.credential.clone())).collect();
-                    for m in resolved {
-                        if merged_seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
-                            merged.push(m);
-                        }
-                    }
+                    merged.extend(resolved.into_iter().filter(|m| merged_seen.insert(key(m))));
                     *matches = merged;
                 }
                 Ok(())

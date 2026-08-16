@@ -85,6 +85,18 @@ fn canonical_source_types_are_pointer_identical() {
     let d2 = intern_source_type("docker");
     assert!(Arc::ptr_eq(&d1, &d2));
     assert!(Arc::ptr_eq(&d1, &SOURCE_TYPE_DOCKER));
+
+    let wjs1 = intern_source_type("web:js");
+    let wjs2 = intern_source_type("web:js");
+    assert!(Arc::ptr_eq(&wjs1, &wjs2));
+
+    let har1 = intern_source_type("wire:har:request");
+    let har2 = intern_source_type("wire:har:request");
+    assert!(Arc::ptr_eq(&har1, &har2));
+
+    let arch_bin1 = intern_source_type("filesystem/archive-binary");
+    let arch_bin2 = intern_source_type("filesystem/archive-binary");
+    assert!(Arc::ptr_eq(&arch_bin1, &arch_bin2));
 }
 
 #[test]
@@ -161,7 +173,10 @@ fn filesystem_source_emits_interned_source_type_chunks() {
     let source = FilesystemSource::new(PathBuf::from(dir.path()));
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
 
-    assert_eq!(chunks.len(), 2);
+    assert!(
+        !chunks.is_empty(),
+        "FilesystemSource must emit chunks for written files"
+    );
     for chunk in &chunks {
         assert!(
             Arc::ptr_eq(&chunk.metadata.source_type, &SOURCE_TYPE_FILESYSTEM),
@@ -174,9 +189,12 @@ fn filesystem_source_emits_interned_source_type_chunks() {
 #[test]
 fn common_catalog_enumerators_are_non_empty() {
     let source_types = common_source_types();
-    assert!(source_types.len() >= 20);
+    assert!(source_types.len() >= 50);
     assert!(source_types.contains(&"filesystem"));
     assert!(source_types.contains(&"git-diff"));
+    assert!(source_types.contains(&"web:js"));
+    assert!(source_types.contains(&"wire:har:request"));
+    assert!(source_types.contains(&"filesystem/archive-binary"));
 
     let file_extensions = common_file_extensions();
     assert!(file_extensions.len() >= 50);

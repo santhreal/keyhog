@@ -164,396 +164,204 @@ impl ChunkMetadata {
     }
 }
 
-/// Canonical `source_type` for standard filesystem file chunks.
-pub static SOURCE_TYPE_FILESYSTEM: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("filesystem"));
-/// Canonical `source_type` for windowed filesystem file chunks.
-pub static SOURCE_TYPE_FILESYSTEM_WINDOWED: LazyLock<Arc<str>> =
-    LazyLock::new(|| Arc::from("filesystem/windowed"));
-/// Canonical `source_type` for filesystem binary printable-strings chunks.
-pub static SOURCE_TYPE_FILESYSTEM_BINARY_STRINGS: LazyLock<Arc<str>> =
-    LazyLock::new(|| Arc::from("filesystem:binary-strings"));
-/// Canonical `source_type` for filesystem archive member chunks.
-pub static SOURCE_TYPE_FILESYSTEM_ARCHIVE: LazyLock<Arc<str>> =
-    LazyLock::new(|| Arc::from("filesystem/archive"));
-/// Canonical `source_type` for filesystem PDF text chunks.
-pub static SOURCE_TYPE_FILESYSTEM_PDF: LazyLock<Arc<str>> =
-    LazyLock::new(|| Arc::from("filesystem/pdf"));
-/// Canonical `source_type` for Git source chunks.
-pub static SOURCE_TYPE_GIT: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("git"));
-/// Canonical `source_type` for Git diff chunks.
-pub static SOURCE_TYPE_GIT_DIFF: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("git-diff"));
-/// Canonical `source_type` for Git history chunks.
-pub static SOURCE_TYPE_GIT_HISTORY: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("git-history"));
-/// Canonical `source_type` for Git staged chunks.
-pub static SOURCE_TYPE_GIT_STAGED: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("git-staged"));
-/// Canonical `source_type` for Git HEAD chunks.
-pub static SOURCE_TYPE_GIT_HEAD: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("git/head"));
-/// Canonical `source_type` for Git tag message chunks.
-pub static SOURCE_TYPE_GIT_TAG: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("git/tag"));
-/// Canonical `source_type` for Git unreachable object chunks.
-pub static SOURCE_TYPE_GIT_UNREACHABLE: LazyLock<Arc<str>> =
-    LazyLock::new(|| Arc::from("git/unreachable"));
-/// Canonical `source_type` for Git history chunks with slash separator.
-pub static SOURCE_TYPE_GIT_HISTORY_SLASH: LazyLock<Arc<str>> =
-    LazyLock::new(|| Arc::from("git/history"));
-/// Canonical `source_type` for Git diff chunks with slash separator.
-pub static SOURCE_TYPE_GIT_DIFF_SLASH: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("git/diff"));
-/// Canonical `source_type` for Git staged chunks with slash separator.
-pub static SOURCE_TYPE_GIT_STAGED_SLASH: LazyLock<Arc<str>> =
-    LazyLock::new(|| Arc::from("git/staged"));
-/// Canonical `source_type` for stdin chunks.
-pub static SOURCE_TYPE_STDIN: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("stdin"));
-/// Canonical `source_type` for Docker container chunks.
-pub static SOURCE_TYPE_DOCKER: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("docker"));
-/// Canonical `source_type` for Amazon S3 object chunks.
-pub static SOURCE_TYPE_S3: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("s3"));
-/// Canonical `source_type` for Google Cloud Storage object chunks.
-pub static SOURCE_TYPE_GCS: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("gcs"));
-/// Canonical `source_type` for Azure Blob Storage object chunks.
-pub static SOURCE_TYPE_AZURE_BLOB: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("azure_blob"));
-/// Canonical `source_type` for web HTTP response chunks.
-pub static SOURCE_TYPE_WEB: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("web"));
-/// Canonical `source_type` for GitHub collaboration chunks.
-pub static SOURCE_TYPE_GITHUB: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("github"));
-/// Canonical `source_type` for Slack message chunks.
-pub static SOURCE_TYPE_SLACK: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("slack"));
-/// Canonical `source_type` for binary file chunks.
-pub static SOURCE_TYPE_BINARY: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("binary"));
-/// Canonical `source_type` for binary printable strings chunks.
-pub static SOURCE_TYPE_BINARY_STRINGS: LazyLock<Arc<str>> =
-    LazyLock::new(|| Arc::from("binary:strings"));
+macro_rules! define_intern_table {
+    (
+        $(#[$intern_meta:meta])*
+        pub fn $fn_intern:ident,
+        $(#[$list_meta:meta])*
+        pub fn $fn_list:ident,
+        $(
+            $(#[$item_meta:meta])*
+            ($name:ident, $str_val:literal)
+        ),* $(,)?
+    ) => {
+        $(
+            $(#[$item_meta])*
+            pub static $name: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from($str_val));
+        )*
 
-/// Pre-interned common source type names.
-pub fn common_source_types() -> &'static [&'static str] {
-    &[
-        "filesystem",
-        "filesystem/windowed",
-        "filesystem:binary-strings",
-        "filesystem/archive",
-        "filesystem/pdf",
-        "git",
-        "git-diff",
-        "git-history",
-        "git-staged",
-        "git/head",
-        "git/history",
-        "git/tag",
-        "git/unreachable",
-        "git/diff",
-        "git/staged",
-        "stdin",
-        "s3",
-        "docker",
-        "gcs",
-        "azure_blob",
-        "web",
-        "github",
-        "slack",
-        "binary",
-        "binary:strings",
-    ]
+        $(#[$list_meta])*
+        pub fn $fn_list() -> &'static [&'static str] {
+            &[
+                $( $str_val ),*
+            ]
+        }
+
+        $(#[$intern_meta])*
+        pub fn $fn_intern(val: &str) -> Arc<str> {
+            match val {
+                $(
+                    $str_val => Arc::clone(&$name),
+                )*
+                other => Arc::from(other),
+            }
+        }
+    };
 }
 
-/// Intern a source type string reference into an `Arc<str>`.
-///
-/// Returns a clone of a pre-allocated static `Arc<str>` for canonical source types,
-/// avoiding heap allocation and string duplication.
-pub fn intern_source_type(source_type: &str) -> Arc<str> {
-    match source_type {
-        "filesystem" => Arc::clone(&SOURCE_TYPE_FILESYSTEM),
-        "filesystem/windowed" => Arc::clone(&SOURCE_TYPE_FILESYSTEM_WINDOWED),
-        "filesystem:binary-strings" => Arc::clone(&SOURCE_TYPE_FILESYSTEM_BINARY_STRINGS),
-        "filesystem/archive" => Arc::clone(&SOURCE_TYPE_FILESYSTEM_ARCHIVE),
-        "filesystem/pdf" => Arc::clone(&SOURCE_TYPE_FILESYSTEM_PDF),
-        "git" => Arc::clone(&SOURCE_TYPE_GIT),
-        "git-diff" => Arc::clone(&SOURCE_TYPE_GIT_DIFF),
-        "git-history" => Arc::clone(&SOURCE_TYPE_GIT_HISTORY),
-        "git-staged" => Arc::clone(&SOURCE_TYPE_GIT_STAGED),
-        "git/head" => Arc::clone(&SOURCE_TYPE_GIT_HEAD),
-        "git/history" => Arc::clone(&SOURCE_TYPE_GIT_HISTORY_SLASH),
-        "git/tag" => Arc::clone(&SOURCE_TYPE_GIT_TAG),
-        "git/unreachable" => Arc::clone(&SOURCE_TYPE_GIT_UNREACHABLE),
-        "git/diff" => Arc::clone(&SOURCE_TYPE_GIT_DIFF_SLASH),
-        "git/staged" => Arc::clone(&SOURCE_TYPE_GIT_STAGED_SLASH),
-        "stdin" => Arc::clone(&SOURCE_TYPE_STDIN),
-        "s3" => Arc::clone(&SOURCE_TYPE_S3),
-        "docker" => Arc::clone(&SOURCE_TYPE_DOCKER),
-        "gcs" => Arc::clone(&SOURCE_TYPE_GCS),
-        "azure_blob" => Arc::clone(&SOURCE_TYPE_AZURE_BLOB),
-        "web" => Arc::clone(&SOURCE_TYPE_WEB),
-        "github" => Arc::clone(&SOURCE_TYPE_GITHUB),
-        "slack" => Arc::clone(&SOURCE_TYPE_SLACK),
-        "binary" => Arc::clone(&SOURCE_TYPE_BINARY),
-        "binary:strings" => Arc::clone(&SOURCE_TYPE_BINARY_STRINGS),
-        other => Arc::from(other),
-    }
+define_intern_table! {
+    /// Intern a source type string reference into an `Arc<str>`.
+    ///
+    /// Returns a clone of a pre-allocated static `Arc<str>` for canonical source types,
+    /// avoiding heap allocation and string duplication.
+    pub fn intern_source_type,
+    /// Pre-interned common source type names.
+    pub fn common_source_types,
+    (SOURCE_TYPE_AZURE_BLOB, "azure_blob"),
+    (SOURCE_TYPE_BENCHMARK, "benchmark"),
+    (SOURCE_TYPE_BINARY, "binary"),
+    (SOURCE_TYPE_BINARY_ELF, "binary:elf"),
+    (SOURCE_TYPE_BINARY_GHIDRA_DECOMPILED, "binary:ghidra:decompiled"),
+    (SOURCE_TYPE_BINARY_GHIDRA_STRINGS, "binary:ghidra:strings"),
+    (SOURCE_TYPE_BINARY_MACHO, "binary:macho"),
+    (SOURCE_TYPE_BINARY_PE, "binary:pe"),
+    (SOURCE_TYPE_BINARY_STRINGS, "binary:strings"),
+    (SOURCE_TYPE_BITBUCKET_WORKSPACE, "bitbucket-workspace"),
+    (SOURCE_TYPE_DAEMON_WARMUP, "daemon-warmup"),
+    (SOURCE_TYPE_DIFF_ARTIFACT, "diff-artifact"),
+    (SOURCE_TYPE_DOCKER, "docker"),
+    (SOURCE_TYPE_DOCTOR, "doctor"),
+    (SOURCE_TYPE_FILESYSTEM, "filesystem"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE, "filesystem/archive"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_BINARY, "filesystem/archive-binary"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_BINARY_TEX_ORPHANED, "filesystem/archive-binary/tex-orphaned"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_BINARY_TEX_REFERENCED, "filesystem/archive-binary/tex-referenced"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_BINARY_TEX_ROOT, "filesystem/archive-binary/tex-root"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_ANDROID, "filesystem/archive/android"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_ANDROID_RESOURCE, "filesystem/archive/android-resource"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_ANDROID_XML, "filesystem/archive/android-xml"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_TEX_COMMENT_ORPHANED, "filesystem/archive/tex-comment/orphaned"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_TEX_COMMENT_REFERENCED, "filesystem/archive/tex-comment/referenced"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_TEX_COMMENT_ROOT, "filesystem/archive/tex-comment/root"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_TEX_ORPHANED, "filesystem/archive/tex-orphaned"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_TEX_REFERENCED, "filesystem/archive/tex-referenced"),
+    (SOURCE_TYPE_FILESYSTEM_ARCHIVE_TEX_ROOT, "filesystem/archive/tex-root"),
+    (SOURCE_TYPE_FILESYSTEM_COMPRESSED, "filesystem/compressed"),
+    (SOURCE_TYPE_FILESYSTEM_COMPRESSED_BINARY, "filesystem/compressed-binary"),
+    (SOURCE_TYPE_FILESYSTEM_IMAGE_METADATA, "filesystem/image-metadata"),
+    (SOURCE_TYPE_FILESYSTEM_PDF, "filesystem/pdf"),
+    (SOURCE_TYPE_FILESYSTEM_WINDOWED, "filesystem/windowed"),
+    (SOURCE_TYPE_FILESYSTEM_BINARY_STRINGS, "filesystem:binary-strings"),
+    (SOURCE_TYPE_GCS, "gcs"),
+    (SOURCE_TYPE_GIT, "git"),
+    (SOURCE_TYPE_GIT_DIFF, "git-diff"),
+    (SOURCE_TYPE_GIT_HISTORY, "git-history"),
+    (SOURCE_TYPE_GIT_STAGED, "git-staged"),
+    (SOURCE_TYPE_GIT_DIFF_SLASH, "git/diff"),
+    (SOURCE_TYPE_GIT_HEAD, "git/head"),
+    (SOURCE_TYPE_GIT_HISTORY_SLASH, "git/history"),
+    (SOURCE_TYPE_GIT_STAGED_SLASH, "git/staged"),
+    (SOURCE_TYPE_GIT_TAG, "git/tag"),
+    (SOURCE_TYPE_GIT_UNREACHABLE, "git/unreachable"),
+    (SOURCE_TYPE_GITHUB, "github"),
+    (SOURCE_TYPE_GITHUB_COLLABORATION, "github-collaboration"),
+    (SOURCE_TYPE_GITHUB_ORG, "github-org"),
+    (SOURCE_TYPE_GITLAB_GROUP, "gitlab-group"),
+    (SOURCE_TYPE_S3, "s3"),
+    (SOURCE_TYPE_SLACK, "slack"),
+    (SOURCE_TYPE_STATIC, "static"),
+    (SOURCE_TYPE_STDIN, "stdin"),
+    (SOURCE_TYPE_WATCH_WARMUP, "watch-warmup"),
+    (SOURCE_TYPE_WEB, "web"),
+    (SOURCE_TYPE_WEB_JS, "web:js"),
+    (SOURCE_TYPE_WEB_SOURCEMAP, "web:sourcemap"),
+    (SOURCE_TYPE_WEB_SOURCEMAP_RAW, "web:sourcemap:raw"),
+    (SOURCE_TYPE_WEB_WASM, "web:wasm"),
+    (SOURCE_TYPE_WIRE_HAR_REQUEST, "wire:har:request"),
+    (SOURCE_TYPE_WIRE_HAR_RESPONSE, "wire:har:response"),
 }
 
-/// Pre-interned common file extension constants.
-pub static EXT_RS: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("rs"));
-pub static EXT_GO: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("go"));
-pub static EXT_PY: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("py"));
-pub static EXT_JS: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("js"));
-pub static EXT_TS: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("ts"));
-pub static EXT_JSX: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("jsx"));
-pub static EXT_TSX: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("tsx"));
-pub static EXT_C: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("c"));
-pub static EXT_CPP: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("cpp"));
-pub static EXT_H: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("h"));
-pub static EXT_HPP: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("hpp"));
-pub static EXT_JAVA: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("java"));
-pub static EXT_KT: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("kt"));
-pub static EXT_SCALA: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("scala"));
-pub static EXT_RB: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("rb"));
-pub static EXT_PHP: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("php"));
-pub static EXT_CS: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("cs"));
-pub static EXT_SWIFT: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("swift"));
-pub static EXT_DART: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("dart"));
-pub static EXT_LUA: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("lua"));
-pub static EXT_R: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("r"));
-pub static EXT_SH: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("sh"));
-pub static EXT_BASH: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("bash"));
-pub static EXT_ZSH: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("zsh"));
-pub static EXT_PS1: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("ps1"));
-pub static EXT_BAT: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("bat"));
-pub static EXT_CMD: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("cmd"));
-pub static EXT_JSON: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("json"));
-pub static EXT_YAML: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("yaml"));
-pub static EXT_YML: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("yml"));
-pub static EXT_TOML: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("toml"));
-pub static EXT_XML: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("xml"));
-pub static EXT_HTML: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("html"));
-pub static EXT_HTM: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("htm"));
-pub static EXT_CSS: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("css"));
-pub static EXT_SCSS: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("scss"));
-pub static EXT_ENV: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("env"));
-pub static EXT_INI: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("ini"));
-pub static EXT_CONF: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("conf"));
-pub static EXT_CFG: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("cfg"));
-pub static EXT_PROPERTIES: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("properties"));
-pub static EXT_TF: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("tf"));
-pub static EXT_HCL: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("hcl"));
-pub static EXT_PROTO: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("proto"));
-pub static EXT_GRAPHQL: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("graphql"));
-pub static EXT_SQL: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("sql"));
-pub static EXT_MD: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("md"));
-pub static EXT_TXT: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("txt"));
-pub static EXT_CSV: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("csv"));
-pub static EXT_LOG: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("log"));
-pub static EXT_TAR: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("tar"));
-pub static EXT_GZ: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("gz"));
-pub static EXT_TGZ: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("tgz"));
-pub static EXT_ZIP: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("zip"));
-pub static EXT_JAR: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("jar"));
-pub static EXT_WAR: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("war"));
-pub static EXT_APK: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("apk"));
-pub static EXT_IPA: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("ipa"));
-pub static EXT_CRX: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("crx"));
-pub static EXT_7Z: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("7z"));
-pub static EXT_RAR: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("rar"));
-pub static EXT_ZST: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("zst"));
-pub static EXT_LZ4: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("lz4"));
-pub static EXT_SZ: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("sz"));
-pub static EXT_BZ2: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("bz2"));
-pub static EXT_XZ: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("xz"));
-pub static EXT_HAR: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("har"));
-pub static EXT_PDF: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("pdf"));
-pub static EXT_PNG: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("png"));
-pub static EXT_JPG: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("jpg"));
-pub static EXT_JPEG: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("jpeg"));
-pub static EXT_GIF: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("gif"));
-pub static EXT_WEBP: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("webp"));
-pub static EXT_SVG: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("svg"));
-pub static EXT_ICO: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("ico"));
-pub static EXT_EXE: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("exe"));
-pub static EXT_DLL: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("dll"));
-pub static EXT_SO: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("so"));
-pub static EXT_DYLIB: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("dylib"));
-pub static EXT_BIN: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("bin"));
-pub static EXT_WASM: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("wasm"));
-pub static EXT_LOCK: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("lock"));
-pub static EXT_SUM: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("sum"));
-
-/// Pre-interned common file extension names.
-pub fn common_file_extensions() -> &'static [&'static str] {
-    &[
-        "rs",
-        "go",
-        "py",
-        "js",
-        "ts",
-        "jsx",
-        "tsx",
-        "c",
-        "cpp",
-        "h",
-        "hpp",
-        "java",
-        "kt",
-        "scala",
-        "rb",
-        "php",
-        "cs",
-        "swift",
-        "dart",
-        "lua",
-        "r",
-        "sh",
-        "bash",
-        "zsh",
-        "ps1",
-        "bat",
-        "cmd",
-        "json",
-        "yaml",
-        "yml",
-        "toml",
-        "xml",
-        "html",
-        "htm",
-        "css",
-        "scss",
-        "env",
-        "ini",
-        "conf",
-        "cfg",
-        "properties",
-        "tf",
-        "hcl",
-        "proto",
-        "graphql",
-        "sql",
-        "md",
-        "txt",
-        "csv",
-        "log",
-        "tar",
-        "gz",
-        "tgz",
-        "zip",
-        "jar",
-        "war",
-        "apk",
-        "ipa",
-        "crx",
-        "7z",
-        "rar",
-        "zst",
-        "lz4",
-        "sz",
-        "bz2",
-        "xz",
-        "har",
-        "pdf",
-        "png",
-        "jpg",
-        "jpeg",
-        "gif",
-        "webp",
-        "svg",
-        "ico",
-        "exe",
-        "dll",
-        "so",
-        "dylib",
-        "bin",
-        "wasm",
-        "lock",
-        "sum",
-    ]
-}
-
-/// Intern a common file extension into an `Arc<str>`.
-///
-/// Returns a clone of a pre-allocated static `Arc<str>` for common extensions,
-/// avoiding per-file allocation during directory traversal.
-pub fn intern_file_extension(ext: &str) -> Arc<str> {
-    match ext {
-        "rs" => Arc::clone(&EXT_RS),
-        "go" => Arc::clone(&EXT_GO),
-        "py" => Arc::clone(&EXT_PY),
-        "js" => Arc::clone(&EXT_JS),
-        "ts" => Arc::clone(&EXT_TS),
-        "jsx" => Arc::clone(&EXT_JSX),
-        "tsx" => Arc::clone(&EXT_TSX),
-        "c" => Arc::clone(&EXT_C),
-        "cpp" => Arc::clone(&EXT_CPP),
-        "h" => Arc::clone(&EXT_H),
-        "hpp" => Arc::clone(&EXT_HPP),
-        "java" => Arc::clone(&EXT_JAVA),
-        "kt" => Arc::clone(&EXT_KT),
-        "scala" => Arc::clone(&EXT_SCALA),
-        "rb" => Arc::clone(&EXT_RB),
-        "php" => Arc::clone(&EXT_PHP),
-        "cs" => Arc::clone(&EXT_CS),
-        "swift" => Arc::clone(&EXT_SWIFT),
-        "dart" => Arc::clone(&EXT_DART),
-        "lua" => Arc::clone(&EXT_LUA),
-        "r" => Arc::clone(&EXT_R),
-        "sh" => Arc::clone(&EXT_SH),
-        "bash" => Arc::clone(&EXT_BASH),
-        "zsh" => Arc::clone(&EXT_ZSH),
-        "ps1" => Arc::clone(&EXT_PS1),
-        "bat" => Arc::clone(&EXT_BAT),
-        "cmd" => Arc::clone(&EXT_CMD),
-        "json" => Arc::clone(&EXT_JSON),
-        "yaml" => Arc::clone(&EXT_YAML),
-        "yml" => Arc::clone(&EXT_YML),
-        "toml" => Arc::clone(&EXT_TOML),
-        "xml" => Arc::clone(&EXT_XML),
-        "html" => Arc::clone(&EXT_HTML),
-        "htm" => Arc::clone(&EXT_HTM),
-        "css" => Arc::clone(&EXT_CSS),
-        "scss" => Arc::clone(&EXT_SCSS),
-        "env" => Arc::clone(&EXT_ENV),
-        "ini" => Arc::clone(&EXT_INI),
-        "conf" => Arc::clone(&EXT_CONF),
-        "cfg" => Arc::clone(&EXT_CFG),
-        "properties" => Arc::clone(&EXT_PROPERTIES),
-        "tf" => Arc::clone(&EXT_TF),
-        "hcl" => Arc::clone(&EXT_HCL),
-        "proto" => Arc::clone(&EXT_PROTO),
-        "graphql" => Arc::clone(&EXT_GRAPHQL),
-        "sql" => Arc::clone(&EXT_SQL),
-        "md" => Arc::clone(&EXT_MD),
-        "txt" => Arc::clone(&EXT_TXT),
-        "csv" => Arc::clone(&EXT_CSV),
-        "log" => Arc::clone(&EXT_LOG),
-        "tar" => Arc::clone(&EXT_TAR),
-        "gz" => Arc::clone(&EXT_GZ),
-        "tgz" => Arc::clone(&EXT_TGZ),
-        "zip" => Arc::clone(&EXT_ZIP),
-        "jar" => Arc::clone(&EXT_JAR),
-        "war" => Arc::clone(&EXT_WAR),
-        "apk" => Arc::clone(&EXT_APK),
-        "ipa" => Arc::clone(&EXT_IPA),
-        "crx" => Arc::clone(&EXT_CRX),
-        "7z" => Arc::clone(&EXT_7Z),
-        "rar" => Arc::clone(&EXT_RAR),
-        "zst" => Arc::clone(&EXT_ZST),
-        "lz4" => Arc::clone(&EXT_LZ4),
-        "sz" => Arc::clone(&EXT_SZ),
-        "bz2" => Arc::clone(&EXT_BZ2),
-        "xz" => Arc::clone(&EXT_XZ),
-        "har" => Arc::clone(&EXT_HAR),
-        "pdf" => Arc::clone(&EXT_PDF),
-        "png" => Arc::clone(&EXT_PNG),
-        "jpg" => Arc::clone(&EXT_JPG),
-        "jpeg" => Arc::clone(&EXT_JPEG),
-        "gif" => Arc::clone(&EXT_GIF),
-        "webp" => Arc::clone(&EXT_WEBP),
-        "svg" => Arc::clone(&EXT_SVG),
-        "ico" => Arc::clone(&EXT_ICO),
-        "exe" => Arc::clone(&EXT_EXE),
-        "dll" => Arc::clone(&EXT_DLL),
-        "so" => Arc::clone(&EXT_SO),
-        "dylib" => Arc::clone(&EXT_DYLIB),
-        "bin" => Arc::clone(&EXT_BIN),
-        "wasm" => Arc::clone(&EXT_WASM),
-        "lock" => Arc::clone(&EXT_LOCK),
-        "sum" => Arc::clone(&EXT_SUM),
-        other => Arc::from(other),
-    }
+define_intern_table! {
+    /// Intern a common file extension into an `Arc<str>`.
+    ///
+    /// Returns a clone of a pre-allocated static `Arc<str>` for common extensions,
+    /// avoiding per-file allocation during directory traversal.
+    pub fn intern_file_extension,
+    /// Pre-interned common file extension names.
+    pub fn common_file_extensions,
+    (EXT_RS, "rs"),
+    (EXT_GO, "go"),
+    (EXT_PY, "py"),
+    (EXT_JS, "js"),
+    (EXT_TS, "ts"),
+    (EXT_JSX, "jsx"),
+    (EXT_TSX, "tsx"),
+    (EXT_C, "c"),
+    (EXT_CPP, "cpp"),
+    (EXT_H, "h"),
+    (EXT_HPP, "hpp"),
+    (EXT_JAVA, "java"),
+    (EXT_KT, "kt"),
+    (EXT_SCALA, "scala"),
+    (EXT_RB, "rb"),
+    (EXT_PHP, "php"),
+    (EXT_CS, "cs"),
+    (EXT_SWIFT, "swift"),
+    (EXT_DART, "dart"),
+    (EXT_LUA, "lua"),
+    (EXT_R, "r"),
+    (EXT_SH, "sh"),
+    (EXT_BASH, "bash"),
+    (EXT_ZSH, "zsh"),
+    (EXT_PS1, "ps1"),
+    (EXT_BAT, "bat"),
+    (EXT_CMD, "cmd"),
+    (EXT_JSON, "json"),
+    (EXT_YAML, "yaml"),
+    (EXT_YML, "yml"),
+    (EXT_TOML, "toml"),
+    (EXT_XML, "xml"),
+    (EXT_HTML, "html"),
+    (EXT_HTM, "htm"),
+    (EXT_CSS, "css"),
+    (EXT_SCSS, "scss"),
+    (EXT_ENV, "env"),
+    (EXT_INI, "ini"),
+    (EXT_CONF, "conf"),
+    (EXT_CFG, "cfg"),
+    (EXT_PROPERTIES, "properties"),
+    (EXT_TF, "tf"),
+    (EXT_HCL, "hcl"),
+    (EXT_PROTO, "proto"),
+    (EXT_GRAPHQL, "graphql"),
+    (EXT_SQL, "sql"),
+    (EXT_MD, "md"),
+    (EXT_TXT, "txt"),
+    (EXT_CSV, "csv"),
+    (EXT_LOG, "log"),
+    (EXT_TAR, "tar"),
+    (EXT_GZ, "gz"),
+    (EXT_TGZ, "tgz"),
+    (EXT_ZIP, "zip"),
+    (EXT_JAR, "jar"),
+    (EXT_WAR, "war"),
+    (EXT_APK, "apk"),
+    (EXT_IPA, "ipa"),
+    (EXT_CRX, "crx"),
+    (EXT_7Z, "7z"),
+    (EXT_RAR, "rar"),
+    (EXT_ZST, "zst"),
+    (EXT_LZ4, "lz4"),
+    (EXT_SZ, "sz"),
+    (EXT_BZ2, "bz2"),
+    (EXT_XZ, "xz"),
+    (EXT_HAR, "har"),
+    (EXT_PDF, "pdf"),
+    (EXT_PNG, "png"),
+    (EXT_JPG, "jpg"),
+    (EXT_JPEG, "jpeg"),
+    (EXT_GIF, "gif"),
+    (EXT_WEBP, "webp"),
+    (EXT_SVG, "svg"),
+    (EXT_ICO, "ico"),
+    (EXT_EXE, "exe"),
+    (EXT_DLL, "dll"),
+    (EXT_SO, "so"),
+    (EXT_DYLIB, "dylib"),
+    (EXT_BIN, "bin"),
+    (EXT_WASM, "wasm"),
+    (EXT_LOCK, "lock"),
+    (EXT_SUM, "sum"),
 }
 
 /// Alias for [`intern_file_extension`].
