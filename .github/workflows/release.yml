@@ -189,7 +189,7 @@ jobs:
         # A PAT-created release updates the existing Marketplace listing;
         # GITHUB_TOKEN-created events are suppressed by GitHub.
         env:
-          GH_TOKEN: ${{ secrets.MARKETPLACE_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.MARKETPLACE_RELEASE_TOKEN || github.token }}
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
@@ -209,4 +209,9 @@ jobs:
               --notes-file "$RUNNER_TEMP/release-notes.md" \
               --verify-tag \
               --latest
+          fi
+          major_tag="${RELEASE_TAG%%.*}"
+          if [[ -n "$major_tag" && "$major_tag" =~ ^v[0-9]+$ ]]; then
+            git tag -fa "$major_tag" "$RELEASE_TAG" -m "Release ${RELEASE_TAG}"
+            git push origin "$major_tag" --force
           fi
