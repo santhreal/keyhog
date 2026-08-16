@@ -443,8 +443,8 @@ impl Phase2AnchorIndex {
     }
 
     #[inline]
-    fn collect_ac_candidates(
-        ac: Option<&AhoCorasick>,
+    fn collect_ac_candidates<'a>(
+        ac: impl FnOnce() -> Option<&'a AhoCorasick>,
         first_bigram: Option<&FirstBigramSet>,
         literal_patterns: &super::CsrU32,
         text: &str,
@@ -455,7 +455,7 @@ impl Phase2AnchorIndex {
         if first_bigram.is_some_and(|gate| !gate.may_have_match(text)) {
             return;
         }
-        let Some(ac) = ac else {
+        let Some(ac) = ac() else {
             return;
         };
         for m in ac.find_overlapping_iter(text) {
@@ -492,7 +492,7 @@ impl Phase2AnchorIndex {
         out: &mut Vec<(u32, u32)>,
     ) {
         Self::collect_ac_candidates(
-            self.anchor_ac.as_ref().and_then(|anchor| anchor.get().0),
+            || self.anchor_ac.as_ref().and_then(|anchor| anchor.get().0),
             self.anchor_first_bigram.as_ref(),
             &self.literal_patterns,
             text,
@@ -508,7 +508,7 @@ impl Phase2AnchorIndex {
         out: &mut Vec<(u32, u32)>,
     ) {
         Self::collect_ac_candidates(
-            self.always_anchor_ac.as_ref(),
+            || self.always_anchor_ac.as_ref(),
             self.always_anchor_first_bigram.as_ref(),
             &self.always_literal_patterns,
             text,
@@ -582,9 +582,7 @@ impl Phase2AnchorIndex {
         out: &mut Vec<(u32, u32)>,
     ) {
         Self::collect_ac_candidates(
-            self.plain_anchor_ac
-                .as_ref()
-                .and_then(|anchor| anchor.get().0),
+            || self.plain_anchor_ac.as_ref().and_then(|a| a.get().0),
             self.plain_anchor_first_bigram.as_ref(),
             &self.plain_literal_patterns,
             text,

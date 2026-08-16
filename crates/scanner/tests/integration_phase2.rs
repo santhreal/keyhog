@@ -63,37 +63,50 @@ fn test_phase2_anchor_candidate_verification_and_buffer_reuse() {
 
     // Sequence of distinct chunks scanned back-to-back to verify candidate scratch
     // buffer reuse without cross-chunk residual pollution or reallocation stalls.
-    let test_payloads = [
+    let test_cases = [
         // 1. AWS key at start (offset 0)
-        "AKIAQYLPMN5HFIQR7XYZ rest of config",
+        (
+            "AKIAQYLPMN5HFIQR7XYZ rest of config",
+            vec!["aws-access-key"],
+        ),
         // 2. GitHub PAT mid-chunk
-        "let token = \"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\";",
+        (
+            "let token = \"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\";",
+            vec!["github-classic-pat"],
+        ),
         // 3. Slack bot token
-        "slack_token: xoxb-123456789012-123456789012-AbCdEfGhIjKlMnOpQrStUvWx",
+        (
+            "slack_token: xoxb-123456789012-123456789012-AbCdEfGhIjKlMnOpQrStUvWx",
+            vec!["slack-bot-token"],
+        ),
         // 4. Multiple adjacent secrets in one chunk
-        "AKIAQYLPMN5HFIQR7XYZ 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",
+        (
+            "AKIAQYLPMN5HFIQR7XYZ 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",
+            vec!["aws-access-key", "github-classic-pat"],
+        ),
         // 5. Clean / no-candidate chunk
-        "fn helper() -> bool { true // clean source code without secrets\n}",
+        (
+            "fn helper() -> bool { true // clean source code without secrets\n}",
+            vec![],
+        ),
         // 6. Stripe secret key
-        "stripe_key = 'sk_live_0123456789abcdefABCDEFxyz0'",
+        (
+            "stripe_key = 'sk_live_0123456789abcdefABCDEFxyz0'",
+            vec!["stripe-secret-key"],
+        ),
     ];
 
-    for (i, text) in test_payloads.iter().enumerate() {
+    for (i, (text, expected_detectors)) in test_cases.iter().enumerate() {
         let chunk = chunk_of(text.as_bytes(), &format!("chunk-{i}.txt"));
         let matches = scanner
             .scan(&chunk)
             .expect("phase2 candidate verification scan succeeds");
-        if text.contains("clean source code") {
-            assert!(
-                matches.is_empty(),
-                "clean chunk must produce zero findings, got: {matches:?}"
-            );
-        } else {
-            assert!(
-                !matches.is_empty(),
-                "secret-bearing chunk {i} ({text}) must produce findings"
-            );
-        }
+        let detected: BTreeSet<&str> = matches.iter().map(|m| m.detector_id.as_ref()).collect();
+        let expected: BTreeSet<&str> = expected_detectors.iter().copied().collect();
+        assert_eq!(
+            detected, expected,
+            "detected detector mismatch on chunk {i} ({text}): got {detected:?}, expected {expected:?}"
+        );
     }
 }
 
