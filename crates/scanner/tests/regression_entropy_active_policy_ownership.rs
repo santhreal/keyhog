@@ -378,9 +378,12 @@ fn full_scan_plausibility_findings(
     config.entropy_enabled = true;
     config.entropy_in_source_files = true;
     config.min_confidence = 0.0;
-    let scanner = CompiledScanner::compile_for_backend(vec![owner, detector("generic-secret", &["secret"], 8)], backend)
-        .expect("compile source-symbol policy corpus")
-        .with_config(config);
+    let scanner = CompiledScanner::compile_for_backend(
+        vec![owner, detector("generic-secret", &["secret"], 8)],
+        backend,
+    )
+    .expect("compile source-symbol policy corpus")
+    .with_config(config);
     let chunk = Chunk {
         data: format!("custom_secret = \"{value}\"").into(),
         metadata: ChunkMetadata {
@@ -424,9 +427,10 @@ fn full_scan_bare_auth_findings(
     config.entropy_enabled = true;
     config.entropy_in_source_files = true;
     config.min_confidence = 0.0;
-    let scanner = CompiledScanner::compile_for_backend(vec![owner, entropy_only_owner(false)], backend)
-        .expect("compile bare-auth detector policy corpus")
-        .with_config(config);
+    let scanner =
+        CompiledScanner::compile_for_backend(vec![owner, entropy_only_owner(false)], backend)
+            .expect("compile bare-auth detector policy corpus")
+            .with_config(config);
     if !scanner.warm_backend(backend) {
         return Vec::new();
     }
@@ -1033,9 +1037,12 @@ fn full_scan_keyword_free_values(
     // Keep one nonmatching phase-1 detector so explicit Hyperscan and GPU
     // routes execute their real production paths before the shared entropy
     // fallback evaluates the keyword-free candidate.
-    let scanner = CompiledScanner::compile_for_backend(vec![keyword_free_owner, entropy_only_owner(false)], backend)
-        .expect("compile detector-owned entropy threshold corpus")
-        .with_config(config);
+    let scanner = CompiledScanner::compile_for_backend(
+        vec![keyword_free_owner, entropy_only_owner(false)],
+        backend,
+    )
+    .expect("compile detector-owned entropy threshold corpus")
+    .with_config(config);
     if !scanner.warm_backend(backend) {
         return Vec::new();
     }
