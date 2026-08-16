@@ -197,19 +197,21 @@ impl CompiledScanner {
                     // Candidates are sorted by (pattern, pos); verify each
                     // pattern's contiguous run together so its per-pattern
                     // signal cache is built at most once.
-                    let _verify_g =
-                        super::profile::span(keyhog_profile::Stage::Phase2AnchoredVerify);
-                    this.verify_anchored_candidates(
-                        anchor_idx,
-                        &cands[..],
-                        preprocessed,
-                        line_index,
-                        chunk,
-                        scan_state,
-                        cursor,
-                        deadline,
-                        prof,
-                    );
+                    {
+                        let _verify_g =
+                            super::profile::span(keyhog_profile::Stage::Phase2AnchoredVerify);
+                        this.verify_anchored_candidates(
+                            anchor_idx,
+                            &cands[..],
+                            preprocessed,
+                            line_index,
+                            chunk,
+                            scan_state,
+                            cursor,
+                            deadline,
+                            prof,
+                        );
+                    }
 
                     // Localized plain-pattern path (ASCII chunks): verify live
                     // patterns from folded-literal AC positions. Inert generated

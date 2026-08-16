@@ -72,16 +72,6 @@ impl<'a> PortableGateEvidence<'a> {
     }
 
     #[inline]
-    pub(super) fn observe(
-        chunk: ChunkTriggerEvidence<'a>,
-        enabled: bool,
-        use_ascii_plain: bool,
-        portable: &'a PortablePrefilter,
-    ) -> Self {
-        Self::new(chunk, enabled, use_ascii_plain, portable)
-    }
-
-    #[inline]
     fn ci_evidence(&self) -> TriggerEvidence {
         if let Some(ev) = self.ci.get() {
             return ev;

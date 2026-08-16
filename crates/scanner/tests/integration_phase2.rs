@@ -69,7 +69,7 @@ fn test_phase2_anchor_candidate_verification_and_buffer_reuse() {
             "AKIAQYLPMN5HFIQR7XYZ rest of config",
             vec!["aws-access-key"],
         ),
-        // 2. GitHub PAT mid-chunk
+        // 2. GitHub PAT mid-chunk (checksum-valid CRC32 token from detectors/github-classic-pat.toml)
         (
             "let token = \"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\";",
             vec!["github-classic-pat"],
