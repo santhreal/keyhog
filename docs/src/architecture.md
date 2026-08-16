@@ -212,10 +212,10 @@ inspectable.
 | Workload | Execution surface | Routing and ownership |
 |---|---|---|
 | One in-process scan | `keyhog scan ... --daemon=off` | Full orchestrator; persisted one-shot autoroute evidence or an explicit diagnostic `--backend`. |
-| Large tree, multiple inputs, Git, cloud, container, binary, or live verification | In-process orchestrator | Fused or coalesced batches; the daemon is not eligible even when it is running. |
+| Mass directories or source batches | `keyhog scan --daemon=mass ...` | Streams bounded batches to a mass-enabled daemon (`daemon start --mass`). |
+| Perpetual repository guard and staged commits | `keyhog guard` and `keyhog scan --git-staged` | Daemon-resident guard runtime with in-memory Git OID clean attestation cache and watcher reconciliation. |
 | Repeated eligible stdin or single-file scans on Unix | `keyhog daemon start`, then `keyhog scan ...` | Client checks request eligibility and peer identity; a calibrated daemon uses warm-runtime autoroute evidence. Invalid startup state prevents readiness. Persisted quarantine is labeled `autoroute-degraded`, and affected requests fail closed without scanning. |
 | Continuous local directory monitoring | `keyhog watch` | Foreground watcher with its own compiled scanner and warm-runtime autoroute policy; not the daemon and not reported by `daemon status`. |
-
 Persisted backend selection lives under
 `crates/cli/src/orchestrator/dispatch/backend.rs` and
 `orchestrator/dispatch/backend/`. Daemon transport and lifecycle live under

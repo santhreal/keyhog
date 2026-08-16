@@ -13,16 +13,71 @@ The guard supplements staged and working-tree scans. It does not replace them.
 A commit is allowed only after the exact staged-object transaction proves the
 content is clean.
 
-## Start the daemon
+## Quick start script
+
+Save this script as `guard_demo.sh` to start the daemon, index any repository,
+and test instant staged commit scans. Set `REPO_PATH` to the target repository:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Set the path to your Git repository:
+REPO_PATH="${1:-/path/to/your/repository}"
+SOCKET_PATH="/tmp/keyhog-guard.sock"
+# ─────────────────────────────────────────────────────────────────────────────
+
+if [[ ! -d "$REPO_PATH/.git" ]]; then
+  echo "Error: '$REPO_PATH' is not a Git repository." >&2
+  exit 1
+fi
+REPO_PATH="$(cd "$REPO_PATH" && pwd)"
+
+echo "1. Starting KeyHog daemon..."
+keyhog daemon stop --socket "$SOCKET_PATH" >/dev/null 2>&1 || true
+keyhog daemon start --backend auto --socket "$SOCKET_PATH" &
+DAEMON_PID=$!
+
+# Wait for socket readiness
+for _ in {1..30}; do
+  if keyhog daemon status --socket "$SOCKET_PATH" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.2
+done
+
+echo "2. Registering and indexing repository..."
+keyhog guard add "$REPO_PATH" --mode repo --socket "$SOCKET_PATH"
+keyhog guard reconcile "$REPO_PATH" --socket "$SOCKET_PATH"
+
+echo "3. Guard status and in-memory index metrics:"
+keyhog guard status "$REPO_PATH" --socket "$SOCKET_PATH" --format json
+
+echo "4. Running staged commit scan (clean attestation cache hit)..."
+(
+  cd "$REPO_PATH"
+  time keyhog scan --git-staged --daemon-socket "$SOCKET_PATH"
+)
+
+echo "5. Stopping daemon..."
+keyhog daemon stop --socket "$SOCKET_PATH"
+wait "$DAEMON_PID" 2>/dev/null || true
+echo "Guard test complete."
+```
+
+## Manual workflow
+
+### Start the daemon
 
 ```sh
-keyhog daemon start --backend cpu
+keyhog daemon start --backend auto
 ```
 
 The guard uses the same daemon as scan requests. One daemon serves all guard
 roots and scan traffic.
 
-## Register a root
+### Register a root
 
 ```sh
 keyhog guard add /path/to/repo --mode repo
@@ -33,7 +88,6 @@ keyhog guard add /path/to/repo --mode repo
 
 A newly added root starts in the `stopped` state. Run `keyhog guard reconcile`
 to transition it to `current` after the initial baseline scan.
-
 ## Check status
 
 ```sh

@@ -162,17 +162,18 @@ This way the next contributor doesn't have to learn the trick.
 
 ## Performance
 
-If a pre-commit scan feels slow:
+Pre-commit scans operate in two modes:
 
-- `keyhog daemon start` (unix only). The daemon holds the compiled
-  scanner in memory for editor-save or hook glue that scans stdin or
-  one regular file. The default staged-file hook uses the in-process
-  orchestrator because git source expansion, baseline policy, and
-  verification are not daemon work.
-- `--fast` is already what the installed hook uses, so there is no speed left
-  to gain there. The cost of that choice is in
-  [what the installed hook does not catch](#what-the-installed-hook-does-not-catch).
+1. **In-process staged scan:** When no daemon is running, `keyhog scan --git-staged`
+   evaluates staged Git blobs in process with the CPU backend.
+2. **Guard daemon commit transaction:** When a KeyHog daemon is running with
+   guarded roots (`keyhog daemon start`), `keyhog scan --git-staged` connects
+   over the Unix socket. The daemon checks its in-memory Git OID clean attestation
+   index, skips unchanged clean blobs, and scans only modified payloads.
 
+The installed pre-commit hook runs `keyhog scan --fast --git-staged --backend cpu`,
+which uses the guard daemon automatically when reachable and falls back to
+in-process execution when absent.
 ## Uninstall
 
 ```sh

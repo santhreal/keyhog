@@ -39,12 +39,23 @@ keyhog scan . --lockdown                  # Linux; requires sufficient memlock
 ## Gate commits and pull requests
 
 ```bash
-keyhog scan --git-staged                  # pre-commit: only staged blobs
+keyhog scan --git-staged                  # pre-commit: staged blobs (uses guard daemon if live)
 keyhog scan --git-diff main               # only files changed since a base ref
 keyhog scan --git-history .               # added lines from reachable commits, bounded by max_commits
 keyhog scan --git-history . --max-commits 500
 ```
 
+## Guard a repository for instant pre-commit scans
+
+```bash
+# 1. Start daemon and register repository
+keyhog daemon start &
+keyhog guard add /path/to/repo --mode repo
+keyhog guard reconcile /path/to/repo
+
+# 2. Staged commits now execute with in-memory clean attestation caching
+cd /path/to/repo && keyhog scan --git-staged
+```
 Pre-commit framework: keyhog ships a hook, so a `.pre-commit-config.yaml`
 `repo: https://github.com/santhreal/keyhog` entry wires `keyhog scan
 --git-staged` into every commit. See [pre-commit](./workflows/precommit.md).

@@ -41,8 +41,10 @@ findings and report. A partial scan is not a clean scan.
 | Scan a Git provider or cloud inventory | `--github-org`, `--gitlab-group`, `--bitbucket-workspace`, `--s3-bucket`, `--gcs-bucket`, or `--azure-container-url` | One provider inventory. Partition larger estates into independent jobs with separate reports and exit codes. |
 | Scan GitHub collaboration content | `--github-collaboration` | Issues, pull requests, discussions, wikis, and gists selected by the collaboration workflow. |
 | Audit a host | `keyhog scan-system` | Eligible local mounted filesystems and discovered Git histories under one space ceiling. |
-| Reuse a warm scanner on Unix | Start `keyhog daemon start`, then scan one file or bounded stdin | Eligible single-file or stdin requests only. Directories, Git, remote, cloud, verification, baselines, presets, and most policy overrides remain in process. |
-| Monitor local directories | `keyhog watch <path>...` | A foreground filesystem-event loop with an in-process scanner. |
+| Continuously guard a repository | `keyhog guard add <repo> --mode repo` | Perpetual Git repository indexing with in-memory clean attestation caching for instant pre-commit scans. |
+| Reuse a warm scanner on Unix | Start `keyhog daemon start`, then scan one file or bounded stdin | Keeps the compiled scanner and accelerator warm for repeated single-file or stdin requests. |
+| Stream mass directory batches | `keyhog scan --daemon=mass ...` | Streams bounded source batches from large directories or trees to a mass-enabled daemon. |
+| Monitor local directories in foreground | `keyhog watch <path>...` | A foreground filesystem-event loop with an in-process scanner. |
 | Inspect a native executable or firmware image | `keyhog scan --binary app.bin` | Printable strings and supported native object sections, on a build with the `binary` feature. A directory walk records binaries as skipped and does not reinterpret them as text; `--no-default-excludes` does not change that. A directory containing only skipped binaries exits `13` because zero source bytes reached the scanner. A mixed tree can still exit `0` with an advisory binary gap, so inspect `coverage_gap_summary`. |
 
 Read [Your first scan](./first-scan.md) for a local repository,
@@ -123,7 +125,7 @@ contract, not a recommendation for routine routing.
 | Hyperscan or Vectorscan | Let calibrated `auto` select it, or diagnose with `--backend simd` | Accelerated CPU trigger matching followed by the shared extraction and policy pipeline. It requires a compatible build and runtime. |
 | CUDA, native Metal, or WGPU | Let calibrated `auto` select an eligible peer | GPU region-presence matching followed by the same confirmation pipeline. GPU availability does not mean the GPU is fastest for every workload. |
 | Required GPU | `--require-gpu`, `[system].gpu = "required"`, or diagnostic `--backend gpu-cuda|gpu-metal|gpu-wgpu` | Use on a self-hosted GPU lane whose contract must fail if the accelerator cannot initialize or dispatch. It never substitutes another backend. |
-| Warm Unix daemon | Start `keyhog daemon start`; use `--daemon=on` when the server is required | Removes repeated scanner startup for eligible single-file or stdin requests. It does not accelerate directory, Git, archive, remote, cloud, or policy-changing scans. |
+| Warm Unix daemon & Guard | Start `keyhog daemon start`; use `--daemon=on` or `keyhog guard` | Removes repeated scanner startup for eligible single-file or stdin requests, and serves perpetual repository guard commit transactions with clean attestation caching. |
 
 Use `keyhog --version --full` to inspect compiled capability, `keyhog backend
 --self-test --json` to prove backend health, and `keyhog backend --autoroute
