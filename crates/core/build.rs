@@ -364,6 +364,9 @@ fn write_embedded_data(
 /// the SHA. `CARGO_MANIFEST_DIR` is `crates/core`, so the workspace `.git`
 /// lives two directories up.
 fn stamp_git_hash(manifest_dir: &Path) {
+    println!("cargo:rerun-if-env-changed=KEYHOG_GIT_HASH");
+    println!("cargo:rerun-if-env-changed=GITHUB_SHA");
+
     let workspace_root = manifest_dir
         .parent()
         .and_then(|p| p.parent())
@@ -409,6 +412,18 @@ fn head_ref_path(git_dir: &Path) -> Option<PathBuf> {
 /// `git rev-parse HEAD`, trimmed. `None` if git is absent or the command
 /// fails (no repo, shallow placeholder, etc.).
 fn git_hash(workspace_root: &Path) -> Option<String> {
+    if let Ok(hash) = env::var("KEYHOG_GIT_HASH") {
+        let hash = hash.trim();
+        if !hash.is_empty() {
+            return Some(hash.to_string());
+        }
+    }
+    if let Ok(hash) = env::var("GITHUB_SHA") {
+        let hash = hash.trim();
+        if !hash.is_empty() {
+            return Some(hash.to_string());
+        }
+    }
     let output = std::process::Command::new("git")
         .arg("-C")
         .arg(workspace_root)
