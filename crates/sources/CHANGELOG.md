@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.78 - 2026-08-16
+
+- fix(scanner): gate expand_triggered_patterns independently of decode feature.
+
 ## 0.5.77 - 2026-08-16
 
 - fix(ci): format scan_postprocess, update dogfood hashes for doc fixtures, and bump action version.
