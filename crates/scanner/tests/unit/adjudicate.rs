@@ -873,3 +873,52 @@ fn decoded_parent_example_suppression_avoids_cloning() {
     let clean_parent = "Here is clean text without the secret";
     assert!(!crate::adjudicate::record_decoded_parent_example_suppression(&m, None, clean_parent));
 }
+#[cfg(feature = "decode")]
+#[test]
+fn scan_collapses_decoded_duplicate_matches_identically() {
+    use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, SensitiveString, Severity};
+    use keyhog_scanner::{CompiledScanner, ScannerConfig};
+
+    let detector = DetectorSpec {
+        id: "duplicate-test-key".into(),
+        name: "Duplicate Test Key".into(),
+        service: "test".into(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            regex: "(dup_[a-zA-Z0-9]{16})".into(),
+            description: Some("duplicate pattern".into()),
+            group: Some(1),
+            required_literals: Vec::new(),
+            client_safe: false,
+            weak_anchor: false,
+            structural_password_slot: false,
+        }],
+        keywords: vec!["dup_".into()],
+        min_confidence: Some(0.0),
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
+    };
+
+    let mut config = ScannerConfig::default();
+    config.max_decode_depth = 1;
+    config.min_confidence = 0.0;
+    let scanner = CompiledScanner::compile(vec![detector])
+        .expect("detector compiles")
+        .with_config(config);
+
+    let data = "dup_abcdef1234567890 a2V5ID0gZHVwX2FiY2RlZjEyMzQ1Njc4OTA=";
+    let chunk = Chunk {
+        data: SensitiveString::from(data),
+        metadata: ChunkMetadata {
+            path: Some("dedup-test.txt".into()),
+            ..Default::default()
+        },
+    };
+
+    let matches = scanner.scan(&chunk).expect("scan succeeds");
+    assert_eq!(
+        matches.len(),
+        1,
+        "raw finding and decoded finding must be collapsed to 1 match by digest dedup, got {matches:?}"
+    );
+    assert_eq!(matches[0].credential.as_ref(), "dup_abcdef1234567890");
+}
