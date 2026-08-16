@@ -540,8 +540,9 @@ pub(crate) fn caesar_shift(input: &str, shift: u8) -> String {
                 _ => {}
             }
         }
-        // Safety: input was ASCII; ASCII letter rotations preserve valid 7-bit ASCII UTF-8.
-        return unsafe { String::from_utf8_unchecked(bytes) };
+        if let Ok(shifted) = String::from_utf8(bytes) {
+            return shifted;
+        }
     }
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {

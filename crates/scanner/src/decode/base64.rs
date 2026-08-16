@@ -125,18 +125,24 @@ impl Decoder for Z85Decoder {
             }
             if let Ok(decoded) = z85_decode(value.as_ref()) {
                 // LAW10: failed trial decode means this span is not valid z85; recall-preserving (the original chunk stays scanned unchanged).
-                if let Ok(mut text) = String::from_utf8(decoded) {
-                    // LAW10: non-UTF8 decoded bytes are not source text; recall-preserving (the original encoded text stays scanned unchanged).
-                    let trimmed_len = text.trim_end_matches('\0').len();
-                    text.truncate(trimmed_len);
-                    open = push_decoded_text_chunk_spliced_at(
-                        sink,
-                        chunk,
-                        Some(z_match.span()),
-                        value.as_ref(),
-                        text,
-                        self.name(),
-                    );
+                match String::from_utf8(decoded) {
+                    Ok(mut text) => {
+                        // LAW10: non-UTF8 decoded bytes are not source text; recall-preserving (the original encoded text stays scanned unchanged).
+                        let trimmed_len = text.trim_end_matches('\0').len();
+                        text.truncate(trimmed_len);
+                        open = push_decoded_text_chunk_spliced_at(
+                            sink,
+                            chunk,
+                            Some(z_match.span()),
+                            value.as_ref(),
+                            text,
+                            self.name(),
+                        );
+                    }
+                    Err(err) => {
+                        let mut bytes = err.into_bytes();
+                        bytes.zeroize();
+                    }
                 }
             }
         });
