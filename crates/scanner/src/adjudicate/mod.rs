@@ -655,6 +655,7 @@ pub(crate) fn record_decoded_unanchored_entropy_suppression(
 ///
 /// Computes a fixed 32-byte digest over the `(detector_id, credential)` pair
 /// without heap-allocating `String` or intermediate tuple containers.
+#[cfg(any(test, feature = "decode"))]
 #[inline]
 pub(crate) fn match_duplicate_digest(detector_id: &str, credential: &str) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
