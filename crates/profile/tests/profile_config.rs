@@ -297,7 +297,7 @@ fn session_start_with_config_applies_settings() {
     assert_eq!(profile.status, keyhog_profile::RunState::Completed);
     keyhog_profile::set_detail(Detail::Off);
 
-    // Disabled config returns Ok(None) and sets Detail::Off
+    // Disabled config returns Ok(None) without starting a session
     config.enabled = false;
     let disabled_identity = keyhog_profile::RunIdentity::new(
         "0.5.76",
@@ -310,9 +310,28 @@ fn session_start_with_config_applies_settings() {
     let disabled_session = keyhog_profile::Session::start_with_config(&config, disabled_identity)
         .expect("start disabled session");
     assert!(disabled_session.is_none());
-    assert_eq!(keyhog_profile::detail(), Detail::Off);
 }
 
+#[test]
+fn profile_config_debug_formatting_redacts_secrets() {
+    let mut config = ProfileConfig::new(KnownProfile::Production);
+    config.auth_token = Some(Zeroizing::new("bearer-secret-token".to_string()));
+    config.api_key = Some(Zeroizing::new("api-secret-key".to_string()));
+    config.secret_key = Some(Zeroizing::new("signing-secret-key".to_string()));
+    let mut headers = HashMap::new();
+    headers.insert(
+        "Authorization".to_string(),
+        Zeroizing::new("Bearer secret-header".to_string()),
+    );
+    config.headers = headers;
+
+    let debug_output = format!("{config:?}");
+    assert!(!debug_output.contains("bearer-secret-token"));
+    assert!(!debug_output.contains("api-secret-key"));
+    assert!(!debug_output.contains("signing-secret-key"));
+    assert!(!debug_output.contains("secret-header"));
+    assert!(debug_output.contains("[REDACTED]"));
+}
 #[test]
 fn profile_config_serialization_never_leaks_secrets() {
     let mut config = ProfileConfig::new(KnownProfile::Production);

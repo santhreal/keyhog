@@ -3,6 +3,7 @@
 All notable changes to `keyhog-profile` are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
 ## 0.5.76 - 2026-08-16
+
 - Add `ProfileConfig`, `ProfileName`, `KnownProfile`, and environment lookup routines for zero-allocation profile resolution and secure credential memory zeroization.
 
 - fix(core): rerun build script on GITHUB_SHA changes to prevent stale git hash in CI cache.

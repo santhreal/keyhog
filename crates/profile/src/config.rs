@@ -376,7 +376,7 @@ const fn default_max_events() -> usize {
 }
 
 /// Profile configuration controlling execution mode, telemetry, and credentials.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProfileConfig {
     /// Profile identifier.
@@ -461,6 +461,38 @@ impl ProfileConfig {
         for (_, mut value) in self.headers.drain() {
             value.zeroize();
         }
+    }
+}
+
+impl fmt::Debug for ProfileConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProfileConfig")
+            .field("name", &self.name)
+            .field("enabled", &self.enabled)
+            .field("detail", &self.detail)
+            .field("endpoint", &self.endpoint)
+            .field(
+                "auth_token",
+                &self.auth_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("api_key", &self.api_key.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "secret_key",
+                &self.secret_key.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("environment", &self.environment)
+            .field("sample_rate", &self.sample_rate)
+            .field("max_events", &self.max_events)
+            .field("tags", &self.tags)
+            .field(
+                "headers",
+                &if self.headers.is_empty() {
+                    "{}"
+                } else {
+                    "{[REDACTED]}"
+                },
+            )
+            .finish()
     }
 }
 
