@@ -299,6 +299,45 @@ What to do with that:
 - Findings do not depend on the choice. Every route reports the same secrets,
   which is what the parity contract above guarantees.
 
+## Memory footprint and zero-allocation execution
+
+KeyHog is designed to scan multi-gigabyte repositories and large disk images with
+a bounded memory footprint.
+
+### Streaming windowing and rendezvous channels
+
+Files larger than 1 MiB are divided into overlapping 1 MiB windows with 128 KiB
+overlap. The filesystem reader uses a rendezvous queue (`fused_depth = 0`), so
+windows are handed directly to the scanner workers without accumulating resident
+memory in crossbeam channels.
+
+### Zero-allocation source semantic indexing
+
+Structured configuration and source AST indexing in `StructuredSourceIndex` uses
+compact byte offsets (`SourceSpan`) and fixed-size stack arrays
+(`[SourceSpan; 12]`) rather than allocating heap strings or nested hash maps.
+Tokens are referenced as borrowed slices of the original window.
+
+### Bounded GPU scratch and readback buffers
+
+The GPU execution engine bounds device allocations and host transfers:
+
+- Resident literal tables are compiled once and reused across dispatches.
+- Match readback buffers are capped at 65,536 entries (768 KiB), preventing
+  high-candidate inputs from triggering host memory allocation spikes.
+- Oversized chunks are sliced into physical windows, uploaded within the
+  configured `--gpu-batch-input-limit`, and reduced on-device before transfer.
+
+### Memory tuning controls
+
+| Setting | Default | Flag | Description |
+|---|---|---|---|
+| Fused batch size | `1024` | `--fused-batch <N>` | Maximum chunks grouped into one scanner batch. |
+| Fused queue depth | `0` | `--fused-depth <N>` | Maximum completed chunk batches queued in RAM. Default `0` (rendezvous) minimizes resident heap. |
+| GPU batch input limit | Adaptive (128M-1G) | `--gpu-batch-input-limit <SIZE>` | Byte budget for GPU coalesced batch buffers. |
+| Scanner threads | CPU count | `--threads <N>` | Number of parallel worker threads. |
+| Reader threads | `1` | `--reader-threads <N>` | Number of dedicated filesystem reader workers. |
+
 ## Automatic routing failures and recovery
 
 Automatic routing has two visible failure states. Neither one changes an
