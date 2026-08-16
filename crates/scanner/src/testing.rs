@@ -315,6 +315,14 @@ pub fn quoted_printable_decode_for_test(input: &str) -> Option<String> {
     crate::decode::quoted_printable_decode(input).ok()
 }
 
+/// Test seam for the URL percent decoder: `%XX` hex triplets decode to their
+/// byte representation. Returns `None` when the candidate contains no valid
+/// percent escapes or when the decoded bytes are not valid UTF-8.
+#[cfg(feature = "decode")]
+pub fn url_decode_for_test(input: &str) -> Option<String> {
+    crate::decode::url_decode(input).ok()
+}
+
 /// Test seam for the RFC2047 MIME encoded-word decoder (`=?charset?enc?text?=`,
 /// used to hide non-ASCII, and secrets, in email/HAR headers). `B` is base64,
 /// `Q` is quoted-printable-like (`_`→space, `=XX` hex); the encoding letter is

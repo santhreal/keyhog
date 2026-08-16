@@ -8,6 +8,7 @@ use super::util::{hex_val, lazy_decoded_prefix};
 use super::{DecodeAdmissionSketch, DecodeOutputSink, Decoder};
 use crate::context;
 use keyhog_core::Chunk;
+use zeroize::{Zeroize, Zeroizing};
 
 pub(super) struct UrlDecoder;
 pub(super) struct QuotedPrintableDecoder;
@@ -36,6 +37,9 @@ impl Decoder for UrlDecoder {
     }
 
     fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
+        if !contains_percent_escape(&chunk.data) {
+            return;
+        }
         decode_filtered_lines_into(
             sink,
             chunk,
@@ -150,17 +154,38 @@ fn strip_line_ending(segment: &str) -> &str {
 /// escape (`=XX` where `XX` is two hex digits). Trailing-bare-`=`
 /// inputs and `key=value` text return false and skip the decode.
 fn has_qp_escape(s: &str) -> bool {
-    s.as_bytes()
-        .windows(3)
-        .any(|w| w[0] == b'=' && w[1].is_ascii_hexdigit() && w[2].is_ascii_hexdigit())
+    let bytes = s.as_bytes();
+    let mut offset = 0;
+    while let Some(pos) = memchr::memchr(b'=', &bytes[offset..]) {
+        let eq_idx = offset + pos;
+        if eq_idx + 2 < bytes.len()
+            && bytes[eq_idx + 1].is_ascii_hexdigit()
+            && bytes[eq_idx + 2].is_ascii_hexdigit()
+        {
+            return true;
+        }
+        offset = eq_idx + 1;
+    }
+    false
 }
 
 fn qp_escape_count(s: &str) -> usize {
     let bytes = s.as_bytes();
-    bytes
-        .windows(3)
-        .filter(|w| w[0] == b'=' && w[1].is_ascii_hexdigit() && w[2].is_ascii_hexdigit())
-        .count()
+    let mut count = 0;
+    let mut offset = 0;
+    while let Some(pos) = memchr::memchr(b'=', &bytes[offset..]) {
+        let eq_idx = offset + pos;
+        if eq_idx + 2 < bytes.len()
+            && bytes[eq_idx + 1].is_ascii_hexdigit()
+            && bytes[eq_idx + 2].is_ascii_hexdigit()
+        {
+            count += 1;
+            offset = eq_idx + 3;
+        } else {
+            offset = eq_idx + 1;
+        }
+    }
+    count
 }
 
 macro_rules! simple_decoder {
@@ -264,7 +289,7 @@ impl Decoder for MimeEncodedWordDecoder {
 }
 
 fn percent_decode(input: &str) -> Result<String, ()> {
-    let mut bytes = Vec::with_capacity(input.len());
+    let mut bytes = Zeroizing::new(Vec::with_capacity(input.len()));
     let mut index = 0;
     let input_bytes = input.as_bytes();
     while index < input_bytes.len() {
@@ -274,9 +299,7 @@ fn percent_decode(input: &str) -> Result<String, ()> {
 
             // A `%` without two following hex digits, truncated at end of
             // input (`…%4`) or non-hex (`%ZZ`), is a literal byte, not the
-            // start of an escape. Earlier code returned Err here, discarding
-            // every escape already decoded in this candidate (all-or-nothing
-            // recall loss). Treat it as literal and continue, exactly like the
+            // start of an escape. Treat it as literal and continue, exactly like the
             // sibling octal/HTML decoders.
             match (
                 input_bytes.get(index + 1).map(|&b| hex_val(b)),
@@ -296,15 +319,20 @@ fn percent_decode(input: &str) -> Result<String, ()> {
             break;
         }
     }
-    String::from_utf8(bytes).map_err(|_| ())
+    let raw = std::mem::take(&mut *bytes);
+    match String::from_utf8(raw) {
+        Ok(s) => Ok(s),
+        Err(err) => {
+            let mut raw_bytes = err.into_bytes();
+            raw_bytes.zeroize();
+            Err(())
+        }
+    }
 }
 
-fn url_decode(input: &str) -> Result<String, ()> {
+pub(crate) fn url_decode(input: &str) -> Result<String, ()> {
     // Bail before doing any work when there is no valid `%XX` percent-escape
-    // in the candidate. The previous flow
-    // copied trailing bare `%` or `%X` (one-char-short) unchanged and
-    // returned the identical string - wasted decode work that the
-    // `seen` dedup later dropped. Refuse the candidate earlier.
+    // in the candidate.
     if !contains_percent_escape(input) {
         return Err(());
     }
@@ -312,24 +340,46 @@ fn url_decode(input: &str) -> Result<String, ()> {
 }
 
 fn contains_percent_escape(input: &str) -> bool {
-    input
-        .as_bytes()
-        .windows(3)
-        .any(|window| window[0] == b'%' && hex_val(window[1]).is_ok() && hex_val(window[2]).is_ok())
+    let bytes = input.as_bytes();
+    let mut offset = 0;
+    while let Some(pos) = memchr::memchr(b'%', &bytes[offset..]) {
+        let pct_idx = offset + pos;
+        if pct_idx + 2 < bytes.len()
+            && hex_val(bytes[pct_idx + 1]).is_ok()
+            && hex_val(bytes[pct_idx + 2]).is_ok()
+        {
+            return true;
+        }
+        offset = pct_idx + 1;
+    }
+    false
 }
 
 fn percent_escape_count(input: &str) -> usize {
-    input
-        .as_bytes()
-        .windows(3)
-        .filter(|window| {
-            window[0] == b'%' && hex_val(window[1]).is_ok() && hex_val(window[2]).is_ok()
-        })
-        .count()
+    let bytes = input.as_bytes();
+    let mut count = 0;
+    let mut offset = 0;
+    while let Some(pos) = memchr::memchr(b'%', &bytes[offset..]) {
+        let pct_idx = offset + pos;
+        if pct_idx + 2 < bytes.len()
+            && hex_val(bytes[pct_idx + 1]).is_ok()
+            && hex_val(bytes[pct_idx + 2]).is_ok()
+        {
+            count += 1;
+            offset = pct_idx + 3;
+        } else {
+            offset = pct_idx + 1;
+        }
+    }
+    count
 }
 
 pub(crate) fn quoted_printable_decode(input: &str) -> Result<String, ()> {
-    let mut bytes = Vec::with_capacity(input.len());
+    if memchr::memchr(b'=', input.as_bytes()).is_none() {
+        return Ok(input.to_string());
+    }
+
+    let mut bytes = Zeroizing::new(Vec::with_capacity(input.len()));
     let mut index = 0;
     let input_bytes = input.as_bytes();
     while index < input_bytes.len() {
@@ -385,7 +435,15 @@ pub(crate) fn quoted_printable_decode(input: &str) -> Result<String, ()> {
             break;
         }
     }
-    String::from_utf8(bytes).map_err(|_| ())
+    let raw = std::mem::take(&mut *bytes);
+    match String::from_utf8(raw) {
+        Ok(s) => Ok(s),
+        Err(err) => {
+            let mut raw_bytes = err.into_bytes();
+            raw_bytes.zeroize();
+            Err(())
+        }
+    }
 }
 
 /// Tier-B HTML named-entity → replacement decode table, the single owner
@@ -659,14 +717,21 @@ pub(crate) fn mime_encoded_word_decode(input: &str) -> Result<String, ()> {
         "Q" | "q" => mime_q_decode(encoded)?,
         _ => return Err(()),
     };
-    String::from_utf8(bytes).map_err(|_| ())
+    let raw = bytes;
+    match String::from_utf8(raw) {
+        Ok(s) => Ok(s),
+        Err(err) => {
+            let mut raw_bytes = err.into_bytes();
+            raw_bytes.zeroize();
+            Err(())
+        }
+    }
 }
 
 fn mime_q_decode(input: &str) -> Result<Vec<u8>, ()> {
-    let normalized = input.replace('_', " ");
-    let mut bytes = Vec::with_capacity(normalized.len());
+    let mut bytes = Zeroizing::new(Vec::with_capacity(input.len()));
     let mut index = 0;
-    let input_bytes = normalized.as_bytes();
+    let input_bytes = input.as_bytes();
     while index < input_bytes.len() {
         match input_bytes[index] {
             b'=' if index + 2 < input_bytes.len() => {
@@ -675,13 +740,17 @@ fn mime_q_decode(input: &str) -> Result<Vec<u8>, ()> {
                 bytes.push((high << 4) | low);
                 index += 3;
             }
+            b'_' => {
+                bytes.push(b' ');
+                index += 1;
+            }
             byte => {
                 bytes.push(byte);
                 index += 1;
             }
         }
     }
-    Ok(bytes)
+    Ok(std::mem::take(&mut *bytes))
 }
 
 fn find_mime_encoded_word_spans(text: &str) -> Vec<ExtractedValue> {
@@ -705,3 +774,6 @@ fn find_mime_encoded_word_spans(text: &str) -> Vec<ExtractedValue> {
     }
     words
 }
+#[cfg(test)]
+#[path = "../../tests/unit/decode_url.rs"]
+mod tests;
