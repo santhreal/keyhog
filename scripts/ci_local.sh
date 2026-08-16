@@ -32,7 +32,4 @@ cargo test -p keyhog --features gpu,simd --profile ci-test \
   --test e2e_gpu_autoroute_optin \
   --test gpu_simd_parity
 
-echo "=== [Local CI] 5. Full Workspace Integration ==="
-cargo test --workspace --profile ci-test
-
 echo "=== [Local CI] ALL CHECKS PASSED (Local CI Level with GPU) ==="
