@@ -138,15 +138,6 @@ impl CompiledScanner {
                 }
                 // Avoid allocating dedup state when decoding produced no sub-chunks.
                 if !decoded_chunks.is_empty() {
-                    // Decoding is monotonic: a transform may add evidence, but it
-                    // must never erase a finding already established on source
-                    // bytes. Keep the raw set so conflict resolution over the
-                    // combined evidence can be unioned back into it below.
-                    let raw_findings = matches.clone();
-                    let mut seen: HashSet<(Arc<str>, SensitiveString)> = matches
-                        .iter()
-                        .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
-                        .collect();
                     // Buffer, then sort by source offset so synthesized aliases cannot
                     // win `(detector, credential)` dedup over a real source coordinate.
                     let mut decoded_candidates: Vec<RawMatch> = Vec::new();
@@ -214,16 +205,16 @@ impl CompiledScanner {
                             decoded_candidates.push(m);
                         }
                     }
-                    // Lowest real source offset wins aliases; `seen` starts with raw findings.
-                    decoded_candidates.sort_by(|a, b| {
-                        a.location
-                            .offset
-                            .cmp(&b.location.offset)
-                            .then_with(|| a.cmp(b))
-                    });
+                    if decoded_candidates.is_empty() {
+                        return Ok(());
+                    }
+                    // Decoding is monotonic: keep raw findings and union resolved decoded evidence.
+                    let raw_findings = matches.clone();
+                    let mut seen: HashSet<(Arc<str>, SensitiveString)> =
+                        matches.iter().map(|m| (Arc::clone(&m.detector_id), m.credential.clone())).collect();
+                    decoded_candidates.sort_by(|a, b| a.location.offset.cmp(&b.location.offset).then_with(|| a.cmp(b)));
                     for m in decoded_candidates {
-                        let key = (Arc::clone(&m.detector_id), m.credential.clone());
-                        if seen.insert(key) {
+                        if seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
                             matches.push(m);
                         }
                     }
@@ -231,19 +222,12 @@ impl CompiledScanner {
                         std::mem::take(matches),
                         &self.detector_plans,
                     )
-                    .map_err(|error| {
-                        crate::ScanError::Config(format!(
-                        "compiled detector resolution failed after decoded finding merge: {error}"
-                    ))
-                    })?;
+                    .map_err(|error| crate::ScanError::Config(format!("compiled detector resolution failed: {error}")))?;
                     let mut merged = raw_findings;
-                    let mut merged_seen: HashSet<(Arc<str>, SensitiveString)> = merged
-                        .iter()
-                        .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
-                        .collect();
+                    let mut merged_seen: HashSet<(Arc<str>, SensitiveString)> =
+                        merged.iter().map(|m| (Arc::clone(&m.detector_id), m.credential.clone())).collect();
                     for m in resolved {
-                        let key = (Arc::clone(&m.detector_id), m.credential.clone());
-                        if merged_seen.insert(key) {
+                        if merged_seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
                             merged.push(m);
                         }
                     }
