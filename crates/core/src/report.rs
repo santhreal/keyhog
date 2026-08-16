@@ -906,6 +906,22 @@ macro_rules! impl_writer_backed {
             }
         }
     };
+    ($reporter:ident <'_>) => {
+        impl<W: Write + Send> WriterBackedReporter for $reporter<'_, W> {
+            type Writer = W;
+            fn writer_mut(&mut self) -> &mut Self::Writer {
+                &mut self.writer
+            }
+        }
+    };
+    ($reporter:ident <$lt:lifetime>) => {
+        impl<$lt, W: Write + Send> WriterBackedReporter for $reporter<$lt, W> {
+            type Writer = W;
+            fn writer_mut(&mut self) -> &mut Self::Writer {
+                &mut self.writer
+            }
+        }
+    };
 }
 pub(crate) use impl_writer_backed;
 

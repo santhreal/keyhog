@@ -109,12 +109,7 @@ impl<W: Write + Send> Reporter for JsonlEnvelopeReporter<'_, W> {
     }
 }
 
-impl<W: Write + Send> WriterBackedReporter for JsonlEnvelopeReporter<'_, W> {
-    type Writer = W;
-    fn writer_mut(&mut self) -> &mut Self::Writer {
-        &mut self.writer
-    }
-}
+impl_writer_backed!(JsonlEnvelopeReporter<'_>);
 
 /// Full JSON array output.
 ///
@@ -257,9 +252,4 @@ impl<W: Write + Send> Reporter for JsonEnvelopeReporter<'_, W> {
     }
 }
 
-impl<W: Write + Send> WriterBackedReporter for JsonEnvelopeReporter<'_, W> {
-    type Writer = W;
-    fn writer_mut(&mut self) -> &mut Self::Writer {
-        &mut self.writer
-    }
-}
+impl_writer_backed!(JsonEnvelopeReporter<'_>);
