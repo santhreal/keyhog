@@ -230,7 +230,7 @@ fn decode_tag_message(
         metadata: ChunkMetadata {
             base_offset: 0,
             base_line: 0,
-            source_type: tag_ref.source_type.into(),
+            source_type: keyhog_core::intern_source_type(tag_ref.source_type),
             path: Some(tag_ref.path.into()),
             commit: None,
             author: author.map(Into::into),

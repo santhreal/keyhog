@@ -431,7 +431,7 @@ impl Iterator for StagedChunkIter {
                 metadata: ChunkMetadata {
                     base_offset: 0,
                     base_line: 0,
-                    source_type: SOURCE_TYPE.into(),
+                    source_type: keyhog_core::intern_source_type(SOURCE_TYPE),
                     path: Some(path.to_string_lossy().into_owned().into()),
                     commit: None,
                     author: None,

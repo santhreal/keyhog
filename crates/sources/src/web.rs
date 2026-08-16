@@ -779,7 +779,7 @@ fn bounded_web_text_chunks(
         return vec![Chunk {
             data: body.into(),
             metadata: ChunkMetadata {
-                source_type: source_type.into(),
+                source_type: keyhog_core::intern_source_type(source_type),
                 path: Some(path),
                 ..Default::default()
             },
@@ -809,7 +809,7 @@ fn bounded_web_text_chunks(
             metadata: ChunkMetadata {
                 base_offset: start,
                 base_line,
-                source_type: source_type.into(),
+                source_type: keyhog_core::intern_source_type(source_type),
                 path: Some(path.clone()),
                 ..Default::default()
             },
@@ -1019,7 +1019,7 @@ fn handle_wasm(
                 metadata: ChunkMetadata {
                     base_offset,
                     base_line,
-                    source_type: "web:wasm".into(),
+                    source_type: keyhog_core::intern_source_type("web:wasm"),
                     path: Some(path.clone()),
                     commit: None,
                     author: None,

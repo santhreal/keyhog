@@ -1,8 +1,8 @@
-use super::display_path;
-use super::filter::{is_default_excluded, is_skip_extension};
+use super::filter::is_skip_extension;
 use super::read;
+use super::{display_path, display_path_arc};
 use keyhog_core::MerkleIndex;
-use keyhog_core::{Chunk, ChunkMetadata, SourceError};
+use keyhog_core::{intern_source_type, Chunk, ChunkMetadata, SourceError};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -186,7 +186,7 @@ pub(super) fn chunk_from_extracted_entry(
         Ok(text) if !text.is_empty() => Some(Ok(Chunk {
             data: text.into(),
             metadata: ChunkMetadata {
-                source_type: text_source_type.into(),
+                source_type: intern_source_type(text_source_type),
                 path: Some(entry_path.into()),
                 ..Default::default()
             },
@@ -208,7 +208,7 @@ pub(super) fn chunk_from_extracted_entry(
                 Some(Ok(Chunk {
                     data: crate::strings::join_printable_runs(&strings),
                     metadata: ChunkMetadata {
-                        source_type: binary_source_type.into(),
+                        source_type: intern_source_type(binary_source_type),
                         path: Some(entry_path.into()),
                         ..Default::default()
                     },
@@ -235,7 +235,7 @@ fn emit_tex_comment_chunks(
         if !emit(Ok(Chunk {
             data: comment.to_string().into(),
             metadata: ChunkMetadata {
-                source_type: provenance.role.comment_source_type().into(),
+                source_type: intern_source_type(provenance.role.comment_source_type()),
                 path: Some(member_display.into()),
                 base_offset: start,
                 base_line,
@@ -334,7 +334,7 @@ fn emit_archive_leaf_member(
                         emit(Ok(Chunk {
                             data: window.text,
                             metadata: ChunkMetadata {
-                                source_type: text_source_type.into(),
+                                source_type: intern_source_type(text_source_type),
                                 path: Some(member_display.to_owned().into()),
                                 base_offset: window.offset,
                                 base_line: window.base_line,
@@ -790,13 +790,25 @@ pub(super) fn process_entry(
     // in-process filter, not just the codewalk glob layer, otherwise a secret in
     // `package-lock.json` stays silently excluded even with the flag set (KH-55).
     let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
-    let default_exclude_path = match path.strip_prefix(default_exclude_root) {
-        Ok(relative) => relative.to_string_lossy(),
-        Err(_) => std::borrow::Cow::Borrowed(filename), // LAW10: root-prefix mismatch uses basename-only default-exclude classification to avoid parent-directory false exclusions; recall-preserving
-    };
-    if respect_default_excludes && is_default_excluded(&default_exclude_path) {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
-        return;
+    if respect_default_excludes {
+        let excluded = match path.strip_prefix(default_exclude_root) {
+            Ok(relative) => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::ffi::OsStrExt;
+                    super::filter::is_default_excluded_bytes(relative.as_os_str().as_bytes())
+                }
+                #[cfg(not(unix))]
+                {
+                    super::filter::is_default_excluded(&relative.to_string_lossy())
+                }
+            }
+            Err(_) => super::filter::is_default_excluded(filename), // LAW10: root-prefix mismatch uses basename-only default-exclude classification to avoid parent-directory false exclusions; recall-preserving
+        };
+        if excluded {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
+            return;
+        }
     }
     // Minified/bundled exclusion (`.min.`/`.bundle.` infixes + `.chunk.js` suffix)
     // is now owned by the Tier-B `default_excludes.toml` and applied by the
@@ -1158,7 +1170,7 @@ pub(super) fn process_entry(
     if file_size > window_size as u64
         && (is_sparse || !large_file_requires_whole_file_decode(&path))
     {
-        let display = display_path(&path);
+        let display = display_path_arc(&path);
         let mut consumer_stopped = false;
         let windowed_mmap_outcome = read::for_each_file_windowed_mmap(
             &path,
@@ -1169,8 +1181,8 @@ pub(super) fn process_entry(
                     let chunk = Ok(Chunk {
                         data: w.text,
                         metadata: ChunkMetadata {
-                            source_type: "filesystem/windowed".into(),
-                            path: Some(display.clone().into()),
+                            source_type: intern_source_type("filesystem/windowed"),
+                            path: Some(Arc::clone(&display)),
                             base_offset: w.offset,
                             base_line: w.base_line,
                             mtime_ns: live_mtime_ns,
@@ -1302,8 +1314,8 @@ pub(super) fn process_entry(
                     let chunk = Ok(Chunk {
                         data: data.into(),
                         metadata: ChunkMetadata {
-                            source_type: "filesystem/windowed".into(),
-                            path: Some(display.clone().into()),
+                            source_type: intern_source_type("filesystem/windowed"),
+                            path: Some(Arc::clone(&display)),
                             base_offset: current_offset,
                             base_line: current_base_line,
                             mtime_ns: live_mtime_ns,
@@ -1403,11 +1415,12 @@ pub(super) fn process_entry(
         let _event = crate::record_skip_event(crate::SourceSkipEvent::GitLfsPointer);
     }
 
+    let path_arc = display_path_arc(&path);
     if !emit(Ok(Chunk {
         data: content,
         metadata: ChunkMetadata {
-            source_type: source_type.into(),
-            path: Some(display_path(&path).into()),
+            source_type: intern_source_type(source_type),
+            path: Some(path_arc),
             mtime_ns: live_mtime_ns,
             size_bytes: Some(file_size),
             decoded_span: None,

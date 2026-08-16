@@ -778,7 +778,7 @@ fn stream_plain_layer_member_windows<R: Read>(
             && !emit(Ok(Chunk {
                 data: text.into_owned().into(),
                 metadata: ChunkMetadata {
-                    source_type: "filesystem/archive".into(),
+                    source_type: keyhog_core::intern_source_type("filesystem/archive"),
                     path: Some(entry_name.to_owned().into()),
                     base_offset: absolute_offset,
                     base_line,

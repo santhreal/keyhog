@@ -73,7 +73,7 @@ pub(super) fn config_chunks(
             metadata: ChunkMetadata {
                 base_offset: 0,
                 base_line: 0,
-                source_type: "docker".into(),
+                source_type: keyhog_core::intern_source_type("docker"),
                 path: Some(
                     format!(
                         "{image}:oci[{idx}]:{label}:config:{digest}",

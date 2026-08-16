@@ -179,6 +179,7 @@ pub mod severity_downgrade_walks_one_step;
 pub mod severity_lte_includes_client_safe_tier;
 pub mod severity_lte_matches_at_or_below_threshold;
 pub mod source_error_other_includes_fix_hint;
+pub mod source_interning;
 pub mod spec;
 pub mod state_file_read_capped;
 pub mod timing;

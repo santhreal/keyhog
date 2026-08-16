@@ -25,7 +25,7 @@ pub(crate) mod special_file_test_support;
 pub(crate) use extract::extraction_total_budget;
 pub(crate) use extract::validate_scan_archive_entry_name;
 use filter::{walker_config, FilesystemWalkConfig};
-pub(crate) use path::display_path;
+pub(crate) use path::{display_path, display_path_arc};
 pub(crate) use read::decode_text_file;
 pub(crate) use read::{open_file_safe, open_file_safe_with_metadata};
 

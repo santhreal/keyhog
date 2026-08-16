@@ -107,7 +107,7 @@ pub(crate) fn try_expand_har(
             chunks.push(Ok(Chunk {
                 data: request_text.into(),
                 metadata: ChunkMetadata {
-                    source_type: "wire:har:request".into(),
+                    source_type: keyhog_core::intern_source_type("wire:har:request"),
                     path: Some(format!("{path_str}#{url}").into()),
                     ..Default::default()
                 },
@@ -130,7 +130,7 @@ pub(crate) fn try_expand_har(
             chunks.push(Ok(Chunk {
                 data: response_text.into(),
                 metadata: ChunkMetadata {
-                    source_type: "wire:har:response".into(),
+                    source_type: keyhog_core::intern_source_type("wire:har:response"),
                     path: Some(format!("{path_str}#{url}").into()),
                     ..Default::default()
                 },

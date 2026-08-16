@@ -251,7 +251,7 @@ impl GhidraChunkBuilder {
             metadata: ChunkMetadata {
                 base_offset: self.base_offset,
                 base_line: self.base_line,
-                source_type: self.source_type.into(),
+                source_type: keyhog_core::intern_source_type(self.source_type),
                 path: self.path.clone(),
                 commit: None,
                 author: None,

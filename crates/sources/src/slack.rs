@@ -588,7 +588,7 @@ fn slack_channel_chunks(channel: &Channel, messages: Vec<Message>) -> Vec<Chunk>
                 metadata: ChunkMetadata {
                     base_offset: 0,
                     base_line: 0,
-                    source_type: "slack".into(),
+                    source_type: keyhog_core::intern_source_type("slack"),
                     path: Some(format!("slack://#{}", channel.name).into()),
                     ..Default::default()
                 },
@@ -601,7 +601,7 @@ fn slack_channel_chunks(channel: &Channel, messages: Vec<Message>) -> Vec<Chunk>
             metadata: ChunkMetadata {
                 base_offset: 0,
                 base_line: 0,
-                source_type: "slack".into(),
+                source_type: keyhog_core::intern_source_type("slack"),
                 path: Some(format!("slack://#{}", channel.name).into()),
                 ..Default::default()
             },

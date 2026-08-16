@@ -414,7 +414,7 @@ fn fetch_gcs_object_chunk(
         metadata: ChunkMetadata {
             base_offset: 0,
             base_line: 0,
-            source_type: "gcs".into(),
+            source_type: keyhog_core::intern_source_type("gcs"),
             path: Some(format!("gs://{bucket}/{name}").into()),
             commit: None,
             author: None,

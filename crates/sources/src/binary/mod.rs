@@ -246,7 +246,7 @@ impl BinarySource {
                 metadata: ChunkMetadata {
                     base_offset,
                     base_line,
-                    source_type: "binary:strings".into(),
+                    source_type: keyhog_core::intern_source_type("binary:strings"),
                     path: Some(path.clone()),
                     commit: None,
                     author: None,

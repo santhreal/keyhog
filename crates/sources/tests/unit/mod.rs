@@ -57,6 +57,7 @@ pub mod magic_generated;
     feature = "bitbucket"
 ))]
 pub mod process_excerpt;
+pub mod source_interning;
 pub mod src_inline_skip_counter_isolation;
 #[cfg(feature = "web")]
 pub mod ssrf_generated;
