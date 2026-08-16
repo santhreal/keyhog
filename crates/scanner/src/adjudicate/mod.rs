@@ -651,21 +651,6 @@ pub(crate) fn record_decoded_unanchored_entropy_suppression(
     }
 }
 
-/// Stack-allocated BLAKE3 hash for match duplicate suppression.
-///
-/// Computes a fixed 32-byte digest over the `(detector_id, credential)` pair
-/// without heap-allocating `String` or intermediate tuple containers.
-#[cfg(any(test, feature = "decode"))]
-#[inline]
-pub(crate) fn match_duplicate_digest(detector_id: &str, credential: &str) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(&(detector_id.len() as u64).to_le_bytes());
-    hasher.update(detector_id.as_bytes());
-    hasher.update(&(credential.len() as u64).to_le_bytes());
-    hasher.update(credential.as_bytes());
-    *hasher.finalize().as_bytes()
-}
-
 fn explicit_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {
     if let Some(stage_id) = ctx.explicit_stage {
         StageOutcome::Suppress(stage_id)

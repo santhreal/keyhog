@@ -3,7 +3,6 @@
 
 ## 0.5.76 - 2026-08-16
 
-- Match duplicate suppression now computes a stack-allocated 32-byte BLAKE3 digest over `(detector_id, credential)` without allocating intermediate tuple keys or cloning `SensitiveString` values during decoded-candidate deduplication.
 - Decoded reverse-placeholder suppression now uses case-insensitive ASCII byte searching directly on candidate bytes, eliminating transient string reversal and uppercase allocations.
 - fix(core): rerun build script on GITHUB_SHA changes to prevent stale git hash in CI cache.
 ## 0.5.75 - 2026-08-14

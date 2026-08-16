@@ -739,22 +739,6 @@ fn entropy_ghidra_decompiled_source_is_not_raw_binary() {
         Some(EntropyShapeStage::SuppressionStage("native_binary_strings")),
     );
 }
-#[test]
-fn match_duplicate_digest_deterministic_and_collision_resistant() {
-    let d1 = crate::adjudicate::match_duplicate_digest("aws-access-key", "AKIAIOSFODNN7EXAMPLE");
-    let d2 = crate::adjudicate::match_duplicate_digest("aws-access-key", "AKIAIOSFODNN7EXAMPLE");
-    assert_eq!(d1, d2);
-
-    let d3 = crate::adjudicate::match_duplicate_digest("slack-api-token", "AKIAIOSFODNN7EXAMPLE");
-    assert_ne!(d1, d3);
-
-    let d4 = crate::adjudicate::match_duplicate_digest("aws-access-key", "AKIAIOSFODNN7OTHER");
-    assert_ne!(d1, d4);
-
-    let d_split1 = crate::adjudicate::match_duplicate_digest("ab", "cd");
-    let d_split2 = crate::adjudicate::match_duplicate_digest("a", "bcd");
-    assert_ne!(d_split1, d_split2);
-}
 
 #[cfg(feature = "decode")]
 #[test]
