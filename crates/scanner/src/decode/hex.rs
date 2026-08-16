@@ -113,9 +113,24 @@ pub fn hex_decode(input: &str) -> Result<Vec<u8>, ()> {
         return hex_simd::decode_to_vec(input.as_bytes()).map_err(|_| ());
     }
 
-    let cleaned: String = input.chars().filter(|c| *c != '_').collect();
+    if input.len() <= 256 {
+        let mut buf = [0u8; 256];
+        let mut len = 0usize;
+        for &b in input.as_bytes() {
+            if b != b'_' {
+                buf[len] = b;
+                len += 1;
+            }
+        }
+        if !len.is_multiple_of(2) || len > MAX_HEX_INPUT_LEN {
+            return Err(());
+        }
+        return hex_simd::decode_to_vec(&buf[..len]).map_err(|_| ());
+    }
+
+    let cleaned: Vec<u8> = input.bytes().filter(|b| *b != b'_').collect();
     if !cleaned.len().is_multiple_of(2) || cleaned.len() > MAX_HEX_INPUT_LEN {
         return Err(());
     }
-    hex_simd::decode_to_vec(cleaned.as_bytes()).map_err(|_| ())
+    hex_simd::decode_to_vec(&cleaned).map_err(|_| ())
 }

@@ -65,6 +65,9 @@ impl Decoder for QuotedPrintableDecoder {
     }
 
     fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
+        if !has_qp_escape(&chunk.data) {
+            return;
+        }
         let line_views: Vec<LineView<'_>> = line_views_with_offsets(&chunk.data).collect();
         let lines = line_views.iter().map(|line| line.text).collect::<Vec<_>>();
         let replacements = line_views
