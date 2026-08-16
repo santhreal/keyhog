@@ -3,8 +3,6 @@ pub(crate) mod confirmed_anchor;
 use super::CompiledScanner;
 #[cfg(feature = "decode")]
 use crate::types::MAX_SCAN_CHUNK_BYTES;
-#[cfg(feature = "decode")]
-use keyhog_core::SensitiveString;
 use keyhog_core::{Chunk, RawMatch};
 #[cfg(feature = "decode")]
 use std::collections::HashSet;
