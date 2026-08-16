@@ -691,7 +691,6 @@ pub mod daemon;
 pub(crate) mod inline_suppression;
 pub(crate) mod orchestrator;
 pub(crate) mod orchestrator_config;
-pub(crate) mod output;
 pub(crate) mod path_validation;
 pub(crate) mod reporting;
 pub(crate) mod skip_dirs;
