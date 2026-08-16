@@ -2,6 +2,12 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.79] - 2026-08-16
+
+### Changed
+
+- ci(release): fallback token and sync floating major tag on release.
+
 ## [0.5.78] - 2026-08-16
 
 ### Changed

@@ -1,6 +1,10 @@
 # Changelog
 
 
+## 0.5.79 - 2026-08-16
+
+- ci(release): fallback token and sync floating major tag on release.
+
 ## 0.5.78 - 2026-08-16
 
 - fix(scanner): gate expand_triggered_patterns independently of decode feature.
