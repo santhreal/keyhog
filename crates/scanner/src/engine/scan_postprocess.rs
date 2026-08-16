@@ -196,24 +196,16 @@ impl CompiledScanner {
                         return Ok(());
                     }
                     // Decoding is monotonic: keep raw findings and union resolved decoded evidence.
-                    let mut seen: HashSet<(Arc<str>, SensitiveString)> = matches
-                        .iter()
-                        .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
-                        .collect();
+                    let raw_findings = matches.clone();
                     decoded_candidates.sort_by(|a, b| {
                         a.location
                             .offset
                             .cmp(&b.location.offset)
                             .then_with(|| a.cmp(b))
                     });
-                    let mut union_matches = matches.clone();
-                    for m in decoded_candidates {
-                        if seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
-                            union_matches.push(m);
-                        }
-                    }
+                    union_matches(matches, decoded_candidates);
                     let resolved = crate::resolution::try_resolve_matches_with_compiled_plan(
-                        union_matches,
+                        std::mem::take(matches),
                         &self.detector_plans,
                     )
                     .map_err(|error| {
@@ -221,15 +213,9 @@ impl CompiledScanner {
                             "compiled detector resolution failed: {error}"
                         ))
                     })?;
-                    let mut merged_seen: HashSet<(Arc<str>, SensitiveString)> = matches
-                        .iter()
-                        .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
-                        .collect();
-                    for m in resolved {
-                        if merged_seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
-                            matches.push(m);
-                        }
-                    }
+                    let mut merged = raw_findings;
+                    union_matches(&mut merged, resolved);
+                    *matches = merged;
                 }
                 Ok(())
             };
@@ -365,5 +351,17 @@ impl CompiledScanner {
             }
         });
         expanded
+    }
+}
+#[cfg(feature = "decode")]
+fn union_matches(target: &mut Vec<keyhog_core::RawMatch>, incoming: Vec<keyhog_core::RawMatch>) {
+    let mut seen: HashSet<(Arc<str>, SensitiveString)> = target
+        .iter()
+        .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
+        .collect();
+    for m in incoming {
+        if seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
+            target.push(m);
+        }
     }
 }

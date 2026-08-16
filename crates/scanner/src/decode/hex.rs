@@ -2,7 +2,7 @@ use super::limits::{MAX_HEX_INPUT_LEN, MIN_HEX_CANDIDATE_LEN};
 use super::pipeline::{with_extracted_value_spans, DecodedReplacementBatcher, ExtractedValue};
 use super::{DecodeAdmissionSketch, DecodeOutputSink, Decoder, EncodedString};
 use keyhog_core::Chunk;
-
+use zeroize::{Zeroize, Zeroizing};
 pub(super) struct HexDecoder;
 
 impl Decoder for HexDecoder {
@@ -40,14 +40,9 @@ impl Decoder for HexDecoder {
                 if !open {
                     break;
                 }
-                let Ok(decoded) = hex_decode(&candidate.value) else {
+                let Some(text) = try_decode_hex_candidate_to_utf8(&candidate.value) else {
                     // LAW10: recall-preserving: the original encoded bytes still
                     // take the whole-chunk scan path unchanged; this trial decode failed.
-                    continue;
-                };
-                let Ok(text) = String::from_utf8(decoded) else {
-                    // LAW10: binary output is not source text; the encoded span
-                    // remains scanned unchanged.
                     continue;
                 };
                 let (start, end) = candidate.span();
@@ -56,6 +51,88 @@ impl Decoder for HexDecoder {
         });
         if open {
             batch.finish();
+        }
+    }
+}
+
+/// Maximum input byte length for stack-allocated fast-path hex decoding (up to 128 decoded bytes,
+/// covering standard 16-byte MD5 and 32-byte SHA256 hex string candidates).
+const HEX_STACK_INPUT_LIMIT: usize = if 256 < MAX_HEX_INPUT_LEN {
+    256
+} else {
+    MAX_HEX_INPUT_LEN
+};
+
+/// Decode a hex string into a stack-allocated buffer (up to 128 decoded bytes).
+/// Intermediate buffers are zeroized on drop.
+fn hex_decode_to_stack_buf(input: &str, stack_dst: &mut [u8; 128]) -> Result<usize, ()> {
+    if !input.as_bytes().contains(&b'_') {
+        if !input.len().is_multiple_of(2) || input.len() > HEX_STACK_INPUT_LIMIT {
+            return Err(());
+        }
+        let len = input.len() / 2;
+        hex_simd::decode(
+            input.as_bytes(),
+            hex_simd::Out::from_slice(&mut stack_dst[..len]),
+        )
+        .map_err(|_| ())?;
+        Ok(len)
+    } else {
+        let mut cleaned = Zeroizing::new([0u8; 256]);
+        let mut len = 0usize;
+        for &b in input.as_bytes() {
+            if b != b'_' {
+                if len >= HEX_STACK_INPUT_LIMIT {
+                    return Err(());
+                }
+                cleaned[len] = b;
+                len += 1;
+            }
+        }
+        if !len.is_multiple_of(2) {
+            return Err(());
+        }
+        let decoded_len = len / 2;
+        hex_simd::decode(
+            &cleaned[..len],
+            hex_simd::Out::from_slice(&mut stack_dst[..decoded_len]),
+        )
+        .map_err(|_| ())?;
+        Ok(decoded_len)
+    }
+}
+
+/// Fast-path trial decode and UTF-8 validation for hex candidate strings.
+///
+/// Decodes into a stack buffer for inputs up to 256 bytes (covering standard 16-byte
+/// MD5 and 32-byte SHA256 hex string candidates) to validate UTF-8 without heap
+/// allocations for binary hash tokens.
+fn try_decode_hex_candidate_to_utf8(value: &str) -> Option<String> {
+    if value.len() <= HEX_STACK_INPUT_LIMIT {
+        let mut stack_dst = Zeroizing::new([0u8; 128]);
+        let Ok(decoded_len) = hex_decode_to_stack_buf(value, &mut *stack_dst) else {
+            // LAW10: recall-preserving: trial decode failure leaves encoded span scanned unchanged.
+            return None;
+        };
+        let Ok(text) = std::str::from_utf8(&stack_dst[..decoded_len]) else {
+            // LAW10: binary output is not source text; the encoded span remains scanned unchanged.
+            return None;
+        };
+        return Some(text.to_string());
+    }
+
+    // Large inputs fallback to heap-allocated decode with zeroized buffers.
+    let Ok(decoded) = hex_decode(value) else {
+        // LAW10: recall-preserving: trial decode failure leaves encoded span scanned unchanged.
+        return None;
+    };
+    match String::from_utf8(decoded) {
+        Ok(text) => Some(text),
+        Err(err) => {
+            // LAW10: binary output is not source text; the encoded span remains scanned unchanged.
+            let mut bytes = err.into_bytes();
+            bytes.zeroize();
+            None
         }
     }
 }
@@ -106,31 +183,46 @@ fn is_hex_candidate(candidate: &ExtractedValue, min_length: usize) -> bool {
 /// non-hex input.
 #[allow(clippy::result_unit_err)]
 pub fn hex_decode(input: &str) -> Result<Vec<u8>, ()> {
+    if input.len() <= HEX_STACK_INPUT_LIMIT {
+        let mut stack_dst = Zeroizing::new([0u8; 128]);
+        let len = hex_decode_to_stack_buf(input, &mut *stack_dst)?;
+        return Ok(stack_dst[..len].to_vec());
+    }
+
     if !input.as_bytes().contains(&b'_') {
         if !input.len().is_multiple_of(2) || input.len() > MAX_HEX_INPUT_LEN {
             return Err(());
         }
-        return hex_simd::decode_to_vec(input.as_bytes()).map_err(|_| ());
-    }
-
-    if input.len() <= 256 {
-        let mut buf = [0u8; 256];
-        let mut len = 0usize;
-        for &b in input.as_bytes() {
-            if b != b'_' {
-                buf[len] = b;
-                len += 1;
-            }
-        }
-        if !len.is_multiple_of(2) || len > MAX_HEX_INPUT_LEN {
+        let decoded_len = input.len() / 2;
+        let mut out = vec![0u8; decoded_len];
+        if hex_simd::decode(input.as_bytes(), hex_simd::Out::from_slice(&mut out)).is_err() {
+            out.zeroize();
             return Err(());
         }
-        return hex_simd::decode_to_vec(&buf[..len]).map_err(|_| ());
+        return Ok(out);
     }
 
-    let cleaned: Vec<u8> = input.bytes().filter(|b| *b != b'_').collect();
-    if !cleaned.len().is_multiple_of(2) || cleaned.len() > MAX_HEX_INPUT_LEN {
+    let mut cleaned = Zeroizing::new(Vec::with_capacity(input.len().min(MAX_HEX_INPUT_LEN)));
+    for &b in input.as_bytes() {
+        if b != b'_' {
+            if cleaned.len() >= MAX_HEX_INPUT_LEN {
+                return Err(());
+            }
+            cleaned.push(b);
+        }
+    }
+    if !cleaned.len().is_multiple_of(2) {
         return Err(());
     }
-    hex_simd::decode_to_vec(&cleaned).map_err(|_| ())
+    let decoded_len = cleaned.len() / 2;
+    let mut out = vec![0u8; decoded_len];
+    if hex_simd::decode(&cleaned, hex_simd::Out::from_slice(&mut out)).is_err() {
+        out.zeroize();
+        return Err(());
+    }
+    Ok(out)
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/decode_hex.rs"]
+mod tests;
