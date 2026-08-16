@@ -5,17 +5,18 @@
 //! Every assertion pins the EXACT decoded bytes a wrapped secret produces, plus
 //! the exact left/handled behaviour of a malformed escape. Two seams are used:
 //!   * the `*_for_test` facades (`quoted_printable_decode_for_test`,
-//!     `octal_escape_decode_for_test`, `mime_encoded_word_decode_for_test`)
-//!     return the decoder's exact `Option<String>`;
+//!     `url_decode_for_test`, `octal_escape_decode_for_test`,
+//!     `mime_encoded_word_decode_for_test`) return the decoder's exact
+//!     `Option<String>`;
 //!   * `testing::decode_chunk` drives the full pipeline so the percent/URL and
-//!     HTML-entity decoders (which have no direct facade) are exercised end to
-//!     end and the decoded layer's bytes are asserted.
+//!     HTML-entity decoders are exercised end to end and the decoded layer's
+//!     bytes are asserted.
 #![cfg(feature = "decode")]
 
 use keyhog_core::Chunk;
 use keyhog_scanner::testing::{
     decode_chunk, mime_encoded_word_decode_for_test, octal_escape_decode_for_test,
-    quoted_printable_decode_for_test,
+    quoted_printable_decode_for_test, url_decode_for_test,
 };
 
 /// Run the whole decode pipeline over `text` and return the `data` of every
@@ -196,6 +197,17 @@ fn mime_word_shorter_than_four_bytes_is_rejected() {
 // ---------------------------------------------------------------------------
 // Percent/URL `%XX` (pipeline → exact decoded layer bytes)
 // ---------------------------------------------------------------------------
+
+#[test]
+fn url_percent_hex_triplets_decode_to_exact_bytes_facade() {
+    assert_eq!(url_decode_for_test("%41%42%43"), Some("ABC".to_string()));
+    assert_eq!(
+        url_decode_for_test("hello%20world"),
+        Some("hello world".to_string())
+    );
+    assert_eq!(url_decode_for_test("plain text"), None);
+    assert_eq!(url_decode_for_test("%FF"), None);
+}
 
 #[test]
 fn url_percent_escapes_decode_wrapped_secret_to_exact_bytes() {
