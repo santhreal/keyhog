@@ -74,6 +74,9 @@ fn hex_decode_to_stack_buf(input: &str, stack_dst: &mut [u8; 128]) -> Result<usi
         let mut len = 0usize;
         for &b in input.as_bytes() {
             if b != b'_' {
+                if len >= 256 {
+                    return Err(());
+                }
                 cleaned[len] = b;
                 len += 1;
             }
