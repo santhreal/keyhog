@@ -1,10 +1,14 @@
 # Changelog
 
 
-## 0.5.76 - 2026-08-16
+## 0.5.77 - 2026-08-16
 
 - Phase-two anchor and literal prefilter verification reuses candidate scratch buffers across sequential chunks, coalesces candidate collection under shared evaluation closures, evaluates portable gate prefix evidence lazily on first need per partition, and checks gateable batch prefix evidence before compiling RegexSet matchers.
+
+## 0.5.76 - 2026-08-16
+
 - fix(core): rerun build script on GITHUB_SHA changes to prevent stale git hash in CI cache.
+
 ## 0.5.75 - 2026-08-14
 
 - Candidate provenance now derives canonical evidence reasons from producer channel, detector policy, source role, checksum, companion, grammar, and verification proof. Attributed matches carry the verdict into public findings while compatibility insertion remains explicitly `review/unattributed`. Shared execution-pack hydration retains the authenticated compiled detector-plan digest, so equivalent pack routes report one exact corpus identity.
