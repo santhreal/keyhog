@@ -302,28 +302,27 @@ async fn verify_group_task(shared: Arc<VerifyTaskShared>, group: DedupedMatch) -
     let inflight = &shared.inflight;
     let inflight_count = &shared.inflight_count;
     let max_inflight_keys = shared.max_inflight_keys;
-    let deadline = crate::engine::VerificationDeadline::new(shared.timeout);
     let Ok(_global_permit) = keyhog_profile::instrument_future(
         keyhog_profile::Stage::LiveVerification,
-        crate::engine::acquire_permit_bounded(global, &deadline),
+        global.acquire(),
     )
     .await
     else {
         return into_finding(
             group,
-            VerificationResult::Error(crate::verify::request::TIMEOUT_ERROR.into()),
+            VerificationResult::Error("semaphore closed".into()),
             HashMap::new(),
         );
     };
     let Ok(_service_permit) = keyhog_profile::instrument_future(
         keyhog_profile::Stage::LiveVerification,
-        crate::engine::acquire_permit_bounded(&service_sem, &deadline),
+        service_sem.acquire(),
     )
     .await
     else {
         return into_finding(
             group,
-            VerificationResult::Error(crate::verify::request::TIMEOUT_ERROR.into()),
+            VerificationResult::Error("service semaphore closed".into()),
             HashMap::new(),
         );
     };
@@ -370,23 +369,7 @@ async fn verify_group_task(shared: Arc<VerifyTaskShared>, group: DedupedMatch) -
             }
         };
 
-        let Ok(remaining) = deadline.remaining() else {
-            return into_finding(
-                group,
-                VerificationResult::Error(crate::verify::request::TIMEOUT_ERROR.into()),
-                HashMap::new(),
-            );
-        };
-        if tokio::time::timeout(remaining, notify_to_await.notified())
-            .await
-            .is_err()
-        {
-            return into_finding(
-                group,
-                VerificationResult::Error(crate::verify::request::TIMEOUT_ERROR.into()),
-                HashMap::new(),
-            );
-        }
+        notify_to_await.notified().await;
     };
 
     let (verification, metadata) = if let Some(verify_spec) = detector

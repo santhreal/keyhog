@@ -1,14 +1,10 @@
-//! Unit tests for verifier deadline bounds and zeroizing auth headers.
+//! Unit tests for verifier deadline bounds.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use keyhog_core::VerificationResult;
-use keyhog_verifier::engine::{acquire_permit_bounded, VerificationDeadline, ZeroizingAuthHeader};
+use keyhog_verifier::engine::VerificationDeadline;
 use keyhog_verifier::testing::TIMEOUT_ERROR;
-use tokio::sync::Semaphore;
-use zeroize::Zeroize;
-
 #[test]
 fn deadline_remaining_decreases_and_expires() {
     let timeout = Duration::from_millis(50);
@@ -68,40 +64,3 @@ async fn deadline_run_bounded_times_out() {
     }
 }
 
-#[tokio::test]
-async fn acquire_permit_bounded_success() {
-    let semaphore = Semaphore::new(1);
-    let deadline = VerificationDeadline::new(Duration::from_millis(100));
-    let permit = acquire_permit_bounded(&semaphore, &deadline).await;
-    assert!(permit.is_ok());
-}
-
-#[tokio::test]
-async fn acquire_permit_bounded_times_out_when_saturated() {
-    let semaphore = Arc::new(Semaphore::new(0));
-    let deadline = VerificationDeadline::new(Duration::from_millis(20));
-    let result = acquire_permit_bounded(&semaphore, &deadline).await;
-    match &result {
-        Err(VerificationResult::Error(msg)) => {
-            assert_eq!(msg.as_str(), TIMEOUT_ERROR);
-        }
-        other => panic!("expected timeout error on saturated semaphore, got {other:?}"),
-    }
-}
-
-#[test]
-fn zeroizing_auth_header_redacts_debug() {
-    let header = ZeroizingAuthHeader::new("Bearer secret_token_12345".to_string());
-    assert_eq!(header.as_str(), "Bearer secret_token_12345");
-    let debug_output = format!("{header:?}");
-    assert!(!debug_output.contains("secret_token_12345"));
-    assert_eq!(debug_output, "[REDACTED AUTH HEADER]");
-}
-
-#[test]
-fn zeroizing_auth_header_zeroizes_explicitly() {
-    let mut header = ZeroizingAuthHeader::new("Bearer my_api_key".to_string());
-    assert_eq!(header.as_str(), "Bearer my_api_key");
-    header.zeroize();
-    assert_eq!(header.as_str(), "");
-}

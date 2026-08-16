@@ -8,8 +8,6 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 
 use keyhog_core::VerificationResult;
-use tokio::sync::{Semaphore, SemaphorePermit};
-use zeroize::{Zeroize, Zeroizing};
 
 use crate::verify::request::TIMEOUT_ERROR;
 
@@ -96,61 +94,3 @@ impl VerificationDeadline {
     }
 }
 
-/// Acquire a semaphore permit under a strict bounded deadline.
-pub async fn acquire_permit_bounded<'a>(
-    semaphore: &'a Semaphore,
-    deadline: &VerificationDeadline,
-) -> Result<SemaphorePermit<'a>, VerificationResult> {
-    let remaining = deadline.remaining()?;
-    match tokio::time::timeout(remaining, semaphore.acquire()).await {
-        Ok(Ok(permit)) => Ok(permit),
-        Ok(Err(_closed)) => Err(VerificationResult::Error(
-            "verification semaphore closed".into(),
-        )),
-        Err(_elapsed) => Err(VerificationResult::Error(TIMEOUT_ERROR.into())),
-    }
-}
-
-/// A zeroizing wrapper around intermediate authentication header strings.
-///
-/// Ensures credentials and authorization tokens populated into HTTP headers
-/// are securely zeroed out when the wrapper is dropped on completion or error.
-#[derive(Clone, Default, PartialEq, Eq)]
-pub struct ZeroizingAuthHeader(Zeroizing<String>);
-
-impl ZeroizingAuthHeader {
-    /// Wrap an existing string into zeroized storage.
-    pub fn new(header_value: String) -> Self {
-        Self(Zeroizing::new(header_value))
-    }
-
-    /// Borrow the inner header value as a string slice.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    /// Extract the inner string reference.
-    pub fn inner(&self) -> &Zeroizing<String> {
-        &self.0
-    }
-}
-
-impl std::ops::Deref for ZeroizingAuthHeader {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl std::fmt::Debug for ZeroizingAuthHeader {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("[REDACTED AUTH HEADER]")
-    }
-}
-
-impl Zeroize for ZeroizingAuthHeader {
-    fn zeroize(&mut self) {
-        self.0.zeroize();
-    }
-}
