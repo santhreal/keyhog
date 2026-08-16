@@ -10,7 +10,7 @@ echo "=== [Local CI] 1. Remote CI Battery (Base Suite) ==="
 bash scripts/ci_remote.sh
 
 echo "=== [Local CI] 2. Scanner Default / GPU Test Suite ==="
-cargo test -p keyhog-scanner --features gpu --test all_tests --profile ci-test
+cargo test -p keyhog-scanner --features gpu --test all_tests --profile ci-test -- --test-threads=16
 
 echo "=== [Local CI] 3. GPU Hardware Parity & Dispatch Contracts ==="
 cargo test -p keyhog-scanner --features gpu --profile release-fast \

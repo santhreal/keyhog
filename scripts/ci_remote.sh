@@ -20,14 +20,14 @@ echo "=== [Remote CI] 2. Fast Build & Smoke Test ==="
 cargo build --profile release-fast -p keyhog --features simd
 
 echo "=== [Remote CI] 3. Core & Verifier Test Suites ==="
-cargo test -p keyhog-core --test all_tests --profile ci-test
+cargo test -p keyhog-core --test all_tests --profile ci-test -- --test-threads=16
 cargo test -p keyhog-core --test new_core_finding_dedup --profile ci-test
 cargo test -p keyhog-verifier --test all_tests --profile ci-test
 cargo test -p keyhog-verifier --test break_it --profile ci-test -- --test-threads=1
 cargo test -p keyhog-verifier --lib
 
 echo "=== [Remote CI] 4. Scanner Lean Test Suite (Non-GPU) ==="
-cargo test -p keyhog-scanner --test all_tests --no-default-features --features ci-lean --profile ci-test
+cargo test -p keyhog-scanner --test all_tests --no-default-features --features ci-lean --profile ci-test -- --test-threads=16
 cargo test -p keyhog-scanner --test decode_coalesced_sparse_parity --no-default-features --features ci-lean --profile ci-test
 cargo test -p keyhog-scanner --test execution_pack_lazy_mapping --no-default-features --features ci-lean --profile ci-test
 cargo test -p keyhog-scanner --test perf_alloc_batch_topology --no-default-features --features ci-lean --profile ci-test
@@ -39,7 +39,7 @@ cargo test -p keyhog-scanner --lib --no-default-features --features ci-lean -- -
 echo "=== [Remote CI] 5. CLI & Profile Test Suites ==="
 cargo test -p keyhog-profile
 cargo test -p keyhog --lib
-cargo test -p keyhog --test all_tests --no-default-features --features ci-lean --profile ci-test
+cargo test -p keyhog --test all_tests --no-default-features --features ci-lean --profile ci-test -- --test-threads=16
 cargo test -p keyhog --test e2e_binary --profile ci-test
 cargo test -p keyhog --test sarif_github_compliance --profile ci-test
 cargo test -p keyhog --test vyre_pin_coherence_lane3 --no-default-features --features ci-lean --profile ci-test
