@@ -249,7 +249,7 @@ impl CompiledScanner {
             target: "keyhog::routing",
             chunk_bytes = chunk.data.len(),
             matches = matches.len(),
-            "post_process_matches_inner done",
+            "post_process_matches done",
         );
         Ok(())
     }
