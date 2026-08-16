@@ -132,54 +132,17 @@ pub fn split_byte_tokens(bytes: &[u8], delimiter: u8) -> impl Iterator<Item = &[
         .filter(|slice| !slice.is_empty())
 }
 
-/// Normalize severity name using zero-allocation byte comparison.
-pub fn normalize_severity_str(s: &str) -> Result<&'static str, String> {
-    let trimmed = trim_ascii_whitespace(s.as_bytes());
-    if trimmed.eq_ignore_ascii_case(b"info") {
-        Ok(Severity::Info.as_str())
-    } else if trimmed.eq_ignore_ascii_case(b"client-safe")
-        || trimmed.eq_ignore_ascii_case(b"client_safe")
-    {
-        Ok(Severity::ClientSafe.as_str())
-    } else if trimmed.eq_ignore_ascii_case(b"low") {
-        Ok(Severity::Low.as_str())
-    } else if trimmed.eq_ignore_ascii_case(b"medium") {
-        Ok(Severity::Medium.as_str())
-    } else if trimmed.eq_ignore_ascii_case(b"high") {
-        Ok(Severity::High.as_str())
-    } else if trimmed.eq_ignore_ascii_case(b"critical") {
-        Ok(Severity::Critical.as_str())
-    } else {
-        let s_trimmed = trim_ascii_str(s);
-        Err(format!(
-            "unknown severity {:?}; expected {}",
-            s_trimmed.to_ascii_lowercase(),
-            Severity::FILTER_EXPECTED_LABELS
-        ))
-    }
-}
-
-/// Return severity rank using zero-allocation byte comparison.
-pub fn severity_rank_from_str(s: &str) -> Result<usize, String> {
-    let trimmed = trim_ascii_whitespace(s.as_bytes());
-    if trimmed.eq_ignore_ascii_case(b"info") {
-        Ok(Severity::Info.rank())
-    } else if trimmed.eq_ignore_ascii_case(b"client-safe")
-        || trimmed.eq_ignore_ascii_case(b"client_safe")
-    {
-        Ok(Severity::ClientSafe.rank())
-    } else if trimmed.eq_ignore_ascii_case(b"low") {
-        Ok(Severity::Low.rank())
-    } else if trimmed.eq_ignore_ascii_case(b"medium") {
-        Ok(Severity::Medium.rank())
-    } else if trimmed.eq_ignore_ascii_case(b"high") {
-        Ok(Severity::High.rank())
-    } else if trimmed.eq_ignore_ascii_case(b"critical") {
-        Ok(Severity::Critical.rank())
-    } else {
-        let s_trimmed = trim_ascii_str(s);
-        Err(format!("unknown severity rank {:?}", s_trimmed))
-    }
+/// Return severity rank using canonical Severity table.
+pub(crate) fn severity_rank_from_str(s: &str) -> Result<usize, String> {
+    Severity::from_filter_label(s)
+        .map(|sev| sev.rank())
+        .ok_or_else(|| {
+            format!(
+                "unknown severity {:?}; expected {}",
+                s.trim().to_ascii_lowercase(),
+                Severity::FILTER_EXPECTED_LABELS
+            )
+        })
 }
 
 /// Check if character is a regular expression metacharacter.
@@ -314,7 +277,15 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
         conditions.push(eq_field("service", trimmed));
     }
     if let Some(s) = entry.severity.as_deref() {
-        let normalized = normalize_severity_str(s)?;
+        let normalized = Severity::from_filter_label(s)
+            .map(|sev| sev.as_str())
+            .ok_or_else(|| {
+                format!(
+                    "unknown severity {:?}; expected {}",
+                    s.trim().to_ascii_lowercase(),
+                    Severity::FILTER_EXPECTED_LABELS
+                )
+            })?;
         conditions.push(eq_field("severity", normalized));
     }
     if let Some(s) = entry.severity_lte.as_deref() {
@@ -328,39 +299,34 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
         });
     }
     if let Some(p) = entry.path_eq.as_deref() {
-        let trimmed = trim_ascii_str(p);
         conditions.push(RuleCondition::FieldInSet {
             field: "path".into(),
-            set: smallvec::smallvec![Arc::from(trimmed)],
+            set: smallvec::smallvec![Arc::from(p)],
         });
     }
     if let Some(p) = entry.path_contains.as_deref() {
-        let trimmed = trim_ascii_str(p);
         conditions.push(RuleCondition::SubstringMatch {
             haystack: "path".into(),
-            needle: Arc::from(trimmed),
+            needle: Arc::from(p),
         });
     }
     if let Some(p) = entry.path_starts_with.as_deref() {
-        let trimmed = trim_ascii_str(p);
         conditions.push(RuleCondition::PrefixMatch {
             value: "path".into(),
-            prefix: Arc::from(trimmed),
+            prefix: Arc::from(p),
         });
     }
     if let Some(p) = entry.path_ends_with.as_deref() {
-        let trimmed = trim_ascii_str(p);
         conditions.push(RuleCondition::SuffixMatch {
             value: "path".into(),
-            suffix: Arc::from(trimmed),
+            suffix: Arc::from(p),
         });
     }
     if let Some(p) = entry.path_regex.as_deref() {
-        let trimmed = trim_ascii_str(p);
         // Optimize exact literal path rules to avoid regex allocation and evaluation.
-        if trimmed.starts_with('^') && trimmed.ends_with('$') && trimmed.len() >= 2 {
-            let inner = &trimmed[1..trimmed.len() - 1];
-            if !inner.chars().any(is_regex_meta) {
+        if p.starts_with('^') && p.ends_with('$') && p.len() >= 2 {
+            let inner = &p[1..p.len() - 1];
+            if !inner.is_empty() && !inner.chars().any(is_regex_meta) {
                 conditions.push(RuleCondition::FieldInSet {
                     field: "path".into(),
                     set: smallvec::smallvec![Arc::from(inner)],
@@ -368,12 +334,12 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
             } else {
                 conditions.push(RuleCondition::RegexMatch {
                     field: "path".into(),
-                    pattern: Arc::from(trimmed),
+                    pattern: Arc::from(p),
                 });
             }
-        } else if trimmed.starts_with('^') && trimmed.ends_with(".*") && trimmed.len() >= 3 {
-            let inner = &trimmed[1..trimmed.len() - 2];
-            if !inner.chars().any(is_regex_meta) {
+        } else if p.starts_with('^') && p.ends_with(".*") && p.len() >= 3 {
+            let inner = &p[1..p.len() - 2];
+            if !inner.is_empty() && !inner.chars().any(is_regex_meta) {
                 conditions.push(RuleCondition::PrefixMatch {
                     value: "path".into(),
                     prefix: Arc::from(inner),
@@ -381,12 +347,12 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
             } else {
                 conditions.push(RuleCondition::RegexMatch {
                     field: "path".into(),
-                    pattern: Arc::from(trimmed),
+                    pattern: Arc::from(p),
                 });
             }
-        } else if trimmed.starts_with('^') && !trimmed.is_empty() {
-            let inner = &trimmed[1..];
-            if !inner.chars().any(is_regex_meta) {
+        } else if p.starts_with('^') && p.len() > 1 {
+            let inner = &p[1..];
+            if !inner.is_empty() && !inner.chars().any(is_regex_meta) {
                 conditions.push(RuleCondition::PrefixMatch {
                     value: "path".into(),
                     prefix: Arc::from(inner),
@@ -394,12 +360,12 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
             } else {
                 conditions.push(RuleCondition::RegexMatch {
                     field: "path".into(),
-                    pattern: Arc::from(trimmed),
+                    pattern: Arc::from(p),
                 });
             }
-        } else if trimmed.ends_with('$') && !trimmed.is_empty() {
-            let inner = &trimmed[..trimmed.len() - 1];
-            if !inner.chars().any(is_regex_meta) {
+        } else if p.ends_with('$') && p.len() > 1 {
+            let inner = &p[..p.len() - 1];
+            if !inner.is_empty() && !inner.chars().any(is_regex_meta) {
                 conditions.push(RuleCondition::SuffixMatch {
                     value: "path".into(),
                     suffix: Arc::from(inner),
@@ -407,12 +373,12 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
             } else {
                 conditions.push(RuleCondition::RegexMatch {
                     field: "path".into(),
-                    pattern: Arc::from(trimmed),
+                    pattern: Arc::from(p),
                 });
             }
-        } else if trimmed.starts_with(".*") && trimmed.ends_with(".*") && trimmed.len() >= 4 {
-            let inner = &trimmed[2..trimmed.len() - 2];
-            if !inner.chars().any(is_regex_meta) {
+        } else if p.starts_with(".*") && p.ends_with(".*") && p.len() >= 4 {
+            let inner = &p[2..p.len() - 2];
+            if !inner.is_empty() && !inner.chars().any(is_regex_meta) {
                 conditions.push(RuleCondition::SubstringMatch {
                     haystack: "path".into(),
                     needle: Arc::from(inner),
@@ -420,18 +386,18 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
             } else {
                 conditions.push(RuleCondition::RegexMatch {
                     field: "path".into(),
-                    pattern: Arc::from(trimmed),
+                    pattern: Arc::from(p),
                 });
             }
-        } else if !trimmed.chars().any(is_regex_meta) {
+        } else if !p.is_empty() && !p.chars().any(is_regex_meta) {
             conditions.push(RuleCondition::SubstringMatch {
                 haystack: "path".into(),
-                needle: Arc::from(trimmed),
+                needle: Arc::from(p),
             });
         } else {
             conditions.push(RuleCondition::RegexMatch {
                 field: "path".into(),
-                pattern: Arc::from(trimmed),
+                pattern: Arc::from(p),
             });
         }
     }

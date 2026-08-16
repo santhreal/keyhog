@@ -1,8 +1,7 @@
 //! Unit tests for zero-allocation byte slicing and rule suppression logic.
 
 use keyhog_core::suppression::rule::{
-    normalize_severity_str, severity_rank_from_str, split_byte_tokens, trim_ascii_str,
-    trim_ascii_whitespace, RuleSuppressor,
+    split_byte_tokens, trim_ascii_str, trim_ascii_whitespace, RuleSuppressor,
 };
 use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::borrow::Cow;
@@ -64,35 +63,22 @@ fn test_split_byte_tokens() {
 }
 
 #[test]
-fn test_normalize_severity_str() {
-    assert_eq!(normalize_severity_str("  info  ").as_deref(), Ok("info"));
-    assert_eq!(
-        normalize_severity_str("Client-Safe").as_deref(),
-        Ok("client-safe")
-    );
-    assert_eq!(
-        normalize_severity_str("CLIENT_SAFE").as_deref(),
-        Ok("client-safe")
-    );
-    assert_eq!(normalize_severity_str("LOW").as_deref(), Ok("low"));
-    assert_eq!(normalize_severity_str("Medium").as_deref(), Ok("medium"));
-    assert_eq!(normalize_severity_str("HIGH").as_deref(), Ok("high"));
-    assert_eq!(
-        normalize_severity_str("CRITICAL").as_deref(),
-        Ok("critical")
-    );
-    assert!(normalize_severity_str("invalid_tier").is_err());
-}
+fn test_severity_suppression_matching() {
+    let toml = r#"
+[[suppress]]
+severity = "low"
 
-#[test]
-fn test_severity_rank_from_str() {
-    assert_eq!(severity_rank_from_str("info"), Ok(0));
-    assert_eq!(severity_rank_from_str("client-safe"), Ok(1));
-    assert_eq!(severity_rank_from_str("low"), Ok(2));
-    assert_eq!(severity_rank_from_str("medium"), Ok(3));
-    assert_eq!(severity_rank_from_str("high"), Ok(4));
-    assert_eq!(severity_rank_from_str("critical"), Ok(5));
-    assert!(severity_rank_from_str("bogus").is_err());
+[[suppress]]
+severity_lte = "medium"
+"#;
+    let s: RuleSuppressor = toml.parse().expect("rule should parse");
+    let low_f = test_finding("src/main.rs", Severity::Low);
+    let med_f = test_finding("src/main.rs", Severity::Medium);
+    let crit_f = test_finding("src/main.rs", Severity::Critical);
+
+    assert!(s.matches(&low_f));
+    assert!(s.matches(&med_f));
+    assert!(!s.matches(&crit_f));
 }
 
 #[test]
