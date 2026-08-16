@@ -146,16 +146,12 @@ pub fn base32_decode(input: &str) -> Result<Vec<u8>, ()> {
 /// `I`/`i`/`L`/`l` -> 1) are normalized.
 ///
 /// Uses standard byte-aligned framing (5-byte blocks per 8 characters) with trailing-bit
-/// zero checks on fractional blocks. Returns `Err(())` on invalid character, invalid length,
-/// or over-length input.
+/// zero checks on fractional blocks. Empty strings and hyphen-only separator strings decode
+/// to an empty vector. Returns `Err(())` on invalid character, invalid length, or over-length input.
 #[allow(clippy::result_unit_err)]
 pub fn crockford_base32_decode(input: &str) -> Result<Vec<u8>, ()> {
     if input.len() > MAX_BASE32_INPUT_LEN {
         return Err(());
-    }
-
-    if input.is_empty() {
-        return Ok(Vec::new());
     }
 
     if !input.as_bytes().contains(&b'-') {
@@ -171,9 +167,6 @@ pub fn crockford_base32_decode(input: &str) -> Result<Vec<u8>, ()> {
                 len += 1;
             }
         }
-        if len == 0 {
-            return Err(());
-        }
         let res = decode_base32_slice(&buf[..len], &CROCKFORD_DECODE_TABLE);
         buf.zeroize();
         res
@@ -183,9 +176,6 @@ pub fn crockford_base32_decode(input: &str) -> Result<Vec<u8>, ()> {
             if b != b'-' {
                 cleaned.push(b);
             }
-        }
-        if cleaned.is_empty() {
-            return Err(());
         }
         let res = decode_base32_slice(&cleaned, &CROCKFORD_DECODE_TABLE);
         cleaned.zeroize();
@@ -438,16 +428,14 @@ mod tests {
 
     #[test]
     fn crockford_hyphens_ignored() {
+        assert_eq!(crockford_base32_decode("").unwrap(), b"");
+        assert_eq!(crockford_base32_decode("-").unwrap(), b"");
+        assert_eq!(crockford_base32_decode("---").unwrap(), b"");
         let dec1 = crockford_base32_decode("CSQPYRK1").unwrap();
         let dec2 = crockford_base32_decode("CSQP-YRK1").unwrap();
         let dec3 = crockford_base32_decode("CS-QP-YR-K1").unwrap();
         assert_eq!(dec1, dec2);
         assert_eq!(dec1, dec3);
-    }
-    #[test]
-    fn crockford_hyphen_only_rejected() {
-        assert!(crockford_base32_decode("-").is_err());
-        assert!(crockford_base32_decode("---").is_err());
     }
     #[test]
     fn crockford_rejects_invalid_chars() {
