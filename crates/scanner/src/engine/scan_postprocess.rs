@@ -62,17 +62,6 @@ impl CompiledScanner {
         route: crate::ScanExecutionRoute,
         decoder_absence: bool,
     ) -> crate::error::Result<()> {
-        self.post_process_matches_inner(chunk, matches, deadline, route, decoder_absence)
-    }
-
-    pub(crate) fn post_process_matches_inner(
-        &self,
-        chunk: &Chunk,
-        matches: &mut Vec<RawMatch>,
-        deadline: Option<std::time::Instant>,
-        route: crate::ScanExecutionRoute,
-        decoder_absence: bool,
-    ) -> crate::error::Result<()> {
         if crate::deadline::expired(deadline) {
             return Ok(());
         }
@@ -210,27 +199,24 @@ impl CompiledScanner {
                     }
                     // Decoding is monotonic: keep raw findings and union resolved decoded evidence.
                     let raw_findings = matches.clone();
-                    let mut seen: HashSet<(Arc<str>, SensitiveString)> =
-                        matches.iter().map(|m| (Arc::clone(&m.detector_id), m.credential.clone())).collect();
-                    decoded_candidates.sort_by(|a, b| a.location.offset.cmp(&b.location.offset).then_with(|| a.cmp(b)));
-                    for m in decoded_candidates {
-                        if seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
-                            matches.push(m);
-                        }
-                    }
+                    decoded_candidates.sort_by(|a, b| {
+                        a.location
+                            .offset
+                            .cmp(&b.location.offset)
+                            .then_with(|| a.cmp(b))
+                    });
+                    union_matches(matches, decoded_candidates);
                     let resolved = crate::resolution::try_resolve_matches_with_compiled_plan(
                         std::mem::take(matches),
                         &self.detector_plans,
                     )
-                    .map_err(|error| crate::ScanError::Config(format!("compiled detector resolution failed: {error}")))?;
+                    .map_err(|e| {
+                        crate::ScanError::Config(format!(
+                            "compiled detector resolution failed: {e}"
+                        ))
+                    })?;
                     let mut merged = raw_findings;
-                    let mut merged_seen: HashSet<(Arc<str>, SensitiveString)> =
-                        merged.iter().map(|m| (Arc::clone(&m.detector_id), m.credential.clone())).collect();
-                    for m in resolved {
-                        if merged_seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
-                            merged.push(m);
-                        }
-                    }
+                    union_matches(&mut merged, resolved);
                     *matches = merged;
                 }
                 Ok(())
@@ -241,11 +227,9 @@ impl CompiledScanner {
                 }
             } else if self.chunk_uses_bounded_decode_windows(chunk) {
                 self.decode_source_windows(chunk, |window| {
-                    if self.chunk_needs_decode_postprocess(window) {
-                        decode_parent(window, matches)
-                    } else {
-                        Ok(())
-                    }
+                    self.chunk_needs_decode_postprocess(window)
+                        .then(|| decode_parent(window, matches))
+                        .unwrap_or(Ok(()))
                 })?;
             }
         }
@@ -369,5 +353,16 @@ impl CompiledScanner {
             }
         });
         expanded
+    }
+}
+fn union_matches(target: &mut Vec<keyhog_core::RawMatch>, incoming: Vec<keyhog_core::RawMatch>) {
+    let mut seen: HashSet<(Arc<str>, SensitiveString)> = target
+        .iter()
+        .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
+        .collect();
+    for m in incoming {
+        if seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
+            target.push(m);
+        }
     }
 }
