@@ -7,6 +7,7 @@
 - Intermediate decoded byte buffers in URL, Quoted-Printable, and MIME decoders are now wrapped in `Zeroizing` and zeroized on invalid escape and UTF-8 error exits before deallocation.
 - Percent and Quoted-Printable escape detection and counting now use SIMD-accelerated `memchr` scanning to bypass intermediate allocations and line-view splitting on ASCII pass-through chunks without `%` or `=` characters.
 - Public testing surface in `testing` exposes `url_decode_for_test` for direct URL percent-decode assertions.
+- Standalone bounded, zeroizing RFC 4648 and Crockford Base32 byte-stream decoders (`base32_decode` and `crockford_base32_decode`) with const lookup tables are exported from `decode::base32` without modifying the default automated scan pipeline composition.
 
 ## 0.5.76 - 2026-08-16
 

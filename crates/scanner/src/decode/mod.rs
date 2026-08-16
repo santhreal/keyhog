@@ -4,6 +4,7 @@
 //! CI/CD configs, URL-escaped payloads, string escapes, and hex-encoded
 //! credentials.
 
+pub mod base32;
 mod base64;
 pub(crate) mod caesar;
 pub(crate) mod hex;
@@ -19,6 +20,7 @@ mod unicode_escape;
 mod url;
 pub(crate) mod util;
 
+pub use base32::{base32_decode, crockford_base32_decode};
 pub use base64::{base64_decode, find_base64_strings, z85_decode};
 // `is_base64_candidate_byte` is the single canonical base64/url-safe alphabet
 // predicate; it is `pub` (not `pub(crate)`) because `keyhog-cli`'s autoroute

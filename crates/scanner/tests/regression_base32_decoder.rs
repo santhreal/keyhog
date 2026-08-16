@@ -1,10 +1,11 @@
-//! Regression: the ONE real base32 (RFC-4648) decoder keyhog ships.
+//! Regression: keyhog-core AWS base32 offline account recovery contract.
 //!
-//! keyhog's decode *pipeline* (base64/hex/url/…/z85/reverse/caesar) has NO
-//! base32 stage, that absence is pinned by `regression_base32_decode.rs`. But
-//! keyhog DOES contain a genuine RFC-4648 standard base32 decoder in
+//! keyhog's default decode *pipeline* (base64/hex/url/…/z85/reverse/caesar) has NO
+//! base32 stage, that absence is pinned by `regression_base32_decode.rs`. Standalone
+//! bounded byte-stream Base32 decoding is exported from `keyhog_scanner::decode::base32`.
+//! In `keyhog-core`, keyhog contains the specialized RFC-4648 standard base32 account decoder in
 //! `keyhog-core::aws` (`aws_account_from_key_id`), the routine that handles the
-//! only base32-shaped credential keyhog cares about: the 16-char base32 body of
+//! only base32-shaped credential keyhog parses in core findings: the 16-char base32 body of
 //! an `AKIA…`/`ASIA…` AWS access-key ID, from which the 12-digit owning account
 //! number is recovered fully offline (trufflesecurity algorithm). This file
 //! pins that decoder's exact decoded values, alphabet handling, fail-closed

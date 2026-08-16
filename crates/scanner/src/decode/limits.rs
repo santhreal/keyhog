@@ -26,6 +26,7 @@ pub(super) const MIN_HTML_NUMERIC_ENTITIES: usize = 4;
 const DECODE_LIMIT_UNIT_BYTES: usize = 16 * MIB;
 pub(super) const MAX_BASE64_INPUT_LEN: usize = DECODE_LIMIT_UNIT_BYTES;
 pub(super) const MAX_Z85_INPUT_LEN: usize = DECODE_LIMIT_UNIT_BYTES;
+pub(super) const MAX_BASE32_INPUT_LEN: usize = DECODE_LIMIT_UNIT_BYTES;
 
 // Two hex input bytes produce one decoded byte, so hex gets two input units.
 pub(super) const MAX_HEX_INPUT_LEN: usize = DECODE_LIMIT_UNIT_BYTES * 2;
