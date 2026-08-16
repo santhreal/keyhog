@@ -170,7 +170,7 @@ hash:c8dd2f89f4777084ad0bef0087a1dbcfd20576cf84a164f955e623a14494fb6e; reason="m
 hash:dfa4628f0d0475b7209644850dbe6a84e9aa3771d986f3daf0870051e1f775f6; reason="measured entropy-token at benchmarks/bench/workload_fixtures.py:368; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
 hash:3dadd105baf8cf41097f50bf39aa464f52eafe23940c3368e85053c5ff49b246; reason="measured entropy-token at docs/src/guides/triage-feedback.md:81; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
 hash:c5123af85e3a7d4b6b28fe69fc3936ce4d72cba1d0c33c101f45bccb875917f8; reason="measured entropy-token at docs/src/guides/triage-feedback.md:83; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
-hash:eb7cfba5ea52088616ef749817d0fc142c2b1ec2ac79a6d129279418839d0550; reason="measured entropy-token at docs/src/workflows/github-action.md:266; reviewed documentation fixture"
+hash:f196fe15dbcd277c35eb876fd7e17d0158e971f63f06faea2bbf3ff8d5662a78; reason="measured entropy-token at docs/src/workflows/github-action.md:266; reviewed documentation fixture"; approved_by="keyhog-maintainers"
 
 # --- Retained but unproven on this build --------------------------------------
 # These suppressed nothing under the seven presets measured on the release-fast
