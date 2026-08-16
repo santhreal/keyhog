@@ -644,7 +644,7 @@ fn csv_empty_corpus_is_header_only() {
 }
 
 /// Non-empty corpus -> header + >=1 data row. Each data row has exactly
-/// 20 logical fields (matching the header column count), parsed as RFC-4180
+/// 22 logical fields (matching the header column count), parsed as RFC-4180
 /// because JSON remediation cells contain commas.
 #[test]
 fn csv_planted_finding_has_header_plus_data_rows() {
@@ -665,12 +665,12 @@ fn csv_planted_finding_has_header_plus_data_rows() {
     assert_eq!(lines[0], CSV_HEADER, "first CSV line must be the header");
     // Parse the JSON-bearing row instead of counting commas inside cells.
     let header_cols = CSV_HEADER.split(',').count();
-    assert_eq!(header_cols, 20, "CSV header must declare 20 columns");
+    assert_eq!(header_cols, 22, "CSV header must declare 22 columns");
     for row in &lines[1..] {
         assert_eq!(
             parse_csv_row(row).len(),
-            20,
-            "CSV data row must have 20 columns matching the header; row={row:?}"
+            22,
+            "CSV data row must have 22 columns matching the header; row={row:?}"
         );
     }
 }

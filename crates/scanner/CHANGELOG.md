@@ -12,6 +12,7 @@
 
 - Hex decoding now zeroizes intermediate decode buffers on malformed trailing characters or invalid hex byte sequences and validates 16-byte and 32-byte hex hashes using a stack buffer, eliminating heap allocations for candidate token validation.
 - Decoded reverse-placeholder suppression now uses case-insensitive ASCII byte searching directly on candidate bytes, eliminating transient string reversal and uppercase allocations.
+- Short-circuit decoded-match suppression checks in scan post-processing and preserve exact deduplication ordering.
 - fix(core): rerun build script on GITHUB_SHA changes to prevent stale git hash in CI cache.
 ## 0.5.75 - 2026-08-14
 

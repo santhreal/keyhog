@@ -17,7 +17,7 @@
 //!              exactly one result.
 //!   * text  -> the "1 secret found" roll-up + "CRITICAL" label + detector
 //!              name + the "stdin" location.
-//!   * csv   -> the exact 20-field header, then a data row whose cells are the
+//!   * csv   -> the exact 22-field header, then a data row whose cells are the
 //!              detector id/name/service/severity/redaction/hash/source in order.
 //!
 //! Negative twins: a clean stdin and an EMPTY stdin each exit 0 and produce the
@@ -387,9 +387,9 @@ fn stdin_text_clean_honest_no_secrets_line_exit_0() {
 // CSV
 // ---------------------------------------------------------------------------
 
-/// csv off stdin: the first non-comment line is EXACTLY the documented 20-field header, and
+/// csv off stdin: the first non-comment line is EXACTLY the documented 22-field header, and
 /// the sole data row's cells are id/name/service/severity/redaction/hash/source
-/// in order, with exactly 20 fields.
+/// in order, with exactly 22 fields.
 #[test]
 fn stdin_csv_header_and_single_data_row_exact_cells() {
     let input = format!("{TOKEN}\n");
@@ -429,11 +429,11 @@ fn stdin_csv_header_and_single_data_row_exact_cells() {
     let fields = parse_csv_row(row);
     let field_count = fields.len();
     assert_eq!(
-        field_count, 20,
-        "csv data row must have exactly 20 fields, got {field_count}"
+        field_count, 22,
+        "csv data row must have exactly 22 fields, got {field_count}"
     );
-    assert_eq!(fields[18], "{}");
-    assert_eq!(fields[19], "[]");
+    assert_eq!(fields[20], "{}");
+    assert_eq!(fields[21], "[]");
 }
 
 /// csv negative twin: clean stdin exits 0 and emits the metadata preamble plus ONLY the header.

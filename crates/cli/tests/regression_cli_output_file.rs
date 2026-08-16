@@ -326,7 +326,7 @@ fn short_o_flag_equivalent_to_long_output() {
 // Other formats round-trip to the file with their exact structure
 // ---------------------------------------------------------------------------
 
-/// CSV `--output`: the first non-comment line is the exact 20-field header and there
+/// CSV `--output`: the first non-comment line is the exact 22-field header and there
 /// is exactly one data row whose first cell is the detector id.
 #[test]
 fn csv_output_file_header_and_single_row() {

@@ -987,8 +987,8 @@ fn parse_csv(text: &str) -> Vec<Vec<String>> {
 }
 
 /// Drive the real binary in `--format csv` on a finding-bearing tree, parse
-/// the output as RFC-4180 CSV, and assert: the header is the exact 20-column
-/// header keyhog promises, every data row has exactly 20 fields (no row
+/// the output as RFC-4180 CSV, and assert: the header is the exact 22-column
+/// header keyhog promises, every data row has exactly 22 fields (no row
 /// torn by an unescaped comma), and the data-row count equals the JSON
 /// ground-truth finding count.
 #[test]

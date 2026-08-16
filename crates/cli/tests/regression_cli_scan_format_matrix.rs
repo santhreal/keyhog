@@ -295,7 +295,7 @@ fn text_clean_run_honest_no_secrets_line() {
 // CSV
 // ---------------------------------------------------------------------------
 
-/// csv: the first non-comment line is EXACTLY the documented 20-field header.
+/// csv: the first non-comment line is EXACTLY the canonical 22-field header.
 #[test]
 fn csv_format_header_is_exact() {
     let (_dir, path) = leak_fixture();
@@ -317,7 +317,7 @@ fn csv_format_header_is_exact() {
 }
 
 /// csv: exactly one data row, and its leading cells are the detector id, name,
-/// service, and severity in order; the RFC-4180 row has exactly 20 fields.
+/// service, and severity in order; the RFC-4180 row has exactly 22 fields.
 #[test]
 fn csv_format_single_data_row_fields() {
     let (_dir, path) = leak_fixture();
@@ -345,12 +345,12 @@ fn csv_format_single_data_row_fields() {
     );
     let field_count = parse_csv_row(row).len();
     assert_eq!(
-        field_count, 20,
-        "csv data row must have exactly 20 fields, got {field_count}"
+        field_count, 22,
+        "csv data row must have exactly 22 fields, got {field_count}"
     );
     let fields = parse_csv_row(row);
-    assert_eq!(fields[18], "{}");
-    assert_eq!(fields[19], "[]");
+    assert_eq!(fields[20], "{}");
+    assert_eq!(fields[21], "[]");
 }
 
 /// csv negative twin: a clean file exits 0 and emits metadata plus ONLY the

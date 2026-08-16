@@ -11,8 +11,15 @@ use keyhog_core::{
 };
 use keyhog_profile::Stage;
 use std::collections::BTreeMap;
-use std::io::{self, IsTerminal};
+use std::io::{self, BufWriter, IsTerminal, Write};
 
+/// Default buffer capacity in bytes for streaming report writers.
+const REPORT_BUFFER_CAPACITY: usize = 64 * 1024;
+
+/// Wrap a writer in a standard buffered writer sized for report streaming.
+fn buffered_report_writer<W: Write>(writer: W) -> BufWriter<W> {
+    BufWriter::with_capacity(REPORT_BUFFER_CAPACITY, writer)
+}
 pub(crate) fn report_findings(findings: &[VerifiedFinding], args: &ScanArgs) -> Result<()> {
     let metadata = generated_report_metadata();
     report_findings_with_metadata(findings, args, &metadata)
@@ -45,7 +52,7 @@ pub(crate) fn report_findings_with_metadata(
     };
     if let Some(path) = &args.output {
         crate::atomic_file::write_with_file(path, |writer_handle| {
-            let w = io::BufWriter::new(writer_handle);
+            let w = buffered_report_writer(writer_handle);
             report_with(
                 w,
                 &args.format,
@@ -60,7 +67,7 @@ pub(crate) fn report_findings_with_metadata(
         .with_context(|| format!("atomically writing report {}", path.display()))?;
         Ok(())
     } else {
-        let w = io::BufWriter::new(io::stdout());
+        let w = buffered_report_writer(io::stdout());
         // Color when stdout is a TTY and the operator did not force plain output
         // via `--no-color`. (The `NO_COLOR` env convention is honored in the
         // orchestrator, which sets the flag-equivalent before reporting.)
