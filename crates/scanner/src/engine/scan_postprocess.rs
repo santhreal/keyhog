@@ -1,15 +1,13 @@
 pub(crate) mod confirmed_anchor;
 
 use super::CompiledScanner;
-#[cfg(feature = "decode")]
-use crate::types::MAX_SCAN_CHUNK_BYTES;
-#[cfg(feature = "decode")]
-use keyhog_core::SensitiveString;
 use keyhog_core::{Chunk, RawMatch};
 #[cfg(feature = "decode")]
-use std::collections::HashSet;
-#[cfg(feature = "decode")]
-use std::sync::Arc;
+use {
+    crate::types::MAX_SCAN_CHUNK_BYTES,
+    keyhog_core::SensitiveString,
+    std::{collections::HashSet, sync::Arc},
+};
 
 /// Deduplicate a literal into a shared `literals` Vec, returning its index.
 /// Avoids the `entry(lit.clone()).or_insert_with(|| push(lit.clone()))`
@@ -211,7 +209,8 @@ impl CompiledScanner {
                     // Decoding is monotonic: keep raw findings and union resolved decoded evidence.
                     let raw_findings = matches.clone();
                     let key = |m: &RawMatch| (Arc::clone(&m.detector_id), m.credential.clone());
-                    let mut seen: HashSet<_> = matches.iter().map(key).collect();
+                    let mut seen: HashSet<(Arc<str>, SensitiveString)> =
+                        matches.iter().map(key).collect();
                     decoded_candidates
                         .sort_by(|a, b| (a.location.offset, a).cmp(&(b.location.offset, b)));
                     matches.extend(
@@ -229,7 +228,8 @@ impl CompiledScanner {
                         ))
                     })?;
                     let mut merged = raw_findings;
-                    let mut merged_seen: HashSet<_> = merged.iter().map(key).collect();
+                    let mut merged_seen: HashSet<(Arc<str>, SensitiveString)> =
+                        merged.iter().map(key).collect();
                     merged.extend(resolved.into_iter().filter(|m| merged_seen.insert(key(m))));
                     *matches = merged;
                 }
