@@ -355,6 +355,7 @@ impl CompiledScanner {
         expanded
     }
 }
+#[cfg(feature = "decode")]
 fn union_matches(target: &mut Vec<keyhog_core::RawMatch>, incoming: Vec<keyhog_core::RawMatch>) {
     let mut seen: HashSet<(Arc<str>, SensitiveString)> = target
         .iter()
