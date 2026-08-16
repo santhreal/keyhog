@@ -4,8 +4,12 @@
 //! always-active prefilter gating, and differential parity between localized
 //! shared-anchor execution and baseline whole-chunk scanning.
 
-mod support;
-use support::paths::detector_dir;
+fn detector_dir() -> std::path::PathBuf {
+    let mut d = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    d.pop();
+    d.pop();
+    d.join("detectors")
+}
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScanExecutionRoute};

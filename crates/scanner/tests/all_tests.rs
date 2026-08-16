@@ -9,6 +9,8 @@ pub mod detector_length_policy_parity;
 #[path = "gap/entropy_feature_policy_fails_closed.rs"]
 pub mod entropy_feature_policy_fails_closed;
 pub mod integration;
+#[path = "integration_phase2.rs"]
+pub mod integration_phase2;
 pub mod regression;
 // Standalone `regression_*.rs` files are aggregated here so the single CI step
 // `cargo test -p keyhog-scanner --test all_tests` actually runs them. A test file
