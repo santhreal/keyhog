@@ -840,7 +840,7 @@ impl Phase2AlwaysActivePrefilter {
             }
             let (matcher, gated) = match plan.matcher_for(batch, phase2_patterns) {
                 BatchMatcher::Run { set, plain_gate } => {
-                    if !plan.run_gateable_batch(batch, plain_gate, gates) {
+                    if !plan.run_gateable_batch(batch, plain_gate, &gates) {
                         if prof && batch.gateable {
                             GATE_BATCH_SKIPS.fetch_add(1, Relaxed);
                         }
@@ -945,7 +945,7 @@ impl Phase2AlwaysActivePrefilter {
             }
             let matcher = match plan.matcher_for(batch, phase2_patterns) {
                 BatchMatcher::Run { set, plain_gate } => {
-                    if !plan.run_gateable_batch(batch, plain_gate, gates) {
+                    if !plan.run_gateable_batch(batch, plain_gate, &gates) {
                         continue;
                     }
                     set

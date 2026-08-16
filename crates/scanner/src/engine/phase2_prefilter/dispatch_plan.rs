@@ -143,8 +143,11 @@ impl<'a> DispatchPlan<'a> {
     }
 
     #[inline]
-    pub(super) fn portable_gates(self, portable: &PortablePrefilter) -> PortableGateEvidence {
-        PortableGateEvidence::observe(
+    pub(super) fn portable_gates(
+        self,
+        portable: &'a PortablePrefilter,
+    ) -> PortableGateEvidence<'a> {
+        PortableGateEvidence::new(
             self.chunk,
             self.prefix_gate,
             self.use_ascii_matcher,
@@ -159,7 +162,7 @@ impl<'a> DispatchPlan<'a> {
         self,
         batch: &PrefilterBatch,
         plain_gate: bool,
-        gates: PortableGateEvidence,
+        gates: &PortableGateEvidence<'_>,
     ) -> bool {
         !batch.gateable || gates.run_gateable_batch(plain_gate)
     }

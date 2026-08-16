@@ -140,6 +140,13 @@ impl CompiledScanner {
                 let pattern_is_live =
                     |pat: usize| !skip_homoglyph || !this.phase2_patterns[pat].0.homoglyph_variant;
                 let localize_keyword_anchors = route.phase2_keyword_localizer;
+                let localize_plain_anchors = this.tuning.homoglyph_gate_enabled()
+                    && scan_text_is_ascii
+                    && anchor_idx.has_plain_localizer(route.phase2_plain_localizer)
+                    && !phase2_always_active_gpu_evidence.is_some_and(|evidence| {
+                        this.phase2_prefixless_gpu_absence_proven(evidence)
+                    });
+
                 super::with_candidate_scratch(|candidate_scratch| {
                     let cands = &mut candidate_scratch.candidates;
                     let mut candidates_are_full_text_offsets = false;
@@ -203,22 +210,14 @@ impl CompiledScanner {
                         deadline,
                         prof,
                     );
-                });
 
-                // Localized plain-pattern path (ASCII chunks): verify live
-                // patterns from folded-literal AC positions. Inert generated
-                // homoglyph variants are excluded by the shared predicate; plain
-                // fallbacks without a folded literal still run whole-chunk. A
-                // complete negative GPU prefixless receipt already covers every
-                // live member of this family, so it suppresses the second pass.
-                if self.tuning.homoglyph_gate_enabled()
-                    && scan_text_is_ascii
-                    && anchor_idx.has_plain_localizer(route.phase2_plain_localizer)
-                    && !phase2_always_active_gpu_evidence
-                        .is_some_and(|evidence| self.phase2_prefixless_gpu_absence_proven(evidence))
-                {
-                    super::with_candidate_scratch(|candidate_scratch| {
-                        let cands = &mut candidate_scratch.candidates;
+                    // Localized plain-pattern path (ASCII chunks): verify live
+                    // patterns from folded-literal AC positions. Inert generated
+                    // homoglyph variants are excluded by the shared predicate; plain
+                    // fallbacks without a folded literal still run whole-chunk. A
+                    // complete negative GPU prefixless receipt already covers every
+                    // live member of this family, so it suppresses the second pass.
+                    if localize_plain_anchors {
                         {
                             let _g = super::profile::span(keyhog_profile::Stage::Phase2SharedAc);
                             anchor_idx.collect_plain_candidates(scan_text, pattern_is_live, cands);
@@ -243,39 +242,39 @@ impl CompiledScanner {
                                 prof,
                             );
                         }
-                    });
-                    {
-                        let _g = super::profile::span(keyhog_profile::Stage::Phase2WholeChunk);
-                        for &idx in anchor_idx.plain_always_mark() {
-                            if crate::deadline::expired(deadline) {
-                                break;
-                            }
-                            let pat = idx as usize;
-                            let (entry, _) = &this.phase2_patterns[pat];
-                            if !pattern_is_live(pat) {
-                                continue;
-                            }
-                            let t0 = if prof { Some(Instant::now()) } else { None };
-                            this.extract_matches_inner(
-                                entry,
-                                preprocessed,
-                                line_index,
-                                chunk,
-                                scan_state,
-                                cursor,
-                                deadline,
+                    }
+                });
+
+                if localize_plain_anchors {
+                    let _g = super::profile::span(keyhog_profile::Stage::Phase2WholeChunk);
+                    for &idx in anchor_idx.plain_always_mark() {
+                        if crate::deadline::expired(deadline) {
+                            break;
+                        }
+                        let pat = idx as usize;
+                        let (entry, _) = &this.phase2_patterns[pat];
+                        if !pattern_is_live(pat) {
+                            continue;
+                        }
+                        let t0 = if prof { Some(Instant::now()) } else { None };
+                        this.extract_matches_inner(
+                            entry,
+                            preprocessed,
+                            line_index,
+                            chunk,
+                            scan_state,
+                            cursor,
+                            deadline,
+                        );
+                        if let Some(t0) = t0 {
+                            phase2_pattern_prof_record(
+                                this.phase2_patterns.len(),
+                                pat,
+                                t0.elapsed().as_nanos() as u64,
                             );
-                            if let Some(t0) = t0 {
-                                phase2_pattern_prof_record(
-                                    this.phase2_patterns.len(),
-                                    pat,
-                                    t0.elapsed().as_nanos() as u64,
-                                );
-                            }
                         }
                     }
                 }
-
                 // Active patterns with no required-literal anchor: whole-chunk
                 // (windowed to the focus cursor when focus-restricting).
                 let _wholechunk_g = super::profile::span(keyhog_profile::Stage::Phase2WholeChunk);
