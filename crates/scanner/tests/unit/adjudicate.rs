@@ -905,6 +905,25 @@ fn scan_collapses_decoded_duplicate_matches_identically() {
         .expect("detector compiles")
         .with_config(config);
 
+    // Negative control: distinct encoded secret emits both raw and decoded findings.
+    // "a2V5ID0gZHVwXzk4NzY1NDMyMTA5ODc2NTQ=" decodes to "key = dup_9876543210987654".
+    let distinct_data = "dup_abcdef1234567890 a2V5ID0gZHVwXzk4NzY1NDMyMTA5ODc2NTQ=";
+    let distinct_chunk = Chunk {
+        data: SensitiveString::from(distinct_data),
+        metadata: ChunkMetadata {
+            path: Some("dedup-test-distinct.txt".into()),
+            ..Default::default()
+        },
+    };
+    let distinct_matches = scanner.scan(&distinct_chunk).expect("scan succeeds");
+    assert_eq!(
+        distinct_matches.len(),
+        2,
+        "raw finding and distinct decoded finding must both survive, got {distinct_matches:?}"
+    );
+
+    // Dedup verification: identical encoded secret collapses to 1 match.
+    // "a2V5ID0gZHVwX2FiY2RlZjEyMzQ1Njc4OTA=" decodes to "key = dup_abcdef1234567890".
     let data = "dup_abcdef1234567890 a2V5ID0gZHVwX2FiY2RlZjEyMzQ1Njc4OTA=";
     let chunk = Chunk {
         data: SensitiveString::from(data),
