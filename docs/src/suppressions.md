@@ -214,6 +214,7 @@ reading the envelope because equivalent reparse-point-safe held-handle I/O is
 not available. Stale detector or pattern identities, unknown fields, malformed
 digests, version mismatches, excessive input, symbolic links, special input
 files, and existing output files fail without publishing either output. See
+[Triage and feedback interchange](./guides/triage-feedback.md) and
 [`keyhog triage`](./reference/cli.md#keyhog-triage).
 
 ### `.keyhogignore`: one condition per line

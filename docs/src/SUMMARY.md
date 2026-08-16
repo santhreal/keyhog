@@ -47,6 +47,7 @@
 - [Detectors and custom corpora](./detectors.md)
 - [Write a detector](./guides/authoring-detectors.md)
 - [Suppressions and baselines](./suppressions.md)
+- [Triage and feedback interchange](./guides/triage-feedback.md)
 - [Credential verification](./verification.md)
 - [Access targets](./guides/access-targets.md)
 - [Confidence calibration](./reference/confidence-calibration.md)

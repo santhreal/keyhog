@@ -539,6 +539,86 @@ Even a regex match isn't always a credential. Stage 4 filters:
   gets reassembled from the tail of chunk N + the head of chunk N+1.
 
 A finding that survives stage 4 makes it to output.
+## Semantic source roles and structured parsing
+
+KeyHog analyzes the syntactic role of matched text to distinguish genuine
+credential assignments from comments, documentation, and mock data.
+
+Each candidate is classified into a `SemanticSourceRole`:
+
+| Semantic source role | Source context | Precision effect |
+|---|---|---|
+| `environment-assignment-value` | `.env` files, shell `KEY=value` lines | Highest confidence for credential assignments |
+| `structured-header-value` | HTTP request/response headers, YAML/JSON auth blocks | High confidence for credential headers |
+| `code-literal` | String literals in source code ASTs (`.js`, `.py`, `.rs`, `.go`, ...) | Standard confidence; subject to identifier and placeholder screens |
+| `standalone-token` | Bare tokens without key-value assignment anchors | Evaluated through entropy, shape, and BPE token efficiency gates |
+| `comment` | Single-line and block comments in source files | Downgraded by default unless `--scan-comments` is enabled |
+| `test-fixture` | Unit test fixtures, mock data, and test files | Suppressed by default unless `--no-suppress-test-fixtures` is enabled |
+| `documentation` | Markdown fenced blocks, docstrings, README files | Suppressed or downgraded according to detector documentation policy |
+| `binary-string` | Extracted printable strings from compiled binaries | Evaluated under binary strings length and entropy bounds |
+| `unattributed` | Synthetic findings or callers without semantic indexing | Default neutral baseline |
+| `unknown` | Files with unrecognized or non-matching structured extensions | Abstained role; candidate evaluates on standard structural evidence |
+
+### Structured parser scoping and abstention
+
+Structured configuration parsers (dotenv, JSON, YAML, TOML) enforce strict
+file-extension scoping:
+
+1. **Extension-matching paths:** Files with recognized extensions (`.env`,
+   `.json`, `.yaml`, `.yml`, `.toml`) parse according to their format grammar.
+2. **Non-matching extensions:** Files with non-matching extensions (for example
+   `config.unknown` or `data.txt`) abstain to `SemanticSourceRole::Unknown`.
+   They do not guess format syntax from arbitrary file extensions.
+3. **Unnamed memory buffers:** Unnamed streams (`path: None`), such as standard
+   input or in-memory chunk buffers, use content-based structural sniffing to
+   identify dotenv or JSON payloads.
+
+## Decoded sub-chunk semantic scoping
+
+When an input contains encoded strings (such as Base64, Hexadecimal, or
+URL-encoded payloads), KeyHog's decode-through engine extracts the decoded bytes
+into a sub-chunk.
+
+A decoded sub-chunk clears its inherited file path to `None` during semantic
+indexing. This ensures that the decoded payload is parsed based on its own
+syntactic structure rather than inheriting the outer file's extension. For
+example, a Base64-encoded JSON object inside a `.txt` file is parsed as
+structured JSON rather than plain text.
+
+## Pattern provenance and secret-safe evidence
+
+Every finding emitted by KeyHog carries a structured `provenance` record inside
+its `evidence` block. This metadata identifies the exact pattern and context
+that produced the match without disclosing secret material:
+
+```json
+{
+  "schema_version": 1,
+  "detector_digest": "0123456789abcdef",
+  "pattern_index": 0,
+  "candidate_channel": "pattern",
+  "source_role": "environment-assignment-value",
+  "context_class": "vendor-pattern"
+}
+```
+
+### Provenance fields
+
+- `schema_version`: Version of the provenance schema (currently `1`).
+- `detector_digest`: 16-character lowercase hexadecimal hash of the active
+  compiled detector specification.
+- `pattern_index`: 0-indexed ordinal of the matched regex pattern in the
+  detector TOML, or `null` for entropy-discovered candidates.
+- `candidate_channel`: Pipeline stage that generated the candidate: `pattern`
+  (regex match), `entropy` (entropy discovery), `companion` (companion match),
+  `static-recovery` (bounded JavaScript XOR/AES evaluation), or `unattributed`.
+- `source_role`: The `SemanticSourceRole` where the match was located.
+- `context_class`: Surrounding context category (`vendor-pattern`,
+  `weak-anchor`, `generic-assignment`, `standalone-token`, or
+  `unsupported-context`).
+
+Provenance records are deterministic, portable, and safe to share in public CI
+logs and triage envelopes.
 
 ## Where the speed comes from
 

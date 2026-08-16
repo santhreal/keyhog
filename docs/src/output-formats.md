@@ -169,8 +169,9 @@ Unsupported scanner context retains its producer identity and uses the
 `unattributed` channel with no detector digest or pattern ordinal.
 Cross-detector grouping retains the strongest evidence reason while keeping
 provenance owned by the detector named in `detector_id`; folded detectors remain
-listed in `cross_detector.*` companions.
-
+listed in `cross_detector.*` companions. See
+[Pattern provenance and secret-safe evidence](./detection.md#pattern-provenance-and-secret-safe-evidence)
+and [Triage and feedback interchange](./guides/triage-feedback.md).
 Do not enable `--show-secrets` when stdout or `--output` is retained by CI,
 uploaded as an artifact, or sent to another process. That option deliberately
 replaces `credential_redacted` with plaintext. `credential_hash` is safe from
