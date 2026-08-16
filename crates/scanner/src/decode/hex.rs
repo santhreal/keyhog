@@ -194,9 +194,6 @@ pub fn hex_decode(input: &str) -> Result<Vec<u8>, ()> {
         return Ok(out);
     }
 
-    if input.len() > MAX_HEX_INPUT_LEN * 2 {
-        return Err(());
-    }
     let mut cleaned = Zeroizing::new(Vec::with_capacity(input.len().min(MAX_HEX_INPUT_LEN)));
     for &b in input.as_bytes() {
         if b != b'_' {

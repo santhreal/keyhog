@@ -108,3 +108,13 @@ fn try_decode_hex_candidate_utf8_fast_path() {
     assert_eq!(try_decode_hex_candidate_to_utf8("abc"), None);
     assert_eq!(try_decode_hex_candidate_to_utf8("zz41"), None);
 }
+#[test]
+fn hex_decode_handles_separator_heavy_large_input() {
+    let mut input = String::with_capacity(2000);
+    for _ in 0..300 {
+        input.push_str("___41___42___");
+    }
+    let decoded = hex_decode(&input).expect("separator-heavy hex should decode");
+    assert_eq!(decoded.len(), 600);
+    assert_eq!(&decoded[..2], b"AB");
+}
