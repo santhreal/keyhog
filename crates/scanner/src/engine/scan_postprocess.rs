@@ -3,9 +3,9 @@ pub(crate) mod confirmed_anchor;
 pub(crate) mod decode;
 
 use super::CompiledScanner;
-use keyhog_core::{Chunk, RawMatch};
 #[cfg(feature = "decode")]
 use crate::types::MAX_SCAN_CHUNK_BYTES;
+use keyhog_core::{Chunk, RawMatch};
 
 /// Deduplicate a literal into a shared `literals` Vec, returning its index.
 /// Avoids the `entry(lit.clone()).or_insert_with(|| push(lit.clone()))`
