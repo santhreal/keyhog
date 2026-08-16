@@ -60,18 +60,18 @@ impl<W: Write + Send> Reporter for JsonlReporter<W> {
 impl_writer_backed!(JsonlReporter);
 
 /// Versioned JSON Lines output with an explicit first-record stream header.
-pub(crate) struct JsonlEnvelopeReporter<W: Write + Send> {
+pub(crate) struct JsonlEnvelopeReporter<'a, W: Write + Send> {
     writer: W,
     finding_count: usize,
     scan_status: ScanCompletionStatus,
-    coverage_gap_summary: Vec<(String, usize)>,
+    coverage_gap_summary: &'a [(String, usize)],
 }
 
-impl<W: Write + Send> JsonlEnvelopeReporter<W> {
+impl<'a, W: Write + Send> JsonlEnvelopeReporter<'a, W> {
     pub(crate) fn new(
         mut writer: W,
         metadata: Option<&ScanReportMetadata>,
-        coverage_gap_summary: &[(String, usize)],
+        coverage_gap_summary: &'a [(String, usize)],
     ) -> Result<Self, ReportError> {
         serde_json::to_writer(&mut writer, &JsonlStreamHeader::new(metadata))?;
         writeln!(writer)?;
@@ -82,12 +82,12 @@ impl<W: Write + Send> JsonlEnvelopeReporter<W> {
                 metadata.map(|value| value.scan_status),
                 !coverage_gap_summary.is_empty(),
             ),
-            coverage_gap_summary: coverage_gap_summary.to_vec(),
+            coverage_gap_summary,
         })
     }
 }
 
-impl<W: Write + Send> Reporter for JsonlEnvelopeReporter<W> {
+impl<'a, W: Write + Send> Reporter for JsonlEnvelopeReporter<'a, W> {
     fn report(&mut self, finding: &VerifiedFinding) -> Result<(), ReportError> {
         serde_json::to_writer(&mut self.writer, finding)?;
         writeln!(self.writer)?;
@@ -101,7 +101,7 @@ impl<W: Write + Send> Reporter for JsonlEnvelopeReporter<W> {
             &JsonlStreamSummary::complete_with_status(
                 self.finding_count,
                 self.scan_status,
-                &self.coverage_gap_summary,
+                self.coverage_gap_summary,
             ),
         )?;
         writeln!(self.writer)?;
@@ -109,7 +109,12 @@ impl<W: Write + Send> Reporter for JsonlEnvelopeReporter<W> {
     }
 }
 
-impl_writer_backed!(JsonlEnvelopeReporter);
+impl<'a, W: Write + Send> WriterBackedReporter for JsonlEnvelopeReporter<'a, W> {
+    type Writer = W;
+    fn writer_mut(&mut self) -> &mut Self::Writer {
+        &mut self.writer
+    }
+}
 
 /// Full JSON array output.
 ///
@@ -171,28 +176,21 @@ impl<W: Write + Send> Reporter for JsonArrayReporter<W> {
 impl_writer_backed!(JsonArrayReporter);
 
 /// Versioned JSON envelope output for operator-facing machine artifacts.
-pub(crate) struct JsonEnvelopeReporter<W: Write + Send> {
+pub(crate) struct JsonEnvelopeReporter<'a, W: Write + Send> {
     writer: W,
     first: bool,
-    /// Pre-encoded `correlations` array, or `None` when the caller supplied no
-    /// correlations. Encoding up front keeps the reporter free of a borrow on
-    /// the report while still emitting the array AFTER `findings`, where a
-    /// streaming reader expects a scan-wide summary.
-    correlations: Option<String>,
-    /// Pre-encoded `access_targets` object, `None` when the caller ran no
-    /// association pass. Same reasoning as `correlations`: encode up front,
-    /// emit after `findings`.
-    access_targets: Option<String>,
+    correlations: &'a [CorrelatedCredential],
+    access_targets: Option<&'a AccessTargetReport>,
 }
 
-impl<W: Write + Send> JsonEnvelopeReporter<W> {
+impl<'a, W: Write + Send> JsonEnvelopeReporter<'a, W> {
     /// Create a versioned JSON envelope reporter.
     pub(crate) fn new(
         mut writer: W,
         metadata: Option<&ScanReportMetadata>,
         coverage_gap_summary: &[(String, usize)],
-        correlations: &[CorrelatedCredential],
-        access_targets: Option<&AccessTargetReport>,
+        correlations: &'a [CorrelatedCredential],
+        access_targets: Option<&'a AccessTargetReport>,
     ) -> Result<Self, ReportError> {
         write!(
             writer,
@@ -224,18 +222,6 @@ impl<W: Write + Send> JsonEnvelopeReporter<W> {
         }
         write!(writer, "]")?;
         write!(writer, ",\"findings\":[")?;
-        let correlations = if correlations.is_empty() {
-            None
-        } else {
-            Some(serde_json::to_string(correlations)?)
-        };
-        // An association pass that ran and found nothing still emits its
-        // coverage block: "looked, found no door" and "never looked" are
-        // different facts and the artifact must not conflate them.
-        let access_targets = match access_targets {
-            Some(report) => Some(serde_json::to_string(report)?),
-            None => None,
-        };
         Ok(Self {
             writer,
             first: true,
@@ -245,7 +231,7 @@ impl<W: Write + Send> JsonEnvelopeReporter<W> {
     }
 }
 
-impl<W: Write + Send> Reporter for JsonEnvelopeReporter<W> {
+impl<'a, W: Write + Send> Reporter for JsonEnvelopeReporter<'a, W> {
     fn report(&mut self, finding: &VerifiedFinding) -> Result<(), ReportError> {
         if !self.first {
             write!(self.writer, ",")?;
@@ -257,15 +243,22 @@ impl<W: Write + Send> Reporter for JsonEnvelopeReporter<W> {
 
     fn finish(&mut self) -> Result<(), ReportError> {
         write!(self.writer, "]")?;
-        if let Some(correlations) = self.correlations.take() {
-            write!(self.writer, ",\"correlations\":{correlations}")?;
+        if !self.correlations.is_empty() {
+            write!(self.writer, ",\"correlations\":")?;
+            serde_json::to_writer(&mut self.writer, self.correlations)?;
         }
-        if let Some(access_targets) = self.access_targets.take() {
-            write!(self.writer, ",\"access_targets\":{access_targets}")?;
+        if let Some(access_targets) = self.access_targets {
+            write!(self.writer, ",\"access_targets\":")?;
+            serde_json::to_writer(&mut self.writer, access_targets)?;
         }
         write!(self.writer, "}}")?;
         self.flush_writer()
     }
 }
 
-impl_writer_backed!(JsonEnvelopeReporter);
+impl<'a, W: Write + Send> WriterBackedReporter for JsonEnvelopeReporter<'a, W> {
+    type Writer = W;
+    fn writer_mut(&mut self) -> &mut Self::Writer {
+        &mut self.writer
+    }
+}

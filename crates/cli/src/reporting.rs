@@ -45,7 +45,7 @@ pub(crate) fn report_findings_with_metadata(
     };
     if let Some(path) = &args.output {
         crate::atomic_file::write_with_file(path, |writer_handle| {
-            let w = io::BufWriter::new(writer_handle);
+            let w = crate::output::buffered_report_writer(writer_handle);
             report_with(
                 w,
                 &args.format,
@@ -60,7 +60,7 @@ pub(crate) fn report_findings_with_metadata(
         .with_context(|| format!("atomically writing report {}", path.display()))?;
         Ok(())
     } else {
-        let w = io::BufWriter::new(io::stdout());
+        let w = crate::output::buffered_report_writer(io::stdout());
         // Color when stdout is a TTY and the operator did not force plain output
         // via `--no-color`. (The `NO_COLOR` env convention is honored in the
         // orchestrator, which sets the flag-equivalent before reporting.)

@@ -345,12 +345,12 @@ fn csv_format_single_data_row_fields() {
     );
     let field_count = parse_csv_row(row).len();
     assert_eq!(
-        field_count, 20,
-        "csv data row must have exactly 20 fields, got {field_count}"
+        field_count, 22,
+        "csv data row must have exactly 22 fields, got {field_count}"
     );
     let fields = parse_csv_row(row);
-    assert_eq!(fields[18], "{}");
-    assert_eq!(fields[19], "[]");
+    assert_eq!(fields[20], "{}");
+    assert_eq!(fields[21], "[]");
 }
 
 /// csv negative twin: a clean file exits 0 and emits metadata plus ONLY the

@@ -1,7 +1,7 @@
 //! SARIF reporter for code-scanning platforms such as GitHub code scanning,
 //! Azure DevOps, and IDE integrations.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::io::Write;
 
 use crate::{
@@ -28,7 +28,7 @@ use sarif_taxonomies::sarif_taxonomies_json;
 /// before `runs[0].tool` so the streaming write order is legal.
 pub(crate) struct SarifReporter<W: Write + Send> {
     writer: W,
-    rules: HashMap<String, SarifRule>,
+    rules: BTreeMap<String, SarifRule>,
     /// Tracks whether the prefix has been emitted; lazy so the writer can
     /// fail before we touch it.
     prefix_written: bool,
@@ -69,7 +69,7 @@ impl<W: Write + Send> SarifReporter<W> {
     pub(crate) fn new(writer: W) -> Self {
         Self {
             writer,
-            rules: HashMap::new(),
+            rules: BTreeMap::new(),
             prefix_written: false,
             any_result: false,
             skip_summary: Vec::new(),
@@ -417,8 +417,7 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
         // `properties.cwe` references; close runs[0], runs[], and the doc.
         write!(self.writer, "],\"tool\":")?;
 
-        let mut rules: Vec<SarifRule> = self.rules.values().cloned().collect();
-        rules.sort_by(|a, b| a.id.cmp(&b.id));
+        let rules: Vec<SarifRule> = std::mem::take(&mut self.rules).into_values().collect();
         let tool = SarifTool {
             driver: SarifToolDriver {
                 name: "keyhog".to_string(),
