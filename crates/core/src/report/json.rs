@@ -87,7 +87,7 @@ impl<'a, W: Write + Send> JsonlEnvelopeReporter<'a, W> {
     }
 }
 
-impl<'a, W: Write + Send> Reporter for JsonlEnvelopeReporter<'a, W> {
+impl<W: Write + Send> Reporter for JsonlEnvelopeReporter<'_, W> {
     fn report(&mut self, finding: &VerifiedFinding) -> Result<(), ReportError> {
         serde_json::to_writer(&mut self.writer, finding)?;
         writeln!(self.writer)?;
@@ -109,7 +109,7 @@ impl<'a, W: Write + Send> Reporter for JsonlEnvelopeReporter<'a, W> {
     }
 }
 
-impl<'a, W: Write + Send> WriterBackedReporter for JsonlEnvelopeReporter<'a, W> {
+impl<W: Write + Send> WriterBackedReporter for JsonlEnvelopeReporter<'_, W> {
     type Writer = W;
     fn writer_mut(&mut self) -> &mut Self::Writer {
         &mut self.writer
@@ -232,7 +232,7 @@ impl<'a, W: Write + Send> JsonEnvelopeReporter<'a, W> {
     }
 }
 
-impl<'a, W: Write + Send> Reporter for JsonEnvelopeReporter<'a, W> {
+impl<W: Write + Send> Reporter for JsonEnvelopeReporter<'_, W> {
     fn report(&mut self, finding: &VerifiedFinding) -> Result<(), ReportError> {
         if !self.first {
             write!(self.writer, ",")?;
@@ -257,7 +257,7 @@ impl<'a, W: Write + Send> Reporter for JsonEnvelopeReporter<'a, W> {
     }
 }
 
-impl<'a, W: Write + Send> WriterBackedReporter for JsonEnvelopeReporter<'a, W> {
+impl<W: Write + Send> WriterBackedReporter for JsonEnvelopeReporter<'_, W> {
     type Writer = W;
     fn writer_mut(&mut self) -> &mut Self::Writer {
         &mut self.writer
