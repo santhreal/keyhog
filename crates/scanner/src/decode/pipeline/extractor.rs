@@ -228,7 +228,11 @@ fn extract_encoded_value_spans_raw(
                 if index.saturating_sub(start) >= MIN_B64_BLOCK_LEN
                     && (start != container_start || index != container_end)
                 {
-                    values.push(ExtractedValue::new(intern(&text[start..index]), start, index));
+                    values.push(ExtractedValue::new(
+                        intern(&text[start..index]),
+                        start,
+                        index,
+                    ));
                 }
             }
         }
@@ -311,7 +315,13 @@ fn extract_encoded_value_spans_raw(
                 } else if current == quote {
                     if cleaned.len() >= MIN_EXTRACTED_VALUE_LEN {
                         if let Some(start) = value_start {
-                            push_b64_subruns(&mut values, text, start, value_end, &mut intern_value);
+                            push_b64_subruns(
+                                &mut values,
+                                text,
+                                start,
+                                value_end,
+                                &mut intern_value,
+                            );
                             values.push(ExtractedValue::new(
                                 intern_value(&cleaned),
                                 start,
