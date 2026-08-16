@@ -235,7 +235,7 @@ fn stdin_sarif_two_secrets_produce_two_results_same_ruleid() {
 }
 
 /// CSV path carries the multi-line token's exact `line`/`offset` cells (columns
-/// 9 and 10 of the 20-field row): a token on line 3 at offset 43 must appear in
+/// 9 and 10 of the 22-field row): a token on line 3 at offset 43 must appear in
 /// the sole data row as `...,stdin,,3,43,...`.
 #[test]
 fn stdin_csv_multiline_row_has_line_3_offset_43_cells() {
@@ -255,7 +255,7 @@ fn stdin_csv_multiline_row_has_line_3_offset_43_cells() {
         "csv data row must encode line 3 / offset 43 for the piped token;\ngot:  {row}\nwant: {expected_prefix}"
     );
     let field_count = parse_csv_row(row).len();
-    assert_eq!(field_count, 20, "csv data row must have exactly 20 fields");
+    assert_eq!(field_count, 22, "csv data row must have exactly 22 fields");
 }
 
 // ---------------------------------------------------------------------------
