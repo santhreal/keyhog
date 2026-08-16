@@ -2,7 +2,7 @@
 # Local CI level (Full workspace validation including GPU hardware test battery).
 # Runs full test matrix with GPU/CUDA/WGPU acceleration enabled on local GPU hardware.
 set -euo pipefail
-export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-16}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 

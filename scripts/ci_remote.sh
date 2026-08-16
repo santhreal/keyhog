@@ -2,7 +2,7 @@
 # Remote CI level (CPU-only, non-GPU, exact CI workflow parity).
 # Runs the full headless test battery used by GitHub Actions.
 set -euo pipefail
-export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-16}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
