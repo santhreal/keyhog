@@ -594,7 +594,7 @@ pub(crate) fn record_decoded_parent_example_suppression(
     fallback_path: Option<&str>,
     parent_data: &str,
 ) -> bool {
-    if crate::context::is_known_example_credential(&m.credential)
+    if crate::context::is_known_example_credential(m.credential.as_ref())
         && parent_data.contains(m.credential.as_ref())
     {
         record_match_example_suppression(m, fallback_path, "decoded_parent_example");
@@ -613,8 +613,7 @@ pub(crate) fn record_decoded_reverse_placeholder_suppression(
     if !decoded_source_type.contains("/reverse") {
         return false;
     }
-    let reversed = crate::decode::reverse::reverse_str(&m.credential).to_uppercase();
-    if decoded_reverse_placeholder_marker(&reversed) {
+    if decoded_reverse_placeholder_marker(m.credential.as_ref()) {
         record_match_example_suppression(m, fallback_path, "decoded_reverse_placeholder");
         true
     } else {
@@ -623,11 +622,12 @@ pub(crate) fn record_decoded_reverse_placeholder_suppression(
 }
 
 #[cfg(feature = "decode")]
-fn decoded_reverse_placeholder_marker(reversed: &str) -> bool {
-    reversed.contains("EXAMPLE")
-        || reversed.contains("PLACEHOLDER")
-        || reversed.contains("SAMPLE")
-        || reversed.contains("YOUR_")
+fn decoded_reverse_placeholder_marker(credential: &str) -> bool {
+    let bytes = credential.as_bytes();
+    crate::ascii_ci::ci_find(bytes, b"elpmaxe")
+        || crate::ascii_ci::ci_find(bytes, b"redlohecalp")
+        || crate::ascii_ci::ci_find(bytes, b"elpmas")
+        || crate::ascii_ci::ci_find(bytes, b"_ruoy")
 }
 
 /// Suppress entropy-only findings on synthesized decoded content. The caller
@@ -649,6 +649,20 @@ pub(crate) fn record_decoded_unanchored_entropy_suppression(
     } else {
         false
     }
+}
+
+/// Stack-allocated BLAKE3 hash for match duplicate suppression.
+///
+/// Computes a fixed 32-byte digest over the `(detector_id, credential)` pair
+/// without heap-allocating `String` or intermediate tuple containers.
+#[inline]
+pub(crate) fn match_duplicate_digest(detector_id: &str, credential: &str) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&(detector_id.len() as u64).to_le_bytes());
+    hasher.update(detector_id.as_bytes());
+    hasher.update(&(credential.len() as u64).to_le_bytes());
+    hasher.update(credential.as_bytes());
+    *hasher.finalize().as_bytes()
 }
 
 fn explicit_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {

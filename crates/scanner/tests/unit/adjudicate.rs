@@ -739,3 +739,137 @@ fn entropy_ghidra_decompiled_source_is_not_raw_binary() {
         Some(EntropyShapeStage::SuppressionStage("native_binary_strings")),
     );
 }
+#[test]
+fn match_duplicate_digest_deterministic_and_collision_resistant() {
+    let d1 = crate::adjudicate::match_duplicate_digest("aws-access-key", "AKIAIOSFODNN7EXAMPLE");
+    let d2 = crate::adjudicate::match_duplicate_digest("aws-access-key", "AKIAIOSFODNN7EXAMPLE");
+    assert_eq!(d1, d2);
+
+    let d3 = crate::adjudicate::match_duplicate_digest("slack-api-token", "AKIAIOSFODNN7EXAMPLE");
+    assert_ne!(d1, d3);
+
+    let d4 = crate::adjudicate::match_duplicate_digest("aws-access-key", "AKIAIOSFODNN7OTHER");
+    assert_ne!(d1, d4);
+
+    let d_split1 = crate::adjudicate::match_duplicate_digest("ab", "cd");
+    let d_split2 = crate::adjudicate::match_duplicate_digest("a", "bcd");
+    assert_ne!(d_split1, d_split2);
+}
+
+#[cfg(feature = "decode")]
+#[test]
+fn decoded_reverse_placeholder_suppression_detects_markers_without_allocating() {
+    use keyhog_core::{MatchLocation, RawMatch, SensitiveString, Severity};
+    use std::sync::Arc;
+
+    let make_match = |credential: &str| RawMatch {
+        detector_id: Arc::from("test-detector"),
+        detector_name: Arc::from("Test Detector"),
+        service: Arc::from("test-service"),
+        severity: Severity::High,
+        confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
+        credential: SensitiveString::from(credential),
+        credential_hash: [0u8; 32].into(),
+        companions: std::collections::HashMap::new(),
+        location: MatchLocation {
+            source: Arc::from("source"),
+            file_path: Some(Arc::from("test.txt")),
+            offset: 0,
+            line: Some(1),
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: None,
+    };
+
+    let m = make_match("secret_elpmaxe_123");
+    assert!(
+        crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+            &m,
+            None,
+            "archive/tar/reverse"
+        )
+    );
+
+    let m = make_match("tok_redlohecalp_val");
+    assert!(
+        crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+            &m,
+            None,
+            "archive/zip/reverse"
+        )
+    );
+
+    let m = make_match("tok_elpmas_val");
+    assert!(
+        crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+            &m,
+            None,
+            "source/reverse"
+        )
+    );
+
+    let m = make_match("token_ruoy_abc");
+    assert!(
+        crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+            &m,
+            None,
+            "source/reverse"
+        )
+    );
+
+    let m = make_match("secret_elpmaxe_123");
+    assert!(
+        !crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+            &m,
+            None,
+            "archive/tar/base64"
+        )
+    );
+
+    let m = make_match("akiasomerealcreds123");
+    assert!(
+        !crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+            &m,
+            None,
+            "source/reverse"
+        )
+    );
+}
+
+#[cfg(feature = "decode")]
+#[test]
+fn decoded_parent_example_suppression_avoids_cloning() {
+    use keyhog_core::{MatchLocation, RawMatch, SensitiveString, Severity};
+    use std::sync::Arc;
+
+    let m = RawMatch {
+        detector_id: Arc::from("test-detector"),
+        detector_name: Arc::from("Test Detector"),
+        service: Arc::from("test-service"),
+        severity: Severity::High,
+        confidence: Some(0.9),
+        evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
+        credential: SensitiveString::from("AKIAIOSFODNN7EXAMPLE"),
+        credential_hash: [0u8; 32].into(),
+        companions: std::collections::HashMap::new(),
+        location: MatchLocation {
+            source: Arc::from("source"),
+            file_path: Some(Arc::from("test.txt")),
+            offset: 0,
+            line: Some(1),
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: None,
+    };
+
+    let parent_data = "Here is an example: AKIAIOSFODNN7EXAMPLE in code";
+    assert!(crate::adjudicate::record_decoded_parent_example_suppression(&m, None, parent_data));
+
+    let clean_parent = "Here is clean text without the secret";
+    assert!(!crate::adjudicate::record_decoded_parent_example_suppression(&m, None, clean_parent));
+}
