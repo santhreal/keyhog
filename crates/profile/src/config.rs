@@ -1,220 +1,20 @@
-//! Profile configuration models, sensitive string protection, and zero-allocation profile lookup.
+//! Profile configuration models and zero-allocation profile lookup.
 //!
 //! Provides [`ProfileConfig`] for configuring execution profiles and telemetry,
-//! [`SensitiveString`] for zeroize-on-drop token and credential protection, and
-//! zero-allocation lookup routines for known profile names.
+//! and zero-allocation lookup routines for known profile names.
 
 use std::borrow::{Borrow, Cow};
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
-use std::sync::Arc;
 
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::Detail;
-
-/// Timing-safe byte slice comparison.
-///
-/// Returns true if and only if both byte slices have equal length and identical bytes.
-/// Executes in constant time for slices of equal length without early termination.
-#[inline]
-#[must_use]
-pub fn constant_time_bytes_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff: u8 = 0;
-    for (&x, &y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
-}
-
-/// A heap-allocated string that is zeroized on drop.
-///
-/// Protects sensitive tokens, credentials, and header values in profile configurations.
-/// Plaintext access is explicit via [`Self::as_str`] or [`Deref`]. Formatting via
-/// [`fmt::Display`] and [`fmt::Debug`] emits redacted byte counts to prevent leaks in logs.
-/// Implicit serde serialization fails closed.
-#[derive(Clone, Default)]
-pub struct SensitiveString {
-    inner: Arc<Zeroizing<String>>,
-}
-
-impl SensitiveString {
-    /// Create a new sensitive string wrapping the given string.
-    #[must_use]
-    pub fn new(s: String) -> Self {
-        Self {
-            inner: Arc::new(Zeroizing::new(s)),
-        }
-    }
-
-    /// Create a new sensitive string from an existing [`Zeroizing<String>`].
-    #[must_use]
-    pub fn from_zeroizing(z: Zeroizing<String>) -> Self {
-        Self { inner: Arc::new(z) }
-    }
-
-    /// Return the plaintext string slice.
-    #[inline]
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        self.inner.as_str()
-    }
-
-    /// Return the length of the sensitive string in bytes.
-    #[inline]
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    /// Return true if the sensitive string is empty.
-    #[inline]
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
-}
-
-impl Deref for SensitiveString {
-    type Target = str;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        self.as_str()
-    }
-}
-
-impl AsRef<str> for SensitiveString {
-    #[inline]
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl Borrow<str> for SensitiveString {
-    #[inline]
-    fn borrow(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl PartialEq for SensitiveString {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        constant_time_bytes_eq(self.as_str().as_bytes(), other.as_str().as_bytes())
-    }
-}
-
-impl Eq for SensitiveString {}
-
-impl PartialOrd for SensitiveString {
-    #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SensitiveString {
-    #[inline]
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.as_str().cmp(other.as_str())
-    }
-}
-
-impl std::hash::Hash for SensitiveString {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.as_str().hash(state);
-    }
-}
-
-impl From<String> for SensitiveString {
-    fn from(s: String) -> Self {
-        Self::new(s)
-    }
-}
-
-impl From<&str> for SensitiveString {
-    fn from(s: &str) -> Self {
-        Self::new(s.to_owned())
-    }
-}
-
-impl From<&String> for SensitiveString {
-    fn from(s: &String) -> Self {
-        Self::new(s.clone())
-    }
-}
-
-impl From<Zeroizing<String>> for SensitiveString {
-    fn from(z: Zeroizing<String>) -> Self {
-        Self::from_zeroizing(z)
-    }
-}
-
-impl fmt::Display for SensitiveString {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<redacted {} bytes>", self.inner.len())
-    }
-}
-
-impl fmt::Debug for SensitiveString {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "SensitiveString(<redacted {} bytes>)", self.inner.len())
-    }
-}
-
-impl Zeroize for SensitiveString {
-    fn zeroize(&mut self) {
-        if let Some(inner) = Arc::get_mut(&mut self.inner) {
-            inner.zeroize();
-        } else {
-            self.inner = Arc::new(Zeroizing::new(String::new()));
-        }
-    }
-}
-
-impl ZeroizeOnDrop for SensitiveString {}
-
-impl Serialize for SensitiveString {
-    fn serialize<S: Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
-        Err(serde::ser::Error::custom(
-            "SensitiveString refuses implicit plaintext serialization; access as_str() explicitly for protected channels",
-        ))
-    }
-}
-
-impl<'de> Deserialize<'de> for SensitiveString {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct SensitiveVisitor;
-
-        impl<'de> Visitor<'de> for SensitiveVisitor {
-            type Value = SensitiveString;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("a sensitive string")
-            }
-
-            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                let mut z = Zeroizing::new(String::with_capacity(v.len()));
-                z.push_str(v);
-                Ok(SensitiveString::from_zeroizing(z))
-            }
-
-            fn visit_string<E: de::Error>(self, v: String) -> Result<Self::Value, E> {
-                let z = Zeroizing::new(v);
-                Ok(SensitiveString::from_zeroizing(z))
-            }
-        }
-
-        deserializer.deserialize_string(SensitiveVisitor)
-    }
-}
 
 /// Standard predefined profile identifiers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -325,7 +125,7 @@ impl AsRef<str> for KnownProfile {
 }
 
 /// Profile identifier supporting known profiles with zero heap allocations or custom names.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug)]
 pub enum ProfileName {
     /// Standard predefined profile backed by static memory.
     Known(KnownProfile),
@@ -346,20 +146,22 @@ impl ProfileName {
     /// Parse a profile name from a string slice without heap allocations if known.
     #[must_use]
     pub fn parse(s: &str) -> Self {
-        if let Some(known) = KnownProfile::from_str_case_insensitive(s) {
+        let trimmed = s.trim();
+        if let Some(known) = KnownProfile::from_str_case_insensitive(trimmed) {
             Self::Known(known)
         } else {
-            Self::Custom(Cow::Owned(s.trim().to_owned()))
+            Self::Custom(Cow::Owned(trimmed.to_owned()))
         }
     }
 
     /// Construct a profile name from a static string slice with zero heap allocations.
     #[must_use]
     pub fn from_static(s: &'static str) -> Self {
-        if let Some(known) = KnownProfile::from_str_case_insensitive(s) {
+        let trimmed = s.trim();
+        if let Some(known) = KnownProfile::from_str_case_insensitive(trimmed) {
             Self::Known(known)
         } else {
-            Self::Custom(Cow::Borrowed(s))
+            Self::Custom(Cow::Borrowed(trimmed))
         }
     }
 
@@ -376,6 +178,36 @@ impl ProfileName {
             Self::Known(k) => Some(*k),
             Self::Custom(_) => None,
         }
+    }
+}
+
+impl PartialEq for ProfileName {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl Eq for ProfileName {}
+
+impl PartialOrd for ProfileName {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ProfileName {
+    #[inline]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_str().cmp(other.as_str())
+    }
+}
+
+impl Hash for ProfileName {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_str().hash(state);
     }
 }
 
@@ -428,10 +260,13 @@ impl From<&'static str> for ProfileName {
 
 impl From<String> for ProfileName {
     fn from(s: String) -> Self {
-        if let Some(known) = KnownProfile::from_str_case_insensitive(&s) {
+        let trimmed = s.trim();
+        if let Some(known) = KnownProfile::from_str_case_insensitive(trimmed) {
             Self::Known(known)
-        } else {
+        } else if trimmed.len() == s.len() {
             Self::Custom(Cow::Owned(s))
+        } else {
+            Self::Custom(Cow::Owned(trimmed.to_owned()))
         }
     }
 }
@@ -464,11 +299,7 @@ impl<'de> Deserialize<'de> for ProfileName {
             }
 
             fn visit_string<E: de::Error>(self, v: String) -> Result<Self::Value, E> {
-                if let Some(known) = KnownProfile::from_str_case_insensitive(&v) {
-                    Ok(ProfileName::Known(known))
-                } else {
-                    Ok(ProfileName::Custom(Cow::Owned(v)))
-                }
+                Ok(ProfileName::from(v))
             }
         }
 
@@ -557,13 +388,13 @@ pub struct ProfileConfig {
     pub endpoint: Option<String>,
     /// Authentication bearer or session token.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub auth_token: Option<SensitiveString>,
+    pub auth_token: Option<Zeroizing<String>>,
     /// API key for authenticated profile reporting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub api_key: Option<SensitiveString>,
+    pub api_key: Option<Zeroizing<String>>,
     /// Secret transport or signing key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secret_key: Option<SensitiveString>,
+    pub secret_key: Option<Zeroizing<String>>,
     /// Target environment tag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub environment: Option<String>,
@@ -578,7 +409,7 @@ pub struct ProfileConfig {
     pub tags: HashMap<String, String>,
     /// Sensitive HTTP request headers.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub headers: HashMap<String, SensitiveString>,
+    pub headers: HashMap<String, Zeroizing<String>>,
 }
 
 impl ProfileConfig {
@@ -602,17 +433,11 @@ impl ProfileConfig {
     }
 
     /// Parse profile configuration from a JSON string.
-    ///
-    /// Sensitive fields are wrapped in [`SensitiveString`]. On deserialization failure,
-    /// any intermediate sensitive values are zeroized when dropped.
     pub fn parse_json(json: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(json)
     }
 
     /// Parse profile configuration from JSON bytes.
-    ///
-    /// Sensitive fields are wrapped in [`SensitiveString`]. On deserialization failure,
-    /// any intermediate sensitive values are zeroized when dropped.
     pub fn parse_json_slice(bytes: &[u8]) -> Result<Self, serde_json::Error> {
         serde_json::from_slice(bytes)
     }

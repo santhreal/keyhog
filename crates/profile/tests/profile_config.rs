@@ -2,73 +2,11 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use keyhog_profile::{
-    constant_time_bytes_eq, lookup_profile_name, resolve_profile_from_env,
-    resolve_profile_from_env_value, resolve_profile_from_env_var, Detail, KnownProfile,
-    ProfileConfig, ProfileName, SensitiveString, PROFILE_ENV_VARS,
+    lookup_profile_name, resolve_profile_from_env, resolve_profile_from_env_value,
+    resolve_profile_from_env_var, Detail, KnownProfile, ProfileConfig, ProfileName,
+    PROFILE_ENV_VARS,
 };
-use zeroize::Zeroize;
-
-#[test]
-fn sensitive_string_redacts_display_and_debug() {
-    let secret = SensitiveString::from("super-secret-token-12345");
-    assert_eq!(format!("{secret}"), "<redacted 24 bytes>");
-    assert_eq!(
-        format!("{secret:?}"),
-        "SensitiveString(<redacted 24 bytes>)"
-    );
-    assert_eq!(secret.as_str(), "super-secret-token-12345");
-    assert_eq!(secret.len(), 24);
-    assert!(!secret.is_empty());
-}
-
-#[test]
-fn sensitive_string_empty_state() {
-    let empty = SensitiveString::default();
-    assert_eq!(format!("{empty}"), "<redacted 0 bytes>");
-    assert_eq!(empty.as_str(), "");
-    assert_eq!(empty.len(), 0);
-    assert!(empty.is_empty());
-}
-
-#[test]
-fn sensitive_string_constant_time_equality() {
-    let a = SensitiveString::from("token-abc");
-    let b = SensitiveString::from("token-abc");
-    let c = SensitiveString::from("token-xyz");
-    let d = SensitiveString::from("token-abcdef");
-
-    assert_eq!(a, b);
-    assert_ne!(a, c);
-    assert_ne!(a, d);
-
-    assert!(constant_time_bytes_eq(b"hello", b"hello"));
-    assert!(!constant_time_bytes_eq(b"hello", b"world"));
-    assert!(!constant_time_bytes_eq(b"hello", b"hell"));
-}
-
-#[test]
-fn sensitive_string_refuses_implicit_serialization() {
-    let secret = SensitiveString::from("secret-api-key");
-    let result = serde_json::to_string(&secret);
-    assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("refuses implicit plaintext serialization"));
-}
-
-#[test]
-fn sensitive_string_deserialization_from_json() {
-    let json = r#""deserialized-secret-token""#;
-    let secret: SensitiveString = serde_json::from_str(json).expect("deserialize sensitive string");
-    assert_eq!(secret.as_str(), "deserialized-secret-token");
-}
-
-#[test]
-fn sensitive_string_zeroizes_explicitly() {
-    let mut secret = SensitiveString::from("temporary-secret-value");
-    assert_eq!(secret.as_str(), "temporary-secret-value");
-    secret.zeroize();
-    assert_eq!(secret.as_str(), "");
-}
+use zeroize::{Zeroize, Zeroizing};
 
 #[test]
 fn known_profiles_case_insensitive_matching() {
@@ -123,6 +61,36 @@ fn profile_name_parse_avoids_allocation_for_known_profiles() {
     assert!(!custom_name.is_known());
     assert_eq!(custom_name.as_known(), None);
     assert_eq!(custom_name.as_str(), "my-custom-team-profile");
+}
+
+#[test]
+fn profile_name_borrow_and_map_lookup() {
+    let mut map = HashMap::new();
+    let dev_profile = ProfileName::from(KnownProfile::Dev);
+    let custom_profile = ProfileName::from("custom-lane");
+
+    map.insert(dev_profile.clone(), 100);
+    map.insert(custom_profile.clone(), 200);
+
+    // Borrow<str> lookup matches plain text
+    assert_eq!(map.get("dev"), Some(&100));
+    assert_eq!(map.get("custom-lane"), Some(&200));
+    assert_eq!(map.get("nonexistent"), None);
+}
+
+#[test]
+fn profile_name_whitespace_trimming() {
+    let a = ProfileName::from("  my-profile  ".to_string());
+    let b = ProfileName::from("my-profile".to_string());
+    let c = ProfileName::parse("   my-profile \t");
+
+    assert_eq!(a, b);
+    assert_eq!(b, c);
+    assert_eq!(a.as_str(), "my-profile");
+
+    let known_padded = ProfileName::from("   ci  ".to_string());
+    assert_eq!(known_padded.as_known(), Some(KnownProfile::Ci));
+    assert_eq!(known_padded.as_str(), "ci");
 }
 
 #[test]
@@ -238,26 +206,18 @@ fn profile_config_json_deserialization_with_sensitive_fields() {
         config.headers.get("Authorization").map(|s| s.as_str()),
         Some("Bearer internal-auth")
     );
-
-    // Verify debug/display formatting does not reveal token plaintext
-    let formatted = format!("{config:?}");
-    assert!(!formatted.contains("bearer-token-xyz"));
-    assert!(!formatted.contains("kh-api-key-999"));
-    assert!(!formatted.contains("kh-secret-sig-key"));
-    assert!(!formatted.contains("Bearer internal-auth"));
-    assert!(!formatted.contains("header-secret"));
 }
 
 #[test]
 fn profile_config_zeroization_clears_sensitive_fields() {
     let mut config = ProfileConfig::new(KnownProfile::Production);
-    config.auth_token = Some(SensitiveString::from("secret-token"));
-    config.api_key = Some(SensitiveString::from("secret-api-key"));
-    config.secret_key = Some(SensitiveString::from("secret-signing-key"));
+    config.auth_token = Some(Zeroizing::new("secret-token".to_string()));
+    config.api_key = Some(Zeroizing::new("secret-api-key".to_string()));
+    config.secret_key = Some(Zeroizing::new("secret-signing-key".to_string()));
     let mut headers = HashMap::new();
     headers.insert(
         "Authorization".to_string(),
-        SensitiveString::from("secret-auth-header"),
+        Zeroizing::new("secret-auth-header".to_string()),
     );
     config.headers = headers;
 

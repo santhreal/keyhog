@@ -117,9 +117,8 @@ pub use comparison::{
     COMPARISON_DIFFERENCE_VERSION, PROFILE_COMPARISON_VERSION, STAGE_COMPARISON_VERSION,
 };
 pub use config::{
-    constant_time_bytes_eq, lookup_profile_name, resolve_profile_from_env,
-    resolve_profile_from_env_value, resolve_profile_from_env_var, KnownProfile, ProfileConfig,
-    ProfileName, SensitiveString, PROFILE_ENV_VARS,
+    lookup_profile_name, resolve_profile_from_env, resolve_profile_from_env_value,
+    resolve_profile_from_env_var, KnownProfile, ProfileConfig, ProfileName, PROFILE_ENV_VARS,
 };
 pub use detail::{detail, set_detail, Detail};
 pub use hardware::{
