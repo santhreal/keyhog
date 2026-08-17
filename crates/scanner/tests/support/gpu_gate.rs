@@ -33,18 +33,15 @@ pub fn arm_policy_from_env() {
     });
 }
 
-/// When the explicit GPU runtime policy requires a GPU, panic if no compatible
-/// adapter is present.
+/// When the explicit GPU runtime policy requires a GPU, panic if no complete
+/// production GPU peer set passed region-presence self-test / preflight.
 pub fn require_gpu_or_panic(context: &str) {
     arm_policy_from_env();
     if !keyhog_scanner::gpu::gpu_required_by_policy() {
         return;
     }
-    if !keyhog_scanner::gpu::gpu_available() {
-        panic!(
-            "{context}: --require-gpu requested but no compatible GPU adapter - \
-             fail loudly instead of skipping GPU gates"
-        );
+    if let Err(reason) = keyhog_scanner::gpu::require_gpu_preflight() {
+        panic!("{context}: {reason}");
     }
 }
 

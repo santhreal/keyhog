@@ -47,7 +47,7 @@ WORKFLOWS = REPO / ".github/workflows"
 
 # Crates whose top-level test files are fully wired and must STAY wired. Add a
 # crate here only after its orphan sweep lands (else this gate turns CI red).
-ENFORCED_CRATES: list[str] = ["verifier", "core", "sources"]
+ENFORCED_CRATES: list[str] = ["verifier", "core", "sources", "scanner", "cli"]
 
 AGGREGATOR = "all_tests"
 

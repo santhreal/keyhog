@@ -70,6 +70,8 @@ crate::kh_matrix!(
     uninstall => "uninstall",
     scan_system => "scan-system",
     daemon => "daemon",
+    guard => "guard",
+    triage => "triage",
     calibrate_autoroute => "calibrate-autoroute",
     compile_execution_packs => "compile-execution-packs",
 );

@@ -62,10 +62,8 @@ jobs:
   clippy:
     name: Clippy (advisory)
     runs-on: ubuntu-24.04
-    # Runs on every required CI push so the lints stay visible, but stays
-    # non-blocking: `-D warnings` previously turned style noise into release
-    # blockers. Genuine bugs are caught by Format/Build/Verifier/focused tests.
-    continue-on-error: true
+    # Runs on every required CI push so the lints stay visible.
+    # No `-D warnings`: lints are reported but do not fail the step.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable

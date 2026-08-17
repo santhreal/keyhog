@@ -351,11 +351,10 @@ fn admission_recovery_receipt_is_counted_in_json_and_terminal_status() {
 fn scanner_panic_marks_report_metadata_partial_without_a_source_gap() {
     use crate::testing::{CliTestApi, API};
     use keyhog_core::ScanCompletionStatus;
-    use std::sync::atomic::Ordering::Relaxed;
 
     let guard = API.scan_runtime_guard_for_test();
     API.reset_scan_runtime_state_for_test(&guard);
-    crate::SCANNER_PANICKED.store(true, Relaxed);
+    let _ = crate::record_scanner_panic(); // LAW10: synthetic test-only fault event; reporting-only, recall-safe
 
     let cli = crate::args::Cli::parse_from(["keyhog", "scan", "."]);
     let crate::args::Command::Scan(args) = cli.command.expect("scan command parsed") else {

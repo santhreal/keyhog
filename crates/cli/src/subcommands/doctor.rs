@@ -307,7 +307,11 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
     );
     println!("  simd           {simd}");
     let gpu = if !hw.gpu_available {
-        format!("{dim}not detected (CPU/SIMD path){reset}")
+        if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
+            format!("{dim}not detected (binary built without --features gpu){reset}")
+        } else {
+            format!("{dim}not detected (CPU/SIMD path){reset}")
+        }
     } else if hw.gpu_is_software {
         format!("{yellow}software renderer (disabled for scans){reset}")
     } else {

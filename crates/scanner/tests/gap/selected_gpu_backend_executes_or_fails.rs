@@ -29,6 +29,7 @@ fn chunk(text: &str) -> Chunk {
 
 #[test]
 fn selected_gpu_backend_executes_or_fails() {
+    support::gpu_gate::arm_policy_from_env();
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load");
     let scanner = CompiledScanner::compile(detectors).expect("compile");
     if !scanner.warm_backend(ScanBackend::GpuWgpu) {

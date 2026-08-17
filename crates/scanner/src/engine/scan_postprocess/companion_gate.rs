@@ -48,14 +48,14 @@ const COMPANION_DERIVED_CACHE_CAP: usize = 16;
 thread_local! {
     static COMPANION_ARMS_CACHE: RefCell<LruCache<String, Arc<Vec<Vec<String>>>>> =
         RefCell::new(LruCache::new(
-            // LAW10: NonZeroUsize::new never fails for positive CAP constants.
+            // LAW10: infallible: NonZeroUsize::new never fails for positive CAP constants.
             NonZeroUsize::new(COMPANION_ARMS_CACHE_CAP).expect("companion arms cache cap is non-zero"),
         ));
     /// Reuse derived companion gate structures across chunks that share an
     /// active pattern set (multi-window scans and recurring trigger mixes).
     static COMPANION_DERIVED_CACHE: RefCell<LruCache<(u64, Vec<usize>), CompanionDerived>> =
         RefCell::new(LruCache::new(
-            // LAW10: NonZeroUsize::new never fails for positive CAP constants.
+            // LAW10: infallible: NonZeroUsize::new never fails for positive CAP constants.
             NonZeroUsize::new(COMPANION_DERIVED_CACHE_CAP)
                 .expect("companion derived cache cap is non-zero"),
         ));

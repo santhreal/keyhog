@@ -113,7 +113,7 @@ fn hex_decode_single_byte_ff_boundary() {
     let decoded = hex_decode("ff").expect("two-char hex decodes to one byte");
     assert_eq!(decoded, vec![0xffu8]);
     // A single hex digit is odd length -> rejected.
-    assert_eq!(hex_decode("f").unwrap_err(), ());
+    assert!(hex_decode("f").is_err());
 }
 
 // ── hex_decode: negative twins ───────────────────────────────────────
@@ -121,20 +121,20 @@ fn hex_decode_single_byte_ff_boundary() {
 #[test]
 fn hex_decode_odd_length_rejected() {
     // 5 chars: not a multiple of 2 -> Err before hex-simd runs.
-    assert_eq!(hex_decode("41424").unwrap_err(), ());
+    assert!(hex_decode("41424").is_err());
 }
 
 #[test]
 fn hex_decode_nonhex_chars_rejected() {
     // Even length (4) but non-hex bytes: the char check inside hex-simd fails.
-    assert_eq!(hex_decode("gg41").unwrap_err(), ());
-    assert_eq!(hex_decode("zzzz").unwrap_err(), ());
+    assert!(hex_decode("gg41").is_err());
+    assert!(hex_decode("zzzz").is_err());
 }
 
 #[test]
 fn hex_decode_underscore_odd_cleaned_rejected() {
     // "41_4" -> stripped "414" is length 3 (odd) -> rejected.
-    assert_eq!(hex_decode("41_4").unwrap_err(), ());
+    assert!(hex_decode("41_4").is_err());
 }
 
 // ── find_hex_strings: extraction floor + rejection ───────────────────

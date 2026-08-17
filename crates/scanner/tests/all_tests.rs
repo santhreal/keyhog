@@ -129,6 +129,8 @@ pub mod regression_decode_json_escapes;
 pub mod regression_decode_primitive_bounds;
 #[path = "regression_decode_registry_names.rs"]
 pub mod regression_decode_registry_names;
+#[path = "regression_decode_source_windows_progress.rs"]
+pub mod regression_decode_source_windows_progress;
 #[path = "regression_decode_through_recall.rs"]
 pub mod regression_decode_through_recall;
 #[path = "regression_decode_through_strict.rs"]
@@ -601,6 +603,8 @@ pub mod hot_pattern_validators_build;
 pub mod hw_probe_routing_logic;
 #[path = "matcher_artifact_cache.rs"]
 pub mod matcher_artifact_cache;
+#[path = "pack_content_is_deduplicated.rs"]
+pub mod pack_content_is_deduplicated;
 #[path = "per_detector_regression.rs"]
 pub mod per_detector_regression;
 #[path = "scan_pipeline_proptest.rs"]

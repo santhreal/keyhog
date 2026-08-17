@@ -468,7 +468,7 @@ impl CachedBackendRouter {
         };
         let fault = match self.runtime_faults.lock() {
             Ok(faults) => faults.get(&key).cloned(),
-            // LAW10: poisoned route-health state invalidates autoroute until restart and recalibration.
+            // LAW10: fails closed: poisoned route-health state invalidates autoroute until restart and recalibration.
             Err(_) => {
                 record_miss(AutorouteCacheMiss::HealthUnavailable);
                 return Err(AutorouteRoutingError::calibration_not_persisted(

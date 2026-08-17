@@ -363,6 +363,7 @@ fn report_detector_loss(
 #[test]
 #[ignore = "GPU-host regression guard; needs a real GPU adapter + a 16 MiB scan"]
 fn gpu_vs_cpu_recall_parity_large_buffer() {
+    support::gpu_gate::require_gpu_or_panic("gpu_vs_cpu_recall_parity_large_buffer");
     if !keyhog_scanner::gpu::gpu_available() {
         eprintln!("no GPU adapter present; GPU recall parity needs a GPU host");
         return;

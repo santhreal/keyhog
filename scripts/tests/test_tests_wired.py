@@ -141,8 +141,8 @@ class LiveWiringTests(unittest.TestCase):
                 f"{crate} has CI-orphan test files",
             )
 
-    def test_enforced_crates_include_the_three_swept(self) -> None:
-        for crate in ("verifier", "core", "sources"):
+    def test_enforced_crates_include_all_five(self) -> None:
+        for crate in ("verifier", "core", "sources", "scanner", "cli"):
             self.assertIn(crate, tw.ENFORCED_CRATES)
 
     def test_sources_is_wired_via_one_all_targets_lane(self) -> None:

@@ -21,6 +21,24 @@ pub(super) fn print_backend_report(args: &BackendArgs) -> Result<()> {
     };
     let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
 
+    println!("## compiled capabilities");
+    println!(
+        "  simd_backend:      {}",
+        if keyhog_scanner::hw_probe::simd_backend_compiled() {
+            "compiled-in"
+        } else {
+            "disabled (compile with --features simd)"
+        }
+    );
+    println!(
+        "  gpu_backend:       {}",
+        if keyhog_scanner::hw_probe::gpu_backend_compiled() {
+            "compiled-in"
+        } else {
+            "disabled (compile with --features gpu)"
+        }
+    );
+    println!();
     println!("## hardware");
     println!("  physical_cores:    {}", hw.physical_cores);
     println!("  logical_cores:     {}", hw.logical_cores);
@@ -32,6 +50,8 @@ pub(super) fn print_backend_report(args: &BackendArgs) -> Result<()> {
         "  gpu:               {} {}",
         if hw.gpu_available {
             hw.gpu_name.as_deref().unwrap_or("yes") // LAW10: absent name/label => display default; reporting-only, recall-safe
+        } else if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
+            "not detected (binary built without --features gpu)"
         } else {
             "not detected"
         },

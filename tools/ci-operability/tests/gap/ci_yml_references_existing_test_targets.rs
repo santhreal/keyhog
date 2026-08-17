@@ -6,13 +6,15 @@ use super::support::{read_workflow, repo_root};
 #[test]
 fn fail_closed_cli_lane_references_existing_test_targets() {
     let workflow = read_workflow("ci.yml");
-    let lane = workflow
+    let lane_after = workflow
         .split("- name: Fail-closed security regressions")
         .nth(1)
-        .expect("ci.yml must retain the fail-closed security regression lane")
-        .split("- name: Property tests")
+        .expect("ci.yml must retain the fail-closed security regression lane");
+    // The step ends at the next step or next job definition
+    let lane = lane_after
+        .split("\n\n")
         .next()
-        .expect("fail-closed lane must end before the property-test lane");
+        .expect("fail-closed step block");
     let targets = lane
         .lines()
         .filter_map(|line| line.trim().strip_prefix("--test "))

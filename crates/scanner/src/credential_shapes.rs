@@ -59,7 +59,7 @@ pub(crate) fn credential_url_userinfo_password(value: &str) -> Option<&str> {
         return None;
     }
     let rest = &value[scheme_end + 3..];
-    // LAW10: a userinfo run with no terminator is the whole remainder; the `@`
+    // LAW10: recall-safe: a userinfo run with no terminator is the whole remainder; the `@`
     // search below still decides whether a credential is present.
     let userinfo_end = rest
         .find(|c: char| c == '/' || c == '?' || c == '#' || c.is_ascii_whitespace())

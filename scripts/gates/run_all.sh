@@ -179,6 +179,24 @@ run "GPU wiring self-test: unfeatured, absorbed, orphaned, and unarmed GPU lanes
   python3 -B scripts/gates/gpu_wired.py --self-test
 run "GPU wiring: GPU targets are feature-built, unabsorbed, wired, and the release lane is armed" \
   python3 -B scripts/gates/gpu_wired.py
+run "GPU wiring unit tests: static fixture workflows and folded scalar parsing" \
+  python3 -B -m unittest scripts.tests.test_gpu_wired -v
+run "Continue-on-error self-test: un-prefixed absorbed test/lint steps are detected" \
+  python3 -B scripts/gates/no_continue_on_error.py --self-test
+run "Continue-on-error: workflow error absorption adheres to Row 5 informational policy" \
+  python3 -B scripts/gates/no_continue_on_error.py
+run "Continue-on-error unit tests: static workflow error absorption analysis" \
+  python3 -B -m unittest scripts.tests.test_no_continue_on_error -v
+run "Vacuous test self-test: capability-conditional tests without safe policies are detected" \
+  python3 -B scripts/gates/vacuous_tests.py --self-test
+run "Vacuous tests: capability-conditional tests safely arm policies or register outcomes" \
+  python3 -B scripts/gates/vacuous_tests.py
+run "Vacuous tests unit tests: static early-return analysis across test targets" \
+  python3 -B -m unittest scripts.tests.test_vacuous_tests -v
+run "Mutation gate self-test: AST mutation generator catches surviving mutants" \
+  python3 -B scripts/gates/mutation_gate.py --self-test
+run "Mutation gate unit tests: operator inversion and comment preservation" \
+  python3 -B -m unittest scripts.tests.test_mutation_gate -v
 run "Organization unit tests: exact complexity ratchet and owner/reference checks" \
   python3 -B -m unittest scripts.tests.test_complexity_budget scripts.tests.test_org_audit -v
 run "tests_wired unit tests: CI-orphan model (path/mod/--test/all-targets/pkg)" \

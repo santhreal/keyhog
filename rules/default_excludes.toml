@@ -141,6 +141,16 @@ filenames = [
   "cargo.lock",
   "go.sum",
   "gemfile.lock",
+  "poetry.lock",
+  "pipfile.lock",
+  "uv.lock",
+  "pdm.lock",
+  "composer.lock",
+  "flake.lock",
+  "mix.lock",
+  "pubspec.lock",
+  "podfile.lock",
+  "conan.lock",
   "angular.json",
 ]
 
