@@ -53,6 +53,13 @@ pub(crate) mod testing {
 
 const HOOK_MARKER: &str = "KeyHog pre-commit hook";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HookInstallStatus {
+    Installed,
+    AlreadyInstalled,
+    Updated,
+}
+
 pub(crate) fn run(command: HookCommand) -> Result<ExitCode> {
     match command {
         HookCommand::Install { force } => install(force),
@@ -61,14 +68,48 @@ pub(crate) fn run(command: HookCommand) -> Result<ExitCode> {
 }
 
 fn install(force: bool) -> Result<ExitCode> {
+    let cur_dir = std::env::current_dir().context("resolving current directory")?;
+    let (hook_path, status) = install_at_repo(&cur_dir, force)?;
+    let palette = crate::style::for_stderr();
+    match status {
+        HookInstallStatus::AlreadyInstalled => {
+            let msg = format!(
+                "KeyHog pre-commit hook is already installed at {}.",
+                hook_path.display()
+            );
+            eprintln!("{}", crate::style::warn(&msg, &palette));
+        }
+        HookInstallStatus::Installed => {
+            let msg = format!(
+                "KeyHog pre-commit hook installed at {}.",
+                hook_path.display()
+            );
+            eprintln!("{}", crate::style::pass(&msg, &palette));
+        }
+        HookInstallStatus::Updated => {
+            let msg = format!(
+                "KeyHog pre-commit hook installed/updated at {}.",
+                hook_path.display()
+            );
+            eprintln!("{}", crate::style::pass(&msg, &palette));
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+pub(crate) fn install_at_repo(
+    repo_root: &std::path::Path,
+    force: bool,
+) -> Result<(PathBuf, HookInstallStatus)> {
     // Hook path resolution + existing-hook check: the collect phase.
     let _check_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
-    let hooks_dir = find_hooks_dir()?;
+    let hooks_dir = find_hooks_dir_for_repo(repo_root)?;
     let hook_path = hooks_dir.join("pre-commit");
 
     std::fs::create_dir_all(&hooks_dir)
         .with_context(|| format!("creating hooks directory at {}", hooks_dir.display()))?;
 
+    let mut is_update = false;
     if hook_path.exists() {
         let existing = std::fs::read_to_string(&hook_path)
             .with_context(|| format!("reading existing hook at {}", hook_path.display()))?;
@@ -76,13 +117,7 @@ fn install(force: bool) -> Result<ExitCode> {
         // alone is not enough: upgraded HOOK_CONTENT must rewrite so operators
         // never keep a stale scan line after a keyhog upgrade (KH-1333).
         if existing == HOOK_CONTENT && !force {
-            let palette = crate::style::for_stderr();
-            let msg = format!(
-                "KeyHog pre-commit hook is already installed at {}.",
-                hook_path.display()
-            );
-            eprintln!("{}", crate::style::warn(&msg, &palette));
-            return Ok(ExitCode::SUCCESS);
+            return Ok((hook_path, HookInstallStatus::AlreadyInstalled));
         }
         let is_keyhog_owned = existing.contains(HOOK_MARKER);
         if !force && !is_keyhog_owned {
@@ -94,6 +129,7 @@ fn install(force: bool) -> Result<ExitCode> {
             );
         }
         // KeyHog-owned but bytes differ (or --force): fall through and rewrite.
+        is_update = true;
     }
 
     let mut file = std::fs::OpenOptions::new()
@@ -121,24 +157,19 @@ fn install(force: bool) -> Result<ExitCode> {
             .with_context(|| format!("making {} executable", hook_path.display()))?;
     }
 
-    let palette = crate::style::for_stderr();
-    let msg = format!(
-        "KeyHog pre-commit hook {} at {}.",
-        if force {
-            "installed/updated"
-        } else {
-            "installed"
-        },
-        hook_path.display(),
-    );
-    eprintln!("{}", crate::style::pass(&msg, &palette));
-    Ok(ExitCode::SUCCESS)
+    let status = if is_update || force {
+        HookInstallStatus::Updated
+    } else {
+        HookInstallStatus::Installed
+    };
+    Ok((hook_path, status))
 }
 
 fn uninstall() -> Result<ExitCode> {
-    // Hook path resolution + ownership check: the collect phase.
     let _check_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
-    let hook_path = find_hooks_dir()?.join("pre-commit");
+    let cur_dir = std::env::current_dir().context("resolving current directory")?;
+    let hooks_dir = find_hooks_dir_for_repo(&cur_dir)?;
+    let hook_path = hooks_dir.join("pre-commit");
 
     if !hook_path.exists() {
         let palette = crate::style::for_stderr();
@@ -161,7 +192,6 @@ fn uninstall() -> Result<ExitCode> {
         .with_context(|| format!("removing hook at {}", hook_path.display()))?;
     drop(_check_span);
 
-    // Publication of the removal receipt.
     let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
     let palette = crate::style::for_stderr();
     let msg = format!(
@@ -172,11 +202,39 @@ fn uninstall() -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn find_hooks_dir() -> Result<PathBuf> {
+pub(crate) fn uninstall_at_repo(repo_root: &std::path::Path) -> Result<Option<PathBuf>> {
+    let _check_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
+    let hooks_dir = match find_hooks_dir_for_repo(repo_root) {
+        Ok(dir) => dir,
+        Err(_) => return Ok(None),
+    };
+    let hook_path = hooks_dir.join("pre-commit");
+
+    if !hook_path.exists() {
+        return Ok(None);
+    }
+
+    let existing = std::fs::read_to_string(&hook_path)
+        .with_context(|| format!("reading hook at {}", hook_path.display()))?;
+
+    if !existing.contains(HOOK_MARKER) {
+        return Ok(None);
+    }
+
+    std::fs::remove_file(&hook_path)
+        .with_context(|| format!("removing hook at {}", hook_path.display()))?;
+    drop(_check_span);
+    let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
+
+    Ok(Some(hook_path))
+}
+
+pub(crate) fn find_hooks_dir_for_repo(repo_root: &std::path::Path) -> Result<PathBuf> {
     // SECURITY: kimi-wave1 audit finding 3.PATH-git. Use trusted absolute path.
     let git_bin = keyhog_core::resolve_safe_bin("git")
         .ok_or_else(|| anyhow::anyhow!("git binary not found in trusted system bin dirs"))?;
     let output = std::process::Command::new(&git_bin)
+        .current_dir(repo_root)
         .args(["rev-parse", "--path-format=absolute", "--git-path", "hooks"])
         .output()
         .context("failed to run `git rev-parse --git-path hooks`. Is this a git repository?")?;

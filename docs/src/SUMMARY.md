@@ -13,11 +13,11 @@
 
 # Repository gates
 
+- [Perpetual repository and filesystem guard](./workflows/guard.md)
 - [Pre-commit secret scanning](./workflows/precommit.md)
 - [GitHub Action secret scanning](./workflows/github-action.md)
 - [CI secret scanning](./workflows/ci.md)
 - [Scan Git history and recover hidden credentials](./guides/deep-recovery.md)
-- [Perpetual repository and filesystem guard](./workflows/guard.md)
 
 # Input shapes
 

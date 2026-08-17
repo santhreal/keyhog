@@ -145,6 +145,31 @@ commands in [Choose the right workflow](#choose-the-right-workflow). You can
 scan Git history, container images, cloud buckets, repository collections,
 URLs, and a whole machine without changing tools.
 
+### Guard repositories for fast pre-commit scans
+
+Register a repository with the perpetual KeyHog daemon for fast
+pre-commit secret detection (requires Unix; on Windows use in-process `keyhog scan`):
+```sh
+# 1. Start the daemon (accelerated by CUDA, Metal, WGPU, or SIMD)
+keyhog guard up
+
+# 2. Guard your repository (indexes baseline and installs pre-commit hook in one step)
+keyhog guard add /path/to/repo
+
+# 3. Every staged commit checks only changed blobs against in-memory attestations
+keyhog scan --git-staged
+
+# 4. View all active guarded repositories and their states
+keyhog guard list
+
+# 5. Turn the daemon on and off cleanly without losing registrations or durable index
+keyhog guard down
+```
+
+See the [perpetual guard guide](https://santhreal.github.io/keyhog/workflows/guard.html)
+and [pre-commit workflow](https://santhreal.github.io/keyhog/workflows/precommit.html)
+for full configuration, state machine lifecycle, and hook automation.
+
 ### Add it to GitHub Actions
 
 Create `.github/workflows/keyhog.yml`:

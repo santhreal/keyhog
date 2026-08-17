@@ -1,222 +1,338 @@
 # Perpetual repository and filesystem guard
 
 The guard is a daemon-resident runtime that registers Git repositories and
-filesystem trees as guarded roots. Each root has a 7-state machine, a clean
-attestation cache, and a policy identity that binds attestations to the exact
-detector corpus, suppression rules, and configuration the daemon was started
-with.
+filesystem trees as guarded roots. It maintains an in-memory clean Git object
+attestation index and filesystem event tracking, enabling sub-second pre-commit
+scanning on staged changes without cold-start detector compilation or redundant
+file I/O.
 
 Guard requires the Unix-domain daemon transport. On Windows, `keyhog guard`
 exits with an unsupported-platform error; use `keyhog scan <path>` in process.
 
 The guard supplements staged and working-tree scans. It does not replace them.
 A commit is allowed only after the exact staged-object transaction proves the
-content is clean.
+staged content is clean.
 
-## Quick start script
+## Core mental model
 
-Save this script as `guard_demo.sh` to start the daemon, index any repository,
-and test instant staged commit scans. Set `REPO_PATH` to the target repository:
+1. **One-command registration (`keyhog guard add <path>`)**: Indexes the target
+   repository into daemon memory once and establishes clean baseline attestations.
+2. **Fast staged commit gating (`keyhog scan --git-staged`)**: Pre-commit
+   hooks query the active guard daemon. The daemon verifies only changed staged
+   blob OIDs against in-memory attestations, skipping unchanged clean payloads.
+3. **Full lifecycle control**: List active roots with `keyhog guard list`, check
+   memory and attestation metrics with `keyhog guard status <path>`, and free
+   daemon memory immediately with `keyhog guard remove <path>` when finished
+   working on a project.
 
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
+## Lifecycle commands
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Set the path to your Git repository:
-REPO_PATH="${1:-/path/to/your/repository}"
-SOCKET_PATH="/tmp/keyhog-guard.sock"
-# ─────────────────────────────────────────────────────────────────────────────
+| Command | Purpose |
+|---|---|
+| `keyhog guard up [--backend <name>]` | Start or ensure the background guard daemon is running and ready. Reconciles registered roots loaded from durable store. |
+| `keyhog guard down` | Stop the background guard daemon cleanly. Persisted root registrations and durable indexes remain on disk. |
+| `keyhog guard add <path> [--mode repo]` | Register a repository or tree for continuous guard protection. Performs initial baseline reconciliation and installs hook before returning. |
+| `keyhog guard list` | Enumerate all registered guard roots, their active states, and terminal sequences. |
+| `keyhog guard status <path> [--format human\|json]` | Print detailed metrics for a guarded root: state, cache hits/misses, files/bytes scanned, residency, and policy digest. |
+| `keyhog guard remove <path>` | Stop guarding a repository and drop its in-memory index and attestation cache to immediately free daemon memory and CPU. |
+| `keyhog guard reconcile <path>` | Force a full baseline reconciliation after intentional policy updates or mass branch operations. |
+| `keyhog guard rebuild <path>` | Delete and recreate the durable guard store for a root after corruption or irrecoverable state. |
+## Quick start
 
-if [[ ! -d "$REPO_PATH/.git" ]]; then
-  echo "Error: '$REPO_PATH' is not a Git repository." >&2
-  exit 1
-fi
-REPO_PATH="$(cd "$REPO_PATH" && pwd)"
-
-echo "1. Starting KeyHog daemon..."
-keyhog daemon stop --socket "$SOCKET_PATH" >/dev/null 2>&1 || true
-keyhog daemon start --backend auto --socket "$SOCKET_PATH" &
-DAEMON_PID=$!
-
-# Wait for socket readiness
-for _ in {1..30}; do
-  if keyhog daemon status --socket "$SOCKET_PATH" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 0.2
-done
-
-echo "2. Registering and indexing repository..."
-keyhog guard add "$REPO_PATH" --mode repo --socket "$SOCKET_PATH"
-keyhog guard reconcile "$REPO_PATH" --socket "$SOCKET_PATH"
-
-echo "3. Guard status and in-memory index metrics:"
-keyhog guard status "$REPO_PATH" --socket "$SOCKET_PATH" --format json
-
-echo "4. Running staged commit scan (clean attestation cache hit)..."
-(
-  cd "$REPO_PATH"
-  time keyhog scan --git-staged --daemon-socket "$SOCKET_PATH"
-)
-
-echo "5. Stopping daemon..."
-keyhog daemon stop --socket "$SOCKET_PATH"
-wait "$DAEMON_PID" 2>/dev/null || true
-echo "Guard test complete."
-```
-
-## Manual workflow
-
-### Start the daemon
+### 1. Start the daemon
 
 ```sh
-keyhog daemon start --backend auto
+keyhog guard up
 ```
 
-The guard uses the same daemon as scan requests. One daemon serves all guard
-roots and scan traffic.
-
-### Register a root
+`guard up` ensures the daemon is active in the background, compiles the active
+926-detector corpus once, and stays resident in memory. One daemon process serves
+all guarded repositories and scan requests.
+### 2. Register a repository
 
 ```sh
 keyhog guard add /path/to/repo --mode repo
 ```
 
-`--mode repo` uses Git object IDs for exact staged-content identity.
-`--mode filesystem` uses content hashes without immutable Git OIDs.
+- `--mode repo` (default): Uses Git object IDs (OIDs) for exact immutable
+  staged-content identification, and automatically installs the managed
+  pre-commit hook at `.git/hooks/pre-commit` (best-effort; skipped if a foreign
+  hook already exists, or if `--no-hook` is passed).
+- `--mode filesystem`: Uses file content hashes without Git OIDs.
 
-A newly added root starts in the `stopped` state. Run `keyhog guard reconcile`
-to transition it to `current` after the initial baseline scan.
-## Check status
+The command waits for initial baseline reconciliation to complete before
+returning:
+
+```text
+OK guard: root /path/to/repo registered (state stopped, sequence 1)
+OK guard: reconciliation complete, root is current
+```
+
+### 3. Check guarded status
+
+Inspect in-memory metrics, cache efficiency, and policy binding:
 
 ```sh
 keyhog guard status /path/to/repo
 ```
 
-Output includes the root state, terminal sequence, pending events, files and
-bytes scanned, attestation cache hits and misses, findings count, coverage
-gaps, and scanner residency label.
+Human-readable output:
 
-JSON output:
+```text
+root:           /path/to/repo
+mode:           repo
+state:          current
+sequence:       2
+accepted seq:   2
+completed seq:  2
+pending events: 0
+files scanned:  142
+bytes scanned:  1849204
+cache hits:     0
+cache misses:   142
+findings:       0
+coverage gaps:  0
+initial recon:  2026-08-17T00:15:00Z
+last recon:     2026-08-17T00:15:00Z
+residency:      resident
+backend route:  gpu-cuda-region-presence
+build digest:   1a2b3c4d5e6f7a8b
+detector:       926-174c093ae73b
+suppression:    0000000000000000
+config:         18cc6ed841bf6dfe
+autoroute:      calibrated
+store schema:   1
+```
+
+Structured JSON output for monitoring and scripts:
 
 ```sh
 keyhog guard status /path/to/repo --format json
 ```
 
-## List roots
+### 4. Run instant staged commit scans
+
+Inside the guarded repository, run:
+
+```sh
+keyhog scan --git-staged
+```
+
+The command connects to the guard daemon via Unix domain socket, checks the
+staged Git blob OIDs against in-memory attestations, and returns in milliseconds.
+
+- **Clean commit outcome**:
+
+```text
+  No secrets detected in the scanned files.
+```
+
+- **Blocked commit outcome**:
+
+```text
+  ┌    CRITICAL ─── OpenAI API Key
+  │ Secret:     sk-9...M8vZ
+  │ Location:   client.ts:4
+  │ Evidence:   likely/vendor-pattern  ■■■■■■ 100%
+  │ Entropy:    5.383 bits/byte
+  │ Action:     Revoke immediately at the provider, rotate dependent credentials, and audit recent usage.
+  └─────────────────────────────────────────────
+
+  ━━━ Results ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  1 secret found · 1 unverified
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### 5. List all guarded repositories
+
+Check which repositories are currently guarded:
 
 ```sh
 keyhog guard list
 ```
 
-## Reconcile a root
+Output:
 
-```sh
-keyhog guard reconcile /path/to/repo
+```text
+OK 2 guard roots registered
+  /path/to/repo-a  current  seq=14
+  /path/to/repo-b  current  seq=3
 ```
 
-Reconciliation forces a full baseline scan. Use it after an intentional policy
-or filesystem change.
-
-## Remove a root
+### 6. Free resources when finished
+When you finish working on a project, remove it from the guard to immediately
+reclaim daemon memory and watcher resources:
 
 ```sh
 keyhog guard remove /path/to/repo
 ```
 
-## States
+`guard remove` unregisters the root from the daemon and removes any KeyHog-owned
+pre-commit hook by default (pass `--keep-hook` to preserve the hook).
+You can re-add the repository at any time with `keyhog guard add /path/to/repo`.
 
-| Label | Meaning |
+## Pre-commit hook integration
+
+### Standalone Git hook
+
+Create or update `.git/hooks/pre-commit` in your repository:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Run staged scan against guard daemon (falls back to in-process if daemon is off)
+keyhog scan --git-staged
+```
+
+Make the script executable:
+
+```sh
+chmod +x .git/hooks/pre-commit
+```
+
+### `pre-commit` framework
+
+Add the following to `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/santhreal/keyhog
+    rev: v0.5.79
+    hooks:
+      - id: keyhog
+        stages: [pre-commit]
+```
+
+## Bypassing checks and suppressing test fixtures
+
+### Emergency single-commit bypass
+
+To bypass the pre-commit hook for a single urgent commit:
+
+```sh
+git commit --no-verify -m "urgent fix"
+```
+
+This bypasses local Git hooks. Use it sparingly.
+
+### Suppressing intentional test fixtures and false positives
+
+When committing intentional test fixtures, mock data, or vendor example keys:
+
+1. **Suppress by credential hash (`.keyhogignore`)**:
+   Add the SHA-256 hash of the value to `.keyhogignore`:
+   ```text
+   hash:5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
+   ```
+2. **Scoped suppression (`.keyhogignore.toml`)**:
+   Target the exact detector and file path in `.keyhogignore.toml`:
+   ```toml
+   [[suppress]]
+   detector = "stripe-secret-key"
+   path_eq = "tests/fixtures/mock_stripe.env"
+   reason = "reviewed synthetic test fixture"
+   ```
+3. **Inline source directive**:
+   Append `// keyhog:ignore detector=<detector-id>` or
+   `# keyhog:ignore detector=<detector-id>` directly to the source line.
+   Without `detector=`, the directive suppresses every finding on that line.
+After committing the suppression rule, run `keyhog guard reconcile <path>` if you
+need to update the in-memory baseline immediately.
+
+## Guard state machine
+
+Every guarded root operates within a 7-state machine owned by `GuardRootState`:
+
+| From State | Event / Trigger | Target State | Description |
+|---|---|---|---|
+| `stopped` | `ReconciliationStarted` | `indexing` | Baseline reconciliation begins. |
+| `indexing` | `ReconciliationClean` | `current` | Baseline scan completed with zero blocking findings. |
+| `indexing` | `ReconciliationFindings` | `blocked` | Baseline scan detected blocking secrets. |
+| `indexing` | `ReconciliationDegraded` / `CoverageLost` | `degraded` | Incomplete coverage during reconciliation. |
+| `indexing` | `PolicyChanged` | `stale-policy` | Detector corpus, suppressions, or config changed during scan. |
+| `current` | `EventAccepted` | `dirty` | Filesystem change accepted; pending events await scan. |
+| `current` | `CoverageLost` | `degraded` | Filesystem watcher overflow or read error. |
+| `current` | `PolicyChanged` | `stale-policy` | Detector corpus, suppressions, or config modified. |
+| `blocked` | `EventAccepted` | `dirty` | Filesystem change accepted in blocked repository. |
+| `blocked` | `CoverageLost` | `degraded` | Coverage lost while blocked. |
+| `blocked` | `PolicyChanged` | `stale-policy` | Policy modified while blocked. |
+| `dirty` | `EventsClean` | `current` | Changed files scanned cleanly; all findings resolved. |
+| `dirty` | `EventsFindings` | `blocked` | Changed files contain blocking secrets. |
+| `dirty` | `EventsDegraded` / `CoverageLost` | `degraded` | Incomplete coverage during incremental scan. |
+| `dirty` | `PolicyChanged` | `stale-policy` | Policy modified while processing dirty events. |
+| `degraded` | `RepairStarted` | `indexing` | Manual `keyhog guard reconcile` or `rebuild` triggered. |
+| `stale-policy` | `RepairStarted` | `indexing` | Manual `keyhog guard reconcile` or `rebuild` triggered. |
+| *any state* | `Stopped` | `stopped` | Root unregistered with `keyhog guard remove` or daemon shutdown. |
+### Process exit codes
+
+`keyhog guard status` and `keyhog scan --git-staged` enforce strict exit semantics:
+
+| Exit Code | Condition |
 |---|---|
-| `stopped` | The root is registered but not actively guarded. |
-| `indexing` | A baseline reconciliation is in progress. |
-| `current` | Coverage is complete and no finding blocks the default evidence policy. Review-tier findings remain visible without blocking this state. |
-| `dirty` | Filesystem events were observed but not yet reconciled. |
-| `blocked` | A likely or confirmed finding blocks the default evidence policy. The root is not clean. |
-| `degraded` | Coverage is incomplete and no default-policy blocker takes precedence. The guard cannot prove the root is clean. |
-| `stale-policy` | The daemon's detector corpus, suppression, or configuration changed. Existing attestations are invalid. |
+| `0` | Root is `current`, or staged scan contains zero blocking secrets under the active policy. |
+| `1` | Root is `blocked`, or staged scan contains a finding that blocks the evidence policy. |
+| `13` | Root is `dirty`, `stopped`, `indexing`, `degraded`, or `stale-policy` (incomplete proof of cleanliness). |
 
-## Exit codes
+## How clean attestations work
 
-| Code | Condition |
-|---|---|
-| 0 | The root is `current`, or a staged scan has only review-tier findings under the default evidence policy. |
-| 1 | The root is `blocked`, or a staged scan contains a finding that blocks its selected evidence policy. |
-| 13 | The root is `dirty`, `stopped`, `indexing`, `degraded`, or `stale-policy`. |
+When KeyHog scans a staged Git blob and detects zero unsuppressed secrets, it
+records a clean attestation record keyed by four immutable elements:
 
-## Scanner residency
+1. **Blob Git OID**: The SHA-1 or SHA-256 object hash of the staged blob.
+2. **Byte Length**: The exact byte length of the blob payload.
+3. **Policy Identity Digest**: The 32-byte digest of the active detector corpus,
+   suppression rules, and scanner configuration.
+4. **Sorted Source-Path Set**: The hashed set of all sorted staged source paths
+   mapped to that blob.
 
-The scanner is always in memory in the daemon process. The residency label
-reports whether the guard is actively using it:
-
-- `active`: in-flight commit transactions right now.
-- `resident`: recent guard activity within the idle threshold (5 minutes).
-- `idle-unload`: no guard activity for longer than the threshold.
-
-## Configuration
-
-The `[guard]` section in `.keyhog.toml` configures the guard runtime. Settings
-include the hot index memory budget, event queue caps, coalesce window,
-scanner residency, idle-unload timeout, scrub interval, and subtree
-reconciliation bounds.
-
-## How attestations work
-
-When a commit transaction scans a blob and finds no unsuppressed secrets, the
-daemon records a clean attestation keyed by the blob's Git OID, hash algorithm,
-policy identity digest, and exact sorted staged source-path set. Future
-transactions skip the payload scan only when all four inputs match. Adding an
-alias or moving the blob between source roles invalidates the attestation.
-
-The source-path set is hashed into the attestation identity. Persisted policy
-identity data does not contain plaintext staged paths.
-
-A policy identity change (new detectors, new suppression rules, new
-configuration) invalidates all existing attestations and transitions active
-roots to `stale-policy`.
-
+Future commit transactions matching all four elements skip payload re-scanning
+and return an instant cache hit. If a file is renamed, moved across source roles,
+or an alias is added, the attestation is invalidated. Persisted policy identity
+records contain no plaintext staged paths.
 ## Durable state persistence
 
-Set `[guard].state_path` in `.keyhog.toml` to persist root records and clean
-attestations across daemon restarts:
+By default, guard state is held in daemon memory. To persist root registrations
+and clean attestations across daemon restarts, configure `state_path` in
+`.keyhog.toml`:
 
 ```toml
 [guard]
 state_path = "~/.local/state/keyhog/guard.redb"
 ```
 
-The durable store is a redb database with owner-only file permissions (0600)
-and parent directory permissions (0700). Symlinked state paths are rejected.
+The durable store uses a high-performance redb database with owner-only (0600)
+file permissions, enforces 0700 permissions on its parent directory, and rejects
+symlinked state paths.
+On daemon restart, persisted roots load in the `stopped` state. Running
+`keyhog guard reconcile /path/to/repo` re-verifies the repository and transitions
+it back to `current`.
 
-On daemon restart, persisted roots are loaded as `stopped` (never `current`)
-and the filesystem watcher is re-registered for each root that still exists.
-The operator must run `keyhog guard reconcile` to transition a root back to
-`current` after a restart.
+In lockdown mode (`[lockdown] require = true`), durable persistence is
+disabled and the guard operates strictly in ephemeral memory.
 
-In lockdown mode (`[lockdown] require = true`), the durable store is disabled.
-The guard operates in ephemeral mode with no on-disk persistence.
+## Periodic scrubbing
 
-## Rebuild a corrupted root
-
-```sh
-keyhog guard rebuild /path/to/repo
-```
-
-Rebuild removes the root from the guard (clearing its durable store entries)
-and re-adds it, triggering a fresh baseline reconciliation. Use it after store
-corruption or when persisted state is irrecoverably stale.
-
-## Periodic scrub
-
-Set `[guard].scrub_interval` to periodically re-scan all `current` roots:
+Configure `scrub_interval` in `.keyhog.toml` to periodically re-verify `current`
+repositories:
 
 ```toml
 [guard]
 scrub_interval = "24h"
 ```
 
-The scrub catches changes that filesystem events missed: NFS mounts, bind
-mounts, and external edits that bypass inotify. When the interval elapses, each
-`current` root transitions to `indexing` for a full re-reconciliation. Omit the
-setting to disable scrubbing.
+Scrubbing detects modifications made outside standard filesystem events (such as
+NFS mounts, container volume mutations, or out-of-band Git object manipulation).
+When the interval elapses, each `current` root automatically transitions to
+`indexing` for a full reconciliation.
+
+## Recovering corrupted roots
+
+If a repository's durable state becomes corrupt or desynchronized, rebuild it:
+
+```sh
+keyhog guard rebuild /path/to/repo
+```
+
+`rebuild` clears the root's durable database entries, re-registers the root, and
+triggers a clean baseline reconciliation.

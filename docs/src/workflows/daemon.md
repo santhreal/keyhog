@@ -37,6 +37,19 @@ keyhog daemon status
 keyhog daemon stop
 ```
 
+### Background guard daemon lifecycle
+
+When using Perpetual Guard (`keyhog guard`), you can manage the daemon in the
+background directly with `keyhog guard up` and `keyhog guard down`:
+
+```sh
+# Start the background daemon if not running and reconcile durable roots
+keyhog guard up
+
+# Stop the daemon cleanly while preserving durable registrations and indexes
+keyhog guard down
+```
+
 Start an opt-in mass service when one worker should process a large source
 stream:
 

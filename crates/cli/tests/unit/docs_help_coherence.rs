@@ -132,6 +132,29 @@ fn nested_subcommands_are_covered() {
         "hook uninstall missing"
     );
     assert!(hook.contains("`--force`"), "hook install --force missing");
+
+    let guard = keyhog::cli_reference::generate_for(&root_command(), "guard");
+    for sub in [
+        "add",
+        "down",
+        "list",
+        "rebuild",
+        "reconcile",
+        "remove",
+        "status",
+        "up",
+    ] {
+        assert!(
+            guard.contains(&format!("keyhog guard {sub}")),
+            "guard subcommand `{sub}` missing from generated reference"
+        );
+    }
+    assert!(guard.contains("`--socket`"), "guard add --socket missing");
+    assert!(guard.contains("`--no-hook`"), "guard add --no-hook missing");
+    assert!(
+        guard.contains("`--keep-hook`"),
+        "guard remove --keep-hook missing"
+    );
 }
 
 /// Defaults, value arities, and possible-value lists must come from the built

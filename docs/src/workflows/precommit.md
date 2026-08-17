@@ -51,17 +51,30 @@ branch. Keep a default-policy scan in CI, where the cost is paid once per push
 rather than once per commit. See
 [Fail only on new secrets](./ci.md#fail-only-on-new-secrets).
 
-`keyhog hook install` has no policy option. To run the full policy locally,
-write the hook yourself:
+### Fast pre-commit scanning with Perpetual Guard
 
-```sh
-printf '#!/usr/bin/env bash\nexec keyhog scan --git-staged\n' > .git/hooks/pre-commit
-chmod +x .git/hooks/pre-commit
-```
+For fast pre-commit gating with the **full default policy**
+(including complete decoding, entropy analysis, and all 926 detectors), use the
+perpetual KeyHog daemon:
 
-That hook blocks the Base64 case. It costs more time on every commit, and
-`keyhog hook uninstall` will not remove it because it carries no KeyHog marker.
+1. Ensure the guard daemon is active in the background:
+   ```sh
+   keyhog guard up
+   ```
+2. Register the repository and install the pre-commit hook in one step:
+   ```sh
+   keyhog guard add . --mode repo
+   ```
 
+`keyhog guard add` registers the repository in daemon memory, performs the initial
+baseline reconciliation, and automatically installs the managed pre-commit hook
+at `.git/hooks/pre-commit` (pass `--no-hook` to skip hook installation).
+
+Because the daemon maintains an in-memory clean Git blob attestation index,
+`keyhog scan --git-staged` checks only changed staged blobs against the daemon's
+in-memory index, skipping unchanged clean payloads rather than re-scanning them.
+
+See the [perpetual guard guide](./guard.md) for full lifecycle management.
 ### `pre-commit` framework
 
 This repository's hook uses `language: system`. Follow the

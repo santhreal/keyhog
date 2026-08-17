@@ -1,7 +1,7 @@
-//! `keyhog guard {add, remove, list, status, reconcile}` subcommand.
+//! `keyhog guard {add, remove, up, down, list, status, reconcile, rebuild}` subcommand.
 //!
-//! Connects to the daemon and sends guard control frames. When no daemon
-//! is available, reports that clearly instead of silently doing nothing.
+//! Connects to the daemon and sends guard control frames. Starts or stops
+//! the background daemon via `guard up` / `guard down`.
 
 use crate::args::{GuardAction, GuardArgs};
 use crate::daemon::client;
@@ -14,17 +14,166 @@ use crate::daemon::server::default_socket_path;
 
 pub(crate) async fn run(args: GuardArgs) -> anyhow::Result<ExitCode> {
     match args.action {
-        GuardAction::Add { root, mode } => run_add(root, mode).await,
-        GuardAction::Remove { root } => run_remove(root).await,
-        GuardAction::List => run_list().await,
-        GuardAction::Status { root, format } => run_status(root, format).await,
-        GuardAction::Reconcile { root } => run_reconcile(root).await,
-        GuardAction::Rebuild { root, mode } => run_rebuild(root, mode).await,
+        GuardAction::Add {
+            root,
+            mode,
+            no_hook,
+            socket,
+        } => run_add(root, mode, no_hook, socket).await,
+        GuardAction::Remove {
+            root,
+            keep_hook,
+            socket,
+        } => run_remove(root, keep_hook, socket).await,
+        GuardAction::Up { backend, socket } => run_up(backend, socket).await,
+        GuardAction::Down { socket } => run_down(socket).await,
+        GuardAction::List { socket } => run_list(socket).await,
+        GuardAction::Status {
+            root,
+            format,
+            socket,
+        } => run_status(root, format, socket).await,
+        GuardAction::Reconcile { root, socket } => run_reconcile(root, socket).await,
+        GuardAction::Rebuild { root, mode, socket } => run_rebuild(root, mode, socket).await,
     }
 }
 
-async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitCode> {
-    let socket = default_socket_path();
+async fn run_up(
+    backend: Option<String>,
+    socket: Option<std::path::PathBuf>,
+) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
+    let palette = style::for_stderr();
+
+    // If daemon is already running and reachable, report status and reconcile.
+    if let Ok(mut conn) = client::connect(&socket).await {
+        eprintln!(
+            "{} guard: daemon already active at {}",
+            style::pass("OK", &palette),
+            socket.display()
+        );
+        if let Ok(Response::GuardListResult { roots }) = conn.round_trip(&Request::GuardList).await
+        {
+            if !roots.is_empty() {
+                eprintln!(
+                    "{} {} guard root{} registered",
+                    style::pass("OK", &palette),
+                    roots.len(),
+                    if roots.len() == 1 { "" } else { "s" }
+                );
+                for root in &roots {
+                    let _ = conn
+                        .round_trip(&Request::GuardReconcile {
+                            root: root.root.clone(),
+                        })
+                        .await;
+                }
+            }
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    // Spawn daemon process in the background.
+    let current_exe = std::env::current_exe()?;
+    let mut cmd = std::process::Command::new(current_exe);
+    cmd.arg("daemon").arg("start");
+    if let Some(b) = &backend {
+        cmd.arg("--backend").arg(b);
+    }
+    cmd.arg("--socket").arg(&socket);
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::null());
+    cmd.stderr(std::process::Stdio::null());
+    let _child = cmd
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("failed to spawn keyhog daemon process: {e}"))?;
+
+    // Poll socket readiness with backoff.
+    let start_time = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(10);
+    let mut conn = loop {
+        match client::connect(&socket).await {
+            Ok(c) => break c,
+            Err(_) => {
+                if start_time.elapsed() >= timeout {
+                    anyhow::bail!(
+                        "guard up: timed out waiting for daemon to start at {}",
+                        socket.display()
+                    );
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        }
+    };
+
+    eprintln!(
+        "{} guard: daemon is up at {}",
+        style::pass("OK", &palette),
+        socket.display()
+    );
+
+    // Reconcile registered roots loaded from durable store.
+    if let Ok(Response::GuardListResult { roots }) = conn.round_trip(&Request::GuardList).await {
+        if !roots.is_empty() {
+            eprintln!(
+                "{} {} guard root{} registered from durable store",
+                style::pass("OK", &palette),
+                roots.len(),
+                if roots.len() == 1 { "" } else { "s" }
+            );
+            for root in &roots {
+                let _ = conn
+                    .round_trip(&Request::GuardReconcile {
+                        root: root.root.clone(),
+                    })
+                    .await;
+            }
+        }
+    }
+
+    Ok(ExitCode::SUCCESS)
+}
+
+async fn run_down(socket: Option<std::path::PathBuf>) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
+    let palette = style::for_stderr();
+
+    let mut conn = match client::connect_any_version(&socket).await {
+        Ok(c) => c,
+        Err(_) => {
+            eprintln!(
+                "{} guard: daemon is not running at {}",
+                style::pass("OK", &palette),
+                socket.display()
+            );
+            return Ok(ExitCode::SUCCESS);
+        }
+    };
+
+    match conn.round_trip(&Request::Shutdown).await? {
+        Response::Shutdown => {
+            eprintln!(
+                "{} guard: daemon stopped; registrations and durable state preserved",
+                style::pass("OK", &palette)
+            );
+            Ok(ExitCode::SUCCESS)
+        }
+        other => {
+            anyhow::bail!(
+                "guard down: unexpected daemon response ({})",
+                response_kind(&other)
+            );
+        }
+    }
+}
+
+async fn run_add(
+    root: std::path::PathBuf,
+    mode: String,
+    no_hook: bool,
+    socket: Option<std::path::PathBuf>,
+) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
     let mut conn = match client::connect(&socket).await {
         Ok(conn) => conn,
         Err(error) => {
@@ -38,7 +187,7 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
     let canonical = canonicalize_root(&root)?;
     let request = Request::GuardAdd {
         root: canonical,
-        mode,
+        mode: mode.clone(),
     };
     let canonical_for_reconcile = match conn.round_trip(&request).await? {
         Response::GuardAdded {
@@ -75,7 +224,7 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
         Response::GuardReconcileStarted { root: _ } => {
             // Reconciliation completed. Query the final state.
             let status_request = Request::GuardStatus {
-                root: canonical_for_reconcile,
+                root: canonical_for_reconcile.clone(),
             };
             match conn.round_trip(&status_request).await? {
                 Response::GuardStatusResult {
@@ -89,6 +238,26 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
                         style::pass("OK", &palette),
                         state
                     );
+                    if mode == "repo" && !no_hook {
+                        match crate::subcommands::hook::install_at_repo(
+                            std::path::Path::new(&canonical_for_reconcile),
+                            false,
+                        ) {
+                            Ok((hook_path, _status)) => {
+                                eprintln!(
+                                    "{} guard: pre-commit hook active at {}",
+                                    style::pass("OK", &palette),
+                                    hook_path.display()
+                                );
+                            }
+                            Err(err) => {
+                                eprintln!(
+                                    "{} guard: pre-commit hook not installed: {err}",
+                                    style::warn("WARN", &palette)
+                                );
+                            }
+                        }
+                    }
                     Ok(exit_for_guard_state(&state, findings_count))
                 }
                 Response::Error { message } => {
@@ -114,8 +283,12 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
     }
 }
 
-async fn run_remove(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
-    let socket = default_socket_path();
+async fn run_remove(
+    root: std::path::PathBuf,
+    keep_hook: bool,
+    socket: Option<std::path::PathBuf>,
+) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
     let mut conn = match client::connect(&socket).await {
         Ok(conn) => conn,
         Err(error) => {
@@ -127,7 +300,9 @@ async fn run_remove(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
     };
 
     let canonical = resolve_root_for_control(&root)?;
-    let request = Request::GuardRemove { root: canonical };
+    let request = Request::GuardRemove {
+        root: canonical.clone(),
+    };
     match conn.round_trip(&request).await? {
         Response::GuardRemoved => {
             let palette = style::for_stderr();
@@ -136,6 +311,17 @@ async fn run_remove(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
                 style::pass("OK", &palette),
                 root.display()
             );
+            if !keep_hook {
+                if let Ok(Some(hook_path)) =
+                    crate::subcommands::hook::uninstall_at_repo(std::path::Path::new(&canonical))
+                {
+                    eprintln!(
+                        "{} guard: pre-commit hook removed from {}",
+                        style::pass("OK", &palette),
+                        hook_path.display()
+                    );
+                }
+            }
             Ok(ExitCode::SUCCESS)
         }
         Response::Error { message } => {
@@ -150,8 +336,8 @@ async fn run_remove(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
     }
 }
 
-async fn run_list() -> anyhow::Result<ExitCode> {
-    let socket = default_socket_path();
+async fn run_list(socket: Option<std::path::PathBuf>) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
     let mut conn = match client::connect(&socket).await {
         Ok(c) => c,
         Err(e) => {
@@ -202,8 +388,12 @@ async fn run_list() -> anyhow::Result<ExitCode> {
     }
 }
 
-async fn run_status(root: std::path::PathBuf, format: String) -> anyhow::Result<ExitCode> {
-    let socket = default_socket_path();
+async fn run_status(
+    root: std::path::PathBuf,
+    format: String,
+    socket: Option<std::path::PathBuf>,
+) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
     let mut conn = match client::connect(&socket).await {
         Ok(conn) => conn,
         Err(error) => {
@@ -338,8 +528,11 @@ async fn run_status(root: std::path::PathBuf, format: String) -> anyhow::Result<
     }
 }
 
-async fn run_reconcile(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
-    let socket = default_socket_path();
+async fn run_reconcile(
+    root: std::path::PathBuf,
+    socket: Option<std::path::PathBuf>,
+) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
     let mut conn = match client::connect(&socket).await {
         Ok(conn) => conn,
         Err(error) => {
@@ -403,8 +596,12 @@ async fn run_reconcile(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
 /// durable store, then re-adds it, triggering a fresh baseline
 /// reconciliation. Use after store corruption or when the persisted
 /// state is irrecoverably stale.
-async fn run_rebuild(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitCode> {
-    let socket = default_socket_path();
+async fn run_rebuild(
+    root: std::path::PathBuf,
+    mode: String,
+    socket: Option<std::path::PathBuf>,
+) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
     let mut conn = match client::connect(&socket).await {
         Ok(conn) => conn,
         Err(error) => {
