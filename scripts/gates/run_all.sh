@@ -175,6 +175,10 @@ run "Gate #5: exact complexity ratchet (growth, slack, and metric drift)" \
   python3 -B scripts/gates/complexity_budget.py
 run "VYRE pin consistency: 6 crates at one immutable Git revision, no vendor build-path" \
   python3 -B scripts/gates/vyre_pin_consistency.py
+run "GPU wiring self-test: unfeatured, absorbed, orphaned, and unarmed GPU lanes are detected" \
+  python3 -B scripts/gates/gpu_wired.py --self-test
+run "GPU wiring: GPU targets are feature-built, unabsorbed, wired, and the release lane is armed" \
+  python3 -B scripts/gates/gpu_wired.py
 run "Organization unit tests: exact complexity ratchet and owner/reference checks" \
   python3 -B -m unittest scripts.tests.test_complexity_budget scripts.tests.test_org_audit -v
 run "tests_wired unit tests: CI-orphan model (path/mod/--test/all-targets/pkg)" \

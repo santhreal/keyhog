@@ -1,13 +1,32 @@
 #!/usr/bin/env bash
 # Local CI level (Full workspace validation including GPU hardware test battery).
 # Runs full test matrix with GPU/CUDA/WGPU acceleration enabled on local GPU hardware.
+#
+# This lane is the ONLY place GPU finding parity is proved. Hosted PR CI has no
+# adapter and never will, so it runs the hardware-free wiring contract instead
+# (`scripts/gates/gpu_wired.py` and `--test gpu_wiring_contract`).
+#
+# KEYHOG_REQUIRE_GPU arms the require-GPU runtime policy for the test support
+# gate. Without it `require_gpu_or_panic` returns at its first line, every GPU
+# parity assertion is skipped, and a runner whose driver died still reports a
+# green GPU suite. The preflight below fails the lane before any test runs when
+# no adapter can execute region presence.
 set -euo pipefail
 export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-16}"
+export KEYHOG_REQUIRE_GPU=1
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-echo "=== [Local CI] 1. Remote CI Battery (Base Suite) ==="
-bash scripts/ci_remote.sh
+echo "=== [Local CI] 1. Workspace check ==="
+cargo check --workspace --all-targets
+
+echo "=== [Local CI] 1b. GPU hardware preflight (fails closed with no adapter) ==="
+cargo run -p keyhog --features gpu,simd --profile release-fast -- \
+  backend --self-test --require-gpu
+
+echo "=== [Local CI] 1c. GPU wiring contract ==="
+cargo test -p keyhog-scanner --features gpu --profile ci-test \
+  --test gpu_wiring_contract
 
 echo "=== [Local CI] 2. Scanner Default / GPU Test Suite ==="
 cargo test -p keyhog-scanner --features gpu --test all_tests --profile ci-test -- --test-threads=16
@@ -24,7 +43,8 @@ cargo test -p keyhog-scanner --features gpu --profile release-fast \
   --test gpu_resident_output_ownership \
   --test regression_gpu_region_presence_batch_parity \
   --test packed_gpu_vyre_artifact \
-  --test gpu_literal_artifact_writer
+  --test gpu_literal_artifact_writer \
+  --test gpu_moe_degrade_contract
 
 echo "=== [Local CI] 4. GPU CLI Integration & Error Handling ==="
 cargo test -p keyhog --features gpu,simd --profile ci-test \

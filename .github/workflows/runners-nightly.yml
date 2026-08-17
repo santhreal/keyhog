@@ -85,17 +85,23 @@ jobs:
             --test performance_regression \
             --test lane6_adversarial_boundary_cases
 
-      - name: Host/GPU-dependent + recall-debt trackers (nightly, informational)
+      - name: Host-dependent + recall-debt trackers (nightly, informational)
         # These are NOT blockable on hosted CI: backend-parity/*-matrix compare
-        # SimdCpu/CpuFallback/GPU (the GPU legs need a self-hosted GPU runner that
-        # does not exist yet, so those cases fail here and are absorbed); the
-        # `gpu_*` files are `--features gpu`-gated (compile to empty without it);
-        # and the recall-debt worklists (`capability_target_spec` and the
-        # full-corpus proptests) are DELIBERATELY red, they report the count of
-        # still-unclosed recall targets (see BACKLOG DR-334). `continue-on-error`
-        # keeps them informational while `--test <name>` de-orphans each for
-        # `scripts/gates/tests_wired.py`. When a `[self-hosted, gpu]` runner lands,
-        # split the GPU set into a real `--features gpu` job.
+        # SimdCpu/CpuFallback/GPU (the GPU legs need an adapter this runner does
+        # not have, so those cases fail here and are absorbed); and the
+        # recall-debt worklists (`capability_target_spec` and the full-corpus
+        # proptests) are DELIBERATELY red, they report the count of still-unclosed
+        # recall targets (see BACKLOG DR-334). `continue-on-error` keeps them
+        # informational while `--test <name>` de-orphans each for
+        # `scripts/gates/tests_wired.py`.
+        #
+        # The `gpu_*` targets are NOT here. They used to be, built without
+        # `--features gpu` and absorbed, which made them pass on a CPU and report
+        # GPU coverage that did not exist (measured: gpu_parity + gpu_ac_smoke +
+        # gpu_peer_backend_parity = 12 passed, 0 ignored, no adapter). They now
+        # run in the `gpu-wiring` job of `ci.yml` (hardware-free contract) and in
+        # `scripts/ci_local.sh` (real adapter, require-GPU armed).
+        # `scripts/gates/gpu_wired.py` fails CI if they come back here.
         continue-on-error: true
         run: |
           cargo test -p keyhog-scanner --profile release-fast \
@@ -111,12 +117,6 @@ jobs:
             --test worst_case_backend_parity \
             --test decode_backend_matrix \
             --test diagnose_sb_divergence \
-            --test gpu_parity \
-            --test gpu_ac_smoke \
-            --test gpu_ac_recall_bug_56 \
-            --test gpu_moe_degrade_contract \
-            --test gpu_proptest_invariants \
-            --test gpu_region_overfire_validation \
             --test ml_forward_parity \
             --test vyre_megakernel_primitive_probe \
             --test capability_target_spec \
