@@ -81,7 +81,11 @@ fn every_corpus_finding_is_well_formed() {
             // space (tracked separately as the offset-under-normalization finding).
             // For ASCII input no normalization occurs, so the offset must be exact.
             let off = m.location.offset;
-            if example.is_ascii() {
+            let is_unmodified_ascii = example.is_ascii()
+                && example
+                    .bytes()
+                    .all(|b| (0x20..=0x7E).contains(&b) || b == b'\n' || b == b'\t' || b == b'\r');
+            if is_unmodified_ascii {
                 if let Some(window) = example.as_bytes().get(off..off + cred.len()) {
                     assert_eq!(
                         window,

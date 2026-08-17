@@ -16,7 +16,7 @@ $ keyhog scan . --progress
     v0.5.80 · secret scanner · 926 detectors
     by santh
 
-  16 cores | SIMD: AVX-512 | Hyperscan | 926 detectors (5803 patterns) io_uring | backend=simd-regex | gpu=none
+  16 cores | SIMD: AVX-512 | Hyperscan | 926 detectors (5800 patterns) io_uring | backend=simd-regex | gpu=none
 
   ┌    CRITICAL ─── Stripe Secret Key
   │ Secret:     sk_l...p7dc

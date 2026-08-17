@@ -1602,10 +1602,12 @@ impl Drop for CompiledScanner {
         match &mut self.backend_state {
             ScannerBackendState::Census {
                 resident_literal_cuda,
+                resident_literal_metal,
                 resident_literal_wgpu,
                 ..
             } => {
                 release_resident_literal_slot(resident_literal_cuda);
+                release_resident_literal_slot(resident_literal_metal);
                 release_resident_literal_slot(resident_literal_wgpu);
             }
             ScannerBackendState::SelectedGpu {

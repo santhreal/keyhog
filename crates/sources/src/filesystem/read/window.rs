@@ -445,7 +445,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
     overlap: usize,
     mut emit: impl FnMut(Result<FileWindow, SourceError>) -> bool,
 ) -> WindowedMmapOutcome {
-    debug_assert!(window_size > overlap, "window must exceed overlap");
+    assert!(window_size > overlap, "window must exceed overlap");
     let (file, meta) = match open_file_safe_with_metadata(path) {
         Ok(opened) => opened,
         Err(error) => {

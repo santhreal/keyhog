@@ -864,7 +864,7 @@ static DETECTOR_EXAMPLES: &[(&str, &str)] = &[
     ("WIX\u{2029}'\u{2028}\u{1680}\u{2001}=_\u{3000}app \r\u{2005}\t\u{3000}\u{85}\u{2009}\u{202f}\u{a0}\u{205f}\u{2029}\u{3000}\u{2003}\u{3000}  \u{1680}\n\u{2029}\u{85}_\u{2028}\u{2029}\r\u{b}\u{85}\u{202f}\t\u{3000}\u{205f}\u{b}id\u{3000}\u{a0}\r6a7de6d7-6d32-6fc2-3e5f-caeb2fc20444", "wix-api-credentials"),
     ("ck_1cdbd3366b06d0b40369fbd5a8217aeead44ee34", "woocommerce-consumer-key"),
     ("ck_4e9546f6c82c4fb46e2ae3fcbfb73b919d509002", "woocommerce-rest-api-credentials"),
-    ("access\u{1680}\u{202f}\u{202f}token:\u{205f}=\u{2007}\nk_a7yk-gc_0-_YQ_a%y%_%1--O%_8W%Iv%uU-_j_-%48f8g3s%R_%x-2DT1ADzw_oj-_DzYatp_yyp-mbW", "wordpress-api-token"),
+    ("wpcom access\u{1680}\u{202f}\u{202f}token:\u{205f}=\u{2007}\nk_a7yk-gc_0-_YQ_a%y%_%1--O%_8W%Iv%uU-_j_-%48f8g3s%R_%x-2DT1ADzw_oj-_DzYatp_yyp-mbW", "wordpress-api-token"),
     ("workdayinstance\u{a0}'4b-ax0708--4i9vjjijpx.workday.com", "workday-api-key"),
     ("WORLDPAY_SERVICE-\u{3000}'\u{85}\"\n '\u{85}\u{205f}\u{2007}\u{3000}\u{1680}\u{3000}':\t=\u{2005}\u{3000}zV-24_--_xw-lE_", "worldpay-api-credentials"),
     ("WORLD-\u{202f}\u{a0} \u{202f}\u{a0}\u{202f}_\u{b}\r\u{2029}_\u{205f}-\u{85}\n\u{202f}\u{3000}-\u{a0}-_\u{a0}\r\u{85}\u{85}\u{202f}WEATHER\u{205f}\u{85}\u{1680}\u{202f}\r\u{3000}\u{3000}_\u{2006}\u{202f}\r_\u{b}\u{205f}\u{a0}-\u{2003}\u{85}\u{1680}\u{2000}\u{202f}\u{3000}\u{3000}\u{202f}\u{2006}\u{3000}\t -ONLINE\u{85}\u{1680}\u{85}\u{2006}\n\u{1680}_KEY'\n'\u{85}\u{3000}=\u{2029}88J693TmR5KE07rXM7ro9j84QQ1r", "worldweatheronline-api-key"),

@@ -279,7 +279,7 @@ fn git_staged_with_single_root_is_allowed() {
 fn scan(args: &[&std::ffi::OsStr]) -> std::process::Output {
     Command::new(binary())
         .arg("scan")
-        .args(["--daemon=off", "--backend", "simd", "--format", "json"])
+        .args(["--daemon=off", "--backend", "cpu", "--format", "json"])
         .args(args)
         .output()
         .expect("spawn keyhog scan")

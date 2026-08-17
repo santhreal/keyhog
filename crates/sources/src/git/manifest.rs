@@ -41,6 +41,10 @@ pub(crate) fn record_index_fingerprint_cache(
     repo_root: PathBuf,
     entry: IndexFingerprintCacheEntry,
 ) {
+    let repo_root = match super::canonical_repo_root(&repo_root) {
+        Ok(canonical) => canonical,
+        Err(_) => return, // LAW10: non-canonical repository path cannot be cached; fingerprint validation is fail-closed to full acquisition
+    };
     let mut guard = INDEX_FINGERPRINT_CACHE.lock();
     let cache = guard.get_or_insert_with(|| {
         let cap = NonZeroUsize::new(MAX_INDEX_FINGERPRINT_CACHE_REPOSITORIES)
@@ -201,7 +205,6 @@ mod tests {
         // unbounded cache growth creates silent memory leaks. Capping to 64 repositories
         // with LRU eviction bounds resident memory while preserving fast race-check hits
         // for active repositories.
-        let mut guard = INDEX_FINGERPRINT_CACHE.lock();
         let cap = NonZeroUsize::new(MAX_INDEX_FINGERPRINT_CACHE_REPOSITORIES).unwrap();
         let mut cache = LruCache::new(cap);
 
@@ -236,9 +239,6 @@ mod tests {
             cache.peek(&PathBuf::from("/repos/repo_64")).is_some(),
             "repo_64 should be cached"
         );
-
-        // Restore the global cache to avoid test pollution.
-        *guard = Some(cache);
     }
 
     #[test]

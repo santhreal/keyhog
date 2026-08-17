@@ -212,7 +212,8 @@ fn linux_vulkan_physical_identity(
             }
             let memory =
                 raw_instance.get_physical_device_memory_properties(hal.raw_physical_device());
-            let capacity_bytes = memory.memory_heaps[..memory.memory_heap_count as usize]
+            let heap_count = (memory.memory_heap_count as usize).min(memory.memory_heaps.len());
+            let capacity_bytes = memory.memory_heaps[..heap_count]
                 .iter()
                 .filter(|heap| heap.flags.contains(ash::vk::MemoryHeapFlags::DEVICE_LOCAL))
                 .try_fold(0u64, |total, heap| total.checked_add(heap.size))?;

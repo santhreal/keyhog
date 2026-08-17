@@ -158,7 +158,11 @@ impl<'a> ScratchBatch<'a> {
 
     #[inline]
     fn scratch(&self, shard_idx: usize) -> &Scratch {
-        debug_assert!(shard_idx < self.initialized);
+        assert!(
+            shard_idx < self.initialized,
+            "shard_idx {shard_idx} out of range (initialized {})",
+            self.initialized
+        );
         // SAFETY: `acquire` initializes slots contiguously and returns `Ok`
         // only after every scanner shard has a scratch. Scan loops use shard
         // indices from that same scanner.

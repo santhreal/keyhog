@@ -337,13 +337,6 @@ fn multiprocess_writers_publish_one_exact_private_merged_cache() {
     std::fs::create_dir(&attempt).expect("create writer attempt directory");
     std::fs::create_dir(&observe).expect("create writer observation directory");
     let current_executable = std::env::current_exe().expect("resolve current test executable");
-    let stable_executable = coordination.path().join(
-        current_executable
-            .file_name()
-            .expect("current test executable filename"),
-    );
-    std::fs::copy(&current_executable, &stable_executable)
-        .expect("copy a stable contention test executable");
     let expected_directory = tempfile::tempdir().expect("create serial reference directory");
     let expected_cache = expected_directory.path().join("autoroute.json");
 
@@ -355,7 +348,7 @@ fn multiprocess_writers_publish_one_exact_private_merged_cache() {
     let mut children = (0..WRITER_PROCESSES)
         .map(|writer| {
             Some(spawn_writer(
-                &stable_executable,
+                &current_executable,
                 &cache,
                 &gate,
                 &ready,

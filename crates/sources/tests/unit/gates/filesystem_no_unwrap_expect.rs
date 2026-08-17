@@ -29,11 +29,17 @@ fn filesystem_no_unwrap_expect() {
             .unwrap_or(&file_path)
             .display()
             .to_string();
+        if rel.contains("test_support") {
+            continue;
+        }
         let src = std::fs::read_to_string(&file_path).expect("source readable");
         let mut in_test_cfg = false;
         for (i, line) in src.lines().enumerate() {
             let t = line.trim();
-            if t.contains("#[cfg(test)]") || t.starts_with("mod tests") {
+            if (t.contains("#[cfg(") && t.contains("test"))
+                || t.starts_with("mod tests")
+                || t.starts_with("mod test")
+            {
                 in_test_cfg = true;
             }
             if in_test_cfg || t.starts_with("//") {

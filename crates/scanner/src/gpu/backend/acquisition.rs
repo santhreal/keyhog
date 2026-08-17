@@ -602,9 +602,12 @@ fn cuda_pci_bus_id(ordinal: usize) -> Result<String, String> {
                 "CUDA device {ordinal} lookup failed with status {device_status}"
             ));
         }
-        let mut pci_bus_id = [0 as std::ffi::c_char; 32];
-        let pci_status =
-            cu_device_get_pci_bus_id(pci_bus_id.as_mut_ptr(), pci_bus_id.len() as i32, device);
+        let mut pci_bus_id = [0 as std::ffi::c_char; 64];
+        let pci_status = cu_device_get_pci_bus_id(
+            pci_bus_id.as_mut_ptr(),
+            (pci_bus_id.len() - 1) as i32,
+            device,
+        );
         if pci_status != 0 {
             return Err(format!(
                 "CUDA device {ordinal} PCI identity failed with status {pci_status}"

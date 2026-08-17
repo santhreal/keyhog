@@ -217,21 +217,21 @@ fn select_backend_for_workload(
         );
     }
 
-    if !caps.gpu_available {
-        return BackendRoutingVerdict::new(
-            caps,
-            workload,
-            cpu_backend,
-            BackendRoutingReason::GpuProbeMiss,
-        );
-    }
-
     if caps.gpu_is_software {
         return BackendRoutingVerdict::new(
             caps,
             workload,
             cpu_backend,
             BackendRoutingReason::GpuSoftwareRenderer,
+        );
+    }
+
+    if !caps.gpu_available {
+        return BackendRoutingVerdict::new(
+            caps,
+            workload,
+            cpu_backend,
+            BackendRoutingReason::GpuProbeMiss,
         );
     }
 
