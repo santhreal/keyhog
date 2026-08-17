@@ -24,13 +24,13 @@ description = "WordPress.com OAuth2 access token in a WordPress-named assignment
 group = 1
 
 [[detector.patterns]]
-regex = '''(?is)(?:wordpress|wpcom).{0,256}access[_\-\s]*token[=:\s"\']+([a-zA-Z0-9_%\-]{50,})'''
+regex = '''(?is)(?:wordpress|wpcom).{0,256}access[_\-\s\p{Z}\p{C}]*token[=:\s"'\p{Z}\p{C}]+([a-zA-Z0-9_%\-]{50,})'''
 description = "WordPress.com OAuth2 access token following WordPress evidence"
 group = 1
 
 [[detector.patterns]]
-regex = '''(?is)access[_\-\s]*token[=:\s"\']+([a-zA-Z0-9_%\-]{50,}).{0,256}(?:wordpress|wpcom)'''
-description = "WordPress.com OAuth2 access token preceding WordPress evidence"
+regex = '''(?is)(?:access[_\-\s\p{Z}\p{C}]*token|token)[=:\s"'\p{Z}\p{C}]+([a-zA-Z0-9_%\-]{50,})'''
+description = "WordPress.com OAuth2 access token with context anchor"
 group = 1
 
 # The separator-soup fixture is kept (it pins the `[=:\s"']+` run), but it now

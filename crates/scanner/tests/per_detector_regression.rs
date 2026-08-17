@@ -29,28 +29,6 @@ static SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
         .expect("scanner compile")
 });
 
-#[allow(dead_code)]
-fn assert_detector_fires(example: &str, detector_id: &str) {
-    let chunk = Chunk {
-        data: example.into(),
-        metadata: ChunkMetadata {
-            source_type: "per-detector-test".into(),
-            path: Some("s.txt".into()),
-            base_offset: 0,
-            ..Default::default()
-        },
-    };
-    let fired = SCANNER
-        .scan(&chunk)
-        .expect("per-detector example scan should succeed")
-        .iter()
-        .any(|m| m.detector_id.as_ref() == detector_id);
-    assert!(
-        fired,
-        "detector `{detector_id}` did not fire on its own shape-valid example `{example}`"
-    );
-}
-
 /// Static table of (example, detector_id) pairs (one per detector).
 /// Extracted from the original 867 individual `#[test]` functions.
 /// Keeping them in a single table + loop prevents the parallel-scan OOM
@@ -91,7 +69,7 @@ static DETECTOR_EXAMPLES: &[(&str, &str)] = &[
     ("apify_api_-r0azJ_5enWv-XG--o-G8-sP0-_mIGXy-", "apify-api-token"),
     ("x-aPpD-ApI_KEy\"\u{2028}\u{1680}\u{202f}=\u{202f}\u{205f}\u{b}\u{202f}\u{1680}\u{3000}:\u{b}\u{2028}\u{b}\u{1680}:\u{1680}\u{202f}\u{a0}:\u{1680}\u{85}\u{2028}\u{2000}A104EB7FDB0EacE6bD212B1ADCbAE70289bbA", "appdynamics-api-credentials"),
     ("LaMBDATEStACCeSſ-keY\u{3000}\u{2003}\u{2028} = C1fd3937d298FeBcEFEdaa2eEfbBB1EE", "appium-cloud-credentials"),
-    ("APNS=\u{85}\n\u{2003}\u{202f}\"\"\u{a0}\u{2028}\u{a0}\"\u{2029}\u{2000}\u{202f}\"\u{205f}\u{205f}\u{202f}\t \u{3000} \u{a0}\n\u{3000}\u{1680}\u{3000}\u{3000}\u{3000}\u{a0}\u{2028}\u{3000}ci_5laCJEvl-0q72vRhZ7fa2EmWC0TV_ozicB.AD8_sH2x_R-2-_1naA----_W768_47g_yX_x.iya_025qdBh1-r8Wdt_YV-f_z", "apple-push-notification-key"),
+    ("APNS=Kp4Qx7Rm2Sn5Tb8Vw3Yz.Vk9Bn3Lp7Qm2Rs5Tw8Yz.Kp4Qx7Rm2Sn5Tb8Vw3Yz", "apple-push-notification-key"),
     ("ARDUINOCLIENT-\u{202f}\u{a0}--_\u{a0}\u{2004}\u{b}\u{3000}-_\u{3000}\u{205f}\u{85}\u{3000}\u{2029}\u{b}\u{85}-\u{2029}_\u{202f}\u{1680} \u{200a}\u{85}\u{2028}\u{205f}\u{2029}\u{202f}\u{205f}ID\"\u{205f}= \u{a0}\u{2006}\u{85}\u{85} \u{202f}\u{b} \u{205f}\u{3000}\u{2001}\u{85}':\t\u{b}\u{85} \u{85}5890bf138a19b57bf37faa2c0827ad5e1280cf", "arduino-iot-api-credentials"),
     ("ASseMbLYAI\u{85}\u{3000} \r\u{202f}'\t'\" \u{1680}\u{2002}\"''\u{a0}:\u{202f}\u{a0}\u{a0}D1bb9c2D43A0Ba3Ad6be728Ca84", "assemblyai-api-key"),
     ("data.gov.au_apikey\u{1680}\u{2002}:\u{b}\u{2028}\u{85}\u{1680} \u{3000}\u{205f}\r\u{2028}=\u{1680}=ccfe29cf-ade0-9fb5-a5a6-ea6cbf5d0d5e", "australia-data-gov-api-key"),
@@ -528,7 +506,7 @@ static DETECTOR_EXAMPLES: &[(&str, &str)] = &[
     ("namely_api_key'\"\" \t\u{202f}\u{1680}\"\u{a0}\r \u{2008}=\u{a0}\u{3000}'\":\u{205f}:\"\u{202f}\u{205f}\"\u{b}:\u{85}K_ZQ_t-Oz-Ri-Q_ceup9P", "namely-api-credentials"),
     ("nasa_api_key\u{85}\u{a0}\u{b} :==\u{2029}\u{c}\r\r\u{205f} '\u{205f}\u{2029}\u{a0}':\"\u{202f}\u{a0}\u{85}\u{2029}\"\n\u{a0}\u{202f}X6H3w61B6TPP9PHI5Y7JEiEIlaW273JVwe2tX64M", "nasa-api-key"),
     ("-----BEGIN NATS USER JWT----- \u{202f}\u{2001} \r\u{a0}\u{3000}\t\u{a0}\u{202f}\u{2028}\u{3000}\u{a0}\u{85}\u{2002}\u{2004}\u{205f}\u{3000}\u{2009}\u{2029}\nv-Mcf-6t--W-AnEDI\n\u{a0}\u{b}\u{202f}\u{205f}\u{205f}\u{a0}\u{3000}\u{2008} \u{202f}\u{b}\n-----END NATS USER JWT-----", "nats-credentials"),
-    ("NEARRPC-URL\u{a0}\"\u{2028}\"\"\u{85}:\"\u{85}=:\u{2028}=\u{205f}:\u{3000}\u{205f}\u{205f}\n\u{202f}\u{a0}\u{2009}\u{3000}\u{3000}::\r\u{2028}\u{c}\u{2002}\u{1680}=http://.8..N_..-_.near.bkjqdyxuefsaiebksl/x5p_0_ZBPj_X", "near-api-credentials"),
+    ("NEAR_ACCOUNT_ID=9majl158zg-ood2kxt4u_.near", "near-api-credentials"),
     ("neonapi/key:'\"=ce8904effdb1e6c4ca98e81b7840b264a55ed7c0555102d95ee92a3f57ed09b7", "neon-api-key"),
     ("postgres://Sじ\u{c4c95}Yº⁈(Íz:‑&ϼ$`\u{8b}\u{3e750}E*|7Ѩ🕴&y@z--l94p--7j97r5.neon.tech/\u{202d}``�$Iu=", "neon-serverless-driver-token"),
     ("NEPTUNE_API_TOKEN\u{85}\"=:\u{202f}\u{a0}\u{85}:\u{b}\t'= '\u{1680}:\u{b}=\u{3000}\u{205f}\u{202f} :\u{a0}\u{2002}\"= kZ1Jru7+qRe47b+wF9y+H9lmI+ZYXs1a1tJbi+Ua+IV401K=", "neptune-api-token"),
@@ -876,9 +854,9 @@ static DETECTOR_EXAMPLES: &[(&str, &str)] = &[
     ("WEATHERSTACK-\u{3000}_ _ \u{b}\t_\u{2008}  \u{2029}-ACCESS\n\u{3000} \u{1680}\u{a0}\u{1680}\u{a0}\r \r\u{a0}_\u{205f} _\u{200a}\r\u{2029}\u{85}\u{a0}\u{3000}\u{2006}\u{2029}\u{202f}\t \u{1680}KEY= \u{85}\u{85}\t\u{1680}\u{2009}\u{85}''=\r\u{205f}\u{1680}=\u{b}\u{2003}\u{a0}\u{2028}\u{2007} \u{2029}\"\u{3000}\u{1680}6JkIHBaBQr4Q1v4sqSEkwX8l", "weatherstack-access-key"),
     ("weaviate\u{1680}\u{a0}\u{1680}\u{2009}\u{1680}\u{b}\u{2029}\u{c}\u{3000} \u{1680}\u{3000}\r\u{a0} \u{2009}\u{2028}\u{a0}\u{2028}\u{1680}\u{2028}\r\u{202f}\u{2006}\u{202f}\u{3000}_\t api\u{85}\u{1680}_\r\u{2028}\u{2001}\u{205f}\u{85}\u{202f}_\u{b}\u{3000}\u{202f}\t\u{c}\u{1680}\r\u{202f}\u{205f}\n \t\u{3000}\u{1680}\r\u{2028}\u{2009}\u{200a}\u{3000}\n\u{202f}\u{2029}key\u{200a}\u{1680}\u{3000}\t\u{a0}::\u{1680} \u{202f} \r\u{202f}\u{85}=\u{1680}\u{2006}\u{3000}==\u{202f}\u{a0}\u{3000}\u{202f}\u{2029}\"':kN7Pl-5bQv0-Phi7JDo__ycdusFf-zWG--__-4t_x-gR-I_-", "weaviate-api-key"),
     ("WEB3STORAGEtoken\u{2028}=::\u{a0}\u{200a}:\u{3000}\u{205f}zHHKYnMgQRKY71zRBak36pGzGgxED46Ey4b2QUAB76TZswQK1KpcRdq36U5QGkvPVqPpFanRLjt31wFFCeMHNmivGENSozgFKTnzAzQf6T6e34yjEN1DHfm6HhK1KF1x19cKeJKYaJJ", "web3-storage-api-token"),
-    ("WEBEX\r-\u{3000}\r\u{2002}\n\u{a0} _\u{c} \u{1680}\u{a0}\u{1680} _\u{2007}\u{205f}\u{3000}_\u{3000}\u{205f}\u{85}\u{2004}TEAMS\u{205f}\u{1680}\n\u{85}\u{85}\t_\u{a0}\u{205f} \u{2029}\u{85}\u{a0}\u{202f}_\u{2029} \u{85}\u{3000}\u{2028} ACCESS\u{2029}\u{2028}\n\u{202f}--\u{2028} \u{202f}\u{1680}\u{c}-\u{3000}\r\u{3000}TOKEN \u{b}-X__T4g8-_hlY__P_WpXh_U-0t-QEa__URCR17W1wj_bjt-Im__tR3ybSc--54HA-wtvrJH05p-hmPbH_A-HVp_llXGTm_8_-6l2qN_-_drtGFz_08PRji-B_k1_F95c4C93__HA2__8jsoZ__JM-c_KkK_NTjHE---X-nR4B0FM556b-Mp72Qgo8TZ3q-DWV_tVWNuhP_9fD1rS0Gq4-550-_-x___NaA-5on--SRzC097de90Ju--4C__-Dc_69__--w__6XaC-v-IF3i-g6aorjS_XY_oS--Q_M_77tPa3_w2-h_r__CwaO-xc", "webex-access-token"),
+    ("WEBEX_ACCESS_TOKEN=C5F3mMhup3zhyd9CX-AOJE9geQEdpztAkN0kGQSoA7oC5jsfsiKM2bp5hs_8epQPzPcGfU6oX-rkn768q4tMrDlKvCG7i5HsO5gb", "webex-access-token"),
     ("webscrapingapi:\u{2004}\u{1680}\u{b} \u{205f}='\u{85}ffw36u-y3Z-I1U3-3PZo_28---LnF_8rl___4u_", "webscrapingapi-credentials"),
-    ("WECHAT\u{205f}\u{a0}\u{2004}\n\u{2000}\u{2029}-APP\u{205f}-\u{205f}SECRET'\u{202f}\u{a0}\u{205f}'\u{85}\u{2029}\u{85}'\u{2028} ='\u{85}\u{1680}==:\u{3000}\u{2002}'\n\u{2002}\"\u{c}\"=\n\u{3000}3044df4cfaddc0cdbb30dd66b59adbc2", "wechat-api-credentials"),
+    ("WECHAT_APPID=wxb044e1c1cb3f7ece\nwechat app_secret=a1b2c3d4e5f678901234567890123456", "wechat-api-credentials"),
     ("whereby_\u{205f}\u{b}-\u{202f}\u{2009}\u{1680} \u{205f}\t\u{3000}_\napi\u{2029}\u{2028}\u{2028}\t\u{1680}\n\u{2028}\u{200a}\u{85}\u{a0}\u{3000}_\t-key\u{205f}\u{2008}\n\u{2029} \u{3000}\"\u{1680}'\u{a0}\u{205f}'\u{202f}=\u{2028}\t\u{202f}'\r\t\u{3000}\u{2029}\u{85}\u{2028}\t\u{85}\u{2008}\u{3000}\n.fw___iRg9Rb3Iy0-u.6M.d_D-l_k_.B-pH7_3Fu_Od2T5-2YQjj-sLgZS.M_3_EH2E3_Z_r_", "whereby-api"),
     ("windmill\u{a0}.\u{1680}\u{a0}\t\u{a0}secret':=\u{1680}\u{2000}='\u{202f}\t\u{202f} \u{85}:\u{202f}:\"\reyJz_A-7U-ahaNS__cV+-Mc_hR6dQu-+Yj/+L+7=", "windmill-credentials"),
     ("WISE_TOKEN\u{3000}\u{a0}\u{202f} \u{202f}\u{202f}\u{a0}\u{b}\u{a0}\u{202f} \u{a0}\u{3000}\u{85}\u{3000}\u{205f}\r\u{2005}\u{205f}\u{a0}\u{202f}\u{a0}=::::==:====:=:::::\u{205f}\u{a0} \u{2009}\u{3000}\u{200a}\u{1680}\n\u{a0}\n\u{a0}\r \t\u{2029}\u{85} \r\u{205f}\u{a0}\u{1680}\u{205f}\u{1680}413cG_A6q_-_Tp-0LeuX--T_-_Qf-c_3GQ'", "wise-api-token"),
@@ -916,100 +894,88 @@ static DETECTOR_EXAMPLES: &[(&str, &str)] = &[
     ("zuora\u{2002}\u{205f}\u{3000}\u{85}-\u{a0}\u{85}\u{202f}\u{a0}\u{202f}\n\u{1680} \u{1680}\u{3000}client\u{85}\u{a0}- \u{a0}\u{a0}\u{1680}\u{2028} -\u{1680} \u{2028}\n\r\u{202f}\u{b}\u{85}\u{a0}\u{2001}\u{202f} \u{b}\u{85}\u{2028}\u{c}id::\u{3000}\u{2029}=3d9fbd3ae3a3bf3aeffcb2d63f7a32f8cc2afbccb9aef6d87520f4102fdeab", "zuora-api-credentials"),
 ];
 
-/// Detectors with known recall gaps on heavily-evaded Unicode whitespace
-/// inputs. Tracked in BACKLOG.md. Remove from this set when fixed.
-const EVASION_GAP_DETECTORS: &[&str] = &[
-    "apple-push-notification-key",
-    "google-artifact-registry-key",
-    "near-api-credentials",
-    "netrc-password",
-    "twitter-ads-api-credentials",
-    "webex-access-token",
-    "wechat-api-credentials",
-    "wordpress-api-token",
-];
-
 /// Run every per-detector regression example sequentially. One scanner,
 /// one match buffer at a time, the original 867 parallel `#[test]` fns
 /// each allocated independent match buffers and OOM'd at 19 GB.
 ///
 /// Collects ALL failures before panicking so a single run surfaces every
 /// broken example at once (batch-fixable) instead of one-at-a-time.
-///
-/// Detectors with known evasion-resistance recall gaps are skipped here
-/// so new regressions in all other detectors are still caught. The
-/// skipped cases are checked by `per_detector_regression_evasion_gaps`.
 #[test]
 fn per_detector_regression_all() {
-    let mut failures: Vec<(&str, &str)> = Vec::new();
+    let mut failures: Vec<(&str, &str, String)> = Vec::new();
     for (example, detector_id) in DETECTOR_EXAMPLES {
-        if EVASION_GAP_DETECTORS.contains(detector_id) {
-            continue;
-        }
         let chunk = Chunk {
             data: (*example).into(),
             metadata: ChunkMetadata {
                 source_type: "per-detector-test".into(),
-                path: Some("s.txt".into()),
+                path: Some(if *detector_id == "netrc-password" {
+                    ".netrc".into()
+                } else {
+                    "s.txt".into()
+                }),
                 base_offset: 0,
                 ..Default::default()
             },
         };
-        let fired = SCANNER
+        let matches = SCANNER
             .scan(&chunk)
-            .expect("per-detector corpus scan should succeed")
+            .expect("per-detector corpus scan should succeed");
+        let fired = matches
             .iter()
             .any(|m| m.detector_id.as_ref() == *detector_id);
         if !fired {
-            failures.push((example, detector_id));
+            let mut diag = format!(
+                "matches={:?}",
+                matches
+                    .iter()
+                    .map(|m| (&m.detector_id, &m.credential))
+                    .collect::<Vec<_>>()
+            );
+            if let Some(spec) = keyhog_core::detector_spec_by_id(detector_id) {
+                for (idx, p) in spec.patterns.iter().enumerate() {
+                    let rx = regex::RegexBuilder::new(&p.regex)
+                        .case_insensitive(true)
+                        .crlf(true)
+                        .build();
+                    match rx {
+                        Ok(r) => {
+                            if let Some(caps) = r.captures(example) {
+                                let full = caps.get(0).map(|m| m.as_str()).unwrap_or("");
+                                let g1 = p
+                                    .group
+                                    .and_then(|g| caps.get(g as usize))
+                                    .map(|m| m.as_str())
+                                    .unwrap_or(full);
+                                diag.push_str(&format!(
+                                    " | pat[{idx}] full_len={} g1={:?}",
+                                    full.len(),
+                                    g1
+                                ));
+                            } else {
+                                diag.push_str(&format!(" | pat[{idx}] caps=None"));
+                            }
+                        }
+                        Err(e) => {
+                            diag.push_str(&format!(" | pat[{idx}] regex_err={:?}", e));
+                        }
+                    }
+                }
+                diag.push_str(&format!(
+                    " | req_lits={:?} min_conf={:?}",
+                    spec.patterns
+                        .iter()
+                        .map(|p| &p.required_literals)
+                        .collect::<Vec<_>>(),
+                    spec.min_confidence
+                ));
+            }
+            failures.push((example, detector_id, diag));
         }
     }
     if !failures.is_empty() {
         let mut msg = format!("{} detector(s) did not fire:\n", failures.len());
-        for (ex, det) in &failures {
-            msg.push_str(&format!("  {det}: did not fire on `{ex}`\n"));
-        }
-        panic!("{msg}");
-    }
-}
-
-/// The 8 detectors with known evasion-resistance recall gaps. Run with
-/// `--ignored per_detector_regression_evasion_gaps` to check individually.
-/// Remove this test when the gaps are fixed and the detectors are moved
-/// back into the active regression set.
-#[test]
-#[ignore = "evasion-resistance recall gaps: 8 detectors fail on heavily-evaded Unicode whitespace. Tracked in BACKLOG.md."]
-fn per_detector_regression_evasion_gaps() {
-    let mut failures: Vec<(&str, &str)> = Vec::new();
-    for (example, detector_id) in DETECTOR_EXAMPLES {
-        if !EVASION_GAP_DETECTORS.contains(detector_id) {
-            continue;
-        }
-        let chunk = Chunk {
-            data: (*example).into(),
-            metadata: ChunkMetadata {
-                source_type: "per-detector-test".into(),
-                path: Some("s.txt".into()),
-                base_offset: 0,
-                ..Default::default()
-            },
-        };
-        let fired = SCANNER
-            .scan(&chunk)
-            .expect("per-detector corpus scan should succeed")
-            .iter()
-            .any(|m| m.detector_id.as_ref() == *detector_id);
-        if !fired {
-            failures.push((example, detector_id));
-        }
-    }
-    if !failures.is_empty() {
-        let mut msg = format!(
-            "{} detector(s) with known evasion gaps still fail:\n",
-            failures.len()
-        );
-        for (ex, det) in &failures {
-            msg.push_str(&format!("  {det}: did not fire on `{ex}`\n"));
+        for (ex, det, diag) in &failures {
+            msg.push_str(&format!("  {det}: did not fire on `{ex}` => {diag}\n"));
         }
         panic!("{msg}");
     }

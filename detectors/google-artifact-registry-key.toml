@@ -17,7 +17,7 @@ private_key_block = true
 resolution_priority = 4
 
 [[detector.patterns]]
-regex = '"type"\s*:\s*"service_account"[^}]*"private_key"\s*:\s*"(-----BEGIN PRIVATE KEY-----[\s\S]*?-----END PRIVATE KEY-----)(?:\\n|\\r\\n|[\r\n])?"'
+regex = '"type"[\s\p{Z}\p{C}]*:[\s\p{Z}\p{C}]*"service_account"[^}]*"private_key"[\s\p{Z}\p{C}]*:[\s\p{Z}\p{C}]*"?(-----BEGIN PRIVATE KEY-----[\s\S]*?-----END PRIVATE KEY-----|-----BEGIN PRIVATE KEY-----)"?'
 required_literals = ['"type"', '"private_key"', "-----BEGIN PRIVATE KEY-----"]
 description = "Google service account JSON with a complete Artifact Registry private key"
 group = 1

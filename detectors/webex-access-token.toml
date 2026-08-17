@@ -13,7 +13,8 @@ match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20,
 keywords = ["webex", "WEBEX", "WEBEX_ACCESS_TOKEN", "webex_access_token", "webexteamssdk", "WEBEX_TEAMS_ACCESS_TOKEN"]
 
 [[detector.patterns]]
-regex = "(?:webex|WEBEX)[_\\-\\s]*(?:access[_\\-\\s]*token|ACCESS[_\\-\\s]*TOKEN|teams[_\\-\\s]*access[_\\-\\s]*token|TEAMS[_\\-\\s]*ACCESS[_\\-\\s]*TOKEN)[=:\\s\\\"']+([A-Za-z0-9_-]{100,400})"
+regex = "(?is)(?:webex|WEBEX)[_\\-\\s\\p{Z}\\p{C}]*(?:access[_\\-\\s\\p{Z}\\p{C}]*token|ACCESS[_\\-\\s\\p{Z}\\p{C}]*TOKEN|teams[_\\-\\s\\p{Z}\\p{C}]*access[_\\-\\s\\p{Z}\\p{C}]*token|TEAMS[_\\-\\s\\p{Z}\\p{C}]*ACCESS[_\\-\\s\\p{Z}\\p{C}]*TOKEN)[=:\\s\\\"'\\p{Z}\\p{C}\\-]+([A-Za-z0-9_-]{100,400})"
+required_literals = ["webex"]
 description = "Webex access token with context anchor (JWT format)"
 group = 1
 

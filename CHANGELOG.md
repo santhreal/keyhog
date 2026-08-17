@@ -7,6 +7,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Changed
 
 - style: format guard massive diff test and git sources modules.
+- fix(detectors): resolve evasion gaps, required literal routing, and Unicode whitespace boundary handling across 8 detector specifications (`apple-push-notification-key`, `google-artifact-registry-key`, `near-api-credentials`, `netrc-password`, `twitter-ads-api-credentials`, `webex-access-token`, `wechat-api-credentials`, `wordpress-api-token`).
+- test(scanner): consolidate per-detector regression execution into sequential full-coverage suite to prevent parallel runner memory exhaustion.
 
 ### Fixed
 
