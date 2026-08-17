@@ -778,3 +778,169 @@ fn daemon_status_without_daemon_exits_user_error() {
         "status must report no-daemon and how to start one; stderr={stderr}"
     );
 }
+#[cfg(unix)]
+#[test]
+fn guard_down_when_not_running_exits_zero() {
+    let dir = TempDir::new().unwrap();
+    let socket = dir.path().join("guard-down-absent.sock");
+
+    let out = Command::new(keyhog())
+        .env("NO_COLOR", "1")
+        .args(["guard", "down", "--socket"])
+        .arg(&socket)
+        .output()
+        .expect("guard down");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "guard down with no daemon must exit 0 cleanly; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("guard: daemon is not running"),
+        "guard down must report daemon is not running; stderr={stderr}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn guard_up_and_down_lifecycle_e2e() {
+    let dir = TempDir::new().unwrap();
+    let socket = dir.path().join("guard-up-down.sock");
+
+    let up_out = Command::new(keyhog())
+        .env("NO_COLOR", "1")
+        .args(["guard", "up", "--backend", "cpu", "--socket"])
+        .arg(&socket)
+        .output()
+        .expect("guard up");
+    assert_eq!(
+        up_out.status.code(),
+        Some(0),
+        "guard up must exit 0; stderr={}",
+        String::from_utf8_lossy(&up_out.stderr)
+    );
+    let up_stderr = String::from_utf8_lossy(&up_out.stderr);
+    assert!(
+        up_stderr.contains("guard: daemon is up at"),
+        "guard up must report daemon is up; stderr={up_stderr}"
+    );
+
+    // Guard up again while already running should report daemon already active
+    let up_again = Command::new(keyhog())
+        .env("NO_COLOR", "1")
+        .args(["guard", "up", "--backend", "cpu", "--socket"])
+        .arg(&socket)
+        .output()
+        .expect("guard up again");
+    assert_eq!(
+        up_again.status.code(),
+        Some(0),
+        "second guard up must exit 0; stderr={}",
+        String::from_utf8_lossy(&up_again.stderr)
+    );
+    let up_again_stderr = String::from_utf8_lossy(&up_again.stderr);
+    assert!(
+        up_again_stderr.contains("guard: daemon already active at"),
+        "second guard up must report already active; stderr={up_again_stderr}"
+    );
+
+    // Guard down should cleanly stop the daemon
+    let down_out = Command::new(keyhog())
+        .env("NO_COLOR", "1")
+        .args(["guard", "down", "--socket"])
+        .arg(&socket)
+        .output()
+        .expect("guard down");
+    assert_eq!(
+        down_out.status.code(),
+        Some(0),
+        "guard down must exit 0; stderr={}",
+        String::from_utf8_lossy(&down_out.stderr)
+    );
+    let down_stderr = String::from_utf8_lossy(&down_out.stderr);
+    assert!(
+        down_stderr.contains("guard: daemon stopped"),
+        "guard down must report stopped; stderr={down_stderr}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn guard_add_no_hook_flag_skips_pre_commit_hook() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let socket = dir.path().join("guard-no-hook.sock");
+
+    let up_out = Command::new(keyhog())
+        .env("NO_COLOR", "1")
+        .args(["guard", "up", "--backend", "cpu", "--socket"])
+        .arg(&socket)
+        .output()
+        .expect("guard up");
+    assert_eq!(up_out.status.code(), Some(0));
+
+    let add_out = Command::new(keyhog())
+        .current_dir(dir.path())
+        .env("NO_COLOR", "1")
+        .args(["guard", "add", ".", "--no-hook"])
+        .output()
+        .expect("guard add --no-hook");
+    assert_eq!(add_out.status.code(), Some(0));
+
+    assert!(
+        !hook_path(dir.path()).exists(),
+        "pre-commit hook must NOT be installed when --no-hook is passed"
+    );
+
+    let _ = Command::new(keyhog())
+        .args(["guard", "down", "--socket"])
+        .arg(&socket)
+        .output();
+}
+
+#[cfg(unix)]
+#[test]
+fn guard_remove_keep_hook_flag_preserves_pre_commit_hook() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let socket = dir.path().join("guard-keep-hook.sock");
+
+    let up_out = Command::new(keyhog())
+        .env("NO_COLOR", "1")
+        .args(["guard", "up", "--backend", "cpu", "--socket"])
+        .arg(&socket)
+        .output()
+        .expect("guard up");
+    assert_eq!(up_out.status.code(), Some(0));
+
+    let add_out = Command::new(keyhog())
+        .current_dir(dir.path())
+        .env("NO_COLOR", "1")
+        .args(["guard", "add", "."])
+        .output()
+        .expect("guard add");
+    assert_eq!(add_out.status.code(), Some(0));
+    assert!(
+        hook_path(dir.path()).exists(),
+        "pre-commit hook must be installed by guard add"
+    );
+
+    let remove_out = Command::new(keyhog())
+        .current_dir(dir.path())
+        .env("NO_COLOR", "1")
+        .args(["guard", "remove", ".", "--keep-hook"])
+        .output()
+        .expect("guard remove --keep-hook");
+    assert_eq!(remove_out.status.code(), Some(0));
+    assert!(
+        hook_path(dir.path()).exists(),
+        "pre-commit hook must be kept in place when --keep-hook is passed"
+    );
+
+    let _ = Command::new(keyhog())
+        .args(["guard", "down", "--socket"])
+        .arg(&socket)
+        .output();
+}
