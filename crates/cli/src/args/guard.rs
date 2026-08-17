@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-/// Subcommand args for `keyhog guard {add, remove, list, status, reconcile}`.
+/// Subcommand args for `keyhog guard {add, remove, up, down, list, status, reconcile, rebuild}`.
 #[derive(Parser)]
 pub struct GuardArgs {
     #[command(subcommand)]
@@ -37,6 +37,24 @@ pub enum GuardAction {
         /// Keep the Git pre-commit hook in place when unregistering.
         #[arg(long)]
         keep_hook: bool,
+    },
+    /// Start or ensure the background guard daemon is running and ready.
+    /// When the daemon is already running, reports that it is active.
+    /// Reconciles registered roots loaded from the durable store.
+    Up {
+        /// Force a specific scan backend (default `auto` uses autoroute).
+        #[arg(long, value_name = "BACKEND")]
+        backend: Option<String>,
+        /// Override the socket path.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
+    },
+    /// Stop the background guard daemon cleanly. Persisted root registrations
+    /// and durable indexes remain on disk and resume on the next `guard up`.
+    Down {
+        /// Override the socket path.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
     },
     /// List all registered guard roots and their current states.
     List,

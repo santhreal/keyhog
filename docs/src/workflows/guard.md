@@ -29,24 +29,25 @@ staged content is clean.
 
 | Command | Purpose |
 |---|---|
-| `keyhog guard add <path> [--mode repo]` | Register a repository or tree for continuous guard protection. Performs initial baseline reconciliation before returning. |
+| `keyhog guard up [--backend <name>]` | Start or ensure the background guard daemon is running and ready. Reconciles registered roots loaded from durable store. |
+| `keyhog guard down` | Stop the background guard daemon cleanly. Persisted root registrations and durable indexes remain on disk. |
+| `keyhog guard add <path> [--mode repo]` | Register a repository or tree for continuous guard protection. Performs initial baseline reconciliation and installs hook before returning. |
 | `keyhog guard list` | Enumerate all registered guard roots, their active states, and terminal sequences. |
 | `keyhog guard status <path> [--format human\|json]` | Print detailed metrics for a guarded root: state, cache hits/misses, files/bytes scanned, residency, and policy digest. |
 | `keyhog guard remove <path>` | Stop guarding a repository and drop its in-memory index and attestation cache to immediately free daemon memory and CPU. |
 | `keyhog guard reconcile <path>` | Force a full baseline reconciliation after intentional policy updates or mass branch operations. |
 | `keyhog guard rebuild <path>` | Delete and recreate the durable guard store for a root after corruption or irrecoverable state. |
-
 ## Quick start
 
 ### 1. Start the daemon
 
 ```sh
-keyhog daemon start --backend auto
+keyhog guard up
 ```
 
-The daemon compiles the active 926-detector corpus once and stays resident in
-memory. One daemon process serves all guarded repositories and scan requests.
-
+`guard up` ensures the daemon is active in the background, compiles the active
+926-detector corpus once, and stays resident in memory. One daemon process serves
+all guarded repositories and scan requests.
 ### 2. Register a repository
 
 ```sh

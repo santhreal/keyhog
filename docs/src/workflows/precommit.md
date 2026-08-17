@@ -57,9 +57,9 @@ For fast pre-commit gating with the **full default policy**
 (including complete decoding, entropy analysis, and all 926 detectors), use the
 perpetual KeyHog daemon:
 
-1. Start the daemon in the background:
+1. Ensure the guard daemon is active in the background:
    ```sh
-   keyhog daemon start --backend auto
+   keyhog guard up
    ```
 2. Register the repository and install the pre-commit hook in one step:
    ```sh

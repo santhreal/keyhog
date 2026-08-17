@@ -1,7 +1,7 @@
-//! `keyhog guard {add, remove, list, status, reconcile}` subcommand.
+//! `keyhog guard {add, remove, up, down, list, status, reconcile, rebuild}` subcommand.
 //!
-//! Connects to the daemon and sends guard control frames. When no daemon
-//! is available, reports that clearly instead of silently doing nothing.
+//! Connects to the daemon and sends guard control frames. Starts or stops
+//! the background daemon via `guard up` / `guard down`.
 
 use crate::args::{GuardAction, GuardArgs};
 use crate::daemon::client;
@@ -20,10 +20,141 @@ pub(crate) async fn run(args: GuardArgs) -> anyhow::Result<ExitCode> {
             no_hook,
         } => run_add(root, mode, no_hook).await,
         GuardAction::Remove { root, keep_hook } => run_remove(root, keep_hook).await,
+        GuardAction::Up { backend, socket } => run_up(backend, socket).await,
+        GuardAction::Down { socket } => run_down(socket).await,
         GuardAction::List => run_list().await,
         GuardAction::Status { root, format } => run_status(root, format).await,
         GuardAction::Reconcile { root } => run_reconcile(root).await,
         GuardAction::Rebuild { root, mode } => run_rebuild(root, mode).await,
+    }
+}
+
+async fn run_up(
+    backend: Option<String>,
+    socket: Option<std::path::PathBuf>,
+) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
+    let palette = style::for_stderr();
+
+    // If daemon is already running and reachable, report status and reconcile.
+    if let Ok(mut conn) = client::connect(&socket).await {
+        eprintln!(
+            "{} guard: daemon already active at {}",
+            style::pass("OK", &palette),
+            socket.display()
+        );
+        if let Ok(Response::GuardListResult { roots }) = conn.round_trip(&Request::GuardList).await
+        {
+            if !roots.is_empty() {
+                eprintln!(
+                    "{} {} guard root{} registered",
+                    style::pass("OK", &palette),
+                    roots.len(),
+                    if roots.len() == 1 { "" } else { "s" }
+                );
+                for root in &roots {
+                    let _ = conn
+                        .round_trip(&Request::GuardReconcile {
+                            root: root.root.clone(),
+                        })
+                        .await;
+                }
+            }
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    // Spawn daemon process in the background.
+    let current_exe = std::env::current_exe()?;
+    let mut cmd = std::process::Command::new(current_exe);
+    cmd.arg("daemon").arg("start");
+    if let Some(b) = &backend {
+        cmd.arg("--backend").arg(b);
+    }
+    cmd.arg("--socket").arg(&socket);
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::null());
+    cmd.stderr(std::process::Stdio::null());
+    let _child = cmd
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("failed to spawn keyhog daemon process: {e}"))?;
+
+    // Poll socket readiness with backoff.
+    let start_time = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(10);
+    let mut conn = loop {
+        match client::connect(&socket).await {
+            Ok(c) => break c,
+            Err(_) => {
+                if start_time.elapsed() >= timeout {
+                    anyhow::bail!(
+                        "guard up: timed out waiting for daemon to start at {}",
+                        socket.display()
+                    );
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        }
+    };
+
+    eprintln!(
+        "{} guard: daemon is up at {}",
+        style::pass("OK", &palette),
+        socket.display()
+    );
+
+    // Reconcile registered roots loaded from durable store.
+    if let Ok(Response::GuardListResult { roots }) = conn.round_trip(&Request::GuardList).await {
+        if !roots.is_empty() {
+            eprintln!(
+                "{} {} guard root{} registered from durable store",
+                style::pass("OK", &palette),
+                roots.len(),
+                if roots.len() == 1 { "" } else { "s" }
+            );
+            for root in &roots {
+                let _ = conn
+                    .round_trip(&Request::GuardReconcile {
+                        root: root.root.clone(),
+                    })
+                    .await;
+            }
+        }
+    }
+
+    Ok(ExitCode::SUCCESS)
+}
+
+async fn run_down(socket: Option<std::path::PathBuf>) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
+    let palette = style::for_stderr();
+
+    let mut conn = match client::connect_any_version(&socket).await {
+        Ok(c) => c,
+        Err(_) => {
+            eprintln!(
+                "{} guard: daemon is not running at {}",
+                style::pass("OK", &palette),
+                socket.display()
+            );
+            return Ok(ExitCode::SUCCESS);
+        }
+    };
+
+    match conn.round_trip(&Request::Shutdown).await? {
+        Response::Shutdown => {
+            eprintln!(
+                "{} guard: daemon stopped; registrations and durable state preserved",
+                style::pass("OK", &palette)
+            );
+            Ok(ExitCode::SUCCESS)
+        }
+        other => {
+            anyhow::bail!(
+                "guard down: unexpected daemon response ({})",
+                response_kind(&other)
+            );
+        }
     }
 }
 

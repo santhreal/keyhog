@@ -151,9 +151,9 @@ Register a repository with the perpetual KeyHog daemon for fast
 pre-commit secret detection (requires Unix; on Windows use in-process `keyhog scan`):
 ```sh
 # 1. Start the daemon (accelerated by CUDA, Metal, WGPU, or SIMD)
-keyhog daemon start --backend auto
+keyhog guard up
 
-# 2. Guard your repository (indexes Git object baseline into memory once)
+# 2. Guard your repository (indexes baseline and installs pre-commit hook in one step)
 keyhog guard add /path/to/repo
 
 # 3. Every staged commit checks only changed blobs against in-memory attestations
@@ -162,8 +162,8 @@ keyhog scan --git-staged
 # 4. View all active guarded repositories and their states
 keyhog guard list
 
-# 5. Free daemon memory whenever you finish working on a repository
-keyhog guard remove /path/to/repo
+# 5. Turn the daemon on and off cleanly without losing registrations or durable index
+keyhog guard down
 ```
 
 See the [perpetual guard guide](https://santhreal.github.io/keyhog/workflows/guard.html)

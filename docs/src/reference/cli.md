@@ -408,7 +408,7 @@ keyhog explain stripe-secret-key
 | `-d`, `--detectors` | `DETECTORS` | `detectors` | Detector TOML directory. When omitted, KeyHog discovers an installed corpus or uses the embedded corpus. An explicitly named missing path is an error |
 <!-- /keyhog-generated: cli-reference command="explain" -->
 
-## `keyhog guard <add|remove|list|status|reconcile|rebuild>`
+## `keyhog guard <add|remove|up|down|list|status|reconcile|rebuild>`
 
 Manages perpetual repository and filesystem guard protection. Connects to
 the daemon and sends guard control frames. When no daemon is available,
@@ -418,14 +418,15 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 <!-- keyhog-generated: cli-reference command="guard" -->
 | Subcommand | Aliases | Description |
 |------------|---------|-------------|
-| `add` |  | Register a repository or filesystem root for continuous guard protection. Waits for initial reconciliation to complete before returning. When guarding a Git repository in `repo` mode, also automatically installs the pre-commit hook unless `--no-hook` is passed |
+| `add` |  | Register a repository or filesystem root for continuous guard protection. Waits for initial reconciliation to complete before returning. When guarding a Git repository in `repo` mode, also attempts to install the managed pre-commit hook (skipped if a foreign hook already exists, or if `--no-hook` is passed) |
+| `down` |  | Stop the background guard daemon cleanly. Persisted root registrations and durable indexes remain on disk and resume on the next `guard up` |
 | `help` |  | Print this message or the help of the given subcommand(s) |
 | `list` |  | List all registered guard roots and their current states |
 | `rebuild` |  | Delete and recreate the durable guard store for a root. Use after store corruption or when the persisted state is irrecoverably stale. The root is re-registered and a full reconciliation is triggered |
 | `reconcile` |  | Force a full reconciliation of a guarded root after an intentional policy or filesystem change |
 | `remove` |  | Stop protecting a root and remove its persisted non-secret state. Also removes any KeyHog-owned Git pre-commit hook unless `--keep-hook` is passed |
 | `status` |  | Print the exact state and current policy identity of a guarded root |
-
+| `up` |  | Start or ensure the background guard daemon is running and ready. Reconciles registered roots loaded from the durable store |
 ### `keyhog guard add`
 
 | Argument | Value | Default | Description |
@@ -433,6 +434,11 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 | `<ROOT>` *(required)* | `ROOT` |  | Root path to guard |
 | `--mode` | `MODE` | `repo` | Guard mode: `repo` uses Git object IDs for exact staged-content identity; `filesystem` uses content hashes without immutable Git OIDs |
 | `--no-hook` |  |  | Do not install or update the Git pre-commit hook during registration |
+### `keyhog guard down`
+
+| Argument | Value | Default | Description |
+|----------|-------|---------|-------------|
+| `--socket` | `PATH` |  | Override the socket path |
 
 ### `keyhog guard help`
 
@@ -468,6 +474,13 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 |----------|-------|---------|-------------|
 | `<ROOT>` *(required)* | `ROOT` |  | Root path to inspect |
 | `--format` | `FORMAT` | `human` | Output format: `human` or `json` |
+
+### `keyhog guard up`
+
+| Argument | Value | Default | Description |
+|----------|-------|---------|-------------|
+| `--backend` | `BACKEND` |  | Force a specific scan backend (default `auto` uses autoroute) |
+| `--socket` | `PATH` |  | Override the socket path |
 
 <!-- /keyhog-generated: cli-reference command="guard" -->
 
