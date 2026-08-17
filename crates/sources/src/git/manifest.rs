@@ -17,8 +17,51 @@
 
 use keyhog_core::guard_state::GitHashAlgorithm;
 use keyhog_core::SourceError;
-use std::path::Path;
+use std::sync::RwLock;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct IndexFingerprintCacheEntry {
+    pub(crate) index_path: PathBuf,
+    pub(crate) mtime: SystemTime,
+    pub(crate) file_size: u64,
+    pub(crate) trailing_checksum: [u8; 20],
+    pub(crate) fingerprint: String,
+}
+
+static INDEX_FINGERPRINT_CACHE: RwLock<Option<HashMap<PathBuf, IndexFingerprintCacheEntry>>> =
+    RwLock::new(None);
+
+pub(crate) fn record_index_fingerprint_cache(
+    repo_root: PathBuf,
+    entry: IndexFingerprintCacheEntry,
+) {
+    let mut guard = INDEX_FINGERPRINT_CACHE.write().unwrap_or_else(|e| e.into_inner());
+    let map = guard.get_or_insert_with(HashMap::new);
+    map.insert(repo_root, entry);
+}
+
+pub(crate) fn fast_check_index_fingerprint(
+    repo_path: &Path,
+    expected_fingerprint: &str,
+) -> Option<bool> {
+    let repo_root = super::canonical_repo_root(repo_path).ok()?;
+    let guard = INDEX_FINGERPRINT_CACHE.read().unwrap_or_else(|e| e.into_inner());
+    let map = guard.as_ref()?;
+    let entry = map.get(&repo_root)?;
+    let meta = std::fs::metadata(&entry.index_path).ok()?;
+    let mtime = meta.modified().ok()?;
+    if mtime != entry.mtime || meta.len() != entry.file_size {
+        return None;
+    }
+    let checksum = super::read_index_tail_checksum(&entry.index_path)?;
+    if checksum != entry.trailing_checksum {
+        return None;
+    }
+    Some(entry.fingerprint == expected_fingerprint)
+}
 /// File mode classification for a staged index entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StagedEntryKind {
@@ -105,6 +148,9 @@ impl StagedManifest {
     /// detects concurrent index mutations between the start of a guard
     /// transaction and receipt validation.
     pub fn fingerprint_matches(&self, repo_path: &std::path::Path) -> bool {
+        if let Some(matches) = fast_check_index_fingerprint(repo_path, &self.index_fingerprint) {
+            return matches;
+        }
         match super::staged_manifest_acquire(repo_path) {
             Ok(fresh) => fresh.index_fingerprint == self.index_fingerprint,
             Err(_) => false,
@@ -119,6 +165,9 @@ impl StagedManifest {
 /// `GuardCommitFinish` to ensure the staged content has not changed
 /// since the transaction began.
 pub fn verify_staged_fingerprint(repo_path: &std::path::Path, expected_fingerprint: &str) -> bool {
+    if let Some(matches) = fast_check_index_fingerprint(repo_path, expected_fingerprint) {
+        return matches;
+    }
     match super::staged_manifest_acquire(repo_path) {
         Ok(fresh) => fresh.index_fingerprint == expected_fingerprint,
         Err(_) => false,

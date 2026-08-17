@@ -1095,6 +1095,10 @@ pub(crate) fn staged_manifest_acquire(
         gix::hash::Kind::Sha1 => GitHashAlgorithm::Sha1,
         _ => GitHashAlgorithm::Sha1,
     };
+    // Fast index size index: read the index once to get object sizes for staged
+    // entries without disk I/O on loose objects. Fall back to `repo.find_header`
+    // only when an entry is absent from the index.
+    let index_sizes = parse_git_index_sizes(&repo.git_dir().join("index"));
 
     let mut command = git_command()?;
     command.args([
@@ -1175,16 +1179,19 @@ pub(crate) fn staged_manifest_acquire(
         // Use find_header to avoid loading the full object payload into memory.
         if entry.kind != manifest::StagedEntryKind::Deletion && !entry.object_oid.is_empty() {
             if let Ok(oid) = gix::ObjectId::from_hex(entry.object_oid.as_bytes()) {
-                match repo.find_header(oid) {
-                    Ok(header) => entry.object_size = header.size(),
-                    Err(_) => {
-                        coverage_gaps.push(format!(
-                            "staged object {} could not be read for size lookup",
-                            entry.object_oid
-                        ));
+                if let Some(&size) = index_sizes.get(&oid) {
+                    entry.object_size = size;
+                } else {
+                    match repo.find_header(oid) {
+                        Ok(header) => entry.object_size = header.size(),
+                        Err(_) => {
+                            coverage_gaps.push(format!(
+                                "staged object {} could not be read for size lookup",
+                                entry.object_oid
+                            ));
+                        }
                     }
                 }
-            } else {
                 coverage_gaps.push(format!(
                     "staged object OID '{}' is not a valid hash",
                     entry.object_oid
@@ -1218,7 +1225,98 @@ pub(crate) fn staged_manifest_acquire(
         coverage_gaps,
     };
     manifest.index_fingerprint = manifest.recompute_fingerprint();
+    let index_path = repo.git_dir().join("index");
+    if let Ok(meta) = std::fs::metadata(&index_path) {
+        if let (Ok(mtime), Some(checksum)) = (meta.modified(), read_index_tail_checksum(&index_path)) {
+            manifest::record_index_fingerprint_cache(
+                repo_root.clone(),
+                manifest::IndexFingerprintCacheEntry {
+                    index_path,
+                    mtime,
+                    file_size: meta.len(),
+                    trailing_checksum: checksum,
+                    fingerprint: manifest.index_fingerprint.clone(),
+                },
+            );
+        }
+    }
     Ok(manifest)
+}
+
+/// Read object sizes directly from the Git binary index file (`.git/index`),
+/// avoiding thousands of individual loose-object disk reads and zlib header
+/// decompressions during staged manifest acquisition.
+fn parse_git_index_sizes(index_path: &Path) -> std::collections::HashMap<gix::ObjectId, u64> {
+    let mut map = std::collections::HashMap::new();
+    let data = match std::fs::read(index_path) {
+        Ok(d) if d.len() >= 12 => d,
+        _ => return map,
+    };
+    if &data[0..4] != b"DIRC" {
+        return map;
+    }
+    let version = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
+    if version != 2 && version != 3 && version != 4 {
+        return map;
+    }
+    let entry_count = u32::from_be_bytes([data[8], data[9], data[10], data[11]]) as usize;
+    let mut offset = 12;
+    for _ in 0..entry_count {
+        if offset + 62 > data.len() {
+            break;
+        }
+        let file_size = u32::from_be_bytes([
+            data[offset + 36],
+            data[offset + 37],
+            data[offset + 38],
+            data[offset + 39],
+        ]) as u64;
+        let oid = gix::ObjectId::from_bytes_or_panic(&data[offset + 40..offset + 60]);
+        map.insert(oid, file_size);
+        let flags = u16::from_be_bytes([data[offset + 60], data[offset + 61]]);
+        let extended = (version == 3) && ((flags & 0x4000) != 0);
+        let header_len = if extended { 64 } else { 62 };
+        if version == 4 {
+            let path_start = offset + header_len;
+            if path_start >= data.len() {
+                break;
+            }
+            let mut p = path_start;
+            while p < data.len() && (data[p] & 0x80) != 0 {
+                p += 1;
+            }
+            if p < data.len() {
+                p += 1;
+            }
+            while p < data.len() && data[p] != 0 {
+                p += 1;
+            }
+            offset = if p < data.len() { p + 1 } else { data.len() };
+        } else {
+            let path_start = offset + header_len;
+            let mut path_end = path_start;
+            while path_end < data.len() && data[path_end] != 0 {
+                path_end += 1;
+            }
+            let entry_len = path_end + 1 - offset;
+            let pad = (8 - (entry_len % 8)) % 8;
+            offset += entry_len + pad;
+        }
+    }
+    map
+}
+
+pub(crate) fn read_index_tail_checksum(path: &Path) -> Option<[u8; 20]> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    if len < 20 {
+        return None;
+    }
+    file.seek(SeekFrom::End(-20)).ok()?;
+    let mut buf = [0u8; 20];
+    file.read_exact(&mut buf).ok()?;
+    Some(buf)
 }
 
 /// Parse a raw diff header line into a manifest entry.
@@ -1293,5 +1391,61 @@ fn classify_mode(mode: u32) -> manifest::StagedEntryKind {
         0o120000 => StagedEntryKind::Symlink,
         0o160000 => StagedEntryKind::Submodule,
         _ => StagedEntryKind::File,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_git_index_sizes_handles_nonexistent_and_invalid() {
+        let empty = parse_git_index_sizes(Path::new("/nonexistent/path/to/index"));
+        assert!(empty.is_empty());
+
+        let temp = tempfile::tempdir().unwrap();
+        let invalid_file = temp.path().join("index");
+        std::fs::write(&invalid_file, b"NOT_DIRC_HEADER").unwrap();
+        let parsed = parse_git_index_sizes(&invalid_file);
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn parse_git_index_sizes_parses_synthetic_v2_entry() {
+        let temp = tempfile::tempdir().unwrap();
+        let index_file = temp.path().join("index");
+        let mut data = Vec::new();
+        // Header: DIRC, version 2, 1 entry
+        data.extend_from_slice(b"DIRC");
+        data.extend_from_slice(&2u32.to_be_bytes());
+        data.extend_from_slice(&1u32.to_be_bytes());
+
+        // Entry header (62 bytes)
+        // ctime..gid (36 bytes)
+        data.extend_from_slice(&[0u8; 36]);
+        // file_size (4 bytes at offset 36..40)
+        data.extend_from_slice(&4242u32.to_be_bytes());
+        // oid (20 bytes at offset 40..60)
+        let sample_oid = [0xabu8; 20];
+        data.extend_from_slice(&sample_oid);
+        // flags (2 bytes at offset 60..62): length of "test.txt" = 8
+        data.extend_from_slice(&8u16.to_be_bytes());
+        // path: "test.txt\0" (9 bytes)
+        data.extend_from_slice(b"test.txt\0");
+        // padding: entry_len = 62 + 9 = 71; pad = (8 - (71 % 8)) % 8 = 1 byte
+        data.push(0);
+
+        // trailing SHA-1 checksum (20 bytes)
+        let checksum = [0x55u8; 20];
+        data.extend_from_slice(&checksum);
+
+        std::fs::write(&index_file, &data).unwrap();
+
+        let sizes = parse_git_index_sizes(&index_file);
+        let expected_oid = gix::ObjectId::from_bytes_or_panic(&sample_oid);
+        assert_eq!(sizes.get(&expected_oid), Some(&4242));
+
+        let read_checksum = read_index_tail_checksum(&index_file);
+        assert_eq!(read_checksum, Some(checksum));
     }
 }

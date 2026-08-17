@@ -7,6 +7,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Changed
 
 - ci(release): fallback token and sync floating major tag on release.
+- Optimize Git staged manifest acquisition and index verification: pre-populate staged blob sizes directly from in-memory `.git/index` and fast-check index fingerprints against `.git/index` metadata and trailing checksum to eliminate redundant loose-object disk reads and subprocess forks during perpetual guard commit scans.
+- Add massive staged diff simulation suite (`regression_cli_guard_massive_diff_simulation.rs`) verifying 1,000-file and 5,000-file diff performance and RAM bounds under 10MB during daemon-served commit transactions.
 
 ## [0.5.78] - 2026-08-16
 
