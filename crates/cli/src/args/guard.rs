@@ -13,7 +13,8 @@ pub struct GuardArgs {
 pub enum GuardAction {
     /// Register a repository or filesystem root for continuous guard
     /// protection. Waits for initial reconciliation to complete before
-    /// returning.
+    /// returning. When guarding a Git repository in `repo` mode, also
+    /// automatically installs the pre-commit hook unless `--no-hook` is passed.
     Add {
         /// Root path to guard.
         root: PathBuf,
@@ -22,11 +23,19 @@ pub enum GuardAction {
         /// OIDs.
         #[arg(long, value_name = "MODE", default_value = "repo")]
         mode: String,
+        /// Do not install or update the Git pre-commit hook during registration.
+        #[arg(long)]
+        no_hook: bool,
     },
     /// Stop protecting a root and remove its persisted non-secret state.
+    /// Also removes any KeyHog-owned Git pre-commit hook unless `--keep-hook`
+    /// is passed.
     Remove {
         /// Root path to unguard.
         root: PathBuf,
+        /// Keep the Git pre-commit hook in place when unregistering.
+        #[arg(long)]
+        keep_hook: bool,
     },
     /// List all registered guard roots and their current states.
     List,

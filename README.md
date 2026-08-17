@@ -145,9 +145,9 @@ commands in [Choose the right workflow](#choose-the-right-workflow). You can
 scan Git history, container images, cloud buckets, repository collections,
 URLs, and a whole machine without changing tools.
 
-### Guard repositories for instant pre-commit scans
+### Guard repositories for fast pre-commit scans
 
-Register a repository with the perpetual KeyHog daemon for sub-millisecond
+Register a repository with the perpetual KeyHog daemon for fast
 pre-commit secret detection:
 
 ```sh
@@ -157,7 +157,7 @@ keyhog daemon start --backend auto
 # 2. Guard your repository (indexes Git object baseline into memory once)
 keyhog guard add /path/to/repo
 
-# 3. Every staged commit checks only changed blobs against in-memory attestations (< 5ms)
+# 3. Every staged commit checks only changed blobs against in-memory attestations
 keyhog scan --git-staged
 
 # 4. View all active guarded repositories and their states

@@ -70,6 +70,7 @@ Pre-commit framework: keyhog ships a hook, so a `.pre-commit-config.yaml`
 `repo: https://github.com/santhreal/keyhog` entry wires `keyhog scan
 --git-staged` into every commit. See [perpetual guard](./workflows/guard.md) and
 [pre-commit](./workflows/precommit.md).
+
 ## Add it to CI (one workflow file)
 
 ```yaml

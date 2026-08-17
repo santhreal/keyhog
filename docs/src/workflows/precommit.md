@@ -50,9 +50,10 @@ Treat the hook as a fast first gate, not as the control that protects the
 branch. Keep a default-policy scan in CI, where the cost is paid once per push
 rather than once per commit. See
 [Fail only on new secrets](./ci.md#fail-only-on-new-secrets).
-### Sub-millisecond pre-commit scanning with Perpetual Guard
 
-For instantaneous (< 5ms) pre-commit gating with the **full default policy**
+### Fast pre-commit scanning with Perpetual Guard
+
+For fast pre-commit gating with the **full default policy**
 (including complete decoding, entropy analysis, and all 926 detectors), use the
 perpetual KeyHog daemon:
 
@@ -70,12 +71,12 @@ perpetual KeyHog daemon:
    chmod +x .git/hooks/pre-commit
    ```
 
-Because the daemon maintains in-memory Merkle trees and clean Git blob
-attestations, `keyhog scan --git-staged` checks only changed staged blobs
-against the daemon's in-memory index, completing in milliseconds rather than
-re-parsing detectors or scanning unchanged files.
+Because the daemon maintains an in-memory clean Git blob attestation index,
+`keyhog scan --git-staged` checks only changed staged blobs against the daemon's
+in-memory index, skipping unchanged clean payloads rather than re-scanning them.
 
 See the [perpetual guard guide](./guard.md) for full lifecycle management.
+
 ### `pre-commit` framework
 
 This repository's hook uses `language: system`. Follow the

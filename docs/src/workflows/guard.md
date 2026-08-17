@@ -1,9 +1,10 @@
 # Perpetual repository and filesystem guard
 
 The guard is a daemon-resident runtime that registers Git repositories and
-filesystem trees as guarded roots. It maintains in-memory Merkle trees and clean
-Git object attestations, enabling sub-millisecond pre-commit scanning on staged
-changes without cold-start detector compilation or redundant file I/O.
+filesystem trees as guarded roots. It maintains an in-memory clean Git object
+attestation index and filesystem event tracking, enabling sub-second pre-commit
+scanning on staged changes without cold-start detector compilation or redundant
+file I/O.
 
 Guard requires the Unix-domain daemon transport. On Windows, `keyhog guard`
 exits with an unsupported-platform error; use `keyhog scan <path>` in process.
@@ -16,9 +17,9 @@ staged content is clean.
 
 1. **One-command registration (`keyhog guard add <path>`)**: Indexes the target
    repository into daemon memory once and establishes clean baseline attestations.
-2. **Sub-millisecond commit gating (`keyhog scan --git-staged`)**: Pre-commit
+2. **Fast staged commit gating (`keyhog scan --git-staged`)**: Pre-commit
    hooks query the active guard daemon. The daemon verifies only changed staged
-   blob OIDs against in-memory attestations, completing scans in milliseconds.
+   blob OIDs against in-memory attestations, skipping unchanged clean payloads.
 3. **Full lifecycle control**: List active roots with `keyhog guard list`, check
    memory and attestation metrics with `keyhog guard status <path>`, and free
    daemon memory immediately with `keyhog guard remove <path>` when finished
@@ -92,12 +93,12 @@ initial recon:  2026-08-17T00:15:00Z
 last recon:     2026-08-17T00:15:00Z
 residency:      resident
 backend route:  gpu-cuda-region-presence
+build digest:   1a2b3c4d5e6f7a8b
 detector:       926-174c093ae73b
 suppression:    0000000000000000
 config:         18cc6ed841bf6dfe
 autoroute:      calibrated
-store schema:   2
-```
+store schema:   1
 
 Structured JSON output for monitoring and scripts:
 
@@ -119,9 +120,7 @@ staged Git blob OIDs against in-memory attestations, and returns in milliseconds
 - **Clean commit outcome**:
 
 ```text
-━━━ Results ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-0 secrets found · Clean staged commit (1.8ms)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  No secrets detected in the scanned files.
 ```
 
 - **Blocked commit outcome**:
@@ -151,7 +150,7 @@ keyhog guard list
 Output:
 
 ```text
-Guarded roots:
+OK 2 guard roots registered
   /path/to/repo-a  current  seq=14
   /path/to/repo-b  current  seq=3
 ```
@@ -238,45 +237,28 @@ need to update the in-memory baseline immediately.
 
 ## Guard state machine
 
-Every guarded root operates within a 7-state machine:
+Every guarded root operates within a 7-state machine owned by `GuardRootState`:
 
-```text
-                  ┌──────────────┐
-                  │   stopped    │
-                  └──────┬───────┘
-                         │ reconcile
-                         ▼
-                  ┌──────────────┐
-                  │   indexing   │
-                  └──────┬───────┘
-                         │
-        ┌────────────────┼────────────────┐
-        ▼                ▼                ▼
- ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
- │   current    │ │   blocked    │ │   degraded   │
- └──────┬───────┘ └──────────────┘ └──────────────┘
-        │ fs event       │                │
-        ▼                │ policy change  │
- ┌──────────────┐        │                │
- │    dirty     │◄───────┴────────────────┘
- └──────┬───────┘
-        │ reconcile
-        ▼
- ┌──────────────┐
- │ stale-policy │
- └──────────────┘
-```
-
-| State | Definition |
-|---|---|
-| `stopped` | The root is registered in the daemon registry but not actively watching or scanning. |
-| `indexing` | Baseline reconciliation is running in the background. |
-| `current` | Baseline scan completed cleanly. Coverage is 100% complete and no finding blocks the active policy. |
-| `dirty` | Filesystem changes occurred and have not yet been reconciled against the baseline. |
-| `blocked` | A likely or confirmed secret was detected in the root baseline. The root is blocked. |
-| `degraded` | Scanner coverage was incomplete (for example, inaccessible files or failed reads). |
-| `stale-policy` | Daemon detector corpus, suppression rules, or configuration changed since the baseline was computed. Existing attestations are invalidated. |
-
+| From State | Event / Trigger | Target State | Description |
+|---|---|---|---|
+| `stopped` | `ReconciliationStarted` | `indexing` | Baseline reconciliation begins. |
+| `indexing` | `ReconciliationClean` | `current` | Baseline scan completed with zero blocking findings. |
+| `indexing` | `ReconciliationFindings` | `blocked` | Baseline scan detected blocking secrets. |
+| `indexing` | `ReconciliationDegraded` / `CoverageLost` | `degraded` | Incomplete coverage during reconciliation. |
+| `indexing` | `PolicyChanged` | `stale-policy` | Detector corpus, suppressions, or config changed during scan. |
+| `current` | `EventAccepted` | `dirty` | Filesystem change accepted; pending events await scan. |
+| `current` | `CoverageLost` | `degraded` | Filesystem watcher overflow or read error. |
+| `current` | `PolicyChanged` | `stale-policy` | Detector corpus, suppressions, or config modified. |
+| `blocked` | `EventAccepted` | `dirty` | Filesystem change accepted in blocked repository. |
+| `blocked` | `CoverageLost` | `degraded` | Coverage lost while blocked. |
+| `blocked` | `PolicyChanged` | `stale-policy` | Policy modified while blocked. |
+| `dirty` | `EventsClean` | `current` | Changed files scanned cleanly; all findings resolved. |
+| `dirty` | `EventsFindings` | `blocked` | Changed files contain blocking secrets. |
+| `dirty` | `EventsDegraded` / `CoverageLost` | `degraded` | Incomplete coverage during incremental scan. |
+| `dirty` | `PolicyChanged` | `stale-policy` | Policy modified while processing dirty events. |
+| `degraded` | `RepairStarted` | `indexing` | Manual `keyhog guard reconcile` or `rebuild` triggered. |
+| `stale-policy` | `RepairStarted` | `indexing` | Manual `keyhog guard reconcile` or `rebuild` triggered. |
+| *any state* | `Stopped` | `stopped` | Root unregistered with `keyhog guard remove` or daemon shutdown. |
 ### Process exit codes
 
 `keyhog guard status` and `keyhog scan --git-staged` enforce strict exit semantics:
@@ -293,15 +275,15 @@ When KeyHog scans a staged Git blob and detects zero unsuppressed secrets, it
 records a clean attestation record keyed by four immutable elements:
 
 1. **Blob Git OID**: The SHA-1 or SHA-256 object hash of the staged blob.
-2. **Hash Algorithm**: The Git object format algorithm in use.
-3. **Policy Identity Digest**: A 16-hex hash of the active 926 detector corpus,
+2. **Byte Length**: The exact byte length of the blob payload.
+3. **Policy Identity Digest**: The 32-byte digest of the active detector corpus,
    suppression rules, and scanner configuration.
-4. **Sorted Source-Path Set**: The canonical file path within the repository.
+4. **Sorted Source-Path Set**: The hashed set of sorted staged source paths mapped
+   to that blob.
 
 Future commit transactions matching all four elements skip payload re-scanning
 and return an instant cache hit. If a file is renamed, moved across source roles,
 or the detector corpus is updated, the attestation is invalidated.
-
 ## Durable state persistence
 
 By default, guard state is held in daemon memory. To persist root registrations

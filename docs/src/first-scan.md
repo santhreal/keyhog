@@ -97,7 +97,7 @@ banner to stderr before the findings:
     v0.5.79 · secret scanner · 926 detectors
     by santh
 
-  ⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 926 detectors (5803 patterns) io_uring | backend=simd-regex | gpu=none
+  16 cores | SIMD: AVX-512 | Hyperscan | 926 detectors (5803 patterns) io_uring | backend=simd-regex | gpu=none
 ```
 
 The banner reports this host's CPU and GPU labels, the scanner engine, the

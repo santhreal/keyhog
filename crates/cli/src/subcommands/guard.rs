@@ -14,8 +14,8 @@ use crate::daemon::server::default_socket_path;
 
 pub(crate) async fn run(args: GuardArgs) -> anyhow::Result<ExitCode> {
     match args.action {
-        GuardAction::Add { root, mode } => run_add(root, mode).await,
-        GuardAction::Remove { root } => run_remove(root).await,
+        GuardAction::Add { root, mode, no_hook } => run_add(root, mode, no_hook).await,
+        GuardAction::Remove { root, keep_hook } => run_remove(root, keep_hook).await,
         GuardAction::List => run_list().await,
         GuardAction::Status { root, format } => run_status(root, format).await,
         GuardAction::Reconcile { root } => run_reconcile(root).await,
@@ -23,7 +23,7 @@ pub(crate) async fn run(args: GuardArgs) -> anyhow::Result<ExitCode> {
     }
 }
 
-async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitCode> {
+async fn run_add(root: std::path::PathBuf, mode: String, no_hook: bool) -> anyhow::Result<ExitCode> {
     let socket = default_socket_path();
     let mut conn = match client::connect(&socket).await {
         Ok(conn) => conn,
@@ -38,7 +38,7 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
     let canonical = canonicalize_root(&root)?;
     let request = Request::GuardAdd {
         root: canonical,
-        mode,
+        mode: mode.clone(),
     };
     let canonical_for_reconcile = match conn.round_trip(&request).await? {
         Response::GuardAdded {
@@ -75,7 +75,7 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
         Response::GuardReconcileStarted { root: _ } => {
             // Reconciliation completed. Query the final state.
             let status_request = Request::GuardStatus {
-                root: canonical_for_reconcile,
+                root: canonical_for_reconcile.clone(),
             };
             match conn.round_trip(&status_request).await? {
                 Response::GuardStatusResult {
@@ -89,6 +89,23 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
                         style::pass("OK", &palette),
                         state
                     );
+                    if mode == "repo" && !no_hook {
+                        match crate::subcommands::hook::install_at_repo(std::path::Path::new(&canonical_for_reconcile), false) {
+                            Ok(hook_path) => {
+                                eprintln!(
+                                    "{} guard: pre-commit hook active at {}",
+                                    style::pass("OK", &palette),
+                                    hook_path.display()
+                                );
+                            }
+                            Err(err) => {
+                                eprintln!(
+                                    "{} guard: pre-commit hook not installed: {err}",
+                                    style::warn("WARN", &palette)
+                                );
+                            }
+                        }
+                    }
                     Ok(exit_for_guard_state(&state, findings_count))
                 }
                 Response::Error { message } => {
@@ -114,7 +131,7 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
     }
 }
 
-async fn run_remove(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
+async fn run_remove(root: std::path::PathBuf, keep_hook: bool) -> anyhow::Result<ExitCode> {
     let socket = default_socket_path();
     let mut conn = match client::connect(&socket).await {
         Ok(conn) => conn,
@@ -127,7 +144,7 @@ async fn run_remove(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
     };
 
     let canonical = resolve_root_for_control(&root)?;
-    let request = Request::GuardRemove { root: canonical };
+    let request = Request::GuardRemove { root: canonical.clone() };
     match conn.round_trip(&request).await? {
         Response::GuardRemoved => {
             let palette = style::for_stderr();
@@ -136,6 +153,15 @@ async fn run_remove(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
                 style::pass("OK", &palette),
                 root.display()
             );
+            if !keep_hook {
+                if let Ok(Some(hook_path)) = crate::subcommands::hook::uninstall_at_repo(std::path::Path::new(&canonical)) {
+                    eprintln!(
+                        "{} guard: pre-commit hook removed from {}",
+                        style::pass("OK", &palette),
+                        hook_path.display()
+                    );
+                }
+            }
             Ok(ExitCode::SUCCESS)
         }
         Response::Error { message } => {
