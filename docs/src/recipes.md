@@ -48,9 +48,8 @@ keyhog scan --git-history . --max-commits 500
 ## Guard a repository for instant pre-commit scans
 
 ```bash
-# 1. Start daemon in background
-keyhog daemon start --backend auto &
-
+# 1. Start daemon in background (reconciles durable roots)
+keyhog guard up
 # 2. Register repository (indexes baseline into memory once)
 keyhog guard add /path/to/repo --mode repo
 

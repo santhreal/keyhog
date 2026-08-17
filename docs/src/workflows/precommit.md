@@ -179,8 +179,8 @@ Pre-commit scans operate in two modes:
 
 1. **In-process staged scan:** When no daemon is running, `keyhog scan --git-staged`
    evaluates staged Git blobs in process with the CPU backend.
-2. **Guard daemon commit transaction:** When a KeyHog daemon is running with
-   guarded roots (`keyhog daemon start`), `keyhog scan --git-staged` connects
+2. **Guard daemon commit transaction:** When a KeyHog daemon is active with
+   guarded roots (`keyhog guard up`), `keyhog scan --git-staged` connects
    over the Unix socket. The daemon checks its in-memory Git OID clean attestation
    index, skips unchanged clean blobs, and scans only modified payloads.
 
