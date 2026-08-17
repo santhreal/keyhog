@@ -886,6 +886,7 @@ fn guard_add_no_hook_flag_skips_pre_commit_hook() {
         .env("NO_COLOR", "1")
         .args(["guard", "add", ".", "--no-hook", "--socket"])
         .arg(&socket)
+        .output()
         .expect("guard add --no-hook");
     assert_eq!(add_out.status.code(), Some(0));
 
@@ -920,6 +921,7 @@ fn guard_remove_keep_hook_flag_preserves_pre_commit_hook() {
         .env("NO_COLOR", "1")
         .args(["guard", "add", ".", "--socket"])
         .arg(&socket)
+        .output()
         .expect("guard add");
     assert_eq!(add_out.status.code(), Some(0));
     assert!(
@@ -932,6 +934,7 @@ fn guard_remove_keep_hook_flag_preserves_pre_commit_hook() {
         .env("NO_COLOR", "1")
         .args(["guard", "remove", ".", "--keep-hook", "--socket"])
         .arg(&socket)
+        .output()
         .expect("guard remove --keep-hook");
     assert_eq!(remove_out.status.code(), Some(0));
     assert!(
