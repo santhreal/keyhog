@@ -53,6 +53,13 @@ pub(crate) mod testing {
 
 const HOOK_MARKER: &str = "KeyHog pre-commit hook";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HookInstallStatus {
+    Installed,
+    AlreadyInstalled,
+    Updated,
+}
+
 pub(crate) fn run(command: HookCommand) -> Result<ExitCode> {
     match command {
         HookCommand::Install { force } => install(force),
@@ -62,22 +69,38 @@ pub(crate) fn run(command: HookCommand) -> Result<ExitCode> {
 
 fn install(force: bool) -> Result<ExitCode> {
     let cur_dir = std::env::current_dir().context("resolving current directory")?;
-    let hook_path = install_at_repo(&cur_dir, force)?;
+    let (hook_path, status) = install_at_repo(&cur_dir, force)?;
     let palette = crate::style::for_stderr();
-    let msg = format!(
-        "KeyHog pre-commit hook {} at {}.",
-        if force {
-            "installed/updated"
-        } else {
-            "installed"
-        },
-        hook_path.display(),
-    );
-    eprintln!("{}", crate::style::pass(&msg, &palette));
+    match status {
+        HookInstallStatus::AlreadyInstalled => {
+            let msg = format!(
+                "KeyHog pre-commit hook is already installed at {}.",
+                hook_path.display()
+            );
+            eprintln!("{}", crate::style::warn(&msg, &palette));
+        }
+        HookInstallStatus::Installed => {
+            let msg = format!(
+                "KeyHog pre-commit hook installed at {}.",
+                hook_path.display()
+            );
+            eprintln!("{}", crate::style::pass(&msg, &palette));
+        }
+        HookInstallStatus::Updated => {
+            let msg = format!(
+                "KeyHog pre-commit hook installed/updated at {}.",
+                hook_path.display()
+            );
+            eprintln!("{}", crate::style::pass(&msg, &palette));
+        }
+    }
     Ok(ExitCode::SUCCESS)
 }
 
-pub(crate) fn install_at_repo(repo_root: &std::path::Path, force: bool) -> Result<PathBuf> {
+pub(crate) fn install_at_repo(
+    repo_root: &std::path::Path,
+    force: bool,
+) -> Result<(PathBuf, HookInstallStatus)> {
     // Hook path resolution + existing-hook check: the collect phase.
     let _check_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     let hooks_dir = find_hooks_dir_for_repo(repo_root)?;
@@ -86,6 +109,7 @@ pub(crate) fn install_at_repo(repo_root: &std::path::Path, force: bool) -> Resul
     std::fs::create_dir_all(&hooks_dir)
         .with_context(|| format!("creating hooks directory at {}", hooks_dir.display()))?;
 
+    let mut is_update = false;
     if hook_path.exists() {
         let existing = std::fs::read_to_string(&hook_path)
             .with_context(|| format!("reading existing hook at {}", hook_path.display()))?;
@@ -93,7 +117,7 @@ pub(crate) fn install_at_repo(repo_root: &std::path::Path, force: bool) -> Resul
         // alone is not enough: upgraded HOOK_CONTENT must rewrite so operators
         // never keep a stale scan line after a keyhog upgrade (KH-1333).
         if existing == HOOK_CONTENT && !force {
-            return Ok(hook_path);
+            return Ok((hook_path, HookInstallStatus::AlreadyInstalled));
         }
         let is_keyhog_owned = existing.contains(HOOK_MARKER);
         if !force && !is_keyhog_owned {
@@ -105,6 +129,7 @@ pub(crate) fn install_at_repo(repo_root: &std::path::Path, force: bool) -> Resul
             );
         }
         // KeyHog-owned but bytes differ (or --force): fall through and rewrite.
+        is_update = true;
     }
 
     let mut file = std::fs::OpenOptions::new()
@@ -132,33 +157,49 @@ pub(crate) fn install_at_repo(repo_root: &std::path::Path, force: bool) -> Resul
             .with_context(|| format!("making {} executable", hook_path.display()))?;
     }
 
-    Ok(hook_path)
+    let status = if is_update || force {
+        HookInstallStatus::Updated
+    } else {
+        HookInstallStatus::Installed
+    };
+    Ok((hook_path, status))
 }
 
 fn uninstall() -> Result<ExitCode> {
+    let _check_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     let cur_dir = std::env::current_dir().context("resolving current directory")?;
-    match uninstall_at_repo(&cur_dir)? {
-        Some(hook_path) => {
-            let palette = crate::style::for_stderr();
-            let msg = format!(
-                "KeyHog pre-commit hook removed from {}.",
-                hook_path.display()
-            );
-            eprintln!("{}", crate::style::pass(&msg, &palette));
-            Ok(ExitCode::SUCCESS)
-        }
-        None => {
-            let palette = crate::style::for_stderr();
-            let hooks_dir =
-                find_hooks_dir_for_repo(&cur_dir).unwrap_or_else(|_| PathBuf::from(".git/hooks"));
-            let msg = format!(
-                "No KeyHog pre-commit hook found at {}.",
-                hooks_dir.join("pre-commit").display()
-            );
-            eprintln!("{}", crate::style::warn(&msg, &palette));
-            Ok(ExitCode::SUCCESS)
-        }
+    let hooks_dir = find_hooks_dir_for_repo(&cur_dir)?;
+    let hook_path = hooks_dir.join("pre-commit");
+
+    if !hook_path.exists() {
+        let palette = crate::style::for_stderr();
+        let msg = format!("No pre-commit hook found at {}.", hook_path.display());
+        eprintln!("{}", crate::style::warn(&msg, &palette));
+        return Ok(ExitCode::SUCCESS);
     }
+
+    let existing = std::fs::read_to_string(&hook_path)
+        .with_context(|| format!("reading hook at {}", hook_path.display()))?;
+
+    if !existing.contains(HOOK_MARKER) {
+        anyhow::bail!(
+            "pre-commit hook at {} was not installed by KeyHog. Remove it manually if you are sure.",
+            hook_path.display()
+        );
+    }
+
+    std::fs::remove_file(&hook_path)
+        .with_context(|| format!("removing hook at {}", hook_path.display()))?;
+    drop(_check_span);
+
+    let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
+    let palette = crate::style::for_stderr();
+    let msg = format!(
+        "KeyHog pre-commit hook removed from {}.",
+        hook_path.display()
+    );
+    eprintln!("{}", crate::style::pass(&msg, &palette));
+    Ok(ExitCode::SUCCESS)
 }
 
 pub(crate) fn uninstall_at_repo(repo_root: &std::path::Path) -> Result<Option<PathBuf>> {

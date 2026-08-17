@@ -102,7 +102,7 @@ async fn run_add(
                             std::path::Path::new(&canonical_for_reconcile),
                             false,
                         ) {
-                            Ok(hook_path) => {
+                            Ok((hook_path, _status)) => {
                                 eprintln!(
                                     "{} guard: pre-commit hook active at {}",
                                     style::pass("OK", &palette),
