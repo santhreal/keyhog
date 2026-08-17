@@ -14,7 +14,8 @@ pub enum GuardAction {
     /// Register a repository or filesystem root for continuous guard
     /// protection. Waits for initial reconciliation to complete before
     /// returning. When guarding a Git repository in `repo` mode, also
-    /// automatically installs the pre-commit hook unless `--no-hook` is passed.
+    /// attempts to install the managed pre-commit hook (skipped if a foreign
+    /// hook already exists, or if `--no-hook` is passed).
     Add {
         /// Root path to guard.
         root: PathBuf,

@@ -54,7 +54,9 @@ keyhog guard add /path/to/repo --mode repo
 ```
 
 - `--mode repo` (default): Uses Git object IDs (OIDs) for exact immutable
-  staged-content identification.
+  staged-content identification, and automatically installs the managed
+  pre-commit hook at `.git/hooks/pre-commit` (best-effort; skipped if a foreign
+  hook already exists, or if `--no-hook` is passed).
 - `--mode filesystem`: Uses file content hashes without Git OIDs.
 
 The command waits for initial baseline reconciliation to complete before
@@ -157,7 +159,6 @@ OK 2 guard roots registered
 ```
 
 ### 6. Free resources when finished
-
 When you finish working on a project, remove it from the guard to immediately
 reclaim daemon memory and watcher resources:
 
@@ -165,6 +166,8 @@ reclaim daemon memory and watcher resources:
 keyhog guard remove /path/to/repo
 ```
 
+`guard remove` unregisters the root from the daemon and removes any KeyHog-owned
+pre-commit hook by default (pass `--keep-hook` to preserve the hook).
 You can re-add the repository at any time with `keyhog guard add /path/to/repo`.
 
 ## Pre-commit hook integration
