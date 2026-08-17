@@ -433,10 +433,6 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         );
     }
 
-    if let Some(reason) = daemon_incompatible_scan_options(&policy.effective_args) {
-        return daemon_cannot_serve(forced_on, reason);
-    }
-
     // Guard commit transaction: when --git-staged is used and a compatible
     // guard daemon is available, route through the staged-object guard
     // transaction instead of the in-process scanner. The daemon's clean
@@ -457,6 +453,10 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
             "no daemon is listening on {}",
             effective_daemon_socket(args).display()
         )));
+    }
+
+    if let Some(reason) = daemon_incompatible_scan_options(&policy.effective_args) {
+        return daemon_cannot_serve(forced_on, reason);
     }
 
     let single_file = match effective_single_file_path(args) {

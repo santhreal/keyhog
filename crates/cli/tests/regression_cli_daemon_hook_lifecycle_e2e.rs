@@ -955,3 +955,65 @@ fn guard_remove_keep_hook_flag_preserves_pre_commit_hook() {
         .arg(&socket)
         .output();
 }
+
+#[cfg(unix)]
+#[test]
+fn hook_canonical_scan_invocation_routes_through_live_guard_daemon() {
+    let _daemon_slot = daemon_slot();
+    let dir = TempDir::new().unwrap();
+    init_git_repo(dir.path());
+    let socket = dir.path().join("guard-hook-route.sock");
+
+    let up_out = Command::new(keyhog())
+        .env("NO_COLOR", "1")
+        .args(["guard", "up", "--backend", "cpu", "--socket"])
+        .arg(&socket)
+        .output()
+        .expect("guard up");
+    assert_eq!(up_out.status.code(), Some(0));
+
+    let add_out = Command::new(keyhog())
+        .current_dir(dir.path())
+        .env("NO_COLOR", "1")
+        .args(["guard", "add", ".", "--socket"])
+        .arg(&socket)
+        .output()
+        .expect("guard add");
+    assert!(matches!(add_out.status.code(), Some(0 | 13)));
+
+    // Stage a clean file.
+    std::fs::write(dir.path().join("file.txt"), "clean content\n").unwrap();
+    let git_add = Command::new("git")
+        .args(["add", "file.txt"])
+        .current_dir(dir.path())
+        .output()
+        .expect("git add");
+    assert!(git_add.status.success());
+
+    // Run exact CANONICAL_SCAN_ARGS with --daemon-socket pointing to live guard.
+    let scan_out = Command::new(keyhog())
+        .current_dir(dir.path())
+        .env("NO_COLOR", "1")
+        .args([
+            "scan",
+            "--fast",
+            "--git-staged",
+            "--backend",
+            "cpu",
+            "--daemon-socket",
+        ])
+        .arg(&socket)
+        .output()
+        .expect("keyhog scan --fast --git-staged --backend cpu");
+    assert_eq!(scan_out.status.code(), Some(0));
+    let scan_err = String::from_utf8_lossy(&scan_out.stderr);
+    assert!(
+        scan_err.contains("guard:"),
+        "staged scan with live daemon must route via guard; stderr={scan_err}"
+    );
+
+    let _ = Command::new(keyhog())
+        .args(["guard", "down", "--socket"])
+        .arg(&socket)
+        .output();
+}
