@@ -231,6 +231,7 @@ panic = "abort"
 strip = "symbols"
 debug = false
 incremental = false
+overflow-checks = true
 
 # ── Release-fast: CI builds where you want -O3 but not multi-minute LTO.
 # Use with `cargo build --profile release-fast`.

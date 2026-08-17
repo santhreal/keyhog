@@ -120,9 +120,14 @@ mod serde_companion_map {
     where
         S: Serializer,
     {
-        let mut map = serializer.serialize_map(Some(companions.len()))?;
-        for (name, value) in companions {
-            map.serialize_entry(name.as_ref(), value)?;
+        let mut sorted: Vec<(&str, &str)> = companions
+            .iter()
+            .map(|(name, value)| (name.as_ref(), value.as_str()))
+            .collect();
+        sorted.sort_by_key(|&(k, _)| k);
+        let mut map = serializer.serialize_map(Some(sorted.len()))?;
+        for (name, value) in sorted {
+            map.serialize_entry(name, value)?;
         }
         map.end()
     }
@@ -620,6 +625,26 @@ where
         .collect()
 }
 
+mod serde_sorted_string_map {
+    use serde::ser::SerializeMap;
+    use serde::Serializer;
+    use std::collections::HashMap;
+
+    pub fn serialize<S>(map: &HashMap<String, String>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut sorted: Vec<(&str, &str)> =
+            map.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        sorted.sort_by_key(|&(k, _)| k);
+        let mut ser_map = serializer.serialize_map(Some(sorted.len()))?;
+        for (k, v) in sorted {
+            ser_map.serialize_entry(k, v)?;
+        }
+        ser_map.end()
+    }
+}
+
 /// Redacted, disk-safe view of a `RawMatch`. Carries only the SHA-256 hash
 /// and a "first4...last4" preview, never the plaintext credential. Use this
 /// before verification; [`VerifiedFinding`] is the final report-safe shape.
@@ -635,6 +660,7 @@ pub struct RedactedFinding {
     pub credential_redacted: Cow<'static, str>,
     /// SHA-256 digest as raw 32 inline bytes; hex-encoded at the serde boundary.
     pub credential_hash: CredentialHash,
+    #[serde(serialize_with = "serde_sorted_string_map::serialize", default)]
     pub companions_redacted: HashMap<String, String>,
     pub location: MatchLocation,
     #[serde(skip_serializing_if = "Option::is_none")]

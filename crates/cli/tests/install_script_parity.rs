@@ -240,3 +240,22 @@ fn install_scripts_share_canonical_endpoints() {
         "install.ps1 must declare its canonical https://santh.dev endpoint"
     );
 }
+
+#[test]
+fn install_scripts_share_common_flags() {
+    let root = repo_root();
+    let sh_content = std::fs::read_to_string(root.join("install.sh")).expect("read install.sh");
+    let ps1_content = std::fs::read_to_string(root.join("install.ps1")).expect("read install.ps1");
+
+    let sh_flags = parse_sh_flags(&sh_content);
+    let ps1_flags = parse_ps1_flags(&ps1_content);
+
+    assert!(
+        !sh_flags.is_empty(),
+        "install.sh must document common flags"
+    );
+    assert!(
+        !ps1_flags.is_empty(),
+        "install.ps1 must document common flags"
+    );
+}

@@ -178,3 +178,40 @@ fn hyperscan_db_filename_is_not_a_matcher_artifact() {
         "MatcherArtifact filenames must not collide with Hyperscan .db shards"
     );
 }
+
+#[test]
+fn matcher_artifact_cache_evicts_oldest_when_capacity_exceeded() {
+    let dir = allowlisted_tempdir();
+    let detectors = sample_detectors();
+    let ir = CanonicalDetectorExecutionIr::compile(&detectors).expect("ir");
+    let sections =
+        CompiledRouteMatcherSections::compile(&ir, ExecutionPackBackend::Cpu).expect("sections");
+
+    // Store 12 distinct artifacts (max capacity is 8)
+    for i in 0..12u8 {
+        let mut config_digest = [0u8; 32];
+        config_digest[0] = i;
+        let identity = MatcherArtifactIdentity::new(
+            ir.digest(),
+            config_digest,
+            None,
+            ExecutionPackBackend::Cpu,
+            None,
+        )
+        .expect("identity");
+        store_matcher_artifact(dir.path(), &identity, &sections).expect("store");
+    }
+
+    // Count remaining .khm files
+    let entries: Vec<_> = std::fs::read_dir(dir.path())
+        .expect("read_dir")
+        .flatten()
+        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("khm"))
+        .collect();
+
+    assert!(
+        entries.len() <= 8,
+        "MatcherArtifact cache entries must not exceed 8, found {}",
+        entries.len()
+    );
+}

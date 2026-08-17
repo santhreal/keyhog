@@ -5,6 +5,7 @@ pub mod create_source_unknown_plugin_errors;
 pub mod default_excludes_rule_validation;
 pub mod filesystem_chunk_has_path_metadata;
 pub mod gzip_chunk_source_type_compressed;
+pub mod input_handling_matrix_parity;
 pub mod jar_chunk_source_type_archive;
 pub mod lockfile_default_excludes_parity;
 pub mod magic_byte_signatures;

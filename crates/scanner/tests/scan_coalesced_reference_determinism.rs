@@ -169,3 +169,47 @@ fn scan_coalesced_is_deterministic_across_trials() {
         }
     }
 }
+
+#[test]
+fn scan_coalesced_finding_parity_across_worker_counts() {
+    let detectors =
+        keyhog_core::load_detectors(&support::paths::detector_dir()).expect("detectors");
+    let scanner = keyhog_scanner::CompiledScanner::compile_for_backend(
+        detectors,
+        keyhog_scanner::ScanBackend::SimdCpu,
+    )
+    .expect("compile exact SIMD scanner");
+    let chunks = fixed_chunks();
+
+    // Get reference matches using default pool
+    scanner.clear_fragment_cache();
+    let reference_rows = scanner
+        .scan_coalesced_with_backend(&chunks, keyhog_scanner::ScanBackend::SimdCpu)
+        .expect("reference scan should succeed");
+    let reference = canonical(&reference_rows);
+    assert!(
+        !reference.is_empty(),
+        "reference finding set must not be empty"
+    );
+
+    // Sweep worker counts: 1 worker, 2 workers, 3 workers, 4 workers
+    for worker_count in [1, 2, 3, 4] {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(worker_count)
+            .build()
+            .expect("build thread pool");
+
+        let got = pool.install(|| {
+            scanner.clear_fragment_cache();
+            let got_rows = scanner
+                .scan_coalesced_with_backend(&chunks, keyhog_scanner::ScanBackend::SimdCpu)
+                .expect("scan with custom thread pool should succeed");
+            canonical(&got_rows)
+        });
+
+        assert_eq!(
+            got, reference,
+            "finding set diverged at worker count {worker_count}"
+        );
+    }
+}
