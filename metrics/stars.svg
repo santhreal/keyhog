@@ -1,17 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="320" viewBox="0 0 960 320" role="img" aria-labelledby="title description">
 <title id="title">KeyHog star history</title>
-<desc id="description">KeyHog GitHub stars: 44 on 2026-05-27 to 89 on 2026-08-16</desc>
+<desc id="description">KeyHog GitHub stars: 44 on 2026-05-27 to 90 on 2026-08-17</desc>
 <defs>
   <linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd60a" stop-opacity="0.34"/><stop offset="1" stop-color="#ffd60a" stop-opacity="0.03"/></linearGradient>
   <style>.bg{fill:#0d1017}.grid{stroke:#343844;stroke-width:1}.axis{fill:#aeb4c2;font:12px ui-monospace,SFMono-Regular,Consolas,monospace}.label{fill:#f5f7fa;font:600 15px system-ui,sans-serif}.value{fill:#ffd60a;font:700 27px system-ui,sans-serif}.line{fill:none;stroke:#ffd60a;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}</style>
 </defs>
 <rect class="bg" width="960" height="320" rx="12"/>
 <text x="68" y="34" class="label">Repository star history</text>
-<text x="68" y="65" class="value">89 stars</text>
-<text x="248" y="62" class="axis">+45 since 2026-05-27 · repository-owned history</text>
+<text x="68" y="65" class="value">90 stars</text>
+<text x="248" y="62" class="axis">+46 since 2026-05-27 · repository-owned history</text>
 <line x1="68" y1="266.00" x2="932" y2="266.00" class="grid"/><text x="56" y="270.00" text-anchor="end" class="axis">0</text><line x1="68" y1="221.02" x2="932" y2="221.02" class="grid"/><text x="56" y="225.02" text-anchor="end" class="axis">22</text><line x1="68" y1="174.00" x2="932" y2="174.00" class="grid"/><text x="56" y="178.00" text-anchor="end" class="axis">45</text><line x1="68" y1="126.98" x2="932" y2="126.98" class="grid"/><text x="56" y="130.98" text-anchor="end" class="axis">68</text><line x1="68" y1="82.00" x2="932" y2="82.00" class="grid"/><text x="56" y="86.00" text-anchor="end" class="axis">90</text>
-<path d="M 68,266 L 68.00,176.04 L 78.67,157.64 L 89.33,151.51 L 100.00,137.20 L 110.67,131.07 L 121.33,124.93 L 132.00,120.84 L 142.67,116.76 L 185.33,114.71 L 196.00,110.62 L 206.67,108.58 L 238.67,104.49 L 324.00,102.44 L 366.67,100.40 L 452.00,96.31 L 484.00,94.27 L 505.33,96.31 L 516.00,98.36 L 580.00,96.31 L 644.00,94.27 L 665.33,92.22 L 729.33,88.13 L 836.00,86.09 L 889.33,84.04 L 921.33,86.09 L 932.00,84.04 L 932,266 Z" fill="url(#area)"/>
-<polyline points="68.00,176.04 78.67,157.64 89.33,151.51 100.00,137.20 110.67,131.07 121.33,124.93 132.00,120.84 142.67,116.76 185.33,114.71 196.00,110.62 206.67,108.58 238.67,104.49 324.00,102.44 366.67,100.40 452.00,96.31 484.00,94.27 505.33,96.31 516.00,98.36 580.00,96.31 644.00,94.27 665.33,92.22 729.33,88.13 836.00,86.09 889.33,84.04 921.33,86.09 932.00,84.04" class="line"/>
-<circle cx="932.00" cy="84.04" r="5" fill="#ffd60a"/>
-<text x="68.00" y="297" text-anchor="start" class="axis">2026-05-27</text><text x="366.67" y="297" text-anchor="middle" class="axis">2026-06-24</text><text x="932.00" y="297" text-anchor="end" class="axis">2026-08-16</text>
+<path d="M 68,266 L 68.00,176.04 L 78.54,157.64 L 89.07,151.51 L 99.61,137.20 L 110.15,131.07 L 120.68,124.93 L 131.22,120.84 L 141.76,116.76 L 183.90,114.71 L 194.44,110.62 L 204.98,108.58 L 236.59,104.49 L 320.88,102.44 L 363.02,100.40 L 447.32,96.31 L 478.93,94.27 L 500.00,96.31 L 510.54,98.36 L 573.76,96.31 L 636.98,94.27 L 658.05,92.22 L 721.27,88.13 L 826.63,86.09 L 879.32,84.04 L 910.93,86.09 L 921.46,84.04 L 932.00,82.00 L 932,266 Z" fill="url(#area)"/>
+<polyline points="68.00,176.04 78.54,157.64 89.07,151.51 99.61,137.20 110.15,131.07 120.68,124.93 131.22,120.84 141.76,116.76 183.90,114.71 194.44,110.62 204.98,108.58 236.59,104.49 320.88,102.44 363.02,100.40 447.32,96.31 478.93,94.27 500.00,96.31 510.54,98.36 573.76,96.31 636.98,94.27 658.05,92.22 721.27,88.13 826.63,86.09 879.32,84.04 910.93,86.09 921.46,84.04 932.00,82.00" class="line"/>
+<circle cx="932.00" cy="82.00" r="5" fill="#ffd60a"/>
+<text x="68.00" y="297" text-anchor="start" class="axis">2026-05-27</text><text x="363.02" y="297" text-anchor="middle" class="axis">2026-06-24</text><text x="932.00" y="297" text-anchor="end" class="axis">2026-08-17</text>
 </svg>
