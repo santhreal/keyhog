@@ -1,4 +1,7 @@
-Output keyhog-demo.gif
+Output demo/keyhog-demo.gif
+Output demo/keyhog-demo.mp4
+Output demo/keyhog-scan.gif
+Output demo/keyhog-scan.mp4
 
 Set Width 1380
 Set Height 800
