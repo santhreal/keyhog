@@ -44,6 +44,7 @@ pub enum GuardAction {
         #[arg(long, value_name = "PATH")]
         socket: Option<PathBuf>,
     },
+    /// Start or ensure the background guard daemon is running and ready.
     /// When the daemon is already running, reports that it is active.
     /// Reconciles registered roots loaded from the durable store.
     Up {

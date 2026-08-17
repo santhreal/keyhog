@@ -426,7 +426,8 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 | `reconcile` |  | Force a full reconciliation of a guarded root after an intentional policy or filesystem change |
 | `remove` |  | Stop protecting a root and remove its persisted non-secret state. Also removes any KeyHog-owned Git pre-commit hook unless `--keep-hook` is passed |
 | `status` |  | Print the exact state and current policy identity of a guarded root |
-| `up` |  | Start or ensure the background guard daemon is running and ready. Reconciles registered roots loaded from the durable store |
+| `up` |  | Start or ensure the background guard daemon is running and ready. When the daemon is already running, reports that it is active. Reconciles registered roots loaded from the durable store |
+
 ### `keyhog guard add`
 
 | Argument | Value | Default | Description |
@@ -434,6 +435,8 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 | `<ROOT>` *(required)* | `ROOT` |  | Root path to guard |
 | `--mode` | `MODE` | `repo` | Guard mode: `repo` uses Git object IDs for exact staged-content identity; `filesystem` uses content hashes without immutable Git OIDs |
 | `--no-hook` |  |  | Do not install or update the Git pre-commit hook during registration |
+| `--socket` | `PATH` |  | Override the socket path |
+
 ### `keyhog guard down`
 
 | Argument | Value | Default | Description |
@@ -446,7 +449,9 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 
 ### `keyhog guard list`
 
-*No arguments.*
+| Argument | Value | Default | Description |
+|----------|-------|---------|-------------|
+| `--socket` | `PATH` |  | Override the socket path |
 
 ### `keyhog guard rebuild`
 
@@ -454,12 +459,14 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 |----------|-------|---------|-------------|
 | `<ROOT>` *(required)* | `ROOT` |  | Root path to rebuild |
 | `--mode` | `MODE` | `repo` | Guard mode: `repo` or `filesystem`. Defaults to `repo` |
+| `--socket` | `PATH` |  | Override the socket path |
 
 ### `keyhog guard reconcile`
 
 | Argument | Value | Default | Description |
 |----------|-------|---------|-------------|
 | `<ROOT>` *(required)* | `ROOT` |  | Root path to reconcile |
+| `--socket` | `PATH` |  | Override the socket path |
 
 ### `keyhog guard remove`
 
@@ -467,6 +474,7 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 |----------|-------|---------|-------------|
 | `<ROOT>` *(required)* | `ROOT` |  | Root path to unguard |
 | `--keep-hook` |  |  | Keep the Git pre-commit hook in place when unregistering |
+| `--socket` | `PATH` |  | Override the socket path |
 
 ### `keyhog guard status`
 
@@ -474,6 +482,7 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 |----------|-------|---------|-------------|
 | `<ROOT>` *(required)* | `ROOT` |  | Root path to inspect |
 | `--format` | `FORMAT` | `human` | Output format: `human` or `json` |
+| `--socket` | `PATH` |  | Override the socket path |
 
 ### `keyhog guard up`
 
@@ -481,7 +490,6 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 |----------|-------|---------|-------------|
 | `--backend` | `BACKEND` |  | Force a specific scan backend (default `auto` uses autoroute) |
 | `--socket` | `PATH` |  | Override the socket path |
-
 <!-- /keyhog-generated: cli-reference command="guard" -->
 
 ## `keyhog watch [PATH]...`
