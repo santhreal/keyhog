@@ -37,9 +37,9 @@ pub mod ascii_ci;
 /// of truth shared by the scanner's finding metadata and the verifier's
 /// suppress-live-verification-for-canaries gate).
 mod aws;
-/// Configuration system for KeyHog scanning options.
 /// Compiled-artifact class model and canonical identity contracts.
 pub mod compiled_artifact;
+/// Configuration system for KeyHog scanning options.
 mod config;
 /// Cross-file credential correlation over an already-reported finding set.
 mod correlation;

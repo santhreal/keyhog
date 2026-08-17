@@ -63,40 +63,70 @@ fn compiled_artifact_identity_round_trips_and_validates() {
         CompiledArtifactClass::MatcherArtifact
     );
 }
+#[cfg(unix)]
+fn allowlisted_tempdir() -> tempfile::TempDir {
+    let uid = std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|status| {
+            status.lines().find_map(|line| {
+                line.strip_prefix("Uid:\t")
+                    .and_then(|rest| rest.split_whitespace().next())
+                    .map(str::to_owned)
+            })
+        })
+        .unwrap_or_else(|| "0".to_owned());
+    let root = std::env::temp_dir().join(format!("keyhog-cache-{uid}"));
+    if let Ok(meta) = std::fs::symlink_metadata(&root) {
+        assert!(
+            !meta.file_type().is_symlink(),
+            "allowlisted root must not be a symlink"
+        );
+    }
+    let _ = std::fs::create_dir(&root);
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700));
+    tempfile::Builder::new()
+        .prefix("matcher-tighten-")
+        .tempdir_in(&root)
+        .expect("tempdir in allowlisted root")
+}
 
 #[test]
+#[cfg(unix)]
 fn default_matcher_cache_path_tightens_permissions_when_loose() {
-    let temp = TempDir::new().expect("tempdir");
+    let temp = allowlisted_tempdir();
     let cache_dir = temp.path().join("keyhog-matcher-artifacts");
     std::fs::create_dir(&cache_dir).expect("create cache dir");
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        // Set mode 775 (group-writable)
-        std::fs::set_permissions(&cache_dir, std::fs::Permissions::from_mode(0o775))
-            .expect("set mode 775");
+    use std::os::unix::fs::PermissionsExt;
+    // Set mode 775 (group-writable)
+    std::fs::set_permissions(&cache_dir, std::fs::Permissions::from_mode(0o775))
+        .expect("set mode 775");
 
-        // Explicit validation should reject group-writable directory
-        let explicit_err = keyhog_scanner::validate_matcher_artifact_cache_dir(&cache_dir);
-        assert!(
-            explicit_err.is_err(),
-            "Explicit validation must refuse group-writable directory"
-        );
+    // Explicit validation should reject group-writable directory
+    let explicit_err = keyhog_scanner::validate_matcher_artifact_cache_dir(&cache_dir);
+    assert!(
+        explicit_err.is_err(),
+        "Explicit validation must refuse group-writable directory"
+    );
+    assert!(
+        explicit_err.unwrap_err().contains("group- or world-writable"),
+        "Error must specifically name group- or world-writable refusal"
+    );
 
-        // Validation with auto_tighten should tighten to 700 and succeed
-        let tighten_res =
-            keyhog_scanner::validate_and_tighten_matcher_artifact_cache_dir(&cache_dir, true);
-        assert!(
-            tighten_res.is_ok(),
-            "Auto-tightening validation must succeed on loose default directory"
-        );
+    // Validation with auto_tighten should tighten to 700 and succeed
+    let tighten_res =
+        keyhog_scanner::validate_and_tighten_matcher_artifact_cache_dir(&cache_dir, true);
+    assert!(
+        tighten_res.is_ok(),
+        "Auto-tightening validation must succeed on loose default directory: {:?}",
+        tighten_res.err()
+    );
 
-        let meta = std::fs::metadata(&cache_dir).expect("read metadata");
-        assert_eq!(
-            meta.permissions().mode() & 0o777,
-            0o700,
-            "Directory permissions must be tightened to 0700"
-        );
-    }
+    let meta = std::fs::metadata(&cache_dir).expect("read metadata");
+    assert_eq!(
+        meta.permissions().mode() & 0o777,
+        0o700,
+        "Directory permissions must be tightened to 0700"
+    );
 }
