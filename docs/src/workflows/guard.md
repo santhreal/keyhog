@@ -200,11 +200,41 @@ repos:
         stages: [pre-commit]
 ```
 
-Install the hook:
+## Bypassing checks and suppressing test fixtures
+
+### Emergency single-commit bypass
+
+To bypass the pre-commit hook for a single urgent commit:
 
 ```sh
-pre-commit install
+git commit --no-verify -m "urgent fix"
 ```
+
+This bypasses local Git hooks. Use it sparingly.
+
+### Suppressing intentional test fixtures and false positives
+
+When committing intentional test fixtures, mock data, or vendor example keys:
+
+1. **Suppress by credential hash (`.keyhogignore`)**:
+   Add the SHA-256 hash of the value to `.keyhogignore`:
+   ```text
+   hash:5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
+   ```
+2. **Scoped suppression (`.keyhogignore.toml`)**:
+   Target the exact detector and file path in `.keyhogignore.toml`:
+   ```toml
+   [[suppress]]
+   detector = "stripe-secret-key"
+   path_eq = "tests/fixtures/mock_stripe.env"
+   reason = "reviewed synthetic test fixture"
+   ```
+3. **Inline source directive**:
+   Append `// keyhog:ignore` or `# keyhog:ignore <detector-id>` directly to the
+   source line.
+
+After committing the suppression rule, run `keyhog guard reconcile <path>` if you
+need to update the in-memory baseline immediately.
 
 ## Guard state machine
 
