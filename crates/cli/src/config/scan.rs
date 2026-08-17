@@ -3,9 +3,10 @@ use super::schema::{ConfigFile, ScanSection};
 use super::sections::config_relative_path;
 use crate::args::{DetectorMode, ScanArgs};
 use crate::value_parsers::{
-    parse_byte_size, parse_dedup_scope, parse_entropy_bpe_max_bytes_per_token,
-    parse_entropy_threshold, parse_min_confidence, parse_ml_threshold, parse_ml_weight,
-    parse_output_format, parse_severity_filter, value_enum_expected,
+    parse_byte_size, parse_decode_size_limit, parse_dedup_scope,
+    parse_entropy_bpe_max_bytes_per_token, parse_entropy_threshold, parse_min_confidence,
+    parse_ml_threshold, parse_ml_weight, parse_output_format, parse_severity_filter,
+    value_enum_expected,
 };
 use std::path::{Path, PathBuf};
 const DETECTOR_MODE_ACCEPTED: &str = "expected one of replace, overlay";
@@ -44,6 +45,19 @@ pub(super) fn parse_config_byte_size(
     value: &str,
 ) -> Option<usize> {
     match parse_byte_size(value) {
+        Ok(size) => Some(size),
+        Err(error) => {
+            errors.push(super::invalid_config_value(field, value, &error));
+            None
+        }
+    }
+}
+fn parse_config_decode_size_limit(
+    errors: &mut Vec<String>,
+    field: &str,
+    value: &str,
+) -> Option<usize> {
+    match parse_decode_size_limit(value) {
         Ok(size) => Some(size),
         Err(error) => {
             errors.push(super::invalid_config_value(field, value, &error));
@@ -541,7 +555,8 @@ pub(super) fn apply_top_level_scan_fields(
     }
 
     if let Some(ref limit_str) = config.decode_size_limit {
-        let parsed_size = parse_config_byte_size(config_errors, "decode_size_limit", limit_str);
+        let parsed_size =
+            parse_config_decode_size_limit(config_errors, "decode_size_limit", limit_str);
         if args.decode_size_limit.is_none() {
             if let Some(size) = parsed_size {
                 args.decode_size_limit = Some(size);

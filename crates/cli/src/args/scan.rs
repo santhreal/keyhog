@@ -967,7 +967,7 @@ pub struct ScanArgs {
     pub decode_depth: Option<usize>,
 
     /// Maximum prepared chunk size admitted to decode-through (default: 512KB).
-    #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
+    #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_decode_size_limit)]
     pub decode_size_limit: Option<usize>,
 
     /// Enable entropy scanning in source code files.

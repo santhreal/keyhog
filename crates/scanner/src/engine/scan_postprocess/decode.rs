@@ -33,7 +33,9 @@ pub(crate) fn decode_source_windows(
     mut visit: impl FnMut(&Chunk) -> crate::error::Result<()>,
 ) -> crate::error::Result<()> {
     let text = chunk.data.as_str();
-    let overlap = crate::types::WINDOW_OVERLAP_BYTES.min(limit / 2);
+    if text.is_empty() || limit == 0 {
+        return Ok(());
+    }
     let mut start = 0usize;
     let mut base_line = chunk.metadata.base_line;
 
@@ -42,10 +44,13 @@ pub(crate) fn decode_source_windows(
         while end > start && !text.is_char_boundary(end) {
             end -= 1;
         }
-        debug_assert!(
-            end > start,
-            "a four-byte decode window fits one UTF-8 scalar"
-        );
+        if end == start {
+            if let Some((idx, _)) = text[start..].char_indices().nth(1) {
+                end = start + idx;
+            } else {
+                end = text.len();
+            }
+        }
 
         let mut metadata = chunk.metadata.clone();
         metadata.base_offset = chunk
@@ -63,15 +68,27 @@ pub(crate) fn decode_source_windows(
             metadata,
         };
         visit(&window)?;
-        if end == text.len() {
+        if end >= text.len() {
             break;
         }
+
+        let max_overlap = (end - start).saturating_sub(1);
+        let overlap = crate::types::WINDOW_OVERLAP_BYTES
+            .min(limit / 2)
+            .min(max_overlap);
 
         let mut next = end.saturating_sub(overlap);
         while next < end && !text.is_char_boundary(next) {
             next += 1;
         }
-        debug_assert!(next > start, "bounded decode windows must make progress");
+        if next <= start {
+            if let Some((idx, _)) = text[start..end].char_indices().nth(1) {
+                next = start + idx;
+            } else {
+                next = end;
+            }
+        }
+        assert!(next > start, "bounded decode windows must make progress");
         base_line = base_line
             .checked_add(
                 text[start..next]

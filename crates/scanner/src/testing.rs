@@ -56,6 +56,14 @@ pub(crate) use crate::simd::backend::HsScanner;
 #[cfg(all(test, feature = "simd"))]
 pub(crate) const REGEX_SIZE_LIMIT_BYTES: usize = crate::types::REGEX_SIZE_LIMIT_BYTES;
 
+#[cfg(feature = "decode")]
+pub fn decode_source_windows_for_test(
+    limit: usize,
+    chunk: &keyhog_core::Chunk,
+    visit: impl FnMut(&keyhog_core::Chunk) -> crate::error::Result<()>,
+) -> crate::error::Result<()> {
+    crate::engine::scan_postprocess::decode::decode_source_windows(limit, chunk, visit)
+}
 /// Complete defaults for programmatic named-detector fixtures.
 pub fn named_detector_fixture_defaults() -> keyhog_core::DetectorSpec {
     keyhog_core::testing::named_detector_fixture_defaults()

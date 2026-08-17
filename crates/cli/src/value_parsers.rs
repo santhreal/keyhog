@@ -338,6 +338,24 @@ pub(crate) fn parse_byte_size(s: &str) -> Result<usize, String> {
     }
 }
 
+/// `--decode-size-limit SIZE`: must be a non-empty byte size >= 4B.
+/// Rejects empty input and values below 4 bytes with a named error and corrective example.
+pub(crate) fn parse_decode_size_limit(s: &str) -> Result<usize, String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Err(
+            "decode size limit cannot be empty. Expected a non-zero byte size >= 4B; example: 512KB".to_string()
+        );
+    }
+    let size = parse_byte_size(trimmed)?;
+    if size < 4 {
+        return Err(format!(
+            "decode size limit '{trimmed}' is too small ({size} bytes). Minimum decode size is 4B; example: 512KB"
+        ));
+    }
+    Ok(size)
+}
+
 /// Parse a clap value enum, including aliases, without allocating a normalized
 /// copy of already canonical input.
 fn parse_value_enum<T: ValueEnum>(value: &str) -> Option<T> {
