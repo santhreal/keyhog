@@ -110,7 +110,9 @@ fn default_matcher_cache_path_tightens_permissions_when_loose() {
         "Explicit validation must refuse group-writable directory"
     );
     assert!(
-        explicit_err.unwrap_err().contains("group- or world-writable"),
+        explicit_err
+            .unwrap_err()
+            .contains("group- or world-writable"),
         "Error must specifically name group- or world-writable refusal"
     );
 
