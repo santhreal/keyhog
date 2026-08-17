@@ -84,14 +84,19 @@ async fn run_up(
     cmd.stdin(std::process::Stdio::null());
     cmd.stdout(std::process::Stdio::null());
     cmd.stderr(std::process::Stdio::null());
-    let _child = cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| anyhow::anyhow!("failed to spawn keyhog daemon process: {e}"))?;
 
     // Poll socket readiness with backoff.
     let start_time = std::time::Instant::now();
-    let timeout = std::time::Duration::from_secs(10);
+    let timeout = std::time::Duration::from_secs(45);
     let mut conn = loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            anyhow::bail!(
+                "guard up: daemon process exited unexpectedly with status {status}"
+            );
+        }
         match client::connect(&socket).await {
             Ok(c) => break c,
             Err(_) => {
