@@ -56,7 +56,7 @@ pub(crate) mod server;
 pub(crate) mod sigpipe;
 pub(crate) mod transport;
 mod trust;
-mod warm_identity;
+pub(crate) mod warm_identity;
 #[cfg(test)]
 #[path = "warm_identity_tests.rs"]
 mod warm_identity_tests;

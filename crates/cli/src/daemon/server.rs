@@ -431,14 +431,25 @@ pub(crate) fn warm_route_error(status: &WarmBackendStatus) -> Option<Response> {
     if status.ready {
         return None;
     }
-    let message = match (
-        status.reason.as_deref(),
-        status.repair_command.as_deref(),
-    ) {
+    let message = match (status.reason.as_deref(), status.repair_command.as_deref()) {
         (Some(reason), Some(repair)) => {
             format!("daemon warm route is not ready: {reason}. Repair with `{repair}`.")
         }
-        _ => "daemon warm route is not ready and its exact status is internally inconsistent. Repair with `keyhog daemon stop && keyhog daemon start`.".to_string(),
+        (Some(reason), None) => {
+            format!(
+                "daemon warm route is not ready: {reason}. Repair with `{}`.",
+                crate::daemon::warm_identity::REPAIR_COMMAND
+            )
+        }
+        (None, Some(repair)) => {
+            format!(
+                "daemon warm route is not ready. Repair with `{repair}`."
+            )
+        }
+        (None, None) => format!(
+            "daemon warm route is not ready and its exact status is internally inconsistent. Repair with `{}`.",
+            crate::daemon::warm_identity::REPAIR_COMMAND
+        ),
     };
     Some(Response::Error { message })
 }
@@ -740,11 +751,27 @@ fn announce_daemon_ready(
             reason,
             repair,
         ),
-        _ => eprintln!(
-            "keyhog daemon status-only on {} ({} detectors, wire={}): warm readiness status is internally inconsistent; repair with `keyhog daemon stop && keyhog daemon start`",
+        (Some(reason), None) => eprintln!(
+            "keyhog daemon status-only on {} ({} detectors, wire={}): warm route not ready: {}; repair with `{}`",
             socket_path.display(),
             detector_count,
             WIRE_VERSION,
+            reason,
+            crate::daemon::warm_identity::REPAIR_COMMAND,
+        ),
+        (None, Some(repair)) => eprintln!(
+            "keyhog daemon status-only on {} ({} detectors, wire={}): warm route not ready; repair with `{}`",
+            socket_path.display(),
+            detector_count,
+            WIRE_VERSION,
+            repair,
+        ),
+        (None, None) => eprintln!(
+            "keyhog daemon status-only on {} ({} detectors, wire={}): warm readiness status is internally inconsistent; repair with `{}`",
+            socket_path.display(),
+            detector_count,
+            WIRE_VERSION,
+            crate::daemon::warm_identity::REPAIR_COMMAND,
         ),
     }
 }
@@ -1725,21 +1752,26 @@ async fn handle_connection(
 /// Requests that do scanner work, as opposed to the always-answerable control
 /// requests (`Hello`, `Health`, `Shutdown`).
 fn is_work_request(request: &Request) -> bool {
-    matches!(
-        request,
+    match request {
         Request::ScanText { .. }
-            | Request::ScanPath { .. }
-            | Request::MassBegin { .. }
-            | Request::MassBatch { .. }
-            | Request::MassFilesystemBegin { .. }
-            | Request::MassFilesystemDrain
-            | Request::MassEnd
-            | Request::GuardCommitBegin { .. }
-            | Request::GuardCommitBlob { .. }
-            | Request::GuardCommitFinish { .. }
-            | Request::GuardAdd { .. }
-            | Request::GuardReconcile { .. }
-    )
+        | Request::ScanPath { .. }
+        | Request::MassBegin { .. }
+        | Request::MassBatch { .. }
+        | Request::MassFilesystemBegin { .. }
+        | Request::MassFilesystemDrain
+        | Request::MassEnd
+        | Request::GuardCommitBegin { .. }
+        | Request::GuardCommitBlob { .. }
+        | Request::GuardCommitFinish { .. }
+        | Request::GuardAdd { .. }
+        | Request::GuardReconcile { .. } => true,
+        Request::Hello
+        | Request::Health
+        | Request::Shutdown
+        | Request::GuardList
+        | Request::GuardRemove { .. }
+        | Request::GuardStatus { .. } => false,
+    }
 }
 
 /// RAII claim on one in-flight work request. Releasing it is what tells a
@@ -3378,6 +3410,7 @@ fn backend_recovery_status_from_receipt(
 /// An open, no-follow handle to the exact regular file one `ScanPath` request
 /// named. Held for the whole scan so the inode cannot be recycled underneath the
 /// read, and re-checked afterwards against the pathname.
+#[derive(Debug)]
 struct PinnedFile(std::fs::File);
 
 /// Open `path` without following a final symlink and require a regular file.
@@ -3735,6 +3768,10 @@ mod system_path_tests;
 #[cfg(test)]
 #[path = "../../tests/unit/daemon_server_guard_event_action.rs"]
 mod guard_event_action_tests;
+
+#[cfg(test)]
+#[path = "../../tests/unit/daemon_server_regression.rs"]
+mod regression_tests;
 
 // Sibling file (daemon/server_tests.rs), not server/ subdir.
 #[path = "server_tests.rs"]

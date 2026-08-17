@@ -3,7 +3,7 @@ use anyhow::Result;
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-const REPAIR_COMMAND: &str = "keyhog daemon stop && keyhog daemon start";
+pub(crate) const REPAIR_COMMAND: &str = "keyhog daemon stop && keyhog daemon start";
 static DAEMON_GENERATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) struct WarmBackendReadiness {
