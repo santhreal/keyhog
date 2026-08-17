@@ -10,7 +10,6 @@
 
 use keyhog_core::{CompiledArtifactClass, CompiledArtifactIdentity};
 use std::collections::BTreeSet;
-use tempfile::TempDir;
 
 #[test]
 fn compiled_artifact_classes_are_enumerable_and_have_compile_owners() {
