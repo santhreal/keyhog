@@ -38,6 +38,8 @@ pub mod ascii_ci;
 /// suppress-live-verification-for-canaries gate).
 mod aws;
 /// Configuration system for KeyHog scanning options.
+/// Compiled-artifact class model and canonical identity contracts.
+pub mod compiled_artifact;
 mod config;
 /// Cross-file credential correlation over an already-reported finding set.
 mod correlation;
@@ -85,6 +87,7 @@ pub mod winpath;
 use std::borrow::Cow;
 
 pub use api::*;
+pub use compiled_artifact::{CompiledArtifactClass, CompiledArtifactIdentity};
 pub use detector_corpus::{
     compose_detector_corpus, compute_detector_corpus_digest,
     compute_detector_corpus_digest_for_schema, DetectorCorpusError, DetectorCorpusMode,

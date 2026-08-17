@@ -298,6 +298,14 @@ pub fn validate_matcher_artifact_cache_dir(
     matcher_artifact_cache::validate_matcher_artifact_cache_dir(path)
 }
 
+/// Validate a MatcherArtifact cache directory with optional auto-tightening for default locations.
+pub fn validate_and_tighten_matcher_artifact_cache_dir(
+    path: &std::path::Path,
+    auto_tighten: bool,
+) -> std::result::Result<(), String> {
+    matcher_artifact_cache::validate_and_tighten_matcher_artifact_cache_dir(path, auto_tighten)
+}
+
 /// True when `detector_id` names the pure-entropy fallback family (`"entropy"`
 /// or any `"entropy-*"` id such as `entropy-token`).
 ///

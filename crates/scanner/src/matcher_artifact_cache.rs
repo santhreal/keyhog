@@ -75,6 +75,14 @@ pub fn default_matcher_artifact_cache_dir_from_base(
 
 /// Validate an explicit MatcherArtifact cache directory.
 pub fn validate_matcher_artifact_cache_dir(path: &Path) -> std::result::Result<(), String> {
+    validate_and_tighten_matcher_artifact_cache_dir(path, false)
+}
+
+/// Validate a MatcherArtifact cache directory with optional auto-tightening for default locations.
+pub fn validate_and_tighten_matcher_artifact_cache_dir(
+    path: &Path,
+    auto_tighten: bool,
+) -> std::result::Result<(), String> {
     if !path.is_absolute() {
         return Err(format!(
             "matcher-artifact cache dir '{}' must be absolute",
@@ -107,13 +115,22 @@ pub fn validate_matcher_artifact_cache_dir(path: &Path) -> std::result::Result<(
                     "matcher-artifact cache directory is not owned by the current user".to_owned(),
                 );
             }
-            // Refuse group/world-writable roots even when the operator pre-
-            // created the directory (we deliberately do not chmod those).
             if meta.mode() & 0o022 != 0 {
-                return Err(
-                    "matcher-artifact cache directory must not be group- or world-writable"
-                        .to_owned(),
-                );
+                if auto_tighten {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Err(error) =
+                        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+                    {
+                        return Err(format!(
+                            "matcher-artifact cache directory is group- or world-writable and tightening permissions failed: {error}"
+                        ));
+                    }
+                } else {
+                    return Err(
+                        "matcher-artifact cache directory must not be group- or world-writable; tighten with chmod 700"
+                            .to_owned(),
+                    );
+                }
             }
         }
     }
