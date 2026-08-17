@@ -584,5 +584,6 @@ table.
 | Verify a performance or detection claim | `benchmarks/` (the README numbers regenerate from here) |
 | Change backend selection or autoroute | [Backends and routing](./backends.md), [Autoroute calibration](./reference/autoroute-calibration.md) |
 | Operate the daemon or plan a mass scan | [Daemon and warm scans](./workflows/daemon.md), [Mass repository and cloud scanning](./guides/mass-scanning.md) |
+| Operate perpetual repository guarding or instant pre-commit gating | [Perpetual guard](./workflows/guard.md), [Pre-commit hook](./workflows/precommit.md) |
 | Understand detection, suppression, or verification | [Detection](./detection.md), [Suppressions](./suppressions.md), [Verification](./verification.md) |
 | Configure scanning or findings output | [Configuration](./reference/configuration.md), [Output formats](./output-formats.md) |
