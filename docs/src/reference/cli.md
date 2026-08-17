@@ -490,6 +490,7 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 |----------|-------|---------|-------------|
 | `--backend` | `BACKEND` |  | Force a specific scan backend (default `auto` uses autoroute) |
 | `--socket` | `PATH` |  | Override the socket path |
+
 <!-- /keyhog-generated: cli-reference command="guard" -->
 
 ## `keyhog watch [PATH]...`
