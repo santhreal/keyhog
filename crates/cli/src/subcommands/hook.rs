@@ -203,6 +203,7 @@ fn uninstall() -> Result<ExitCode> {
 }
 
 pub(crate) fn uninstall_at_repo(repo_root: &std::path::Path) -> Result<Option<PathBuf>> {
+    let _check_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     let hooks_dir = match find_hooks_dir_for_repo(repo_root) {
         Ok(dir) => dir,
         Err(_) => return Ok(None),
@@ -222,6 +223,8 @@ pub(crate) fn uninstall_at_repo(repo_root: &std::path::Path) -> Result<Option<Pa
 
     std::fs::remove_file(&hook_path)
         .with_context(|| format!("removing hook at {}", hook_path.display()))?;
+    drop(_check_span);
+    let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
 
     Ok(Some(hook_path))
 }
