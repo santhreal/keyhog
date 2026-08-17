@@ -201,6 +201,30 @@ harness = false
 name = "adversarial"
 harness = false
 
+[[bench]]
+name = "entropy"
+harness = false
+
+[[bench]]
+name = "confidence"
+harness = false
+
+[[bench]]
+name = "compile_time"
+harness = false
+
+[[bench]]
+name = "alphabet"
+harness = false
+
+[[bench]]
+name = "edge_cases"
+harness = false
+
+[[bench]]
+name = "throughput"
+harness = false
+
 [[test]]
 name = "prefilter_robustness_proptest"
 path = "tests/property/prefilter_robustness_proptest.rs"
