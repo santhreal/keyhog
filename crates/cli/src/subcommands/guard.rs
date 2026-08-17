@@ -14,7 +14,11 @@ use crate::daemon::server::default_socket_path;
 
 pub(crate) async fn run(args: GuardArgs) -> anyhow::Result<ExitCode> {
     match args.action {
-        GuardAction::Add { root, mode, no_hook } => run_add(root, mode, no_hook).await,
+        GuardAction::Add {
+            root,
+            mode,
+            no_hook,
+        } => run_add(root, mode, no_hook).await,
         GuardAction::Remove { root, keep_hook } => run_remove(root, keep_hook).await,
         GuardAction::List => run_list().await,
         GuardAction::Status { root, format } => run_status(root, format).await,
@@ -23,7 +27,11 @@ pub(crate) async fn run(args: GuardArgs) -> anyhow::Result<ExitCode> {
     }
 }
 
-async fn run_add(root: std::path::PathBuf, mode: String, no_hook: bool) -> anyhow::Result<ExitCode> {
+async fn run_add(
+    root: std::path::PathBuf,
+    mode: String,
+    no_hook: bool,
+) -> anyhow::Result<ExitCode> {
     let socket = default_socket_path();
     let mut conn = match client::connect(&socket).await {
         Ok(conn) => conn,
@@ -90,7 +98,10 @@ async fn run_add(root: std::path::PathBuf, mode: String, no_hook: bool) -> anyho
                         state
                     );
                     if mode == "repo" && !no_hook {
-                        match crate::subcommands::hook::install_at_repo(std::path::Path::new(&canonical_for_reconcile), false) {
+                        match crate::subcommands::hook::install_at_repo(
+                            std::path::Path::new(&canonical_for_reconcile),
+                            false,
+                        ) {
                             Ok(hook_path) => {
                                 eprintln!(
                                     "{} guard: pre-commit hook active at {}",
@@ -144,7 +155,9 @@ async fn run_remove(root: std::path::PathBuf, keep_hook: bool) -> anyhow::Result
     };
 
     let canonical = resolve_root_for_control(&root)?;
-    let request = Request::GuardRemove { root: canonical.clone() };
+    let request = Request::GuardRemove {
+        root: canonical.clone(),
+    };
     match conn.round_trip(&request).await? {
         Response::GuardRemoved => {
             let palette = style::for_stderr();
@@ -154,7 +167,9 @@ async fn run_remove(root: std::path::PathBuf, keep_hook: bool) -> anyhow::Result
                 root.display()
             );
             if !keep_hook {
-                if let Ok(Some(hook_path)) = crate::subcommands::hook::uninstall_at_repo(std::path::Path::new(&canonical)) {
+                if let Ok(Some(hook_path)) =
+                    crate::subcommands::hook::uninstall_at_repo(std::path::Path::new(&canonical))
+                {
                     eprintln!(
                         "{} guard: pre-commit hook removed from {}",
                         style::pass("OK", &palette),

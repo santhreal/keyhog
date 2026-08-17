@@ -149,8 +149,12 @@ fn uninstall() -> Result<ExitCode> {
         }
         None => {
             let palette = crate::style::for_stderr();
-            let hooks_dir = find_hooks_dir_for_repo(&cur_dir).unwrap_or_else(|_| PathBuf::from(".git/hooks"));
-            let msg = format!("No KeyHog pre-commit hook found at {}.", hooks_dir.join("pre-commit").display());
+            let hooks_dir =
+                find_hooks_dir_for_repo(&cur_dir).unwrap_or_else(|_| PathBuf::from(".git/hooks"));
+            let msg = format!(
+                "No KeyHog pre-commit hook found at {}.",
+                hooks_dir.join("pre-commit").display()
+            );
             eprintln!("{}", crate::style::warn(&msg, &palette));
             Ok(ExitCode::SUCCESS)
         }
@@ -180,7 +184,6 @@ pub(crate) fn uninstall_at_repo(repo_root: &std::path::Path) -> Result<Option<Pa
 
     Ok(Some(hook_path))
 }
-
 
 pub(crate) fn find_hooks_dir_for_repo(repo_root: &std::path::Path) -> Result<PathBuf> {
     // SECURITY: kimi-wave1 audit finding 3.PATH-git. Use trusted absolute path.
