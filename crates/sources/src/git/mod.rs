@@ -1192,6 +1192,7 @@ pub(crate) fn staged_manifest_acquire(
                         }
                     }
                 }
+            } else {
                 coverage_gaps.push(format!(
                     "staged object OID '{}' is not a valid hash",
                     entry.object_oid
@@ -1246,20 +1247,20 @@ pub(crate) fn staged_manifest_acquire(
 /// Read object sizes directly from the Git binary index file (`.git/index`),
 /// avoiding thousands of individual loose-object disk reads and zlib header
 /// decompressions during staged manifest acquisition.
-fn parse_git_index_sizes(index_path: &Path) -> std::collections::HashMap<gix::ObjectId, u64> {
-    let mut map = std::collections::HashMap::new();
+pub fn parse_git_index_sizes(index_path: &Path) -> std::collections::HashMap<gix::ObjectId, u64> {
     let data = match std::fs::read(index_path) {
         Ok(d) if d.len() >= 12 => d,
-        _ => return map,
+        _ => return std::collections::HashMap::new(),
     };
     if &data[0..4] != b"DIRC" {
-        return map;
+        return std::collections::HashMap::new();
     }
     let version = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
     if version != 2 && version != 3 && version != 4 {
-        return map;
+        return std::collections::HashMap::new();
     }
     let entry_count = u32::from_be_bytes([data[8], data[9], data[10], data[11]]) as usize;
+    let mut map = std::collections::HashMap::with_capacity(entry_count);
     let mut offset = 12;
     for _ in 0..entry_count {
         if offset + 62 > data.len() {
@@ -1447,5 +1448,26 @@ mod tests {
 
         let read_checksum = read_index_tail_checksum(&index_file);
         assert_eq!(read_checksum, Some(checksum));
+    }
+
+    #[test]
+    fn parse_git_index_sizes_preallocates_capacity() {
+        // WHY: large repositories contain tens of thousands of index entries.
+        // Pre-allocating the map with `entry_count` eliminates repetitive rehashing
+        // and heap reallocations during staged manifest index parsing.
+        let temp = tempfile::tempdir().unwrap();
+        let index_file = temp.path().join("index");
+        let mut data = Vec::new();
+        data.extend_from_slice(b"DIRC");
+        data.extend_from_slice(&2u32.to_be_bytes());
+        data.extend_from_slice(&128u32.to_be_bytes());
+        std::fs::write(&index_file, &data).unwrap();
+
+        let sizes = parse_git_index_sizes(&index_file);
+        assert!(
+            sizes.capacity() >= 128,
+            "expected map capacity >= 128, got {}",
+            sizes.capacity()
+        );
     }
 }

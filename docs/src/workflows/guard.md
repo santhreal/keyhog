@@ -13,6 +13,27 @@ The guard supplements staged and working-tree scans. It does not replace them.
 A commit is allowed only after the exact staged-object transaction proves the
 staged content is clean.
 
+## Three-step quickstart
+
+1. Register the repository:
+   ```sh
+   keyhog guard add /path/to/repo
+   ```
+   Registers the repository with the guard daemon and installs the managed pre-commit hook at `.git/hooks/pre-commit`.
+
+2. Start the daemon (if not already running):
+   ```sh
+   keyhog guard up
+   ```
+   Ensures the background daemon process is active and ready to handle scan requests. One daemon process serves all registered repositories.
+
+3. Stage changes and commit:
+   ```sh
+   git add <files>
+   git commit -m "commit message"
+   ```
+   The pre-commit hook runs `keyhog scan --git-staged` against the daemon, verifies staged object IDs against cached attestations, and blocks the commit if credentials are detected.
+
 ## Core mental model
 
 1. **One-command registration (`keyhog guard add <path>`)**: Indexes the target
@@ -37,7 +58,8 @@ staged content is clean.
 | `keyhog guard remove <path>` | Stop guarding a repository and drop its in-memory index and attestation cache to immediately free daemon memory and CPU. |
 | `keyhog guard reconcile <path>` | Force a full baseline reconciliation after intentional policy updates or mass branch operations. |
 | `keyhog guard rebuild <path>` | Delete and recreate the durable guard store for a root after corruption or irrecoverable state. |
-## Quick start
+
+## Detailed walkthrough
 
 ### 1. Start the daemon
 

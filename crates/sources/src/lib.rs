@@ -97,8 +97,8 @@ pub use api::*;
 pub use filesystem::DiscoveryCounts;
 #[cfg(feature = "git")]
 pub use git::{
-    read_staged_blob, verify_staged_fingerprint, StagedEntryKind, StagedManifest,
-    StagedManifestEntry,
+    parse_git_index_sizes, read_staged_blob, verify_staged_fingerprint, StagedEntryKind,
+    StagedManifest, StagedManifestEntry,
 };
 pub(crate) use skip::{
     acquire_scan_read_lease, attach_scan_lease, enter_exclusive_scan_scope, gate_scan,

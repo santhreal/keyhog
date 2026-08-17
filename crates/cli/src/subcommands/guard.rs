@@ -181,7 +181,7 @@ async fn run_add(
         Ok(conn) => conn,
         Err(error) => {
             anyhow::bail!(
-                "guard add: no compatible daemon at {} (start one with `keyhog daemon start`): {error}",
+                "guard add: no compatible daemon at {} (start one with `keyhog guard up`): {error}",
                 socket.display()
             );
         }
@@ -296,7 +296,7 @@ async fn run_remove(
         Ok(conn) => conn,
         Err(error) => {
             anyhow::bail!(
-                "guard remove: no compatible daemon at {} (start one with `keyhog daemon start`): {error}",
+                "guard remove: no compatible daemon at {} (start one with `keyhog guard up`): {error}",
                 socket.display()
             );
         }
@@ -345,7 +345,7 @@ async fn run_list(socket: Option<std::path::PathBuf>) -> anyhow::Result<ExitCode
         Ok(c) => c,
         Err(e) => {
             anyhow::bail!(
-                "guard list: no compatible daemon at {} (start one with `keyhog daemon start`): {e}",
+                "guard list: no compatible daemon at {} (start one with `keyhog guard up`): {e}",
                 socket.display()
             );
         }
@@ -401,7 +401,7 @@ async fn run_status(
         Ok(conn) => conn,
         Err(error) => {
             anyhow::bail!(
-                "guard status: no compatible daemon at {} (start one with `keyhog daemon start`): {error}",
+                "guard status: no compatible daemon at {} (start one with `keyhog guard up`): {error}",
                 socket.display()
             );
         }
@@ -540,7 +540,7 @@ async fn run_reconcile(
         Ok(conn) => conn,
         Err(error) => {
             anyhow::bail!(
-                "guard reconcile: no compatible daemon at {} (start one with `keyhog daemon start`): {error}",
+                "guard reconcile: no compatible daemon at {} (start one with `keyhog guard up`): {error}",
                 socket.display()
             );
         }
@@ -609,7 +609,7 @@ async fn run_rebuild(
         Ok(conn) => conn,
         Err(error) => {
             anyhow::bail!(
-                "guard rebuild: no compatible daemon at {} (start one with `keyhog daemon start`): {error}",
+                "guard rebuild: no compatible daemon at {} (start one with `keyhog guard up`): {error}",
                 socket.display()
             );
         }

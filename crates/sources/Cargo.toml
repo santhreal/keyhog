@@ -95,6 +95,8 @@ toml = { workspace = true }
 # to resolve the `dashmap` import. Declared directly here so every feature
 # combination compiles.
 dashmap = { workspace = true }
+lru = { workspace = true }
+parking_lot = { workspace = true }
 gix = { workspace = true, optional = true }
 memmap2 = { workspace = true }
 memchr = { workspace = true }
@@ -180,6 +182,7 @@ optional = true
 workspace = true
 
 [dev-dependencies]
+criterion = { workspace = true }
 keyhog-profile = { workspace = true }
 flate2 = { workspace = true }
 httpmock = { workspace = true }
@@ -278,3 +281,8 @@ required-features = ["binary"]
 name = "docker_oci_classification"
 path = "tests/docker_oci_classification.rs"
 required-features = ["docker"]
+
+[[bench]]
+name = "bench_git_staged"
+harness = false
+required-features = ["git"]

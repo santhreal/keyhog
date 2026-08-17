@@ -1337,6 +1337,14 @@ pub mod testing {
                 .with_endpoint(endpoint)
                 .with_lookback_messages(lookback_messages)
         }
+
+        #[cfg(feature = "git")]
+        pub fn parse_git_index_sizes_for_test(
+            &self,
+            index_path: &std::path::Path,
+        ) -> std::collections::HashMap<gix::ObjectId, u64> {
+            crate::git::parse_git_index_sizes(index_path)
+        }
     }
     /// Outcome of [`for_each_file_windowed_mmap_for_test`].
     pub enum ForEachWindowedMmapOutcome {
@@ -1396,4 +1404,5 @@ pub mod testing {
             remainder,
         )
     }
+
 }
