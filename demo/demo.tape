@@ -1,37 +1,33 @@
-Output demo/keyhog-demo.gif
-Output demo/keyhog-demo.mp4
-Output demo/keyhog-scan.gif
-Output demo/keyhog-scan.mp4
+Output keyhog-demo.gif
 
-Require keyhog
-
-Set Shell "bash"
-Set Width 1280
-Set Height 820
-Set Padding 24
+Set Width 1380
+Set Height 800
+Set Padding 28
 Set FontSize 14
 Set Theme "Dracula"
 Set Framerate 30
-Set TypingSpeed 32ms
+Set TypingSpeed 28ms
 
+# Records a real `keyhog scan` of the synthetic demo/ tree: the headless
+# scan surface every user actually runs. Hide covers the cold-start
+# (detector compile + GPU init) so the visible portion of the gif is all
+# live output - findings printed with file:line, severity, and the
+# end-of-run summary counters.
 Hide
-Type "export CLICOLOR_FORCE=1" Enter
 Type "clear" Enter
-Sleep 200ms
+Sleep 100ms
+Type "keyhog scan demo" Enter
+
+# Cold-start window: detector compile + GPU init happen off-screen so the
+# visible frames below capture the findings + summary, not boot dead-air.
+Sleep 4500ms
 Show
 
-Type "keyhog scan demo/app demo/config"
-Sleep 400ms
-Enter
+# Visible: findings stream out, then the summary line lands.
+Sleep 6s
 
-# Output findings stream in full color
-Sleep 4000ms
+# Hold on the populated end-state.
+Sleep 800ms
 
-Type "keyhog explain stripe-secret-key"
-Sleep 400ms
-Enter
-
-# Output detector spec & remediation guide
-Sleep 4000ms
-
-Sleep 1500ms
+Hide
+Sleep 200ms
