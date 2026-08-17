@@ -48,18 +48,28 @@ keyhog scan --git-history . --max-commits 500
 ## Guard a repository for instant pre-commit scans
 
 ```bash
-# 1. Start daemon and register repository
-keyhog daemon start &
-keyhog guard add /path/to/repo --mode repo
-keyhog guard reconcile /path/to/repo
+# 1. Start daemon in background
+keyhog daemon start --backend auto &
 
-# 2. Staged commits now execute with in-memory clean attestation caching
+# 2. Register repository (indexes baseline into memory once)
+keyhog guard add /path/to/repo --mode repo
+
+# 3. Inspect in-memory status and attestation metrics
+keyhog guard status /path/to/repo
+
+# 4. Staged commits now execute with sub-millisecond in-memory attestation caching
 cd /path/to/repo && keyhog scan --git-staged
+
+# 5. List all active guarded repositories
+keyhog guard list
+
+# 6. Free daemon memory whenever you finish working on a repository
+keyhog guard remove /path/to/repo
 ```
 Pre-commit framework: keyhog ships a hook, so a `.pre-commit-config.yaml`
 `repo: https://github.com/santhreal/keyhog` entry wires `keyhog scan
---git-staged` into every commit. See [pre-commit](./workflows/precommit.md).
-
+--git-staged` into every commit. See [perpetual guard](./workflows/guard.md) and
+[pre-commit](./workflows/precommit.md).
 ## Add it to CI (one workflow file)
 
 ```yaml
