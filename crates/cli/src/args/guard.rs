@@ -27,6 +27,9 @@ pub enum GuardAction {
         /// Do not install or update the Git pre-commit hook during registration.
         #[arg(long)]
         no_hook: bool,
+        /// Override the socket path.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
     },
     /// Stop protecting a root and remove its persisted non-secret state.
     /// Also removes any KeyHog-owned Git pre-commit hook unless `--keep-hook`
@@ -37,8 +40,10 @@ pub enum GuardAction {
         /// Keep the Git pre-commit hook in place when unregistering.
         #[arg(long)]
         keep_hook: bool,
+        /// Override the socket path.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
     },
-    /// Start or ensure the background guard daemon is running and ready.
     /// When the daemon is already running, reports that it is active.
     /// Reconciles registered roots loaded from the durable store.
     Up {
@@ -57,7 +62,11 @@ pub enum GuardAction {
         socket: Option<PathBuf>,
     },
     /// List all registered guard roots and their current states.
-    List,
+    List {
+        /// Override the socket path.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
+    },
     /// Print the exact state and current policy identity of a guarded root.
     Status {
         /// Root path to inspect.
@@ -65,12 +74,18 @@ pub enum GuardAction {
         /// Output format: `human` or `json`.
         #[arg(long, value_name = "FORMAT", default_value = "human")]
         format: String,
+        /// Override the socket path.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
     },
     /// Force a full reconciliation of a guarded root after an intentional
     /// policy or filesystem change.
     Reconcile {
         /// Root path to reconcile.
         root: PathBuf,
+        /// Override the socket path.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
     },
     /// Delete and recreate the durable guard store for a root. Use after
     /// store corruption or when the persisted state is irrecoverably stale.
@@ -81,5 +96,8 @@ pub enum GuardAction {
         /// Guard mode: `repo` or `filesystem`. Defaults to `repo`.
         #[arg(long, value_name = "MODE", default_value = "repo")]
         mode: String,
+        /// Override the socket path.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
     },
 }

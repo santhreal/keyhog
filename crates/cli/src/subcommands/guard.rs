@@ -18,14 +18,23 @@ pub(crate) async fn run(args: GuardArgs) -> anyhow::Result<ExitCode> {
             root,
             mode,
             no_hook,
-        } => run_add(root, mode, no_hook).await,
-        GuardAction::Remove { root, keep_hook } => run_remove(root, keep_hook).await,
+            socket,
+        } => run_add(root, mode, no_hook, socket).await,
+        GuardAction::Remove {
+            root,
+            keep_hook,
+            socket,
+        } => run_remove(root, keep_hook, socket).await,
         GuardAction::Up { backend, socket } => run_up(backend, socket).await,
         GuardAction::Down { socket } => run_down(socket).await,
-        GuardAction::List => run_list().await,
-        GuardAction::Status { root, format } => run_status(root, format).await,
-        GuardAction::Reconcile { root } => run_reconcile(root).await,
-        GuardAction::Rebuild { root, mode } => run_rebuild(root, mode).await,
+        GuardAction::List { socket } => run_list(socket).await,
+        GuardAction::Status {
+            root,
+            format,
+            socket,
+        } => run_status(root, format, socket).await,
+        GuardAction::Reconcile { root, socket } => run_reconcile(root, socket).await,
+        GuardAction::Rebuild { root, mode, socket } => run_rebuild(root, mode, socket).await,
     }
 }
 
@@ -162,8 +171,9 @@ async fn run_add(
     root: std::path::PathBuf,
     mode: String,
     no_hook: bool,
+    socket: Option<std::path::PathBuf>,
 ) -> anyhow::Result<ExitCode> {
-    let socket = default_socket_path();
+    let socket = socket.unwrap_or_else(default_socket_path);
     let mut conn = match client::connect(&socket).await {
         Ok(conn) => conn,
         Err(error) => {
@@ -273,8 +283,12 @@ async fn run_add(
     }
 }
 
-async fn run_remove(root: std::path::PathBuf, keep_hook: bool) -> anyhow::Result<ExitCode> {
-    let socket = default_socket_path();
+async fn run_remove(
+    root: std::path::PathBuf,
+    keep_hook: bool,
+    socket: Option<std::path::PathBuf>,
+) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
     let mut conn = match client::connect(&socket).await {
         Ok(conn) => conn,
         Err(error) => {
@@ -322,8 +336,8 @@ async fn run_remove(root: std::path::PathBuf, keep_hook: bool) -> anyhow::Result
     }
 }
 
-async fn run_list() -> anyhow::Result<ExitCode> {
-    let socket = default_socket_path();
+async fn run_list(socket: Option<std::path::PathBuf>) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
     let mut conn = match client::connect(&socket).await {
         Ok(c) => c,
         Err(e) => {
@@ -374,8 +388,12 @@ async fn run_list() -> anyhow::Result<ExitCode> {
     }
 }
 
-async fn run_status(root: std::path::PathBuf, format: String) -> anyhow::Result<ExitCode> {
-    let socket = default_socket_path();
+async fn run_status(
+    root: std::path::PathBuf,
+    format: String,
+    socket: Option<std::path::PathBuf>,
+) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
     let mut conn = match client::connect(&socket).await {
         Ok(conn) => conn,
         Err(error) => {
@@ -510,8 +528,11 @@ async fn run_status(root: std::path::PathBuf, format: String) -> anyhow::Result<
     }
 }
 
-async fn run_reconcile(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
-    let socket = default_socket_path();
+async fn run_reconcile(
+    root: std::path::PathBuf,
+    socket: Option<std::path::PathBuf>,
+) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
     let mut conn = match client::connect(&socket).await {
         Ok(conn) => conn,
         Err(error) => {
@@ -575,8 +596,12 @@ async fn run_reconcile(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
 /// durable store, then re-adds it, triggering a fresh baseline
 /// reconciliation. Use after store corruption or when the persisted
 /// state is irrecoverably stale.
-async fn run_rebuild(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitCode> {
-    let socket = default_socket_path();
+async fn run_rebuild(
+    root: std::path::PathBuf,
+    mode: String,
+    socket: Option<std::path::PathBuf>,
+) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
     let mut conn = match client::connect(&socket).await {
         Ok(conn) => conn,
         Err(error) => {
