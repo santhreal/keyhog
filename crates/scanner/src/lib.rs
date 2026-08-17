@@ -261,6 +261,7 @@ pub(crate) mod simd;
 #[cfg(feature = "simdsieve")]
 mod simdsieve_prefilter;
 
+pub mod cache_eviction;
 pub(crate) mod shared_regexes;
 
 pub use api::*;
@@ -297,6 +298,10 @@ pub fn validate_matcher_artifact_cache_dir(
 ) -> std::result::Result<(), String> {
     matcher_artifact_cache::validate_matcher_artifact_cache_dir(path)
 }
+pub use cache_eviction::{
+    collect_stale_lock_files, evict_cache_dir_with_policy, reconcile_all_cache_kinds,
+    EvictionReport,
+};
 
 /// True when `detector_id` names the pure-entropy fallback family (`"entropy"`
 /// or any `"entropy-*"` id such as `entropy-token`).

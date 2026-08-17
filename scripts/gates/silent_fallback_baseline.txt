@@ -146,9 +146,6 @@ crates/scanner/src/gpu/backend/resident_evidence.rs::.and_then(|bytes| u64::try_
 crates/scanner/src/gpu/backend/resident_evidence.rs::.ok()
 crates/scanner/src/gpu/backend/resident_evidence.rs::.unwrap_or(0);
 crates/scanner/src/gpu/backend/resident_evidence.rs::Err(_) => {
-crates/scanner/src/matcher_artifact_cache.rs::.unwrap_or(0);
-crates/scanner/src/matcher_artifact_cache.rs::.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-crates/scanner/src/matcher_artifact_cache.rs::let _ = std::fs::remove_file(stale_path);
 crates/scanner/src/matcher_artifact_cache.rs::pack_generation: pack_generation.unwrap_or("none").to_owned(),
 crates/scanner/src/matcher_artifact_cache.rs::runtime_identity: runtime_identity.unwrap_or("none").to_owned(),
 crates/scanner/src/ml_scorer.rs::Err(_) => cpu_rows.push((candidate_id, Some(features))),

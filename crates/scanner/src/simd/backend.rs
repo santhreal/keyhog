@@ -799,6 +799,11 @@ impl HsScanner {
             dropped = dropped.len(),
             "HS shard cached"
         );
+        crate::cache_eviction::evict_cache_dir_with_policy(
+            parent,
+            keyhog_core::CacheKind::HyperscanShards,
+            keyhog_core::CacheKind::HyperscanShards.default_policy(),
+        );
     }
 
     fn assemble_scanner_shards(

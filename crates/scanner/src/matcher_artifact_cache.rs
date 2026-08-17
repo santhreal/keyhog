@@ -37,7 +37,8 @@ pub use keyhog_core::MATCHER_ARTIFACT_MAGIC;
 pub use keyhog_core::MATCHER_ARTIFACT_SUFFIX;
 /// Hard cap for one MatcherArtifact cache file, including header.
 pub const MATCHER_ARTIFACT_FILE_BYTES: u64 = 256 * 1024 * 1024;
-
+/// Default maximum retained matcher artifacts in cache directory.
+pub const MATCHER_ARTIFACT_MAX_ENTRIES: usize = 8;
 static CONFIGURED_CACHE_DIR: OnceLock<parking_lot::RwLock<Option<PathBuf>>> = OnceLock::new();
 fn configured_cache_dir_cell() -> &'static parking_lot::RwLock<Option<PathBuf>> {
     CONFIGURED_CACHE_DIR.get_or_init(|| parking_lot::RwLock::new(None))
@@ -744,34 +745,13 @@ pub fn store_matcher_artifact(
     Ok(())
 }
 
-const MATCHER_ARTIFACT_MAX_ENTRIES: usize = 8;
-
 fn evict_old_matcher_artifacts(cache_dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(cache_dir) else {
-        return;
-    };
-    let mut artifacts = Vec::with_capacity(MATCHER_ARTIFACT_MAX_ENTRIES + 1);
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("khm") {
-            continue;
-        }
-        let modified = entry
-            .metadata()
-            .and_then(|meta| meta.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-        artifacts.push((modified, path));
-        if artifacts.len() > MATCHER_ARTIFACT_MAX_ENTRIES {
-            let oldest = artifacts
-                .iter()
-                .enumerate()
-                .min_by_key(|(_, (modified, _))| *modified)
-                .map(|(index, _)| index)
-                .unwrap_or(0);
-            let (_, stale_path) = artifacts.swap_remove(oldest);
-            let _ = std::fs::remove_file(stale_path);
-        }
-    }
+    let policy = keyhog_core::CacheKind::MatcherArtifacts.default_policy();
+    crate::cache_eviction::evict_cache_dir_with_policy(
+        cache_dir,
+        keyhog_core::CacheKind::MatcherArtifacts,
+        policy,
+    );
 }
 
 fn atomic_write(

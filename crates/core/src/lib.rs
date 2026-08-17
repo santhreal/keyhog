@@ -37,6 +37,8 @@ pub mod ascii_ci;
 /// of truth shared by the scanner's finding metadata and the verifier's
 /// suppress-live-verification-for-canaries gate).
 mod aws;
+/// Unified cache layout classification and eviction policy contracts.
+pub mod cache_layout;
 /// Configuration system for KeyHog scanning options.
 mod config;
 /// Cross-file credential correlation over an already-reported finding set.
@@ -82,6 +84,7 @@ pub mod triage;
 /// verifier.
 pub mod verification_domain;
 pub mod winpath;
+pub use cache_layout::{CacheEvictionPolicy, CacheKind};
 use std::borrow::Cow;
 
 pub use api::*;

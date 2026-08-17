@@ -2,6 +2,7 @@
 
 ## 0.5.80 - 2026-08-17
 
+- feat(cache): add `cache_layout` module with canonical `CacheKind` enumeration, path classification, and `CacheEvictionPolicy` contracts.
 - style: format guard massive diff test and git sources modules.
 
 ## 0.5.79 - 2026-08-16
