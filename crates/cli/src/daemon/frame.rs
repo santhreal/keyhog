@@ -132,9 +132,9 @@ impl Encoder<Request> for RequestEncoder {
     type Error = anyhow::Error;
 
     fn encode(&mut self, item: Request, dst: &mut BytesMut) -> Result<()> {
-        let body = serde_json::to_vec(&item)
-            .with_context(|| format!("frame: serialize Request::{}", request_kind(&item)))?;
-        encode_body(dst, &body)
+        let kind = request_kind(&item);
+        encode_json_frame(dst, &item, MAX_FRAME_BYTES as usize)
+            .with_context(|| format!("frame: serialize Request::{kind}"))
     }
 }
 
@@ -151,20 +151,6 @@ impl Encoder<Response> for ResponseEncoder {
         encode_json_frame(dst, &item, MAX_FRAME_BYTES as usize)
             .with_context(|| format!("frame: serialize Response::{kind}"))
     }
-}
-
-fn encode_body(dst: &mut BytesMut, body: &[u8]) -> Result<()> {
-    if body.len() > MAX_FRAME_BYTES as usize {
-        bail!(
-            "frame: body of {} bytes exceeds {} byte cap",
-            body.len(),
-            MAX_FRAME_BYTES
-        );
-    }
-    dst.reserve(LENGTH_PREFIX_BYTES + body.len());
-    dst.put_u32(body.len() as u32);
-    dst.extend_from_slice(body);
-    Ok(())
 }
 
 struct FrameBodyWriter<'a> {

@@ -1976,8 +1976,8 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             // payload under each path and binds clean attestations to that
             // exact path set.
             let mut source_paths_by_oid: std::collections::HashMap<String, (u64, Vec<String>)> =
-                std::collections::HashMap::new();
-            let mut oid_order = Vec::new();
+                std::collections::HashMap::with_capacity(entries.len());
+            let mut oid_order = Vec::with_capacity(entries.len());
             let mut objects_skipped = 0u64;
             for entry in &entries {
                 if let Err(message) = validate_staged_relative_path(&entry.path) {
@@ -2010,8 +2010,8 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 }
             }
 
-            let mut clean_hits = Vec::new();
-            let mut required_blob_oids = Vec::new();
+            let mut clean_hits = Vec::with_capacity(oid_order.len());
+            let mut required_blob_oids = Vec::with_capacity(oid_order.len());
             let mut bytes_requested = 0u64;
             let mut bytes_hit = 0u64;
             for oid in &oid_order {

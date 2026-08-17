@@ -154,8 +154,14 @@ async fn run_guard_commit_on_connection(
             );
         }
         total_bytes_streamed += payload.len() as u64;
+        let data = match std::str::from_utf8(&payload) {
+            Ok(s) => keyhog_core::SensitiveString::from(s),
+            Err(_) => {
+                keyhog_core::SensitiveString::from(String::from_utf8_lossy(&payload).into_owned())
+            }
+        };
         let chunk = keyhog_core::Chunk {
-            data: String::from_utf8_lossy(&payload).into_owned().into(),
+            data,
             metadata: keyhog_core::ChunkMetadata {
                 source_type: "git-staged".into(),
                 path: Some(oid.clone().into()),
@@ -309,8 +315,12 @@ fn manifest_entry_to_wire(entry: &StagedManifestEntry) -> GuardWireManifestEntry
         StagedEntryKind::Symlink => "symlink",
         StagedEntryKind::Submodule => "submodule",
     };
+    let path = match std::str::from_utf8(&entry.path_bytes) {
+        Ok(s) => s.to_string(),
+        Err(_) => String::from_utf8_lossy(&entry.path_bytes).into_owned(),
+    };
     GuardWireManifestEntry {
-        path: String::from_utf8_lossy(&entry.path_bytes).into_owned(),
+        path,
         kind: kind.to_string(),
         object_oid: entry.object_oid.clone(),
         object_size: entry.object_size,

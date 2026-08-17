@@ -8,6 +8,13 @@ use keyhog_core::{Chunk, RawMatch, SensitiveString};
 
 #[cfg(feature = "decode")]
 pub(crate) fn union_unique_matches(dest: &mut Vec<RawMatch>, src: Vec<RawMatch>) {
+    if src.is_empty() {
+        return;
+    }
+    if dest.is_empty() && src.len() <= 1 {
+        *dest = src;
+        return;
+    }
     let mut seen: HashSet<(Arc<str>, SensitiveString)> = dest
         .iter()
         .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))

@@ -1338,22 +1338,40 @@ fn parse_raw_diff_header(
         ))
     })?;
 
-    let parts: Vec<&str> = header.splitn(5, ' ').collect();
-    if parts.len() < 5 {
-        return Err(SourceError::Git(format!(
-            "git raw staged diff header has too few fields: {header:?}"
-        )));
-    }
-
-    let new_mode = u32::from_str_radix(parts[1], 8).map_err(|error| {
+    let mut parts = header.split(' ');
+    let _old_mode = parts.next().ok_or_else(|| {
         SourceError::Git(format!(
-            "git raw staged diff header has invalid mode '{}': {error}",
-            parts[1]
+            "git raw staged diff header has too few fields: {header:?}"
+        ))
+    })?;
+    let new_mode_str = parts.next().ok_or_else(|| {
+        SourceError::Git(format!(
+            "git raw staged diff header has too few fields: {header:?}"
+        ))
+    })?;
+    let _old_oid = parts.next().ok_or_else(|| {
+        SourceError::Git(format!(
+            "git raw staged diff header has too few fields: {header:?}"
+        ))
+    })?;
+    let new_oid = parts.next().ok_or_else(|| {
+        SourceError::Git(format!(
+            "git raw staged diff header has too few fields: {header:?}"
+        ))
+    })?;
+    let status_str = parts.next().ok_or_else(|| {
+        SourceError::Git(format!(
+            "git raw staged diff header has too few fields: {header:?}"
         ))
     })?;
 
-    let new_oid = parts[3];
-    let status = parts[4].chars().next().ok_or_else(|| {
+    let new_mode = u32::from_str_radix(new_mode_str, 8).map_err(|error| {
+        SourceError::Git(format!(
+            "git raw staged diff header has invalid mode '{new_mode_str}': {error}"
+        ))
+    })?;
+
+    let status = status_str.chars().next().ok_or_else(|| {
         SourceError::Git(format!(
             "git raw staged diff header has empty status: {header:?}"
         ))

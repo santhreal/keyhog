@@ -202,16 +202,12 @@ fn shannon_entropy_uncached(data: &[u8]) -> f64 {
 /// `ml_scorer::ml_features::unique_byte_count`. Both consumers live downstream
 /// of `entropy` (each already imports from it), so this is the natural home.
 pub(crate) fn unique_byte_count(data: &[u8]) -> usize {
-    let mut seen = [false; 256];
-    let mut count = 0usize;
+    let mut seen = [0u64; 4];
     for &byte in data {
-        let slot = &mut seen[byte as usize];
-        if !*slot {
-            *slot = true;
-            count += 1;
-        }
+        seen[(byte >> 6) as usize] |= 1u64 << (byte & 63);
     }
-    count
+    (seen[0].count_ones() + seen[1].count_ones() + seen[2].count_ones() + seen[3].count_ones())
+        as usize
 }
 
 /// Shannon entropy rescaled to `0.0..=1.0` by dividing by `log2(unique_bytes)`.
