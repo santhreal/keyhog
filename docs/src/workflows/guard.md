@@ -210,7 +210,7 @@ pre-commit install
 
 Every guarded root operates within a 7-state machine:
 
-```
+```text
                   ┌──────────────┐
                   │   stopped    │
                   └──────┬───────┘
