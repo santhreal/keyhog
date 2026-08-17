@@ -229,9 +229,9 @@ When committing intentional test fixtures, mock data, or vendor example keys:
    reason = "reviewed synthetic test fixture"
    ```
 3. **Inline source directive**:
-   Append `// keyhog:ignore` or `# keyhog:ignore <detector-id>` directly to the
-   source line.
-
+   Append `// keyhog:ignore detector=<detector-id>` or
+   `# keyhog:ignore detector=<detector-id>` directly to the source line.
+   Without `detector=`, the directive suppresses every finding on that line.
 After committing the suppression rule, run `keyhog guard reconcile <path>` if you
 need to update the in-memory baseline immediately.
 
@@ -278,12 +278,13 @@ records a clean attestation record keyed by four immutable elements:
 2. **Byte Length**: The exact byte length of the blob payload.
 3. **Policy Identity Digest**: The 32-byte digest of the active detector corpus,
    suppression rules, and scanner configuration.
-4. **Sorted Source-Path Set**: The hashed set of sorted staged source paths mapped
-   to that blob.
+4. **Sorted Source-Path Set**: The hashed set of all sorted staged source paths
+   mapped to that blob.
 
 Future commit transactions matching all four elements skip payload re-scanning
 and return an instant cache hit. If a file is renamed, moved across source roles,
-or the detector corpus is updated, the attestation is invalidated.
+or an alias is added, the attestation is invalidated. Persisted policy identity
+records contain no plaintext staged paths.
 ## Durable state persistence
 
 By default, guard state is held in daemon memory. To persist root registrations
@@ -296,8 +297,8 @@ state_path = "~/.local/state/keyhog/guard.redb"
 ```
 
 The durable store uses a high-performance redb database with owner-only (0600)
-file permissions.
-
+file permissions, enforces 0700 permissions on its parent directory, and rejects
+symlinked state paths.
 On daemon restart, persisted roots load in the `stopped` state. Running
 `keyhog guard reconcile /path/to/repo` re-verifies the repository and transitions
 it back to `current`.

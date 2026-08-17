@@ -148,8 +148,7 @@ URLs, and a whole machine without changing tools.
 ### Guard repositories for fast pre-commit scans
 
 Register a repository with the perpetual KeyHog daemon for fast
-pre-commit secret detection:
-
+pre-commit secret detection (requires Unix; on Windows use in-process `keyhog scan`):
 ```sh
 # 1. Start the daemon (accelerated by CUDA, Metal, WGPU, or SIMD)
 keyhog daemon start --backend auto
