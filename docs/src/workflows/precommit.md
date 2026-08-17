@@ -61,22 +61,20 @@ perpetual KeyHog daemon:
    ```sh
    keyhog daemon start --backend auto
    ```
-2. Register the repository:
+2. Register the repository and install the pre-commit hook in one step:
    ```sh
    keyhog guard add . --mode repo
    ```
-3. Configure `.git/hooks/pre-commit`:
-   ```sh
-   printf '#!/usr/bin/env bash\nexec keyhog scan --git-staged\n' > .git/hooks/pre-commit
-   chmod +x .git/hooks/pre-commit
-   ```
+
+`keyhog guard add` registers the repository in daemon memory, performs the initial
+baseline reconciliation, and automatically installs the managed pre-commit hook
+at `.git/hooks/pre-commit` (pass `--no-hook` to skip hook installation).
 
 Because the daemon maintains an in-memory clean Git blob attestation index,
 `keyhog scan --git-staged` checks only changed staged blobs against the daemon's
 in-memory index, skipping unchanged clean payloads rather than re-scanning them.
 
 See the [perpetual guard guide](./guard.md) for full lifecycle management.
-
 ### `pre-commit` framework
 
 This repository's hook uses `language: system`. Follow the

@@ -99,6 +99,7 @@ suppression:    0000000000000000
 config:         18cc6ed841bf6dfe
 autoroute:      calibrated
 store schema:   1
+```
 
 Structured JSON output for monitoring and scripts:
 
