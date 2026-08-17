@@ -53,34 +53,7 @@ impl CacheKind {
     /// Check whether a given filename or path matches this cache kind.
     #[must_use]
     pub fn matches_path(self, path: &Path) -> bool {
-        let file_name = match path.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n,
-            None => return false,
-        };
-
-        match self {
-            Self::HyperscanShards => {
-                file_name.starts_with(crate::hyperscan_cache::HYPERSCAN_CACHE_PREFIX)
-                    && file_name.ends_with(crate::hyperscan_cache::HYPERSCAN_CACHE_SUFFIX)
-            }
-            Self::DetectorPlans => {
-                file_name.starts_with("detectors-") && file_name.ends_with(".json")
-            }
-            Self::GpuPrograms => {
-                // Programs can reside under a `programs/` sub-directory or have GPU prefix
-                let in_programs_dir = path
-                    .parent()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n == "programs");
-                let is_program_file = file_name.ends_with(".bin")
-                    || (file_name.len() == 64 && file_name.chars().all(|c| c.is_ascii_hexdigit()))
-                    || file_name.starts_with("gpu-");
-                in_programs_dir || (is_program_file && !file_name.ends_with(".lock"))
-            }
-            Self::MatcherArtifacts => file_name.ends_with(crate::MATCHER_ARTIFACT_SUFFIX),
-            Self::LockFiles => file_name.ends_with(".lock"),
-        }
+        Self::classify_path(path) == Some(self)
     }
 
     /// Classify a path into its respective `CacheKind` if recognized.
@@ -106,7 +79,10 @@ impl CacheKind {
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
             .is_some_and(|n| n == "programs");
-        if in_programs_dir {
+        let is_program_file = file_name.ends_with(".bin")
+            || (file_name.len() == 64 && file_name.chars().all(|c| c.is_ascii_hexdigit()))
+            || file_name.starts_with("gpu-");
+        if in_programs_dir || is_program_file {
             return Some(Self::GpuPrograms);
         }
         None

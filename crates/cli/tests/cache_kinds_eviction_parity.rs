@@ -157,6 +157,54 @@ fn stale_lock_files_are_collected() {
 }
 
 #[test]
+fn actively_held_flock_lock_files_are_never_collected_even_when_old() {
+    let temp = TempDir::new().expect("tempdir");
+    let cache_dir = temp.path();
+
+    let state_file = cache_dir.join("active_state.json");
+    let held_lock_path = cache_dir.join("active_state.json.lock");
+
+    let _lock = keyhog_core::StateFileWriteLock::acquire(&state_file)
+        .expect("acquire state file write lock");
+
+    // Set mtime to 2 hours in the past
+    let past = SystemTime::now() - Duration::from_secs(7200);
+    set_mtime(&held_lock_path, past);
+
+    // Attempt collection with 600s threshold
+    let removed = collect_stale_lock_files(cache_dir, Duration::from_secs(600));
+    assert_eq!(
+        removed, 0,
+        "Actively held lock file must not be removed by stale lock collection"
+    );
+    assert!(
+        held_lock_path.exists(),
+        "Actively held lock file must remain on disk"
+    );
+}
+
+#[test]
+fn single_newest_entry_larger_than_byte_cap_is_retained() {
+    let temp = TempDir::new().expect("tempdir");
+    let cache_dir = temp.path();
+
+    let file_path = cache_dir.join("hs-large.db");
+    std::fs::write(&file_path, vec![b'X'; 500]).expect("write 500 byte file");
+
+    // Policy: max 10 entries, max 100 bytes (file is 500 bytes)
+    let policy = CacheEvictionPolicy::new(10, 100, 600);
+    let report = evict_cache_dir_with_policy(cache_dir, CacheKind::HyperscanShards, policy);
+
+    assert_eq!(report.initial_count, 1);
+    assert_eq!(report.initial_bytes, 500);
+    assert_eq!(
+        report.retained_count, 1,
+        "Single newest entry must be retained rather than thrashed"
+    );
+    assert!(file_path.exists());
+}
+
+#[test]
 fn reconcile_all_cache_kinds_processes_mixed_cache_root() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path();

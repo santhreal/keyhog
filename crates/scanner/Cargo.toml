@@ -74,6 +74,7 @@ gpu = [
 [dependencies]
 keyhog-core = { workspace = true }
 keyhog-profile = { workspace = true }
+fs2 = { workspace = true }
 flate2 = { workspace = true }
 # GPU stack, optional, gated by the `gpu` feature so the lean CI build does
 # not link wgpu and does not probe Vulkan/EGL at startup. `vyre`/`vyre_libs`

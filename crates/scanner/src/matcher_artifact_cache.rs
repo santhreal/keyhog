@@ -38,7 +38,9 @@ pub use keyhog_core::MATCHER_ARTIFACT_SUFFIX;
 /// Hard cap for one MatcherArtifact cache file, including header.
 pub const MATCHER_ARTIFACT_FILE_BYTES: u64 = 256 * 1024 * 1024;
 /// Default maximum retained matcher artifacts in cache directory.
-pub const MATCHER_ARTIFACT_MAX_ENTRIES: usize = 8;
+pub const MATCHER_ARTIFACT_MAX_ENTRIES: usize = keyhog_core::CacheKind::MatcherArtifacts
+    .default_policy()
+    .max_entries;
 static CONFIGURED_CACHE_DIR: OnceLock<parking_lot::RwLock<Option<PathBuf>>> = OnceLock::new();
 fn configured_cache_dir_cell() -> &'static parking_lot::RwLock<Option<PathBuf>> {
     CONFIGURED_CACHE_DIR.get_or_init(|| parking_lot::RwLock::new(None))
