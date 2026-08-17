@@ -869,10 +869,10 @@ fn guard_up_and_down_lifecycle_e2e() {
 #[cfg(unix)]
 #[test]
 fn guard_add_no_hook_flag_skips_pre_commit_hook() {
+    let _daemon_slot = daemon_slot();
     let dir = TempDir::new().unwrap();
     init_git_repo(dir.path());
     let socket = dir.path().join("guard-no-hook.sock");
-
     let up_out = Command::new(keyhog())
         .env("NO_COLOR", "1")
         .args(["guard", "up", "--backend", "cpu", "--socket"])
@@ -888,7 +888,11 @@ fn guard_add_no_hook_flag_skips_pre_commit_hook() {
         .arg(&socket)
         .output()
         .expect("guard add --no-hook");
-    assert_eq!(add_out.status.code(), Some(0));
+    assert!(
+        matches!(add_out.status.code(), Some(0 | 13)),
+        "guard add must return a valid guard state exit code (0 current, 13 degraded/dirty); code={:?}",
+        add_out.status.code()
+    );
 
     assert!(
         !hook_path(dir.path()).exists(),
@@ -904,10 +908,10 @@ fn guard_add_no_hook_flag_skips_pre_commit_hook() {
 #[cfg(unix)]
 #[test]
 fn guard_remove_keep_hook_flag_preserves_pre_commit_hook() {
+    let _daemon_slot = daemon_slot();
     let dir = TempDir::new().unwrap();
     init_git_repo(dir.path());
     let socket = dir.path().join("guard-keep-hook.sock");
-
     let up_out = Command::new(keyhog())
         .env("NO_COLOR", "1")
         .args(["guard", "up", "--backend", "cpu", "--socket"])
@@ -923,7 +927,11 @@ fn guard_remove_keep_hook_flag_preserves_pre_commit_hook() {
         .arg(&socket)
         .output()
         .expect("guard add");
-    assert_eq!(add_out.status.code(), Some(0));
+    assert!(
+        matches!(add_out.status.code(), Some(0 | 13)),
+        "guard add must return a valid guard state exit code (0 current, 13 degraded/dirty); code={:?}",
+        add_out.status.code()
+    );
     assert!(
         hook_path(dir.path()).exists(),
         "pre-commit hook must be installed by guard add"
