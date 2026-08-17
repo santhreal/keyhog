@@ -217,13 +217,25 @@ mod tests {
 
         // Insert 65th entry. Since repo_0 was accessed, repo_1 is now the oldest (LRU).
         let repo_64 = PathBuf::from("/repos/repo_64");
-        cache.put(repo_64.clone(), sample_cache_entry(repo_64.join(".git/index"), "fp_64"));
+        cache.put(
+            repo_64.clone(),
+            sample_cache_entry(repo_64.join(".git/index"), "fp_64"),
+        );
         assert_eq!(cache.len(), 64);
 
         // repo_1 must have been evicted; repo_0 must still be present.
-        assert!(cache.peek(&PathBuf::from("/repos/repo_1")).is_none(), "repo_1 should have been evicted");
-        assert!(cache.peek(&PathBuf::from("/repos/repo_0")).is_some(), "repo_0 should still be cached");
-        assert!(cache.peek(&PathBuf::from("/repos/repo_64")).is_some(), "repo_64 should be cached");
+        assert!(
+            cache.peek(&PathBuf::from("/repos/repo_1")).is_none(),
+            "repo_1 should have been evicted"
+        );
+        assert!(
+            cache.peek(&PathBuf::from("/repos/repo_0")).is_some(),
+            "repo_0 should still be cached"
+        );
+        assert!(
+            cache.peek(&PathBuf::from("/repos/repo_64")).is_some(),
+            "repo_64 should be cached"
+        );
 
         // Restore the global cache to avoid test pollution.
         *guard = Some(cache);

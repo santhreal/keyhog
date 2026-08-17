@@ -155,7 +155,11 @@ fn massive_1000_file_diff_guarantees_millisecond_gating() {
     for i in 0..5 {
         let filename = format!("src/module_{i:04}.rs");
         let path = repo.join(&filename);
-        std::fs::write(&path, format!("pub fn func_{i}() -> usize {{ {i} + 42 }}\n")).unwrap();
+        std::fs::write(
+            &path,
+            format!("pub fn func_{i}() -> usize {{ {i} + 42 }}\n"),
+        )
+        .unwrap();
     }
     let git_add_mutated = Command::new("git")
         .args([
@@ -357,7 +361,11 @@ fn massive_10000_file_diff_scaling_guarantees_millisecond_gating() {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).unwrap();
         }
-        std::fs::write(&path, format!("pub fn compute_{i}() -> usize {{ {i} * 5 }}\n")).unwrap();
+        std::fs::write(
+            &path,
+            format!("pub fn compute_{i}() -> usize {{ {i} * 5 }}\n"),
+        )
+        .unwrap();
     }
 
     // 3. Stage all 10,000 files in Git index.
@@ -406,8 +414,7 @@ fn massive_10000_file_diff_scaling_guarantees_millisecond_gating() {
     );
     let scan_stderr = String::from_utf8_lossy(&scan_out.stderr);
     assert!(
-        scan_stderr.contains("10000 cache hit(s)")
-            || scan_stderr.contains("10000 blob(s) scanned"),
+        scan_stderr.contains("10000 cache hit(s)") || scan_stderr.contains("10000 blob(s) scanned"),
         "must process all 10000 files via guard; stderr={scan_stderr}"
     );
 
@@ -447,10 +454,26 @@ fn massive_10000_file_diff_scaling_guarantees_millisecond_gating() {
     for i in 0..10 {
         let filename = format!("src/pkg_{:03}/module_{:05}.rs", i / 500, i);
         let path = repo.join(&filename);
-        std::fs::write(&path, format!("pub fn compute_{i}() -> usize {{ {i} * 5 + 99 }}\n")).unwrap();
+        std::fs::write(
+            &path,
+            format!("pub fn compute_{i}() -> usize {{ {i} * 5 + 99 }}\n"),
+        )
+        .unwrap();
     }
     let git_add_mutated = Command::new("git")
-        .args(["add", "src/pkg_000/module_00000.rs", "src/pkg_000/module_00001.rs", "src/pkg_000/module_00002.rs", "src/pkg_000/module_00003.rs", "src/pkg_000/module_00004.rs", "src/pkg_000/module_00005.rs", "src/pkg_000/module_00006.rs", "src/pkg_000/module_00007.rs", "src/pkg_000/module_00008.rs", "src/pkg_000/module_00009.rs"])
+        .args([
+            "add",
+            "src/pkg_000/module_00000.rs",
+            "src/pkg_000/module_00001.rs",
+            "src/pkg_000/module_00002.rs",
+            "src/pkg_000/module_00003.rs",
+            "src/pkg_000/module_00004.rs",
+            "src/pkg_000/module_00005.rs",
+            "src/pkg_000/module_00006.rs",
+            "src/pkg_000/module_00007.rs",
+            "src/pkg_000/module_00008.rs",
+            "src/pkg_000/module_00009.rs",
+        ])
         .current_dir(repo)
         .output()
         .expect("git add mutated 10");
@@ -545,7 +568,14 @@ fn guard_staged_diff_edge_cases_staged_renames() {
     let scan_1 = Command::new(keyhog())
         .current_dir(repo)
         .env("NO_COLOR", "1")
-        .args(["scan", "--fast", "--git-staged", "--backend", "cpu", "--daemon-socket"])
+        .args([
+            "scan",
+            "--fast",
+            "--git-staged",
+            "--backend",
+            "cpu",
+            "--daemon-socket",
+        ])
         .arg(&socket)
         .output()
         .expect("scan initial");
@@ -598,7 +628,14 @@ fn guard_staged_diff_edge_cases_staged_renames() {
     let scan_renames = Command::new(keyhog())
         .current_dir(repo)
         .env("NO_COLOR", "1")
-        .args(["scan", "--fast", "--git-staged", "--backend", "cpu", "--daemon-socket"])
+        .args([
+            "scan",
+            "--fast",
+            "--git-staged",
+            "--backend",
+            "cpu",
+            "--daemon-socket",
+        ])
         .arg(&socket)
         .output()
         .expect("scan renames");
@@ -617,7 +654,14 @@ fn guard_staged_diff_edge_cases_staged_renames() {
     let scan_renames_cached = Command::new(keyhog())
         .current_dir(repo)
         .env("NO_COLOR", "1")
-        .args(["scan", "--fast", "--git-staged", "--backend", "cpu", "--daemon-socket"])
+        .args([
+            "scan",
+            "--fast",
+            "--git-staged",
+            "--backend",
+            "cpu",
+            "--daemon-socket",
+        ])
         .arg(&socket)
         .output()
         .expect("scan renames cached");
@@ -666,7 +710,11 @@ fn guard_staged_diff_edge_cases_mode_changes_executable() {
     std::fs::create_dir_all(repo.join("tools")).unwrap();
     std::fs::create_dir_all(repo.join("src")).unwrap();
 
-    std::fs::write(&script_clean, "#!/usr/bin/env bash\necho 'deploying clean'\n").unwrap();
+    std::fs::write(
+        &script_clean,
+        "#!/usr/bin/env bash\necho 'deploying clean'\n",
+    )
+    .unwrap();
     std::fs::write(&tool_clean, "#!/usr/bin/env python3\nprint('helper')\n").unwrap();
     std::fs::write(&lib_clean, "pub fn add(a: i32, b: i32) -> i32 { a + b }\n").unwrap();
 
@@ -697,17 +745,32 @@ fn guard_staged_diff_edge_cases_mode_changes_executable() {
 
     // 3. Change mode of clean scripts to executable (+x) in Git index.
     let chmod_out = Command::new("git")
-        .args(["update-index", "--chmod=+x", "scripts/deploy_clean.sh", "tools/helper.py"])
+        .args([
+            "update-index",
+            "--chmod=+x",
+            "scripts/deploy_clean.sh",
+            "tools/helper.py",
+        ])
         .current_dir(repo)
         .output()
         .expect("git update-index --chmod=+x");
-    assert!(chmod_out.status.success(), "chmod +x in git index must succeed");
+    assert!(
+        chmod_out.status.success(),
+        "chmod +x in git index must succeed"
+    );
 
     // 4. Staged scan with mode changes: object OID is identical, daemon recognizes clean hits.
     let scan_mode_clean = Command::new(keyhog())
         .current_dir(repo)
         .env("NO_COLOR", "1")
-        .args(["scan", "--fast", "--git-staged", "--backend", "cpu", "--daemon-socket"])
+        .args([
+            "scan",
+            "--fast",
+            "--git-staged",
+            "--backend",
+            "cpu",
+            "--daemon-socket",
+        ])
         .arg(&socket)
         .output()
         .expect("scan mode change clean");
@@ -718,7 +781,8 @@ fn guard_staged_diff_edge_cases_mode_changes_executable() {
     );
     let mode_clean_stderr = String::from_utf8_lossy(&scan_mode_clean.stderr);
     assert!(
-        mode_clean_stderr.contains("2 cache hit(s)") || mode_clean_stderr.contains("2 blob(s) scanned"),
+        mode_clean_stderr.contains("2 cache hit(s)")
+            || mode_clean_stderr.contains("2 blob(s) scanned"),
         "mode changes with identical content must be processed; stderr={mode_clean_stderr}"
     );
 
@@ -747,7 +811,14 @@ fn guard_staged_diff_edge_cases_mode_changes_executable() {
     let scan_secret = Command::new(keyhog())
         .current_dir(repo)
         .env("NO_COLOR", "1")
-        .args(["scan", "--fast", "--git-staged", "--backend", "cpu", "--daemon-socket"])
+        .args([
+            "scan",
+            "--fast",
+            "--git-staged",
+            "--backend",
+            "cpu",
+            "--daemon-socket",
+        ])
         .arg(&socket)
         .output()
         .expect("scan secret");
@@ -760,7 +831,9 @@ fn guard_staged_diff_edge_cases_mode_changes_executable() {
     let secret_stdout = String::from_utf8_lossy(&scan_secret.stdout);
     let combined = format!("{secret_stdout}\n{secret_stderr}");
     assert!(
-        combined.contains("run_leak.sh") || combined.contains("AWS") || combined.contains("finding"),
+        combined.contains("run_leak.sh")
+            || combined.contains("AWS")
+            || combined.contains("finding"),
         "secret finding must be surfaced; output={combined}"
     );
 
@@ -780,7 +853,14 @@ fn guard_staged_diff_edge_cases_mode_changes_executable() {
     let scan_remediated = Command::new(keyhog())
         .current_dir(repo)
         .env("NO_COLOR", "1")
-        .args(["scan", "--fast", "--git-staged", "--backend", "cpu", "--daemon-socket"])
+        .args([
+            "scan",
+            "--fast",
+            "--git-staged",
+            "--backend",
+            "cpu",
+            "--daemon-socket",
+        ])
         .arg(&socket)
         .output()
         .expect("scan remediated");

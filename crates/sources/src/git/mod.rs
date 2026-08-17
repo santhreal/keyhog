@@ -1228,7 +1228,9 @@ pub(crate) fn staged_manifest_acquire(
     manifest.index_fingerprint = manifest.recompute_fingerprint();
     let index_path = repo.git_dir().join("index");
     if let Ok(meta) = std::fs::metadata(&index_path) {
-        if let (Ok(mtime), Some(checksum)) = (meta.modified(), read_index_tail_checksum(&index_path)) {
+        if let (Ok(mtime), Some(checksum)) =
+            (meta.modified(), read_index_tail_checksum(&index_path))
+        {
             manifest::record_index_fingerprint_cache(
                 repo_root.clone(),
                 manifest::IndexFingerprintCacheEntry {
