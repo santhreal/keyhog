@@ -1,6 +1,10 @@
 # Changelog
 
 
+## 0.5.80 - 2026-08-17
+
+- style: format guard massive diff test and git sources modules.
+
 ## 0.5.79 - 2026-08-16
 
 - ci(release): fallback token and sync floating major tag on release.
