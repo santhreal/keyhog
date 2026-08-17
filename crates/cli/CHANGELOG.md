@@ -3,6 +3,7 @@
 ## 0.5.79 - 2026-08-16
 
 - ci(release): fallback token and sync floating major tag on release.
+- test(daemon): add 30 regression tests encoding daemon server pure-function behaviors and file-type label coverage.
 
 ## 0.5.78 - 2026-08-16
 

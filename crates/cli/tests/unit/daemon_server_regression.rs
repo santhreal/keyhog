@@ -374,6 +374,33 @@ fn file_type_label_covers_all_types() {
     std::os::unix::fs::symlink(&target, &link_path).unwrap();
     let link_meta = std::fs::symlink_metadata(&link_path).unwrap();
     assert_eq!(file_type_label(&link_meta.file_type()), "a symbolic link");
+
+    // Socket
+    let sock_path = dir.path().join("test.sock");
+    if let Ok(_listener) = std::os::unix::net::UnixListener::bind(&sock_path) {
+        let sock_meta = std::fs::symlink_metadata(&sock_path).unwrap();
+        assert_eq!(file_type_label(&sock_meta.file_type()), "a socket");
+    }
+
+    // FIFO
+    let fifo_path = dir.path().join("test.fifo");
+    if std::process::Command::new("mkfifo")
+        .arg(&fifo_path)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+    {
+        let fifo_meta = std::fs::symlink_metadata(&fifo_path).unwrap();
+        assert_eq!(file_type_label(&fifo_meta.file_type()), "a FIFO");
+    }
+
+    // Character device
+    if let Ok(char_meta) = std::fs::metadata("/dev/null") {
+        assert_eq!(
+            file_type_label(&char_meta.file_type()),
+            "a character device"
+        );
+    }
 }
 
 // ── refused_file_type_message ────────────────────────────────────────
