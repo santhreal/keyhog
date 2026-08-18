@@ -374,6 +374,60 @@ case "$1" in
   *) ;;
 esac
 SH
+# Binary that installs, passes doctor, and calibrates, but whose ordinary scan
+# still has no route: the class doctor cannot see, because its self-test scans
+# with an explicit CPU backend.
+cat > "$FIX_DIR/fake_keyhog_unroutable_scan" <<'SH'
+#!/bin/sh
+write_mock_autoroute_cache() {
+  if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+    cache="$HOME/Library/Caches/keyhog/autoroute.json"
+  else
+    cache="${XDG_CACHE_HOME:-$HOME/.cache}/keyhog/autoroute.json"
+  fi
+  mkdir -p "$(dirname "$cache")" || exit 1
+  printf '{}\n' > "$cache"
+}
+case "$1" in
+  --version) echo "KeyHog v9.9.9 (mock)" ;;
+  --help) echo "Usage: keyhog <COMMAND>"; echo "  scan"; exit 0 ;;
+  doctor)    echo "mock doctor: healthy"; exit 0 ;;
+  scan)
+    case "${2:-}" in
+      --help) echo "Usage: keyhog scan [--no-config] [--autoroute-calibrate]"; exit 0 ;;
+    esac
+    case " $* " in
+      *" --autoroute-calibrate "*) write_mock_autoroute_cache; exit 0 ;;
+    esac
+    echo "error: autoroute calibration required: this workload has no persisted fastest-correct backend decision." >&2
+    exit 2
+    ;;
+  backend)
+    cat <<'JSON'
+{
+  "configs": [{
+    "decisions": [
+      {
+        "backend": "simd-regex",
+        "sample_bytes": 0,
+        "sample_chunks": 0,
+        "simd_ms": 1,
+        "cpu_ms": 3,
+        "gpu_cuda_ms": null,
+        "gpu_wgpu_ms": null,
+        "selected_margin_ns": 2000000,
+        "daemon_backend": "simd-regex"
+      }
+    ]
+  }]
+}
+JSON
+    exit 0
+    ;;
+  *) ;;
+esac
+SH
+
 
 sha_of() {
     if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
@@ -799,6 +853,17 @@ expect_match  "8.5b doctor-unhealthy rolls back" "rolling back this install" "$o
 expect_nomatch "8.5c doctor-unhealthy does not falsely claim installed" "may not be fully healthy" "$out"
 expect_status "8.6 doctor-unhealthy install fails closed" 1 "$st"
 expect_nofile "8.6b doctor-unhealthy leaves no binary on PATH" "$h/.local/bin/keyhog"
+rm -rf "$h"
+# 8.7 calibration succeeds but the primed cache cannot serve an ordinary scan.
+#     doctor is blind to this: its self-test scans with an explicit CPU backend,
+#     so it passes while the operator's first auto-routed scan exits 2. The
+#     install runs one plain scan after calibration and fails closed on it.
+h=$(newhome)
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_unroutable_scan" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_match  "8.7 unroutable post-calibration scan reported" "cannot serve an ordinary scan \(exit 2\)" "$out"
+expect_match  "8.7b unroutable scan surfaces the binary's reason" "autoroute calibration required" "$out"
+expect_status "8.7c unroutable install fails closed" 1 "$st"
+expect_nofile "8.7d unroutable leaves no binary on PATH" "$h/.local/bin/keyhog"
 rm -rf "$sb" "$h"
 
 # ======================================================================

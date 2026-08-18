@@ -913,6 +913,8 @@ verify_install() {
         elif ! prime_autoroute_cache "$INSTALL_DIR/keyhog"; then
             err "Autoroute calibration failed; refusing to leave an install whose default auto route is not usable."
             return 1
+        elif ! verify_autoroute_serves_a_scan "$INSTALL_DIR/keyhog"; then
+            return 1
         fi
         return 0
     fi
@@ -1068,6 +1070,45 @@ publish_execution_packs() {
     if [ -n "$pack_reason" ]; then
         err "  reason: $pack_reason"
     fi
+    return 1
+}
+
+# A primed cache is worth nothing unless the next ordinary scan can resolve a
+# route from it. `keyhog doctor` cannot see this: its self-test compiles one
+# bundled detector and scans with an explicit CPU backend, so it passes on an
+# install whose first real scan exits 2 for want of a calibrated decision.
+# Scan a throwaway two-file tree the way an operator would, with no backend
+# override and no calibration flag, and fail the install if routing refuses.
+verify_autoroute_serves_a_scan() {
+    bin="$1"
+    if ! check_dir="$(mktemp -d -t keyhog-postcalibration-XXXXXX)"; then
+        err "Could not create the post-calibration scan workspace with mktemp."
+        return 1
+    fi
+    printf 'first probe file, no credentials here\n' > "$check_dir/one.txt"
+    printf 'second probe file, no credentials here\n' > "$check_dir/two.txt"
+    # Resolve the same configuration the calibration measured: the host
+    # baseline, not whatever .keyhog.toml sits above the operator's cwd.
+    check_cfg=""
+    if "$bin" scan --help 2>/dev/null | grep -q -- '--no-config'; then
+        check_cfg="--no-config"
+    fi
+    check_err="$check_dir/scan.err"
+    check_status=0
+    # shellcheck disable=SC2086
+    "$bin" scan "$check_dir" $check_cfg --format json -o /dev/null >/dev/null 2>"$check_err" || check_status=$?
+    check_reason="$(head -n 1 "$check_err" 2>/dev/null)"
+    rm -rf "$check_dir" 2>/dev/null || true
+    # 0 = clean, 1 = findings. Both mean a route was resolved and the scan ran.
+    if [ "$check_status" = "0" ] || [ "$check_status" = "1" ]; then
+        ok "  A plain scan resolves a route from the calibrated cache."
+        return 0
+    fi
+    err "The freshly calibrated cache cannot serve an ordinary scan (exit $check_status)."
+    if [ -n "$check_reason" ]; then
+        err "  reason: $check_reason"
+    fi
+    err "Refusing to leave an install whose first scan fails; rerun install.sh --calibrate after fixing the cause."
     return 1
 }
 

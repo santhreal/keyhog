@@ -593,8 +593,9 @@ jobs:
         # No Windows runner needed to catch a syntax error: parse the script
         # with the PowerShell language parser on the (pwsh-equipped) Linux
         # runner. Guards the install.ps1 recoverability edits from shipping
-        # un-parseable. Behaviour is smoke-tested on Windows in
-        # integration-smoke.yml.
+        # un-parseable. No CI job executes install.ps1 on Windows; its
+        # behaviour is held to install.sh by the parity gate in
+        # crates/cli/tests/install_script_parity.rs.
         run: |
           $tokens = $null; $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile(

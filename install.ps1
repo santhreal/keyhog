@@ -835,6 +835,44 @@ function Publish-ExecutionPacks {
     return $true
 }
 
+# Parity with install.sh's verify_autoroute_serves_a_scan: a primed cache is
+# worth nothing unless the next ordinary scan can resolve a route from it, and
+# `keyhog doctor` cannot see that (its self-test scans with an explicit CPU
+# backend). Scan a throwaway two-file tree with no backend override and no
+# calibration flag, and fail the install if routing refuses.
+function Test-AutorouteServesAScan {
+    param([Parameter(Mandatory = $true)][string]$BinPath)
+
+    $checkDir = Join-Path ([System.IO.Path]::GetTempPath()) ("keyhog-postcalibration-{0}" -f ([System.Guid]::NewGuid()))
+    try {
+        New-Item -ItemType Directory -Force -Path $checkDir -ErrorAction Stop | Out-Null
+        Set-Content -LiteralPath (Join-Path $checkDir 'one.txt') -Value 'first probe file, no credentials here'
+        Set-Content -LiteralPath (Join-Path $checkDir 'two.txt') -Value 'second probe file, no credentials here'
+    } catch {
+        Err "Could not create the post-calibration scan workspace ${checkDir}: $_"
+        return $false
+    }
+
+    # Resolve the same configuration the calibration measured: the host
+    # baseline, not whatever .keyhog.toml sits above the current directory.
+    $scanArgs = @('scan', $checkDir)
+    if ((& $BinPath scan --help 2>$null) -match '--no-config') { $scanArgs += '--no-config' }
+    $scanArgs += @('--format', 'json', '-o', (Join-Path $checkDir 'out.json'))
+
+    & $BinPath @scanArgs *> $null
+    $scanExit = $LASTEXITCODE
+    Remove-Item -LiteralPath $checkDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    # 0 = clean, 1 = findings. Both mean a route was resolved and the scan ran.
+    if ($scanExit -eq 0 -or $scanExit -eq 1) {
+        Ok "  A plain scan resolves a route from the calibrated cache."
+        return $true
+    }
+    Err "The freshly calibrated cache cannot serve an ordinary scan (exit $scanExit)."
+    Err "Refusing to leave an install whose first scan fails; rerun install.ps1 -Calibrate after fixing the cause."
+    return $false
+}
+
 function Invoke-AutorouteCalibration {
     param($BinPath)
     $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("keyhog-autoroute-prime-{0}" -f ([System.Guid]::NewGuid()))
@@ -1689,6 +1727,9 @@ function Finalize-Install {
         } elseif (-not (Invoke-AutorouteCalibration -BinPath $BinPath)) {
             Err "Autoroute calibration failed; refusing to leave an install whose default auto route is not usable."
             Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the uncalibrated binary; no working keyhog was overwritten."
+            return $false
+        } elseif (-not (Test-AutorouteServesAScan -BinPath $BinPath)) {
+            Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the binary whose calibrated cache could not serve a scan; no working keyhog was overwritten."
             return $false
         }
         if ($Script:InstallBackup) { Remove-Item -Force $Script:InstallBackup -ErrorAction SilentlyContinue; $Script:InstallBackup = $null }

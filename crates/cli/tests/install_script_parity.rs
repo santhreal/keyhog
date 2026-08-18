@@ -489,3 +489,79 @@ fn install_scripts_probe_the_same_decode_heavy_bands() {
         "install.sh and install.ps1 must probe the same decode-heavy bands"
     );
 }
+
+/// WHY: an install can finish "successfully" and still be unusable. Calibration
+/// publishes decisions under the configuration it measured, and `keyhog doctor`
+/// cannot detect a mismatch: its self-test compiles one bundled detector and
+/// scans with an explicit `ScanBackend::CpuFallback`, so it passes on an install
+/// whose very next auto-routed scan exits 2. That shipped: the all-policy sweep
+/// spawned isolated policy children without the parent's config mode, so every
+/// calibrated decision landed under a digest no plain scan resolves. Both
+/// installers must therefore end the calibration phase by running one ordinary
+/// scan, with no backend override and no calibration flag, and fail the install
+/// when routing refuses it.
+///
+/// WHAT IT DOES NOT CATCH: whether the check itself resolves the same digest on
+/// a host whose `.keyhog.toml` sits above the temporary scan directory. The
+/// probe runs in a fresh temp tree and asks for the baseline config explicitly.
+#[test]
+fn install_scripts_verify_a_plain_scan_after_calibration() {
+    struct Wiring {
+        script: &'static str,
+        open: &'static str,
+        call_site: &'static str,
+        findings_exit_is_success: &'static str,
+    }
+
+    let root = repo_root();
+    for wiring in [
+        Wiring {
+            script: "install.sh",
+            open: "verify_autoroute_serves_a_scan() {",
+            call_site: "elif ! verify_autoroute_serves_a_scan \"$INSTALL_DIR/keyhog\"; then",
+            findings_exit_is_success: "\"$check_status\" = \"1\"",
+        },
+        Wiring {
+            script: "install.ps1",
+            open: "function Test-AutorouteServesAScan {",
+            call_site: "elseif (-not (Test-AutorouteServesAScan -BinPath $BinPath)) {",
+            findings_exit_is_success: "$scanExit -eq 1",
+        },
+    ] {
+        let name = wiring.script;
+        let content =
+            std::fs::read_to_string(root.join(name)).unwrap_or_else(|e| panic!("read {name}: {e}"));
+        let start = content
+            .find(wiring.open)
+            .unwrap_or_else(|| panic!("{name} must define the post-calibration scan check"));
+        let body = content[start..]
+            .split_once("\n}\n")
+            .unwrap_or_else(|| panic!("{name}: post-calibration check has no closing brace"))
+            .0;
+
+        assert!(
+            content.contains(wiring.call_site),
+            "{name} defines the post-calibration scan check but never runs it after calibration"
+        );
+        assert!(
+            body.contains("scan"),
+            "{name}: the post-calibration check must run a real scan"
+        );
+        assert!(
+            !body.contains("--backend"),
+            "{name}: the post-calibration check must exercise the auto route, not a pinned backend"
+        );
+        assert!(
+            !body.contains("--autoroute-calibrate"),
+            "{name}: the post-calibration check must read the primed cache, not extend it"
+        );
+        assert!(
+            body.contains("--no-config"),
+            "{name}: the check must resolve the baseline configuration calibration measured"
+        );
+        assert!(
+            body.contains(wiring.findings_exit_is_success),
+            "{name}: exit 1 is findings, not a routing failure, and must pass the check"
+        );
+    }
+}
