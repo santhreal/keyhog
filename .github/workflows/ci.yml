@@ -243,6 +243,7 @@ jobs:
         run: >
           cargo test -p keyhog-scanner --features gpu --profile ci-test
           --test gpu_wiring_contract
+          --test regression_row_103_gpu_upload_readback_latency
       - name: Require-GPU fails closed on an adapter-free host
         run: >
           cargo test -p keyhog --features gpu --profile ci-test

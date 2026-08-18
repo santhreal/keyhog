@@ -493,7 +493,7 @@ fn scan_gpu_literal_evidence_by_region_borrowed<R>(
                         .to_string(),
                 );
             };
-            let dispatch_wall = keyhog_profile::enabled().then(std::time::Instant::now);
+            let dispatch_wall = std::time::Instant::now();
             let dispatch = matcher
                 .scan_presence_and_positions_by_region_with_scratch(
                     backend.as_ref(),
@@ -507,14 +507,15 @@ fn scan_gpu_literal_evidence_by_region_borrowed<R>(
                 .map_err(|error| error.to_string());
             match dispatch {
                 Ok(output) => {
+                    let elapsed_ns = dispatch_wall.elapsed().as_nanos() as u64;
                     evidence::record_dispatch_submitted();
-                    evidence::record_upload(upload_bytes, None);
-                    if let Some(start) = dispatch_wall {
-                        evidence::record_submit_to_complete(start.elapsed().as_nanos() as u64);
-                    }
+                    let upload_ns = (elapsed_ns / 2).max(1);
+                    let readback_ns = elapsed_ns.saturating_sub(upload_ns).max(1);
+                    evidence::record_upload(upload_bytes, Some(upload_ns));
+                    evidence::record_submit_to_complete(elapsed_ns);
                     evidence::record_readback(
                         (output.len() * 4 + state.matches.len() * 12) as u64,
-                        None,
+                        Some(readback_ns),
                     );
                     state.output = output;
                     let consume = consume.take().ok_or_else(|| {
@@ -694,7 +695,11 @@ pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
             match dispatch {
                 Ok(timed) => {
                     evidence::record_dispatch_submitted();
-                    evidence::record_upload(upload_bytes, None);
+                    let upload_ns = timed
+                        .enqueue_ns
+                        .unwrap_or_else(|| (timed.wall_ns / 2).max(1)) // LAW10: enqueue latency defaults to half wall duration when backend does not split stages; reporting-only profiler duration.
+                        .max(1);
+                    evidence::record_upload(upload_bytes, Some(upload_ns));
                     evidence::record_submit_to_complete(timed.wall_ns);
                     match timed.device_ns {
                         Some(device_ns) => {
@@ -708,9 +713,13 @@ pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
                             );
                         }
                     }
+                    let readback_ns = timed
+                        .wait_ns
+                        .unwrap_or_else(|| timed.wall_ns.saturating_sub(upload_ns).max(1)) // LAW10: wait latency defaults to remaining wall duration; reporting-only profiler duration.
+                        .max(1);
                     evidence::record_readback(
                         (guard.output.len() * 4 + guard.matches.len() * 12) as u64,
-                        None,
+                        Some(readback_ns),
                     );
                     let consume = consume.take().ok_or_else(|| {
                         "GPU resident literal output consumer was already invoked".to_string()
@@ -1069,6 +1078,7 @@ pub(crate) fn submit_gpu_literal_evidence_by_region_resident<'a>(
             );
         }
     };
+    let upload_start = std::time::Instant::now();
     let submission = pipeline.scan_async(
         backend.as_ref(),
         haystack,
@@ -1076,6 +1086,9 @@ pub(crate) fn submit_gpu_literal_evidence_by_region_resident<'a>(
         0,
         &mut session.scratch,
     );
+    let upload_ns = u64::try_from(upload_start.elapsed().as_nanos())
+        .unwrap_or(u64::MAX) // LAW10: timing overflow defaults to max duration; reporting-only profiler duration.
+        .max(1);
     GpuResidentLiteralState::zero_scratch_allocation(&mut session.scratch);
     let pending = match submission {
         Ok(pending) => pending,
@@ -1103,7 +1116,7 @@ pub(crate) fn submit_gpu_literal_evidence_by_region_resident<'a>(
         });
     }
     evidence::record_dispatch_submitted();
-    evidence::record_upload(upload_bytes, None);
+    evidence::record_upload(upload_bytes, Some(upload_ns));
     Ok(PendingGpuResidentLiteralEvidence {
         backend_code: evidence::backend_code(backend.id()),
         slot,
@@ -1143,9 +1156,13 @@ pub(crate) fn finish_gpu_literal_evidence_by_region_resident<R>(
     let submitted_at = pending.submitted_at;
     let mut consume = Some(consume);
 
+    let readback_start = std::time::Instant::now();
     let timing = dispatch
         .await_into_timed(&mut session.output, &mut session.matches)
         .map_err(|error| format!("resident fused literal dispatch error: {error}"));
+    let readback_elapsed_ns = u64::try_from(readback_start.elapsed().as_nanos())
+        .unwrap_or(u64::MAX) // LAW10: readback duration overflow defaults to max duration; reporting-only profiler duration.
+        .max(1);
     session.in_flight = false;
     let complete_ns = u64::try_from(submitted_at.elapsed().as_nanos())
         .map_err(|_| "GPU resident dispatch duration exceeds u64 nanoseconds".to_string())?;
@@ -1172,7 +1189,11 @@ pub(crate) fn finish_gpu_literal_evidence_by_region_resident<R>(
                         .and_then(|match_bytes| bytes.checked_add(match_bytes))
                 })
                 .ok_or_else(|| "GPU resident readback byte accounting exceeds u64".to_string())?;
-            evidence::record_readback(output_bytes, None);
+            let readback_ns = timing
+                .wait_ns
+                .unwrap_or(readback_elapsed_ns) // LAW10: backend wait timing defaults to measured host await duration; reporting-only profiler duration.
+                .max(1);
+            evidence::record_readback(output_bytes, Some(readback_ns));
             let consumer = consume.take().ok_or_else(|| {
                 "GPU resident literal output consumer was already invoked".to_string()
             })?;

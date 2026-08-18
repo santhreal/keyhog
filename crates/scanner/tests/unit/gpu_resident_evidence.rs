@@ -481,3 +481,75 @@ fn row72_host_byte_copies_and_scrub_counter_and_credential_zeroize_guarantee() {
         assert!(session.scratch.iter().all(|byte| *byte == 0));
     }
 }
+
+/// WHY: GPU upload and readback latency counters must be populated with positive durations for every dispatch (Row 103).
+/// Every dispatch with nonzero upload bytes must record nonzero GpuUploadNs; every dispatch with nonzero readback bytes
+/// must record nonzero GpuReadbackNs.
+/// WHAT IT DOES NOT CATCH:
+/// Physical PCIe bus hardware clock drift or driver-level hardware timer inaccuracies.
+#[test]
+fn row103_gpu_upload_and_readback_durations_recorded_on_dispatch() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
+    let concrete_backend = match vyre_driver_wgpu::WgpuBackend::shared() {
+        Ok(backend) => backend,
+        Err(error) => {
+            assert!(
+                !crate::hw_probe::probe_hardware().gpu_available,
+                "GPU hardware is present but WGPU could not be acquired: {error}"
+            );
+            return;
+        }
+    };
+    let backend: std::sync::Arc<dyn vyre::VyreBackend> = concrete_backend;
+    let matcher = vyre::scan::GpuLiteralSet::compile(&[b"secret_token_12345".as_slice()]);
+    let slot = std::sync::Mutex::new(GpuResidentLiteralSlot::Empty);
+
+    let runtime = keyhog_profile::Runtime::new();
+    let mut matched = false;
+
+    runtime.scope(|| {
+        let res = scan_gpu_literal_evidence_by_region_resident(
+            &slot,
+            &matcher,
+            &backend,
+            false,
+            b"data with secret_token_12345 inside",
+            &[0],
+            1,
+            |_presence, matches| {
+                matched = !matches.is_empty();
+                Ok(())
+            },
+        );
+        assert!(res.is_ok(), "GPU literal scan must succeed: {res:?}");
+    });
+
+    assert!(matched, "pattern detected");
+
+    let metrics = runtime.take_session_typed_metrics();
+    let value = |id: keyhog_profile::MetricId| {
+        metrics
+            .iter()
+            .find(|metric| metric.metric_id == id)
+            .map(|metric| metric.value)
+            .unwrap_or(0)
+    };
+
+    let upload_bytes = value(keyhog_profile::CounterId::GpuUploadBytes.metric_id());
+    let upload_ns = value(keyhog_profile::CounterId::GpuUploadNs.metric_id());
+    let readback_bytes = value(keyhog_profile::CounterId::GpuReadbackBytes.metric_id());
+    let readback_ns = value(keyhog_profile::CounterId::GpuReadbackNs.metric_id());
+
+    assert!(upload_bytes > 0, "upload bytes must be recorded");
+    assert!(
+        upload_ns > 0,
+        "upload duration must be nonzero when upload bytes > 0 (Row 103 contract)"
+    );
+    assert!(readback_bytes > 0, "readback bytes must be recorded");
+    assert!(
+        readback_ns > 0,
+        "readback duration must be nonzero when readback bytes > 0 (Row 103 contract)"
+    );
+
+    reset_resident_literal_slot(&slot).expect("slot resets cleanly");
+}

@@ -20,7 +20,7 @@ use super::gpu_region_batch::{
 use super::gpu_region_dispatch_helpers::record_test_window_reduction_allocation;
 #[cfg(test)]
 pub(super) use super::gpu_region_dispatch_helpers::{
-    append_phase2_gpu_admission, reset_test_window_reduction_allocations,
+    append_phase2_gpu_admission, mib_per_second, reset_test_window_reduction_allocations,
     test_window_reduction_allocations,
 };
 use super::gpu_region_dispatch_helpers::{
@@ -189,7 +189,7 @@ impl CompiledScanner {
         let words = self.ac_map.len().div_ceil(64).max(1);
         let gpu_literal_count = self.gpu_literal_count();
         let presence_words = gpu_literal_count.div_ceil(32).max(1);
-        let region_source_bytes = chunks.iter().try_fold(0usize, |total, chunk| {
+        let _region_source_bytes = chunks.iter().try_fold(0usize, |total, chunk| {
             total.checked_add(chunk.data.len()).ok_or_else(|| {
                 super::gpu_forced::SelectedGpuDispatchError::new(
                     "GPU region-presence source-byte accounting overflows host usize".to_string(),
@@ -953,7 +953,7 @@ impl CompiledScanner {
             has_shards.then(|| super::profile::span(keyhog_profile::Stage::BackendDispatch));
         let t_phase2_gpu = kh.then(std::time::Instant::now);
         let mut phase2_gpu_empty_complete = false;
-        let mut phase2_gpu_coverage = None;
+        let mut _phase2_gpu_coverage = None;
         let mut phase2_gpu_haystack_uploads = 0usize;
         let phase2_gpu_admission = match phase2_gpu_workload {
             Phase2GpuAdmissionWorkload::Empty => {
@@ -962,7 +962,7 @@ impl CompiledScanner {
             }
             Phase2GpuAdmissionWorkload::Full { chunks: gpu_chunks } => match catalog_opt {
                 Some(catalog) => {
-                    phase2_gpu_coverage = Some(catalog.coverage());
+                    _phase2_gpu_coverage = Some(catalog.coverage());
                     if !catalog.has_shards() {
                         phase2_gpu_empty_complete = true;
                         None
@@ -1009,7 +1009,7 @@ impl CompiledScanner {
                 full_len,
             } => match catalog_opt {
                 Some(catalog) => {
-                    phase2_gpu_coverage = Some(catalog.coverage());
+                    _phase2_gpu_coverage = Some(catalog.coverage());
                     if !catalog.has_shards() {
                         phase2_gpu_empty_complete = true;
                         None
