@@ -731,6 +731,28 @@ impl AutorouteCalibrationPoint {
             .map(|(route, _, _)| *route)
     }
 
+    /// One-shot cost of an accelerator route, per trial.
+    ///
+    /// An accelerator pays a fixed setup cost once (Hyperscan database load,
+    /// GPU context and buffer creation) and then scans. Calibration measures
+    /// setup+scan exactly ONCE, as trial zero, and the scan alone six more
+    /// times. The one-shot cost of trial `i` is therefore that single measured
+    /// setup plus the scan time of trial `i`.
+    ///
+    /// This used to be `cold_ns.max(warm_ns)`. Because setup dominates for
+    /// SIMD, every trial collapsed to the identical `cold_ns`, which turned a
+    /// distribution into a constant: measured across a real 158-class
+    /// calibration, 929 of 940 SIMD one-shot intervals had zero width. A
+    /// zero-width interval never overlaps a peer, so SIMD was declared a
+    /// *separated* loser against cpu-fallback on every one-shot route of every
+    /// host, even where its own warm trials were faster than cpu's.
+    ///
+    /// The median is unchanged: `setup + warm_median` is `cold_ns` whenever
+    /// setup is positive, which is what `route_ns` already reported.
+    fn accelerator_setup_ns(cold_ns: u128, warm_timing: &BackendTimingEvidence) -> u128 {
+        cold_ns.saturating_sub(warm_timing.median_ns())
+    }
+
     fn route_trial_ns_for(
         &self,
         route: MeasuredRoute,
@@ -738,17 +760,15 @@ impl AutorouteCalibrationPoint {
     ) -> Option<Vec<u128>> {
         if route.backend == ScanBackend::SimdCpu || route.backend.is_gpu() {
             let (cold_ns, warm_timing, _) = self.accelerator_cold_warm_route_for_measured(route)?;
+            if persistent_runtime {
+                return Some(warm_timing.trials_ns);
+            }
+            let setup_ns = Self::accelerator_setup_ns(cold_ns, &warm_timing);
             Some(
                 warm_timing
                     .trials_ns
                     .into_iter()
-                    .map(|warm_ns| {
-                        if persistent_runtime {
-                            warm_ns
-                        } else {
-                            cold_ns.max(warm_ns)
-                        }
-                    })
+                    .map(|warm_ns| warm_ns.saturating_add(setup_ns))
                     .collect(),
             )
         } else {
@@ -874,9 +894,12 @@ impl AutorouteCalibrationPoint {
                     if persistent_runtime {
                         warm_interval
                     } else {
+                        // Setup was measured once, so it contributes a shift,
+                        // not certainty. The width stays the warm width.
+                        let setup_ns = Self::accelerator_setup_ns(cold_ns, &warm_timing);
                         TimingConfidenceInterval {
-                            low_ns: cold_ns.max(warm_interval.low_ns),
-                            high_ns: cold_ns.max(warm_interval.high_ns),
+                            low_ns: warm_interval.low_ns.saturating_add(setup_ns),
+                            high_ns: warm_interval.high_ns.saturating_add(setup_ns),
                         }
                     },
                 ));

@@ -3583,6 +3583,57 @@ fn autoroute_confidence_uses_student_t_for_small_calibration_samples() {
     );
 }
 
+/// WHY: a one-shot accelerator route used to be scored as `max(cold, warm)`
+/// on BOTH confidence bounds. Setup dominates for SIMD, so both bounds
+/// collapsed onto the single cold sample and the interval had zero width. In
+/// a real 158-class calibration on this host, 929 of 940 SIMD one-shot
+/// intervals were zero width and cold exceeded the warm median in 940 of 940.
+/// A zero-width interval can never overlap a peer, so SIMD was reported as a
+/// measurably *separated* loser against cpu-fallback on every one-shot route,
+/// from one measurement.
+///
+/// Setup is measured once, so it shifts the distribution; it does not shrink
+/// it. These numbers are a near tie: cpu's interval ends at 26.58 ms, the
+/// single SIMD cold sample is 27.0 ms, and SIMD's own warm scans run
+/// 24.0-26.0 ms. The old model called that proof; it is not.
+///
+/// WHAT IT DOES NOT CATCH: whether the setup cost itself is stable. One cold
+/// sample cannot say, which is exactly why its width is borrowed from the
+/// warm trials rather than asserted to be zero.
+#[test]
+fn one_shot_accelerator_confidence_keeps_the_measured_warm_width() {
+    let simd_timing = super::super::evidence::BackendTimingEvidence::from_trial_ns(vec![
+        27_000_000, 24_000_000, 24_500_000, 25_000_000, 25_000_000, 25_500_000, 26_000_000,
+    ])
+    .expect("SIMD cold-then-warm timing evidence");
+    let cpu_timing = super::super::evidence::BackendTimingEvidence::from_trial_ns(vec![
+        25_800_000, 26_000_000, 26_200_000, 26_300_000, 26_400_000, 26_600_000, 26_700_000,
+    ])
+    .expect("CPU timing evidence");
+    let decision = AutorouteDecision::from_timing_evidence(
+        ScanBackend::SimdCpu,
+        8 * 1024 * 1024,
+        1,
+        0xA11D_0B57_A11D_0B57,
+        1,
+        simd_timing,
+        Some(cpu_timing),
+        None,
+    );
+
+    assert!(
+        !decision.selected_backend_has_non_overlapping_confidence(ScanBackend::CpuFallback),
+        "cpu-fallback must not be a proved one-shot winner over an accelerator whose own \
+         warm scans are faster; the accelerator's single cold sample is not a zero-width \
+         confidence interval"
+    );
+    assert!(
+        !decision.has_confidence_supported_route(),
+        "a near tie between the shifted accelerator interval and cpu must report as \
+         unseparated, not as measured proof"
+    );
+}
+
 #[test]
 fn scalar_reference_inconsistency_aborts_calibration_contract() {
     let reference = vec![vec![canonical_test_match(
