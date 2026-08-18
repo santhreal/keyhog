@@ -351,6 +351,55 @@ pub(crate) fn reset_host_data_movement_counters() {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub(crate) enum GpuApiKind {
+    Cuda,
+    Metal,
+    Wgpu,
+}
+
+impl GpuApiKind {
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Cuda => "cuda",
+            Self::Metal => "metal",
+            Self::Wgpu => "wgpu",
+        }
+    }
+}
+
+static INITIALIZED_GPU_APIS: [AtomicU64; 3] = [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
+
+pub(crate) fn record_gpu_api_initialized(api: GpuApiKind) {
+    let idx = match api {
+        GpuApiKind::Cuda => 0,
+        GpuApiKind::Metal => 1,
+        GpuApiKind::Wgpu => 2,
+    };
+    INITIALIZED_GPU_APIS[idx].fetch_add(1, Ordering::Relaxed);
+}
+
+#[cfg(test)]
+pub(crate) fn initialized_gpu_api_count() -> usize {
+    INITIALIZED_GPU_APIS.iter().filter(|a| a.load(Ordering::Relaxed) > 0).count()
+}
+
+#[cfg(test)]
+pub(crate) fn initialized_gpu_api_counts() -> (u64, u64, u64) {
+    (
+        INITIALIZED_GPU_APIS[0].load(Ordering::Relaxed),
+        INITIALIZED_GPU_APIS[1].load(Ordering::Relaxed),
+        INITIALIZED_GPU_APIS[2].load(Ordering::Relaxed),
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn reset_initialized_gpu_api_counters() {
+    for a in &INITIALIZED_GPU_APIS {
+        a.store(0, Ordering::Relaxed);
+    }
+}
+
 /// Current (resident, peak) device-byte tracker state; test diagnostics only.
 #[cfg(test)]
 pub(crate) fn resident_bytes_snapshot() -> (u64, u64) {

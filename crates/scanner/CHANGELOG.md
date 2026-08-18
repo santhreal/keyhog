@@ -2,6 +2,7 @@
 
 
 ## 0.5.80 - 2026-08-17
+- fix(gpu): lazy-scope GPU API initialization to only the selected scan backend route and eliminate redundant WGPU enumeration during CUDA and CPU scans.
 - perf(gpu): eliminate intermediate host buffer copies and redundant scrubs on GPU region dispatch, enforcing <= 1 copy per dispatched byte with host data movement instrumentation.
 - perf(gpu): short-circuit phase-2 GPU regex-DFA admission and eliminate redundant backend dispatch spans when catalog covers zero patterns.
 - fix(router): eliminate inverted batch dominance heuristic in hardware probe backend selection and unify batch routing with measured threshold evaluation.

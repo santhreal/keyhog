@@ -52,8 +52,7 @@ fn selected_gpu_peer(backend: crate::hw_probe::ScanBackend) -> SelectedGpuPeer {
                         caps.compute_capability.1,
                         caps.total_memory
                     );
-                    let runtime_identity = linux_cuda_runtime_identity()
-                        .map_err(|diagnostic| {
+                    let runtime_identity = crate::gpu::linux_cuda_runtime_identity()
                             tracing::warn!(
                                 target: "keyhog::routing",
                                 %diagnostic,
@@ -1525,14 +1524,3 @@ impl CompiledScanner {
     }
 }
 
-#[cfg(all(target_os = "linux", feature = "gpu"))]
-fn linux_cuda_runtime_identity() -> std::result::Result<String, String> {
-    let version = std::fs::read_to_string("/proc/driver/nvidia/version")
-        .map_err(|error| format!("cannot read /proc/driver/nvidia/version: {error}"))?;
-    let version = version.split_whitespace().collect::<Vec<_>>().join(" ");
-    if version.is_empty() {
-        Err("/proc/driver/nvidia/version contains no runtime identity".to_owned())
-    } else {
-        Ok(format!("nvidia-kernel:{version}"))
-    }
-}

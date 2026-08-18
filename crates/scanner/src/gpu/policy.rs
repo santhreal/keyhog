@@ -85,6 +85,17 @@ pub(crate) fn gpu_probe() -> GpuRuntimeProbe {
     if gpu_disabled_by_policy() {
         return GpuRuntimeProbe::default();
     }
+    #[cfg(all(feature = "gpu", target_os = "linux"))]
+    if let Ok(cuda) = super::probe_cuda_peer() {
+        let name = format!("NVIDIA GPU (CUDA cap {}.{})", cuda.major, cuda.minor);
+        return GpuRuntimeProbe {
+            available: true,
+            name: Some(name),
+            buffer_limit_mb: Some(cuda.total_vram_mb),
+            runtime_identity: super::linux_cuda_runtime_identity().ok(),
+            is_software: false,
+        };
+    }
     #[cfg(feature = "gpu")]
     if let Some(gpu) = super::gpu_adapter_probe() {
         return GpuRuntimeProbe {
