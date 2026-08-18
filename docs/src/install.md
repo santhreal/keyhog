@@ -41,6 +41,12 @@ binary on `PATH` with the same layout, permission, and PATH handling that a
 packaged install would use. Neither script contacts the network. Both refuse
 to install without `--from-file` and print the Cargo command instead.
 
+Both scripts run `keyhog doctor`, publish an execution-pack generation,
+calibrate autoroute, and then scan a throwaway two-file directory with no
+backend override. That last scan is the install's pass criterion for routing: a
+calibrated cache that cannot serve an ordinary scan fails the install and the
+previous binary is restored.
+
 Update with `cargo install --locked --force keyhog`. That is also the repair
 path: it rebuilds and replaces the installed binary.
 
