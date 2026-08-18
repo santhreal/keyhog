@@ -39,6 +39,8 @@ pub mod ascii_ci;
 mod aws;
 /// Unified cache layout classification and eviction policy contracts.
 pub mod cache_layout;
+/// Compiled-artifact class model and canonical identity contracts.
+pub mod compiled_artifact;
 /// Configuration system for KeyHog scanning options.
 mod config;
 /// Cross-file credential correlation over an already-reported finding set.
@@ -88,6 +90,7 @@ pub use cache_layout::{CacheEvictionPolicy, CacheKind};
 use std::borrow::Cow;
 
 pub use api::*;
+pub use compiled_artifact::{CompiledArtifactClass, CompiledArtifactIdentity};
 pub use detector_corpus::{
     compose_detector_corpus, compute_detector_corpus_digest,
     compute_detector_corpus_digest_for_schema, DetectorCorpusError, DetectorCorpusMode,

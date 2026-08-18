@@ -13,8 +13,9 @@ use std::path::PathBuf;
 /// Default-on mirrors Hyperscan's persistent shard cache, which likewise
 /// resolves under `dirs::cache_dir()/keyhog` when `--cache-dir` is unset
 /// (`simd::backend::resolve_cache_dir`). An explicit path that fails validation
-/// is a hard error. The automatic default soft-fails to `None` (cache disabled)
-/// when the platform cache root is missing or outside the allowlist.
+/// is a hard error. The automatic default automatically tightens loose permissions
+/// (e.g. 0775 to 0700) and soft-fails to `None` (cache disabled) when the platform
+/// cache root is missing or outside the allowlist.
 pub(crate) fn resolve_matcher_cache_path(raw: Option<&str>) -> Result<Option<PathBuf>, String> {
     resolve_matcher_cache_path_with_default(raw, dirs::cache_dir())
 }
@@ -40,20 +41,22 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
     }
 
     match keyhog_scanner::default_matcher_artifact_cache_dir_from_base(default_cache_dir) {
-        Ok(path) => match keyhog_scanner::validate_matcher_artifact_cache_dir(&path) {
-            Ok(()) => Ok(Some(path)),
-            Err(error) => {
-                // Default-on soft-fail must not spam ordinary/CI stderr when
-                // XDG_CACHE_HOME sits outside $HOME. Explicit --matcher-cache
-                // paths still hard-error above.
-                tracing::debug!(
-                    error = %error,
-                    path = %path.display(),
-                    "matcher-artifact cache disabled: default cache location is unusable"
-                );
-                Ok(None)
+        Ok(path) => {
+            match keyhog_scanner::validate_and_tighten_matcher_artifact_cache_dir(&path, true) {
+                Ok(()) => Ok(Some(path)),
+                Err(error) => {
+                    // Default-on soft-fail must not spam ordinary/CI stderr when
+                    // XDG_CACHE_HOME sits outside $HOME. Explicit --matcher-cache
+                    // paths still hard-error above.
+                    tracing::debug!(
+                        error = %error,
+                        path = %path.display(),
+                        "matcher-artifact cache disabled: default cache location is unusable"
+                    );
+                    Ok(None)
+                }
             }
-        },
+        }
         Err(error) => {
             tracing::debug!(
                 error = %error,
