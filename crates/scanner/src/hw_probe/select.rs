@@ -47,7 +47,6 @@ pub(crate) fn cpu_tier_backend(caps: &HardwareCaps) -> ScanBackend {
 struct BackendWorkload {
     bytes: u64,
     pattern_count: usize,
-    large_chunk_bytes: Option<u64>,
 }
 
 impl BackendWorkload {
@@ -55,25 +54,6 @@ impl BackendWorkload {
         Self {
             bytes,
             pattern_count,
-            large_chunk_bytes: None,
-        }
-    }
-
-    #[cfg(test)]
-    fn batch(bytes: u64, pattern_count: usize, large_chunk_bytes: u64) -> Self {
-        Self {
-            bytes,
-            pattern_count,
-            large_chunk_bytes: Some(large_chunk_bytes),
-        }
-    }
-
-    fn gpu_dominates_dispatch_cost(self) -> bool {
-        match self.large_chunk_bytes {
-            None => true,
-            Some(large_chunk_bytes) => {
-                large_chunk_bytes > 0 && large_chunk_bytes.saturating_mul(2) >= self.bytes
-            }
         }
     }
 }
@@ -84,7 +64,6 @@ pub enum BackendRoutingReason {
     GpuDisabledByPolicy,
     GpuProbeMiss,
     GpuSoftwareRenderer,
-    GpuBatchNotDominant,
     GpuThresholdNotMet,
     GpuSelected,
 }
@@ -98,7 +77,6 @@ impl BackendRoutingReason {
             Self::GpuDisabledByPolicy => "gpu_disabled_by_policy",
             Self::GpuProbeMiss => "gpu_probe_miss",
             Self::GpuSoftwareRenderer => "gpu_software_renderer",
-            Self::GpuBatchNotDominant => "gpu_batch_not_dominant",
             Self::GpuThresholdNotMet => "gpu_threshold_not_met",
             Self::GpuSelected => "gpu_selected",
         }
@@ -133,7 +111,7 @@ impl BackendRoutingVerdict {
             reason,
             workload_bytes: workload.bytes,
             pattern_count: workload.pattern_count,
-            large_chunk_bytes: workload.large_chunk_bytes,
+            large_chunk_bytes: None,
             gpu_available: caps.gpu_available,
             gpu_is_software: caps.gpu_is_software,
             gpu_tier: profile.tier,
@@ -156,18 +134,6 @@ impl BackendRoutingVerdict {
             }
             BackendRoutingReason::GpuSoftwareRenderer => {
                 "GPU adapter is a software renderer and is slower than CPU/SIMD".to_string()
-            }
-            BackendRoutingReason::GpuBatchNotDominant => {
-                let Some(large) = self.large_chunk_bytes else {
-                    return format!(
-                        "large-chunk byte share is unavailable for workload bytes ({})",
-                        self.workload_bytes
-                    );
-                };
-                format!(
-                    "large-chunk bytes ({large}) do not dominate workload bytes ({})",
-                    self.workload_bytes
-                )
             }
             BackendRoutingReason::GpuThresholdNotMet => format!(
                 "GPU thresholds not met for tier {}: bytes={} min={} solo={} patterns={} pattern_floor={}",
@@ -235,14 +201,6 @@ fn select_backend_for_workload(
         );
     }
 
-    if !workload.gpu_dominates_dispatch_cost() {
-        return BackendRoutingVerdict::new(
-            caps,
-            workload,
-            cpu_backend,
-            BackendRoutingReason::GpuBatchNotDominant,
-        );
-    }
 
     if gpu_could_engage(caps, workload.bytes, workload.pattern_count) {
         return BackendRoutingVerdict::new(
@@ -305,60 +263,17 @@ pub fn select_backend_verdict(
 
 /// Batch-aware backend routing (a pure, hardware-only library router).
 ///
-/// NOTE on the live CLI path: the shipped scan dispatcher does NOT call this;
-/// it uses the measured, parity-checked `MeasuredBackendRouter`
-/// (`crates/cli/src/orchestrator/dispatch/backend.rs`), which benchmarks the
-/// candidate backends on a real sample and gates the GPU behind explicit
-/// `--autoroute-gpu` calibration eligibility (GPU region presence is slower
-/// than SIMD on keyhog's workload through the measured range). This function is the deterministic,
-/// side-effect-free dominance heuristic used by the `keyhog backend` report and
-/// by callers that want a backend decision without running the scanner, it
-/// shares [`cpu_tier_backend`] and [`gpu_could_engage`] with the live router so
-/// the CPU-tier verdict never diverges.
-///
-/// Identical to [`select_backend`] for the CPU tiers, but adds a structural
-/// guard before the GPU branch: `large_chunk_bytes`
-/// is the number of bytes in the batch that live in *large* chunks - chunks at
-/// or above the tier's `gpu_min_bytes` floor (the per-file size below which a
-/// chunk can never carry its share of the device-dispatch cost).
-///
-/// `select_backend` decides on `workload_bytes` alone - the coalesced batch
-/// total. That conflates two workloads the GPU treats very differently:
-///
-///   * a batch *dominated* by genuinely large files (e.g. minified bundles,
-///     data blobs, generated headers) - the GPU's massively-parallel literal/
-///     AC kernel scans those contiguous regions far faster than one Hyperscan
-///     core, amortizing the fixed per-batch device-dispatch + PCIe-copy +
-///     readback + host-side match-attribution cost; and
-///   * a *swarm* of tiny files whose sizes merely SUM past the GPU floor
-///     (the Linux kernel: 94k files, 1.5 GiB, but only 55 files >= 2 MiB and a
-///     single 22 MiB max - the tiny files coalesce into 256 MiB batches). Here
-///     the GPU re-scans every byte, surfaces a literal hit for every detector-
-///     prefix occurrence across the whole buffer, then hands the CPU the SAME
-///     per-chunk phase-2 confirmation it would have run anyway - plus the
-///     coalesce/copy/readback the SIMD path never pays. Measured on the kernel
-///     this routes ~2.1x SLOWER (204 s vs 96 s) at ~3x peak RSS (4.1 vs 2.3
-///     GiB), and the unbounded device wait can stall the whole scan when the
-///     driver drops a completion.
-///
-/// A largest-chunk guard is not enough: the kernel's 55 large files are
-/// sprinkled through the walk, so nearly every 4096-file batch catches one and
-/// would still route to GPU. The robust signal is DOMINANCE - GPU engages only
-/// when large-chunk bytes are at least half the batch, so a tiny-file swarm
-/// never qualifies no matter how the large files cluster, while a batch that is
-/// mostly big-file data still gets the device. An explicit CLI backend override
-/// still wins (forced/diagnostic GPU path unchanged), and benchmarks should pin
-/// `--backend simd`, so this only changes the *default* routing for many-small-
-/// file trees - the common real-world scan.
+/// Selects the scan backend for a batch based on hardware capabilities and
+/// measured threshold requirements.
 #[must_use]
 #[cfg(test)]
 pub(crate) fn select_backend_for_batch(
     caps: &HardwareCaps,
     workload_bytes: u64,
     pattern_count: usize,
-    large_chunk_bytes: u64,
+    _large_chunk_bytes: u64,
 ) -> ScanBackend {
-    select_backend_for_batch_verdict(caps, workload_bytes, pattern_count, large_chunk_bytes).backend
+    select_backend(caps, workload_bytes, pattern_count)
 }
 
 #[must_use]
@@ -367,12 +282,9 @@ pub(crate) fn select_backend_for_batch_verdict(
     caps: &HardwareCaps,
     workload_bytes: u64,
     pattern_count: usize,
-    large_chunk_bytes: u64,
+    _large_chunk_bytes: u64,
 ) -> BackendRoutingVerdict {
-    select_backend_for_workload(
-        caps,
-        BackendWorkload::batch(workload_bytes, pattern_count, large_chunk_bytes),
-    )
+    select_backend_verdict(caps, workload_bytes, pattern_count)
 }
 
 /// Cheap, side-effect-free pre-check: could a scan of `workload_bytes` over

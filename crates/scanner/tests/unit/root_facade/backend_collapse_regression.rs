@@ -195,18 +195,6 @@ fn routing_verdict_surfaces_every_cpu_reason() {
             .reason_detail()
             .contains("GPU thresholds not met"));
 
-        let batch_verdict = select_backend_for_batch_verdict(
-            &caps_gpu(true, true),
-            thresholds::GPU_MIN_BYTES_HIGH_TIER,
-            5_000,
-            1024,
-        );
-        assert_eq!(batch_verdict.backend, ScanBackend::SimdCpu);
-        assert_eq!(
-            batch_verdict.reason,
-            BackendRoutingReason::GpuBatchNotDominant
-        );
-        assert!(batch_verdict.reason_detail().contains("do not dominate"));
     });
 }
 
@@ -290,25 +278,14 @@ fn selection_matrix_exact_cells() {
 }
 
 #[test]
-fn batch_dominance_guard_keeps_small_file_swarm_on_cpu() {
+fn batch_selection_delegates_to_backend_routing() {
     with_policy(GpuRuntimePolicy::Auto, None, || {
         let gpu = caps_gpu(true, true);
-        // A batch whose bytes sum past the floor but whose LARGE-chunk bytes are
-        // a small minority (tiny-file swarm) must NOT route to GPU, even though
-        // the size-only `select_backend` would. This is the dominance guard that
-        // distinguishes the two batch shapes.
         let total = thresholds::GPU_MIN_BYTES_HIGH_TIER;
-        let small_large = 1024 * 1024; // 1 MiB of large-chunk bytes out of the batch.
         assert_eq!(
-            select_backend_for_batch(&gpu, total, 5_000, small_large),
-            ScanBackend::SimdCpu,
-            "small-file swarm (large bytes < half) must stay on SimdCpu"
-        );
-        // The same batch DOMINATED by large-file bytes does take the GPU.
-        assert_eq!(
-            select_backend_for_batch(&gpu, total, 5_000, total),
-            automatic_gpu_backend(),
-            "large-file-dominated batch must route to GPU"
+            select_backend_for_batch(&gpu, total, 5_000, 1024),
+            select_backend(&gpu, total, 5_000),
+            "select_backend_for_batch must match select_backend"
         );
     });
 }

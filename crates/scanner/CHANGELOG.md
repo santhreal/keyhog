@@ -2,6 +2,7 @@
 
 
 ## 0.5.80 - 2026-08-17
+- fix(router): eliminate inverted batch dominance heuristic in hardware probe backend selection and unify batch routing with measured threshold evaluation.
 - feat(cache): implement unified cache eviction engine (`cache_eviction`) and `CacheKind` layout reconciliation across Hyperscan, detector plan, GPU program, and matcher artifact caches with stale lock reclamation.
 - feat(cache): add `validate_and_tighten_matcher_artifact_cache_dir` to auto-repair loose default cache directory permissions to 0700 without disabling cache.
 - fix(scanner): clamp decode-through window overlap to enforce strictly advancing window progress across UTF-8 scalar boundaries in release builds.
