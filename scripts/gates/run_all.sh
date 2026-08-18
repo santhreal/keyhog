@@ -223,6 +223,12 @@ run "Unified counter ownership: profile metrics ownership and zero stray counter
   python3 -B scripts/gates/unified_counter_ownership.py
 run "Unified counter ownership unit tests: static analysis of process-global counter ownership" \
   python3 -B -m unittest scripts.tests.test_unified_counter_ownership -v
+run "Timing log profile identity self-test: diagnostic log lines without profile identity are detected" \
+  python3 -B scripts/gates/timing_log_profile_identity.py --self-test
+run "Timing log profile identity: all diagnostic timing figures derive from registered profile metrics" \
+  python3 -B scripts/gates/timing_log_profile_identity.py
+run "Timing log profile identity unit tests: static analysis of diagnostic timing logging" \
+  python3 -B -m unittest scripts.tests.test_timing_log_profile_identity -v
 run "Mutation gate self-test: AST mutation generator catches surviving mutants" \
   python3 -B scripts/gates/mutation_gate.py --self-test
 run "Mutation gate unit tests: operator inversion and comment preservation" \

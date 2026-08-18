@@ -2,6 +2,7 @@
 
 
 ## 0.5.80 - 2026-08-17
+- feat(gpu): migrate GPU region dispatch timing from ad-hoc `Instant` stderr `perf-trace` lines into `keyhog_profile` typed metrics and render structured dispatch split during profile dumps.
 - fix(safety): enforce written `// SAFETY:` preconditions and release assertions across all `unsafe` blocks with `unsafe_guards.py` workspace gate.
 - fix(profile): separate Stage::ScanPipeline container from leaf Stage::BackendDispatch to prevent container-duration distortion in bottleneck and cost tables.
 - fix(runtime): enforce panic = "unwind" in release profile to enable catch_unwind GPU isolation boundaries and degradation in shipped release binaries.

@@ -136,6 +136,124 @@ pub(crate) fn ml_split_from_typed(metrics: &[keyhog_profile::TypedMetricRecordV2
     )
 }
 
+/// GPU region dispatch phase breakdown and detail metrics drained from typed profiler storage.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct GpuDispatchSplit {
+    pub matcher_ns: u64,
+    pub coalesce_ns: u64,
+    pub dispatch_ns: u64,
+    pub derive_ns: u64,
+    pub floor_ns: u64,
+    pub phase2_gpu_ns: u64,
+    pub coalesced_bytes: u64,
+    pub max_dispatch_bytes: u64,
+    pub dispatch_calls: u64,
+    pub recoveries: u64,
+    pub presence_bits: u64,
+    pub underfire_recovered: u64,
+    pub trigger_bits: u64,
+    pub phase2_admitted: u64,
+    pub phase2_evidence_bits: u64,
+    pub phase2_haystack_uploads: u64,
+    pub phase2_complete_chunks: u64,
+    pub phase2_complete_rows: u64,
+    pub phase2_excluded_oversized: u64,
+    pub phase2_excluded_non_ascii: u64,
+    pub phase2_always_anchor_chunks: u64,
+    pub phase2_always_anchor_candidate_rows: u64,
+    pub phase2_always_anchor_candidate_count: u64,
+    pub confirmed_anchor_candidate_rows: u64,
+    pub confirmed_anchor_candidate_count: u64,
+    pub generic_keyword_candidate_rows: u64,
+    pub generic_keyword_candidate_count: u64,
+}
+
+impl GpuDispatchSplit {
+    pub(crate) fn any_recorded(&self) -> bool {
+        self.matcher_ns > 0
+            || self.coalesce_ns > 0
+            || self.dispatch_ns > 0
+            || self.derive_ns > 0
+            || self.floor_ns > 0
+            || self.phase2_gpu_ns > 0
+            || self.dispatch_calls > 0
+    }
+}
+
+pub(crate) fn gpu_dispatch_split_from_typed(
+    metrics: &[keyhog_profile::TypedMetricRecordV2],
+) -> GpuDispatchSplit {
+    let value = |counter: keyhog_profile::CounterId| {
+        metrics
+            .iter()
+            .find(|record| record.metric_id == counter.metric_id())
+            .map_or(0, |record| record.value)
+    };
+    GpuDispatchSplit {
+        matcher_ns: value(keyhog_profile::CounterId::GpuMatcherNs),
+        coalesce_ns: value(keyhog_profile::CounterId::GpuCoalesceNs),
+        dispatch_ns: value(keyhog_profile::CounterId::GpuDispatchNs),
+        derive_ns: value(keyhog_profile::CounterId::GpuDeriveNs),
+        floor_ns: value(keyhog_profile::CounterId::GpuRecallFloorNs),
+        phase2_gpu_ns: value(keyhog_profile::CounterId::Phase2GpuAdmissionNs),
+        coalesced_bytes: value(keyhog_profile::CounterId::GpuCoalescedBytes),
+        max_dispatch_bytes: value(keyhog_profile::CounterId::GpuMaxDispatchBytes),
+        dispatch_calls: value(keyhog_profile::CounterId::GpuDispatchCalls),
+        recoveries: value(keyhog_profile::CounterId::GpuRecoveries),
+        presence_bits: value(keyhog_profile::CounterId::GpuPresenceBits),
+        underfire_recovered: value(keyhog_profile::CounterId::GpuUnderfireRecovered),
+        trigger_bits: value(keyhog_profile::CounterId::GpuTriggerBits),
+        phase2_admitted: value(keyhog_profile::CounterId::Phase2GpuAdmitted),
+        phase2_evidence_bits: value(keyhog_profile::CounterId::Phase2GpuEvidenceBits),
+        phase2_haystack_uploads: value(keyhog_profile::CounterId::Phase2GpuHaystackUploads),
+        phase2_complete_chunks: value(keyhog_profile::CounterId::Phase2GpuCompleteChunks),
+        phase2_complete_rows: value(keyhog_profile::CounterId::Phase2GpuCompleteRows),
+        phase2_excluded_oversized: value(keyhog_profile::CounterId::Phase2GpuExcludedOversized),
+        phase2_excluded_non_ascii: value(keyhog_profile::CounterId::Phase2GpuExcludedNonAscii),
+        phase2_always_anchor_chunks: value(keyhog_profile::CounterId::Phase2AlwaysAnchorChunks),
+        phase2_always_anchor_candidate_rows: value(
+            keyhog_profile::CounterId::Phase2AlwaysAnchorCandidateRows,
+        ),
+        phase2_always_anchor_candidate_count: value(
+            keyhog_profile::CounterId::Phase2AlwaysAnchorCandidateCount,
+        ),
+        confirmed_anchor_candidate_rows: value(
+            keyhog_profile::CounterId::ConfirmedAnchorCandidateRows,
+        ),
+        confirmed_anchor_candidate_count: value(
+            keyhog_profile::CounterId::ConfirmedAnchorCandidateCount,
+        ),
+        generic_keyword_candidate_rows: value(
+            keyhog_profile::CounterId::GenericKeywordCandidateRows,
+        ),
+        generic_keyword_candidate_count: value(
+            keyhog_profile::CounterId::GenericKeywordCandidateCount,
+        ),
+    }
+}
+
+pub(crate) fn format_gpu_dispatch_split(split: &GpuDispatchSplit) -> String {
+    let m = split.matcher_ns as f64 / 1e6;
+    let c = split.coalesce_ns as f64 / 1e6;
+    let d = split.dispatch_ns as f64 / 1e6;
+    let der = split.derive_ns as f64 / 1e6;
+    let f = split.floor_ns as f64 / 1e6;
+    let p2 = split.phase2_gpu_ns as f64 / 1e6;
+    let total_compute = c + d + der;
+    let coalesce_mib_s = if split.coalesce_ns > 0 && split.coalesced_bytes > 0 {
+        (split.coalesced_bytes as f64 / (1024.0 * 1024.0)) / (split.coalesce_ns as f64 / 1e9)
+    } else {
+        0.0
+    };
+    format!(
+        "=== GPU dispatch split: matcher={m:.3}ms coalesce={c:.3}ms ({coalesce_mib_s:.1} MiB/s) dispatch={d:.3}ms derive={der:.3}ms floor={f:.3}ms phase2_gpu={p2:.3}ms (compute = {:.1}% transfer/kernel) dispatches={} coalesced_bytes={} trigger_bits={} ===",
+        if total_compute > 0.0 { 100.0 * d / total_compute } else { 0.0 },
+        split.dispatch_calls,
+        split.coalesced_bytes,
+        split.trigger_bits,
+    )
+}
+
 /// Return `true` when a VYRE GPU detection route is available in this
 /// build/runtime.
 ///

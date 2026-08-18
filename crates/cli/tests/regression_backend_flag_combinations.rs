@@ -22,16 +22,12 @@ fn all_backend_override_values_enumerated_at_runtime() {
 
 #[test]
 fn no_gpu_with_gpu_backend_is_rejected_at_parse_time() {
-    let gpu_backends = [
-        "gpu",
-        "gpu-cuda",
-        "gpu-metal",
-        "gpu-wgpu",
-        "gpu-region-presence",
-        "gpu-cuda-region-presence",
-        "gpu-metal-region-presence",
-        "gpu-wgpu-region-presence",
-    ];
+    let gpu_backends: Vec<&str> = BACKEND_OVERRIDE_VALUES
+        .iter()
+        .copied()
+        .filter(|&backend| backend.starts_with("gpu"))
+        .collect();
+    assert!(!gpu_backends.is_empty());
 
     for &backend in &gpu_backends {
         let args = ["keyhog", "scan", "--backend", backend, "--no-gpu", "."];

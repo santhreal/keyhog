@@ -165,6 +165,31 @@ pub enum MetricId {
     BinaryGhidraDegradedToStrings,
     BinaryUnreadable,
     GitBufferedBlobChunks,
+    GpuMatcherNs,
+    GpuCoalesceNs,
+    GpuDispatchNs,
+    GpuDeriveNs,
+    GpuRecallFloorNs,
+    Phase2GpuAdmissionNs,
+    GpuCoalescedBytes,
+    GpuMaxDispatchBytes,
+    GpuPresenceBits,
+    GpuUnderfireRecovered,
+    GpuTriggerBits,
+    Phase2GpuAdmitted,
+    Phase2GpuEvidenceBits,
+    Phase2GpuHaystackUploads,
+    Phase2GpuCompleteChunks,
+    Phase2GpuCompleteRows,
+    Phase2GpuExcludedOversized,
+    Phase2GpuExcludedNonAscii,
+    Phase2AlwaysAnchorChunks,
+    Phase2AlwaysAnchorCandidateRows,
+    Phase2AlwaysAnchorCandidateCount,
+    ConfirmedAnchorCandidateRows,
+    ConfirmedAnchorCandidateCount,
+    GenericKeywordCandidateRows,
+    GenericKeywordCandidateCount,
 }
 
 /// Stable identifier for a top-level production pipeline stage.
@@ -313,9 +338,34 @@ pub enum CounterId {
     ExampleSuppressions,
     BinaryGhidraDegradedToStrings,
     BinaryUnreadable,
+    GpuMatcherNs,
+    GpuCoalesceNs,
+    GpuDispatchNs,
+    GpuDeriveNs,
+    GpuRecallFloorNs,
+    Phase2GpuAdmissionNs,
+    GpuCoalescedBytes,
+    GpuMaxDispatchBytes,
+    GpuPresenceBits,
+    GpuUnderfireRecovered,
+    GpuTriggerBits,
+    Phase2GpuAdmitted,
+    Phase2GpuEvidenceBits,
+    Phase2GpuHaystackUploads,
+    Phase2GpuCompleteChunks,
+    Phase2GpuCompleteRows,
+    Phase2GpuExcludedOversized,
+    Phase2GpuExcludedNonAscii,
+    Phase2AlwaysAnchorChunks,
+    Phase2AlwaysAnchorCandidateRows,
+    Phase2AlwaysAnchorCandidateCount,
+    ConfirmedAnchorCandidateRows,
+    ConfirmedAnchorCandidateCount,
+    GenericKeywordCandidateRows,
+    GenericKeywordCandidateCount,
 }
 impl CounterId {
-    pub const ALL: [Self; 107] = [
+    pub const ALL: [Self; 132] = [
         Self::InputBytes,
         Self::InputUnits,
         Self::ProcessCpuTime,
@@ -423,6 +473,31 @@ impl CounterId {
         Self::ExampleSuppressions,
         Self::BinaryGhidraDegradedToStrings,
         Self::BinaryUnreadable,
+        Self::GpuMatcherNs,
+        Self::GpuCoalesceNs,
+        Self::GpuDispatchNs,
+        Self::GpuDeriveNs,
+        Self::GpuRecallFloorNs,
+        Self::Phase2GpuAdmissionNs,
+        Self::GpuCoalescedBytes,
+        Self::GpuMaxDispatchBytes,
+        Self::GpuPresenceBits,
+        Self::GpuUnderfireRecovered,
+        Self::GpuTriggerBits,
+        Self::Phase2GpuAdmitted,
+        Self::Phase2GpuEvidenceBits,
+        Self::Phase2GpuHaystackUploads,
+        Self::Phase2GpuCompleteChunks,
+        Self::Phase2GpuCompleteRows,
+        Self::Phase2GpuExcludedOversized,
+        Self::Phase2GpuExcludedNonAscii,
+        Self::Phase2AlwaysAnchorChunks,
+        Self::Phase2AlwaysAnchorCandidateRows,
+        Self::Phase2AlwaysAnchorCandidateCount,
+        Self::ConfirmedAnchorCandidateRows,
+        Self::ConfirmedAnchorCandidateCount,
+        Self::GenericKeywordCandidateRows,
+        Self::GenericKeywordCandidateCount,
     ];
 
     pub const fn metric_id(self) -> MetricId {
@@ -538,6 +613,31 @@ impl CounterId {
             Self::ExampleSuppressions => MetricId::ExampleSuppressions,
             Self::BinaryGhidraDegradedToStrings => MetricId::BinaryGhidraDegradedToStrings,
             Self::BinaryUnreadable => MetricId::BinaryUnreadable,
+            Self::GpuMatcherNs => MetricId::GpuMatcherNs,
+            Self::GpuCoalesceNs => MetricId::GpuCoalesceNs,
+            Self::GpuDispatchNs => MetricId::GpuDispatchNs,
+            Self::GpuDeriveNs => MetricId::GpuDeriveNs,
+            Self::GpuRecallFloorNs => MetricId::GpuRecallFloorNs,
+            Self::Phase2GpuAdmissionNs => MetricId::Phase2GpuAdmissionNs,
+            Self::GpuCoalescedBytes => MetricId::GpuCoalescedBytes,
+            Self::GpuMaxDispatchBytes => MetricId::GpuMaxDispatchBytes,
+            Self::GpuPresenceBits => MetricId::GpuPresenceBits,
+            Self::GpuUnderfireRecovered => MetricId::GpuUnderfireRecovered,
+            Self::GpuTriggerBits => MetricId::GpuTriggerBits,
+            Self::Phase2GpuAdmitted => MetricId::Phase2GpuAdmitted,
+            Self::Phase2GpuEvidenceBits => MetricId::Phase2GpuEvidenceBits,
+            Self::Phase2GpuHaystackUploads => MetricId::Phase2GpuHaystackUploads,
+            Self::Phase2GpuCompleteChunks => MetricId::Phase2GpuCompleteChunks,
+            Self::Phase2GpuCompleteRows => MetricId::Phase2GpuCompleteRows,
+            Self::Phase2GpuExcludedOversized => MetricId::Phase2GpuExcludedOversized,
+            Self::Phase2GpuExcludedNonAscii => MetricId::Phase2GpuExcludedNonAscii,
+            Self::Phase2AlwaysAnchorChunks => MetricId::Phase2AlwaysAnchorChunks,
+            Self::Phase2AlwaysAnchorCandidateRows => MetricId::Phase2AlwaysAnchorCandidateRows,
+            Self::Phase2AlwaysAnchorCandidateCount => MetricId::Phase2AlwaysAnchorCandidateCount,
+            Self::ConfirmedAnchorCandidateRows => MetricId::ConfirmedAnchorCandidateRows,
+            Self::ConfirmedAnchorCandidateCount => MetricId::ConfirmedAnchorCandidateCount,
+            Self::GenericKeywordCandidateRows => MetricId::GenericKeywordCandidateRows,
+            Self::GenericKeywordCandidateCount => MetricId::GenericKeywordCandidateCount,
         }
     }
 }
@@ -1884,10 +1984,160 @@ pub static METRICS: [MetricDescriptor; MetricId::COUNT] = [
         MetricKind::Gauge,
         MetricUnit::Count,
     ),
+    metric(
+        MetricId::GpuMatcherNs,
+        "gpu-matcher-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::GpuCoalesceNs,
+        "gpu-coalesce-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::GpuDispatchNs,
+        "gpu-dispatch-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::GpuDeriveNs,
+        "gpu-derive-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::GpuRecallFloorNs,
+        "gpu-recall-floor-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::Phase2GpuAdmissionNs,
+        "phase2-gpu-admission-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::GpuCoalescedBytes,
+        "gpu-coalesced-bytes",
+        MetricKind::Counter,
+        MetricUnit::Bytes,
+    ),
+    metric(
+        MetricId::GpuMaxDispatchBytes,
+        "gpu-max-dispatch-bytes",
+        MetricKind::Counter,
+        MetricUnit::Bytes,
+    ),
+    metric(
+        MetricId::GpuPresenceBits,
+        "gpu-presence-bits",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::GpuUnderfireRecovered,
+        "gpu-underfire-recovered",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::GpuTriggerBits,
+        "gpu-trigger-bits",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2GpuAdmitted,
+        "phase2-gpu-admitted",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2GpuEvidenceBits,
+        "phase2-gpu-evidence-bits",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2GpuHaystackUploads,
+        "phase2-gpu-haystack-uploads",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2GpuCompleteChunks,
+        "phase2-gpu-complete-chunks",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2GpuCompleteRows,
+        "phase2-gpu-complete-rows",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2GpuExcludedOversized,
+        "phase2-gpu-excluded-oversized",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2GpuExcludedNonAscii,
+        "phase2-gpu-excluded-non-ascii",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2AlwaysAnchorChunks,
+        "phase2-always-anchor-chunks",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2AlwaysAnchorCandidateRows,
+        "phase2-always-anchor-candidate-rows",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2AlwaysAnchorCandidateCount,
+        "phase2-always-anchor-candidate-count",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ConfirmedAnchorCandidateRows,
+        "confirmed-anchor-candidate-rows",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ConfirmedAnchorCandidateCount,
+        "confirmed-anchor-candidate-count",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::GenericKeywordCandidateRows,
+        "generic-keyword-candidate-rows",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::GenericKeywordCandidateCount,
+        "generic-keyword-candidate-count",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
 ];
 
 impl MetricId {
-    pub const COUNT: usize = 160;
+    pub const COUNT: usize = 185;
     #[inline]
     pub const fn descriptor(self) -> &'static MetricDescriptor {
         &METRICS[self as usize]
@@ -1898,4 +2148,31 @@ impl MetricId {
     pub const fn as_str(self) -> &'static str {
         self.descriptor().name
     }
+}
+
+/// Named GPU region dispatch phase timing counters.
+pub const GPU_DISPATCH_PHASE_COUNTERS: [CounterId; 6] = [
+    CounterId::GpuMatcherNs,
+    CounterId::GpuCoalesceNs,
+    CounterId::GpuDispatchNs,
+    CounterId::GpuDeriveNs,
+    CounterId::GpuRecallFloorNs,
+    CounterId::Phase2GpuAdmissionNs,
+];
+
+/// Named GPU region dispatch decomposition counters whose sum composes the enclosing dispatch duration.
+pub const GPU_DISPATCH_DECOMPOSITION_COUNTERS: [CounterId; 3] = [
+    CounterId::GpuCoalesceNs,
+    CounterId::GpuDispatchNs,
+    CounterId::GpuDeriveNs,
+];
+
+/// Slice of all GPU dispatch phase timing counters.
+pub fn gpu_dispatch_phase_counters() -> &'static [CounterId] {
+    &GPU_DISPATCH_PHASE_COUNTERS
+}
+
+/// Slice of GPU dispatch decomposition timing counters.
+pub fn gpu_dispatch_decomposition_counters() -> &'static [CounterId] {
+    &GPU_DISPATCH_DECOMPOSITION_COUNTERS
 }

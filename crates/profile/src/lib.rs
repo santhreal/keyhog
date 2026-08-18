@@ -140,9 +140,10 @@ pub use insight::{
     StageAttributionV2, StageMemoryV2, ThroughputInsightV2, RUN_INSIGHT_V2_VERSION,
 };
 pub use metrics::{
-    AnnotationId, CacheId, CounterId, EventId, GaugeId, IndexedCounterId, MacroStageId,
-    MetricDescriptor, MetricId, MetricKind, MetricUnit, QueueId, RetryCause, INDEXED_COUNTER_SLOTS,
-    METRICS,
+    gpu_dispatch_decomposition_counters, gpu_dispatch_phase_counters, AnnotationId, CacheId,
+    CounterId, EventId, GaugeId, IndexedCounterId, MacroStageId, MetricDescriptor, MetricId,
+    MetricKind, MetricUnit, QueueId, RetryCause, GPU_DISPATCH_DECOMPOSITION_COUNTERS,
+    GPU_DISPATCH_PHASE_COUNTERS, INDEXED_COUNTER_SLOTS, METRICS,
 };
 pub use runtime::{
     add_backend_dispatched_bytes, add_counter, add_derived_decoder_bytes, add_indexed_counter,
