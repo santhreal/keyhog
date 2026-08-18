@@ -1411,8 +1411,12 @@ impl ScanOrchestrator {
                         load_installed_preferred_detector_execution_pack(policy),
                 };
                 match installed {
-                    Ok(pack) => (None, Some(pack)),
+                    Ok(pack) => {
+                        keyhog_profile::record_cache_hit(keyhog_profile::CacheId::DetectorPlan);
+                        (None, Some(pack))
+                    }
                     Err(error) if !execution_pack_directory.exists() => {
+                        keyhog_profile::record_cache_miss(keyhog_profile::CacheId::DetectorPlan);
                         tracing::warn!(
                             error = %error,
                             "no installed execution-pack generation; parsing embedded detectors"
