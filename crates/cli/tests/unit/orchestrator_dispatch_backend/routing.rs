@@ -2238,6 +2238,107 @@ fn calibration_envelope_retains_agreeing_points_and_rejects_a_crossover() {
     assert!(error.contains("split the workload identity"));
 }
 
+/// WHY: a backend disagreement between measured points was refused on a bare
+/// inequality, with no check that the measurements actually separated the two
+/// backends. Two backends whose 95% intervals overlap have no measured winner,
+/// so which one a given point picks is a coin flip, and on a 16-core AVX-512
+/// host the 4 MiB to 32 MiB buckets sat exactly there: across three retries of
+/// the SAME bucket, simd-regex and cpu-fallback swapped which side of the
+/// comparison they were on. Refusing the class refused the whole generation,
+/// no autoroute cache was ever written, and `install.sh` could not complete:
+/// every later scan failed closed with exit 2.
+///
+/// Overlap must reconcile to the lowest-complexity non-inferior backend, which
+/// is what the documented contract already promises for overlapping timings.
+/// `calibration_envelope_retains_agreeing_points_and_rejects_a_crossover` is
+/// the negative twin and still refuses a SEPARATED disagreement, so this pair
+/// pins both sides: proof refuses, noise resolves.
+///
+/// WHAT IT DOES NOT CATCH: whether the reconciled backend is the fastest one.
+/// Under overlap nothing is measurably fastest; that is the premise.
+#[test]
+fn overlapping_backend_disagreement_resolves_instead_of_discarding_the_class() {
+    // A point whose intervals overlap already resolves deterministically to the
+    // lowest-complexity backend, so two overlapping points never disagree. The
+    // disagreement that actually occurs, and that stalled the installer, is
+    // this one: run-to-run variance separates the backends at one measured
+    // point and leaves them overlapping at another, so one point proves simd
+    // faster and the other cannot tell and falls back to cpu on complexity.
+    let separated_simd = BackendTimingEvidence::from_trial_ns(vec![
+        4_000_000, 5_000_000, 5_000_000, 5_000_000, 5_000_000, 5_000_000, 6_000_000,
+    ])
+    .expect("valid separated SIMD fixture");
+    let separated_cpu = BackendTimingEvidence::from_trial_ns(vec![
+        19_000_000, 20_000_000, 20_000_000, 20_000_000, 20_000_000, 20_000_000, 21_000_000,
+    ])
+    .expect("valid separated CPU fixture");
+    let overlapping_simd = BackendTimingEvidence::from_trial_ns(vec![
+        2_000_000, 9_000_000, 11_000_000, 11_000_000, 11_000_000, 13_000_000, 20_000_000,
+    ])
+    .expect("valid overlapping SIMD fixture");
+    let overlapping_cpu = BackendTimingEvidence::from_trial_ns(vec![
+        2_000_000, 9_000_000, 10_000_000, 10_000_000, 10_000_000, 13_000_000, 20_000_000,
+    ])
+    .expect("valid overlapping CPU fixture");
+
+    // Point one separates: simd's whole interval sits below cpu's, so it picks
+    // simd and cpu is a proved loser here.
+    let mut class = AutorouteDecision::from_timing_evidence(
+        ScanBackend::SimdCpu,
+        4 * 1024 * 1024,
+        1,
+        0x0BEE_F00D_0BEE_F00D,
+        1,
+        separated_simd,
+        Some(separated_cpu),
+        None,
+    );
+    assert_eq!(
+        class.resolved_routing_backend(),
+        Some(ScanBackend::SimdCpu),
+        "the separated point picks the backend its measurements prove faster"
+    );
+
+    // Point two does not separate, so it falls back to cpu on complexity. That
+    // is a disagreement with point one, and it is noise: nothing here proves
+    // cpu faster than simd, it only fails to prove simd faster.
+    class
+        .merge_calibration_point(AutorouteDecision::from_timing_evidence(
+            ScanBackend::CpuFallback,
+            8 * 1024 * 1024,
+            1,
+            0x0BEE_F00D_0BEE_F00D,
+            1,
+            overlapping_simd,
+            Some(overlapping_cpu),
+            None,
+        ))
+        .expect(
+            "a disagreement no point separates must reconcile, not discard the class: \
+             refusing here is what left the installer with no publishable generation",
+        );
+
+    assert_eq!(class.calibration_points.len(), 2);
+    let resolved = class
+        .resolved_routing_backend()
+        .expect("an unseparated disagreement still resolves one route for the class");
+    assert_eq!(
+        resolved,
+        ScanBackend::SimdCpu,
+        "the class keeps the backend that some point measured faster and no point \
+         measured slower; the overlapping point proved nothing, so it cannot demote it"
+    );
+    assert!(
+        !class.has_confidence_supported_route(),
+        "reconciling an unseparated point must not manufacture separated proof: the \
+         class has a route, and it does not have a confidence-separated one"
+    );
+
+    // Determinism: the same evidence must resolve the same way every time, or
+    // a reinstall would publish a different route from identical measurements.
+    assert_eq!(class.resolved_routing_backend(), Some(resolved));
+}
+
 #[test]
 #[cfg(feature = "simd")]
 fn cached_router_fails_closed_for_invalid_autoroute_state() {

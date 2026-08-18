@@ -193,9 +193,14 @@ This drives the core stdin + filesystem workload ladder across every scan
 preset. Plain single-file probes cover every power-of-two size band from 1 byte
 through 32 MiB, with additional 4 MiB + 1, 8 MiB - 1, 8 MiB + 1, and
 16 MiB - 1 probes retaining raw evidence on both sides of the required 8 MiB
-crossover. A coarse size class is reusable only when every retained point
-selects the same fastest-correct one-shot and daemon backends; disagreement
-rejects calibration and requires the class to be split. File-tree probes cover
+crossover. A coarse size class holds its points together when they agree, and
+also when they disagree without proving anything: the class keeps the
+lowest-complexity backend that is measured at every point and measurably
+slower at none. A disagreement that measurement does prove, where one point's
+whole 95% interval for the selected backend sits above a peer's, is a real
+crossover; it rejects calibration and requires the class to be split. Such a
+class reports `confidence_separated: false`, because the route is permitted by
+the evidence rather than proved by it. File-tree probes cover
 every chunk-count band through the default 32-chunk fused batch. Tar-member
 probes cover the same count ladder for payload-derived extracted filesystem
 chunks. Decode-heavy probes cover the decoder path. Empty input has no routing
