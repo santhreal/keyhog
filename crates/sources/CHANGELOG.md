@@ -1,6 +1,7 @@
 # Changelog
 
 ## 0.5.80 - 2026-08-17
+- test(sources): derive ecosystem lockfile variant space dynamically from `rules/default_excludes.toml` with bidirectional fixture precision assertions (`lockfile_default_excludes_parity`).
 
 - style: format guard massive diff test and git sources modules.
 
