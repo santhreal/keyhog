@@ -69,6 +69,7 @@ fn perf_event_open(attr: &PerfEventAttr) -> std::io::Result<OwnedFd> {
 }
 
 fn open_counter(type_: u32, config: u64) -> std::io::Result<OwnedFd> {
+    // SAFETY: PerfEventAttr is a POD C struct safely initialized with all zero bytes.
     let mut attr: PerfEventAttr = unsafe { std::mem::zeroed() };
     attr.type_ = type_;
     attr.size = std::mem::size_of::<PerfEventAttr>() as u32;
@@ -88,6 +89,7 @@ static PERF_STATE: AtomicU8 = AtomicU8::new(PERF_STATE_UNTRIED);
 
 fn read_counter(fd: RawFd) -> Option<u64> {
     let mut value = 0_u64;
+    // SAFETY: value pointer is valid memory for size_of::<u64>() bytes.
     let read = unsafe {
         libc::pread(
             fd,
@@ -573,6 +575,7 @@ fn cgroup_quota_milli() -> Option<u64> {
 }
 
 fn affinity_cpu_count() -> Option<u32> {
+    // SAFETY: cpu_set_t is a POD C struct safely initialized with all zero bytes.
     let mut set: libc::cpu_set_t = unsafe { std::mem::zeroed() };
     // SAFETY: set points to a valid zeroed cpu_set_t of the given size.
     let result =

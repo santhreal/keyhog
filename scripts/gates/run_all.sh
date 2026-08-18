@@ -205,6 +205,12 @@ run "Profile divergence: workspace profile table keys are classified and release
   python3 -B scripts/gates/profile_divergence.py
 run "Profile divergence unit tests: static analysis of profile tables" \
   python3 -B -m unittest scripts.tests.test_profile_divergence -v
+run "Unsafe guards self-test: safety precondition and debug_assert hazard detection" \
+  python3 -B scripts/gates/unsafe_guards.py --self-test
+run "Unsafe guards: workspace unsafe blocks carry written safety preconditions and release asserts" \
+  python3 -B scripts/gates/unsafe_guards.py
+run "Unsafe guards unit tests: static analysis of unsafe block invariants" \
+  python3 -B -m unittest scripts.tests.test_unsafe_guards -v
 run "Mutation gate self-test: AST mutation generator catches surviving mutants" \
   python3 -B scripts/gates/mutation_gate.py --self-test
 run "Mutation gate unit tests: operator inversion and comment preservation" \

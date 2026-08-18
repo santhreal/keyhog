@@ -203,6 +203,7 @@ mod tracked {
     const _: () = assert!(std::mem::size_of::<AllocationHeader>() == HEADER_BYTES);
 
     /// Tracked allocation: header records the stage slot and requested bytes.
+    // SAFETY: Caller must ensure layout meets GlobalAlloc invariants.
     pub(super) unsafe fn tracked_alloc(layout: Layout) -> *mut u8 {
         let offset = layout.align().max(HEADER_BYTES);
         let Some(total) = layout.size().checked_add(offset) else {
@@ -238,6 +239,7 @@ mod tracked {
     /// (panic in the global allocator); a corrupt `bytes` fed
     /// `from_size_align_unchecked` and wrapping `fetch_sub`. Validate the
     /// header; on failure, free with the caller layout and skip counters.
+    // SAFETY: Caller must ensure ptr was allocated by tracked_alloc with matching layout.
     pub(super) unsafe fn tracked_dealloc(ptr: *mut u8, layout: Layout) {
         let offset = layout.align().max(HEADER_BYTES);
         // SAFETY: ptr came from tracked_alloc with the same layout, so the
@@ -262,6 +264,7 @@ mod tracked {
                 // offset is align.max(16) so power-of-two and nonzero; size was
                 // accepted at alloc time. Fall back only if saturating wrap
                 // produced an impossible pair.
+                // SAFETY: offset is a non-zero power-of-two alignment.
                 unsafe { Layout::from_size_align_unchecked(layout.size() + offset, offset) }
             });
         // SAFETY: base/real match the allocation that produced ptr when the

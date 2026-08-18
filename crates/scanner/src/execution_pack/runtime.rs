@@ -149,6 +149,7 @@ impl ExecutionPack {
         // The mapping is read-only and the file handle is never exposed for mutation.
         // Install/update publication must rename an immutable generation into place;
         // replacing the path cannot change pages held by this mapping.
+        // SAFETY: File is opened read-only and remains immutable.
         let mapping =
             unsafe { MmapOptions::new().map(&file) }.map_err(|source| ExecutionPackError::Io {
                 operation: "map",
@@ -171,6 +172,7 @@ impl ExecutionPack {
             path: path.to_path_buf(),
             source,
         })?;
+        // SAFETY: File is opened read-only and remains immutable.
         let mapping =
             unsafe { MmapOptions::new().map(&file) }.map_err(|source| ExecutionPackError::Io {
                 operation: "map",
@@ -201,6 +203,7 @@ impl ExecutionPack {
             path: path.to_path_buf(),
             source,
         })?;
+        // SAFETY: File is opened read-only and remains immutable.
         let mapping =
             unsafe { MmapOptions::new().map(&file) }.map_err(|source| ExecutionPackError::Io {
                 operation: "map",
@@ -692,6 +695,7 @@ fn mapping_slice_range(mapping: &Mmap, bytes: &[u8]) -> Result<Range<usize>, Exe
 
 #[cfg(unix)]
 fn mapping_page_size(path: &Path) -> Result<usize, ExecutionPackError> {
+    // SAFETY: sysconf(_SC_PAGESIZE) reads a kernel constant with no pointer arguments.
     let probed = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
     let page = usize::try_from(probed).map_err(|_| ExecutionPackError::Io {
         operation: "query page size for mapped-page discard",
@@ -723,6 +727,7 @@ fn release_entire_mapping(
                 path.display()
             )));
         }
+        // SAFETY: mapping pointer is verified page-aligned and len covers the valid mapping.
         let result = unsafe {
             libc::madvise(
                 mapping.as_ptr() as *mut libc::c_void,
@@ -739,6 +744,7 @@ fn release_entire_mapping(
         }
         #[cfg(target_os = "linux")]
         {
+            // SAFETY: mapping pointer is verified page-aligned and len covers the valid mapping.
             let result = unsafe {
                 libc::madvise(
                     mapping.as_ptr() as *mut libc::c_void,
@@ -754,6 +760,7 @@ fn release_entire_mapping(
                 });
             }
         }
+        // SAFETY: mapping pointer is verified page-aligned and len covers the valid mapping.
         let result = unsafe {
             libc::madvise(
                 mapping.as_ptr() as *mut libc::c_void,
@@ -799,6 +806,7 @@ fn release_mapping_slice(
             })?;
         let aligned_end = relative_end - (relative_end % page);
         if aligned_start < aligned_end {
+            // SAFETY: aligned_start and aligned_end are page-aligned offsets within the valid mapping bounds.
             let result = unsafe {
                 libc::madvise(
                     mapping.as_ptr().add(aligned_start) as *mut libc::c_void,

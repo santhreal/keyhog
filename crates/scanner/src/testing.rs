@@ -4893,19 +4893,25 @@ impl AlphabetMask {
     }
 
     #[cfg(target_arch = "aarch64")]
+    // SAFETY: target is aarch64 which baseline includes NEON.
     pub unsafe fn from_bytes_neon(bytes: &[u8]) -> Self {
+        // SAFETY: forwarded from the caller.
         Self(unsafe { crate::alphabet_filter::AlphabetMask::from_bytes_neon(bytes) })
     }
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
+    // SAFETY: caller must ensure AVX2 is supported.
     pub unsafe fn from_bytes_avx2(bytes: &[u8]) -> Self {
+        // SAFETY: forwarded from the caller.
         Self(unsafe { crate::alphabet_filter::AlphabetMask::from_bytes_avx2(bytes) })
     }
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse2")]
+    // SAFETY: caller must run on x86_64 CPU which baseline includes SSE2.
     pub unsafe fn from_bytes_sse2(bytes: &[u8]) -> Self {
+        // SAFETY: forwarded from the caller.
         Self(unsafe { crate::alphabet_filter::AlphabetMask::from_bytes_sse2(bytes) })
     }
 
@@ -4947,10 +4953,11 @@ impl AlphabetScreen {
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
+    // SAFETY: caller must ensure AVX2 is supported.
     pub unsafe fn screen_avx2(&self, data: &[u8]) -> bool {
+        // SAFETY: forwarded from caller.
         unsafe { self.0.screen_avx2(data) }
     }
-}
 
 pub fn assert_alphabet_prefilter_backend_parity(targets: &[String], data: &[u8]) -> bool {
     let mask_scalar = AlphabetMask::from_bytes_scalar(data);
@@ -4963,10 +4970,12 @@ pub fn assert_alphabet_prefilter_backend_parity(targets: &[String], data: &[u8])
     #[cfg(target_arch = "x86_64")]
     {
         if is_x86_feature_detected!("avx2") {
+            // SAFETY: verified via is_x86_feature_detected! above.
             let mask_avx2 = unsafe { AlphabetMask::from_bytes_avx2(data) };
             assert_eq!(mask_scalar, mask_avx2, "AVX2 AlphabetMask parity failed");
         }
         if is_x86_feature_detected!("sse2") {
+            // SAFETY: verified via is_x86_feature_detected! above.
             let mask_sse2 = unsafe { AlphabetMask::from_bytes_sse2(data) };
             assert_eq!(mask_scalar, mask_sse2, "SSE2 AlphabetMask parity failed");
         }
@@ -4974,6 +4983,7 @@ pub fn assert_alphabet_prefilter_backend_parity(targets: &[String], data: &[u8])
 
     #[cfg(target_arch = "aarch64")]
     {
+        // SAFETY: aarch64 baseline includes NEON.
         let mask_neon = unsafe { AlphabetMask::from_bytes_neon(data) };
         assert_eq!(mask_scalar, mask_neon, "NEON AlphabetMask parity failed");
     }
@@ -4989,6 +4999,7 @@ pub fn assert_alphabet_prefilter_backend_parity(targets: &[String], data: &[u8])
     #[cfg(target_arch = "x86_64")]
     {
         if is_x86_feature_detected!("avx2") {
+            // SAFETY: verified via is_x86_feature_detected! above.
             let screen_avx2 = unsafe { screen.screen_avx2(data) };
             assert_eq!(
                 screen_scalar, screen_avx2,
@@ -5893,9 +5904,11 @@ pub fn reverse_str(s: &str) -> String {
 /// (`E0425: cannot find calculate_shannon_entropy`), breaking the portable
 /// / macOS-arm64 build.
 #[cfg(test)]
+// SAFETY: caller must verify AVX512 support on x86_64 targets.
 pub(crate) unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
     #[cfg(target_arch = "x86_64")]
     {
+        // SAFETY: forwarded from caller.
         unsafe { crate::entropy::avx512::calculate_shannon_entropy(chunk) }
     }
     #[cfg(not(target_arch = "x86_64"))]

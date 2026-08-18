@@ -350,6 +350,7 @@ fn windows_drives(include_network: bool) -> Result<Vec<PathBuf>> {
     };
 
     let filters = load_mount_filters()?;
+    // SAFETY: GetLogicalDrives has no pointer preconditions and returns a bitmask.
     let mask = unsafe { GetLogicalDrives() };
     if mask == 0 {
         return Err(std::io::Error::last_os_error()).context("enumerate Windows logical drives");
@@ -362,6 +363,7 @@ fn windows_drives(include_network: bool) -> Result<Vec<PathBuf>> {
         }
         let root = format!("{}:\\", letter as char);
         let wide: Vec<u16> = root.encode_utf16().chain(std::iter::once(0)).collect();
+        // SAFETY: wide is a null-terminated UTF-16 string representing the drive root path.
         let drive_class = match unsafe { GetDriveTypeW(wide.as_ptr()) } {
             DRIVE_FIXED | DRIVE_RAMDISK => WindowsDriveClass::Local,
             DRIVE_REMOTE => WindowsDriveClass::Network,

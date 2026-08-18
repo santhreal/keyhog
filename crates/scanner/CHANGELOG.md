@@ -2,6 +2,7 @@
 
 
 ## 0.5.80 - 2026-08-17
+- fix(safety): enforce written `// SAFETY:` preconditions and release assertions across all `unsafe` blocks with `unsafe_guards.py` workspace gate.
 - fix(profile): separate Stage::ScanPipeline container from leaf Stage::BackendDispatch to prevent container-duration distortion in bottleneck and cost tables.
 - fix(runtime): enforce panic = "unwind" in release profile to enable catch_unwind GPU isolation boundaries and degradation in shipped release binaries.
 - fix(gpu): lazy-scope GPU API initialization to only the selected scan backend route and eliminate redundant WGPU enumeration during CUDA and CPU scans.
