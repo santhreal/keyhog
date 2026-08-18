@@ -4,6 +4,7 @@ pub(crate) mod backend;
 pub(crate) mod calibrate;
 pub(crate) mod calibrate_autoroute;
 pub(crate) mod compile_execution_packs;
+pub(crate) mod compile_gpu_literals;
 pub(crate) mod completion;
 pub(crate) mod config;
 // See `lib.rs` for why `daemon` is unix-only. The Windows handler

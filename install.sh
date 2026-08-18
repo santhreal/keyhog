@@ -63,6 +63,7 @@ INSTALL_DIR="$HOME/.local/bin"
 FROM_FILE=""
 INSECURE_INSTALL=0
 SKIP_CALIBRATION=0
+GPU_LITERALS_FROM_BINARY=0
 MODE="install"
 INTERACTIVE=1
 ASSUME_YES=0
@@ -469,10 +470,14 @@ stage_local_gpu_literal_sidecar() {
     local_sig="$local_sidecar.minisig"
     sidecar_tmp=$(mktemp)
     if [ ! -f "$local_sidecar" ] || [ ! -s "$local_sidecar" ]; then
+        # No sidecar ships with a locally built or `cargo install` binary, and
+        # `--from-file` is the only install mode, so requiring one here failed
+        # every install. The binary compiles its own matchers instead, after the
+        # swap, from the detector corpus embedded in it. Runtime compilation is
+        # still never acceptable: a failure to generate fails the install.
         rm -f "$sidecar_tmp"
-        err "--from-file requires a sibling GPU literal sidecar: $local_sidecar"
-        err "Refusing to install a local binary that would recompile shipped detector matchers at runtime."
-        return 1
+        GPU_LITERALS_FROM_BINARY=1
+        return 0
     fi
     if ! verify_local_signature_if_present "$local_sidecar" "$local_sig" "GPU literal sidecar"; then
         rm -f "$sidecar_tmp"
@@ -616,8 +621,34 @@ validate_gpu_literal_sidecar_archive() {
     return 0
 }
 
+# Compile the shipped detector corpus into this host's GPU literal matchers
+# using the binary that was just installed. Runs after the atomic swap, so the
+# caller rolls the binary back when this fails.
+generate_gpu_literals_from_installed_binary() {
+    programs_dir="$(gpu_programs_cache_dir_for_install)"
+    if ! mkdir -p "$programs_dir"; then
+        err "Could not create GPU literal cache directory at $programs_dir."
+        return 1
+    fi
+    say "Compiling GPU literal matchers for this host..."
+    if ! "$INSTALL_DIR/keyhog" compile-gpu-literals --output-dir "$programs_dir" >/dev/null 2>&1; then
+        err "Could not compile GPU literal matchers into $programs_dir."
+        err "Refusing to finish an install that would recompile shipped detector matchers at runtime."
+        return 1
+    fi
+    if [ ! -f "$programs_dir/manifest.json" ]; then
+        err "GPU literal compilation reported success but published no manifest in $programs_dir."
+        return 1
+    fi
+    return 0
+}
+
 install_verified_gpu_literal_sidecar() {
-    [ -n "$GPU_LITERAL_SIDECAR_TMP" ] || return 0
+    if [ -z "$GPU_LITERAL_SIDECAR_TMP" ]; then
+        [ "$GPU_LITERALS_FROM_BINARY" = "1" ] || return 0
+        generate_gpu_literals_from_installed_binary
+        return $?
+    fi
     if ! validate_gpu_literal_sidecar_archive "$GPU_LITERAL_SIDECAR_TMP"; then
         cleanup_gpu_literal_sidecar_tmp
         err "Refusing GPU literal sidecar with unsafe archive paths."

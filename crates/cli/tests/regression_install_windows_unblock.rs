@@ -229,7 +229,10 @@ fn powershell_installer_verifies_and_seeds_the_local_gpu_literal_sidecar() {
         sidecar_stage,
         &[
             "$FromFile.gpu-literals.tar.gz",
-            "-FromFile requires a sibling GPU literal sidecar",
+            // A missing sidecar is no longer fatal: nothing ships one, so the
+            // installer compiles the matchers from the installed binary. Order
+            // still matters for a sidecar that IS supplied.
+            "$Script:GpuLiteralsFromBinary = $true",
             "Verify-LocalSignature",
             "Verify-LocalChecksum",
             "No local checksum file found beside -FromFile GPU literal sidecar",

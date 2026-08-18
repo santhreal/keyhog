@@ -465,6 +465,9 @@ pub async fn cli_main() -> ExitCode {
         Some(args::Command::CompileExecutionPacks(args)) => {
             subcommands::compile_execution_packs::run(args).map(|()| ExitCode::SUCCESS)
         }
+        Some(args::Command::CompileGpuLiterals(args)) => {
+            subcommands::compile_gpu_literals::run(args).map(|()| ExitCode::SUCCESS)
+        }
         Some(args::Command::ActionReport(args)) => match args.command {
             args::ActionReportCommand::Verify(args) => action_report::verify(args),
         },

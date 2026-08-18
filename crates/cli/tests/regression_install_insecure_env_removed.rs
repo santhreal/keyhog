@@ -211,9 +211,9 @@ fn installers_have_no_network_fetch_path() {
 }
 
 /// WHY: a GPU literal sidecar seeds the compiled-matcher cache, so a hostile
-/// archive would plant files outside it. The sidecar must be signature- and
-/// checksum-checked and archive-validated BEFORE extraction, and a failure
-/// must roll the cache back rather than leave it half-seeded.
+/// archive would plant files outside it. A sidecar that IS supplied must be
+/// signature- and checksum-checked and archive-validated BEFORE extraction,
+/// and a failure must roll the cache back rather than leave it half-seeded.
 #[test]
 fn installers_verify_gpu_literal_sidecars_before_seeding_the_cache() {
     let sh = include_str!("../../../install.sh");
@@ -221,7 +221,6 @@ fn installers_verify_gpu_literal_sidecars_before_seeding_the_cache() {
         sh.contains("stage_local_gpu_literal_sidecar")
             && sh.contains("verify_local_signature_if_present \"$local_sidecar\" \"$local_sig\"")
             && sh.contains("verify_local_checksum \"$local_sidecar\" \"$local_sum\"")
-            && sh.contains("--from-file requires a sibling GPU literal sidecar")
             && sh.contains("validate_gpu_literal_sidecar_archive")
             && sh.contains("GPU literal artifact sidecar contains link entries.")
             && sh.contains("backup_gpu_programs_cache_for_install")
@@ -234,12 +233,70 @@ fn installers_verify_gpu_literal_sidecars_before_seeding_the_cache() {
     assert!(
         ps1.contains("Stage-LocalGpuLiteralSidecar")
             && ps1.contains("Verify-LocalChecksum -BinaryPath $localSidecar -SumFile $localSum")
-            && ps1.contains("-FromFile requires a sibling GPU literal sidecar")
             && ps1.contains("Test-GpuLiteralSidecarArchive")
             && ps1.contains("GPU literal artifact sidecar contains a link entry")
             && ps1.contains("Backup-GpuProgramsCacheForInstall")
             && ps1.contains("Restore-GpuProgramsCacheBackup")
             && ps1.contains("Clear-GpuProgramsCacheBackup"),
         "install.ps1 must verify and inspect GPU literal sidecar archives before extraction"
+    );
+}
+
+/// WHY: both installers REQUIRED a sibling `<binary>.gpu-literals.tar.gz` and
+/// failed closed without it. Nothing produced that tarball: its only producer
+/// is `keyhog-scanner-artifacts`, a development binary that is not shipped, and
+/// the packaging step existed only in CI and test fixtures. `--from-file` is
+/// the only install mode, so a required artifact with no producer stopped every
+/// install on both platforms.
+///
+/// A missing sidecar must now compile the matchers from the detector corpus
+/// embedded in the installed binary. The install must still fail when that
+/// compilation fails, because finishing without matchers puts detector
+/// compilation back on every scan, which is the cost the sidecar existed to
+/// avoid.
+///
+/// WHAT IT DOES NOT CATCH: that the emitted artifacts load. `install.sh`
+/// verifies that on the host by requiring a published `manifest.json`, and the
+/// end-to-end install battery exercises the scan that consumes them.
+#[test]
+fn installers_compile_gpu_literals_when_no_sidecar_ships_beside_the_binary() {
+    let sh = include_str!("../../../install.sh");
+    assert!(
+        !sh.contains("--from-file requires a sibling GPU literal sidecar"),
+        "install.sh must not fail closed on a missing sidecar: nothing ships one"
+    );
+    assert!(
+        sh.contains("generate_gpu_literals_from_installed_binary")
+            && sh.contains("compile-gpu-literals --output-dir")
+            && sh.contains("GPU_LITERALS_FROM_BINARY=1"),
+        "install.sh must compile GPU literals from the installed binary instead"
+    );
+    assert!(
+        sh.contains("Could not compile GPU literal matchers into $programs_dir.")
+            && sh.contains(
+                "GPU literal compilation reported success but published no manifest in \
+                 $programs_dir."
+            ),
+        "install.sh must fail the install when generation fails or publishes no manifest"
+    );
+
+    let ps1 = include_str!("../../../install.ps1");
+    assert!(
+        !ps1.contains("-FromFile requires a sibling GPU literal sidecar"),
+        "install.ps1 must not fail closed on a missing sidecar: nothing ships one"
+    );
+    assert!(
+        ps1.contains("New-GpuLiteralsFromInstalledBinary")
+            && ps1.contains("compile-gpu-literals --output-dir $programsDir")
+            && ps1.contains("$Script:GpuLiteralsFromBinary = $true"),
+        "install.ps1 must compile GPU literals from the installed binary instead"
+    );
+    assert!(
+        ps1.contains("Could not compile GPU literal matchers into $programsDir.")
+            && ps1.contains(
+                "GPU literal compilation reported success but published no manifest in \
+                 $programsDir."
+            ),
+        "install.ps1 must fail the install when generation fails or publishes no manifest"
     );
 }

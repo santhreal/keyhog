@@ -31,7 +31,8 @@ pub use guard::{GuardAction, GuardArgs};
 pub use hook::HookCommand;
 pub use limits::SourceLimitArgs;
 pub use maintenance::{
-    BackendArgs, CompileExecutionPacksArgs, CompletionArgs, DoctorArgs, UninstallArgs,
+    BackendArgs, CompileExecutionPacksArgs, CompileGpuLiteralsArgs, CompletionArgs, DoctorArgs,
+    UninstallArgs,
 };
 pub use scan::{
     CliDedupScope, DaemonMode, DetectorMode, EvidencePolicy, OutputFormat, ScanArgs, SeverityFilter,
@@ -92,6 +93,10 @@ pub enum Command {
     /// Compile and transactionally publish one host execution-pack generation
     #[command(verbatim_doc_comment, hide = true)]
     CompileExecutionPacks(CompileExecutionPacksArgs),
+
+    /// Compile the shipped detector corpus into host GPU literal matcher artifacts
+    #[command(verbatim_doc_comment, hide = true)]
+    CompileGpuLiterals(CompileGpuLiteralsArgs),
 
     /// Manage git pre-commit hooks
     #[command(verbatim_doc_comment)]

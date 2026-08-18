@@ -46,6 +46,7 @@ $Repo = 'santhreal/keyhog'
 $Script:ReleasePublicKey = 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 $Script:InsecureInstall = [bool]$Insecure
 $Script:GpuLiteralSidecarPath = $null
+$Script:GpuLiteralsFromBinary = $false
 $Script:GpuProgramsCacheBackupPath = $null
 $Script:GpuProgramsCacheWasMissing = $false
 
@@ -444,9 +445,13 @@ function Stage-LocalGpuLiteralSidecar {
             $localSidecar = "$FromFile.gpu-literals.tar.gz"
             $localSum = "$localSidecar.sha256"
             if (-not (Test-Path -PathType Leaf $localSidecar)) {
-                Err "-FromFile requires a sibling GPU literal sidecar: $localSidecar"
-                Err "Refusing to install a local binary that would recompile shipped detector matchers at runtime."
-                return $false
+                # No sidecar ships with a locally built or `cargo install`
+                # binary, and -FromFile is the only install mode, so requiring
+                # one here failed every install. The binary compiles its own
+                # matchers after the swap instead. Runtime compilation is still
+                # never acceptable: a failure to generate fails the install.
+                $Script:GpuLiteralsFromBinary = $true
+                return $true
             }
             if ((Get-Item $localSidecar).Length -eq 0) {
                 Err "GPU literal artifact sidecar $localSidecar is empty."
@@ -534,8 +539,38 @@ function Test-GpuLiteralSidecarArchive {
     return $true
 }
 
+# Compile the shipped detector corpus into this host's GPU literal matchers
+# using the binary that was just installed. Runs after the swap, so the caller
+# rolls the binary back when this fails.
+function New-GpuLiteralsFromInstalledBinary {
+    $programsDir = Get-GpuProgramsCacheDirForInstall
+    if (-not $programsDir) {
+        Err "GPU literal cache directory is unavailable because LocalAppData could not be resolved."
+        return $false
+    }
+    New-Item -ItemType Directory -Force -Path $programsDir | Out-Null
+    Say "Compiling GPU literal matchers for this host..."
+    $installedBinary = Join-Path $InstallDir 'keyhog.exe'
+    & $installedBinary compile-gpu-literals --output-dir $programsDir *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Err "Could not compile GPU literal matchers into $programsDir."
+        Err "Refusing to finish an install that would recompile shipped detector matchers at runtime."
+        return $false
+    }
+    if (-not (Test-Path -PathType Leaf (Join-Path $programsDir 'manifest.json'))) {
+        Err "GPU literal compilation reported success but published no manifest in $programsDir."
+        return $false
+    }
+    return $true
+}
+
 function Install-VerifiedGpuLiteralSidecar {
-    if (-not $Script:GpuLiteralSidecarPath) { return $true }
+    if (-not $Script:GpuLiteralSidecarPath) {
+        if ($Script:GpuLiteralsFromBinary) {
+            return (New-GpuLiteralsFromInstalledBinary)
+        }
+        return $true
+    }
     if (-not (Test-GpuLiteralSidecarArchive -ArchivePath $Script:GpuLiteralSidecarPath)) {
         Clear-GpuLiteralSidecarTemp
         return $false

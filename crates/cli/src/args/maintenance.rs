@@ -12,6 +12,14 @@ pub struct CompileExecutionPacksArgs {
 }
 
 #[derive(Parser)]
+pub struct CompileGpuLiteralsArgs {
+    /// Publish the compiled GPU literal matcher artifacts here. Defaults to the
+    /// host runtime program cache the scanner loads them from.
+    #[arg(long, value_name = "DIR")]
+    pub output_dir: Option<PathBuf>,
+}
+
+#[derive(Parser)]
 pub struct CompletionArgs {
     /// Shell to generate completions for.
     #[arg(value_enum)]

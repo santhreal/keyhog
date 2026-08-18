@@ -72,4 +72,5 @@ crate::kh_matrix!(
     triage => "triage",
     calibrate_autoroute => "calibrate-autoroute",
     compile_execution_packs => "compile-execution-packs",
+    compile_gpu_literals => "compile-gpu-literals",
 );
