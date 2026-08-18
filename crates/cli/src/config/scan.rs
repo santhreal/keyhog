@@ -39,7 +39,7 @@ fn keyword_list_is_nonempty(errors: &mut Vec<String>, field: &str, entries: &[St
     true
 }
 
-pub(super) fn parse_config_byte_size(
+pub(crate) fn parse_config_byte_size(
     errors: &mut Vec<String>,
     field: &str,
     value: &str,

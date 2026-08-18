@@ -2,6 +2,7 @@
 
 ## 0.5.80 - 2026-08-17
 
+- feat(cli): single canonical owner of byte size parsing across CLI, daemon, and config (Row 112).
 - fix(profile): wire queue depth tracking, blocked wait attribution, and per-worker blocked time across fused and coalesced dispatch pipelines (Row 107).
 - test(cli): assert incremental Merkle cache detection across four adversarial change kinds and verify interrupt recovery without state corruption (`incremental_rescan_reports_unchanged_secret`, `sigint_mid_scan_exits_130`).
 - test(cli): enforce exit code totality through real binary execution across all scan-reachable codes and assert corrective action guidance on error enum variants (`regression_exit_code_matrix`).

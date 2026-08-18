@@ -34,6 +34,50 @@ pub enum DaemonTerminalFixture {
     FatalAccept(std::io::Error),
 }
 
+/// Enumeration of every door and entry point that parses human-readable byte sizes (Row 112).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ByteSizeParserDoor {
+    /// Canonical CLI value parser (`keyhog::value_parsers::parse_byte_size`).
+    CliValueParser,
+    /// Trait interface exposed on `CliTestApi::parse_byte_size`.
+    TestingApi,
+    /// System scanner space parser adapter (`keyhog::args::scan_system::parse_space_bytes`).
+    ScanSystemSpace,
+    /// Configuration loader parser (`keyhog::config::scan::parse_byte_size_field`).
+    ConfigField,
+}
+
+impl ByteSizeParserDoor {
+    /// All parser doors for exhaustive cross-entry-point property testing.
+    pub const ALL: [Self; 4] = [
+        Self::CliValueParser,
+        Self::TestingApi,
+        Self::ScanSystemSpace,
+        Self::ConfigField,
+    ];
+
+    /// Parse the input string through this specific door.
+    pub fn parse(self, input: &str) -> std::result::Result<usize, String> {
+        match self {
+            Self::CliValueParser => crate::value_parsers::parse_byte_size(input),
+            Self::TestingApi => API.parse_byte_size(input),
+            Self::ScanSystemSpace => {
+                crate::args::parse_space_bytes(input).map(|bytes| bytes as usize)
+            }
+            Self::ConfigField => {
+                let mut errors = Vec::new();
+                match crate::config::parse_config_byte_size(&mut errors, "test_field", input) {
+                    Some(val) => Ok(val),
+                    None => match errors.into_iter().next() {
+                        Some(err) => Err(err),
+                        None => Err("parse error".to_string()),
+                    },
+                }
+            }
+        }
+    }
+}
+
 static SCAN_RUNTIME_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[must_use = "hold ScanRuntimeGuard across CLI test-facade calls that touch process-global scan state"]

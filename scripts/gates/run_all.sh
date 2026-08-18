@@ -231,6 +231,10 @@ run "Unified window overlap self-test: single canonical window overlap owner and
   python3 -B scripts/gates/unified_window_overlap.py --self-test
 run "Unified window overlap: canonical keyhog_core window overlap ownership" \
   python3 -B scripts/gates/unified_window_overlap.py
+run "Unified byte size parser self-test: single canonical byte size parser and zero private implementations" \
+  python3 -B scripts/gates/unified_byte_size_parser.py --self-test
+run "Unified byte size parser: canonical value_parsers::parse_byte_size ownership" \
+  python3 -B scripts/gates/unified_byte_size_parser.py
 run "Timing log profile identity self-test: diagnostic log lines without profile identity are detected" \
   python3 -B scripts/gates/timing_log_profile_identity.py --self-test
 run "Timing log profile identity: all diagnostic timing figures derive from registered profile metrics" \
