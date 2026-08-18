@@ -42,7 +42,12 @@ pub struct CalibrateAutorouteArgs {
     #[arg(long, value_name = "PATH")]
     pub autoroute_cache: Option<String>,
     /// Bind persisted route evidence to this authenticated execution-pack generation.
-    #[arg(long, value_name = "DIR", hide = true)]
+    ///
+    /// Calibration binds to the authenticated generation in the platform cache
+    /// directory on its own, so an ordinary install needs no flag. Name a
+    /// directory only to bind against a generation that lives elsewhere; it
+    /// fails closed when the directory does not authenticate.
+    #[arg(long, value_name = "DIR")]
     pub execution_packs: Option<PathBuf>,
     /// Internal receipt sink used by the all-policy parent transaction.
     #[arg(long, value_name = "PATH", hide = true)]
