@@ -508,6 +508,14 @@ impl CompiledScanner {
     ) -> Option<&Arc<dyn vyre::VyreBackend>> {
         self.backend_state.gpu_backend(backend)
     }
+    /// Scanner-derived decode window overlap requirement in bytes.
+    #[inline]
+    pub fn decode_window_overlap_bytes(&self) -> usize {
+        match self.pattern_boundary_context {
+            boundary::BoundaryContextBytes::Bounded(bytes) => bytes,
+            boundary::BoundaryContextBytes::FullAdjacentChunks => crate::types::WINDOW_OVERLAP_BYTES,
+        }
+    }
 
     /// End one caller-defined scan partition.
     ///
