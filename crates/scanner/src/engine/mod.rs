@@ -458,7 +458,9 @@ impl CompiledScanner {
     pub fn decode_window_overlap_bytes(&self) -> usize {
         match self.pattern_boundary_context {
             boundary::BoundaryContextBytes::Bounded(bytes) => bytes,
-            boundary::BoundaryContextBytes::FullAdjacentChunks => crate::types::WINDOW_OVERLAP_BYTES,
+            boundary::BoundaryContextBytes::FullAdjacentChunks => {
+                crate::types::WINDOW_OVERLAP_BYTES
+            }
         }
     }
 

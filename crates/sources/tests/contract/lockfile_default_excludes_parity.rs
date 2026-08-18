@@ -379,8 +379,14 @@ fn default_excludes_rule_table_is_bidirectionally_verified_over_fixture_bytes() 
         let temp_dir = tempfile::tempdir().expect("create temp dir for lockfile fixture");
         let root = temp_dir.path();
 
-        let source_secret = format!("ghp_plantedsource_{}_0123456789ABCDEF012345", filename.replace('.', "_"));
-        let lockfile_secret = format!("ghp_plantedlockfile_{}_0123456789ABCDEF012345", filename.replace('.', "_"));
+        let source_secret = format!(
+            "ghp_plantedsource_{}_0123456789ABCDEF012345",
+            filename.replace('.', "_")
+        );
+        let lockfile_secret = format!(
+            "ghp_plantedlockfile_{}_0123456789ABCDEF012345",
+            filename.replace('.', "_")
+        );
 
         let src_dir = root.join("src");
         std::fs::create_dir_all(&src_dir).expect("create src dir");
@@ -400,10 +406,7 @@ fn default_excludes_rule_table_is_bidirectionally_verified_over_fixture_bytes() 
         // - The source file secret must be emitted with its path
         {
             let source = FilesystemSource::new(root.to_path_buf()).with_default_excludes(true);
-            let chunks: Vec<keyhog_core::Chunk> = source
-                .chunks()
-                .filter_map(Result::ok)
-                .collect();
+            let chunks: Vec<keyhog_core::Chunk> = source.chunks().filter_map(Result::ok).collect();
 
             let has_source_secret = chunks.iter().any(|c| c.data.contains(&source_secret));
             let has_lockfile_secret = chunks.iter().any(|c| c.data.contains(&lockfile_secret));
@@ -432,10 +435,7 @@ fn default_excludes_rule_table_is_bidirectionally_verified_over_fixture_bytes() 
         // - Both the source file secret and the lockfile secret must be emitted with their respective paths
         {
             let source = FilesystemSource::new(root.to_path_buf()).with_default_excludes(false);
-            let chunks: Vec<keyhog_core::Chunk> = source
-                .chunks()
-                .filter_map(Result::ok)
-                .collect();
+            let chunks: Vec<keyhog_core::Chunk> = source.chunks().filter_map(Result::ok).collect();
 
             let has_source_secret = chunks.iter().any(|c| c.data.contains(&source_secret));
             let has_lockfile_secret = chunks.iter().any(|c| c.data.contains(&lockfile_secret));
@@ -493,7 +493,10 @@ fn default_excludes_case_insensitivity_parity() {
             }
         };
 
-        let lockfile_secret = format!("ghp_variant_{}_0123456789ABCDEF012345", filename.replace('.', "_"));
+        let lockfile_secret = format!(
+            "ghp_variant_{}_0123456789ABCDEF012345",
+            filename.replace('.', "_")
+        );
         let lockfile_path = root.join(&uppercase_variant);
         let lockfile_content = generate_hash_rich_lockfile_content(filename, &lockfile_secret);
         std::fs::write(&lockfile_path, lockfile_content).expect("write lockfile variant");
@@ -501,10 +504,7 @@ fn default_excludes_case_insensitivity_parity() {
         // Direction 1: Excluded
         {
             let source = FilesystemSource::new(root.to_path_buf()).with_default_excludes(true);
-            let chunks: Vec<keyhog_core::Chunk> = source
-                .chunks()
-                .filter_map(Result::ok)
-                .collect();
+            let chunks: Vec<keyhog_core::Chunk> = source.chunks().filter_map(Result::ok).collect();
             let has_lockfile_secret = chunks.iter().any(|c| c.data.contains(&lockfile_secret));
             assert!(
                 !has_lockfile_secret,
@@ -515,10 +515,7 @@ fn default_excludes_case_insensitivity_parity() {
         // Direction 2: Included when default excludes disabled
         {
             let source = FilesystemSource::new(root.to_path_buf()).with_default_excludes(false);
-            let chunks: Vec<keyhog_core::Chunk> = source
-                .chunks()
-                .filter_map(Result::ok)
-                .collect();
+            let chunks: Vec<keyhog_core::Chunk> = source.chunks().filter_map(Result::ok).collect();
             let has_lockfile_secret = chunks.iter().any(|c| c.data.contains(&lockfile_secret));
             assert!(
                 has_lockfile_secret,

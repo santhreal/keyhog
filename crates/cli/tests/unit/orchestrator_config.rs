@@ -737,7 +737,10 @@ fn config_precedence_matrix_across_all_schema_layers() {
     assert_eq!(args_toml.min_confidence, Some(0.75));
 
     // Case C: CLI flag overrides TOML value
-    let args_cli = args_for_config_with_extra("[scan]\nmin_confidence = 0.75\n", &["--min-confidence", "0.90"]);
+    let args_cli = args_for_config_with_extra(
+        "[scan]\nmin_confidence = 0.75\n",
+        &["--min-confidence", "0.90"],
+    );
     assert_eq!(args_cli.min_confidence, Some(0.90));
 
     // Case D: CLI flag alone without TOML
@@ -758,13 +761,15 @@ fn config_precedence_matrix_across_all_schema_layers() {
     let args_commits_toml = args_for_config("max_commits = 50\n");
     assert_eq!(args_commits_toml.max_commits, Some(50));
 
-    let args_commits_cli = args_for_config_with_extra("max_commits = 50\n", &["--max-commits", "100"]);
+    let args_commits_cli =
+        args_for_config_with_extra("max_commits = 50\n", &["--max-commits", "100"]);
     assert_eq!(args_commits_cli.max_commits, Some(100));
 
     // Setting 4: format (Default: text, TOML: json, CLI: sarif)
     let args_fmt_toml = args_for_config("[scan]\nformat = \"json\"\n");
     assert_eq!(args_fmt_toml.format, OutputFormat::Json);
 
-    let args_fmt_cli = args_for_config_with_extra("[scan]\nformat = \"json\"\n", &["--format", "sarif"]);
+    let args_fmt_cli =
+        args_for_config_with_extra("[scan]\nformat = \"json\"\n", &["--format", "sarif"]);
     assert_eq!(args_fmt_cli.format, OutputFormat::Sarif);
 }

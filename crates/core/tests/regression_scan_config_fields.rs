@@ -160,7 +160,10 @@ fn max_decode_depth_above_limit_rejected_exact_error() {
     cfg.max_decode_depth = 20;
     assert_eq!(
         TestApi.scan_config_validate(&cfg),
-        Err("max_decode_depth exceeds limit of 10, found 20. Fix: reduce max_decode_depth to <= 10".to_string())
+        Err(
+            "max_decode_depth exceeds limit of 10, found 20. Fix: reduce max_decode_depth to <= 10"
+                .to_string()
+        )
     );
 }
 
@@ -213,7 +216,10 @@ fn toml_out_of_range_depth_parses_then_validate_rejects() {
     assert_eq!(cfg.max_decode_depth, 25); // deserialization accepted it
     assert_eq!(
         TestApi.scan_config_validate(&cfg),
-        Err("max_decode_depth exceeds limit of 10, found 25. Fix: reduce max_decode_depth to <= 10".to_string())
+        Err(
+            "max_decode_depth exceeds limit of 10, found 25. Fix: reduce max_decode_depth to <= 10"
+                .to_string()
+        )
     );
 }
 

@@ -11,16 +11,13 @@ fn catch_unwind_sites_are_classified_and_profile_release_unwinds() {
     let cargo_toml = std::fs::read_to_string("../../Cargo.toml")
         .or_else(|_| std::fs::read_to_string("Cargo.toml"))
         .expect("Cargo.toml readable");
-    
+
     let release_section = cargo_toml
         .split("[profile.release]")
         .nth(1)
         .expect("[profile.release] section present");
-    let release_block = release_section
-        .split("\n[")
-        .next()
-        .expect("release block");
-    
+    let release_block = release_section.split("\n[").next().expect("release block");
+
     assert!(
         release_block.contains("panic = \"unwind\""),
         "[profile.release] must set panic = \"unwind\" so catch_unwind isolation boundaries function in release builds"

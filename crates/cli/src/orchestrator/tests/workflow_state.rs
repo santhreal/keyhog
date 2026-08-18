@@ -358,7 +358,10 @@ fn stage_identity_distinguishes_mapping_from_compiling() {
         Stage::ScannerCompile.metric_id(),
         "ExecutionPackMap and ScannerCompile must have distinct metric IDs"
     );
-    assert_eq!(Stage::ExecutionPackMap.metric_id(), MetricId::ExecutionPackMap);
+    assert_eq!(
+        Stage::ExecutionPackMap.metric_id(),
+        MetricId::ExecutionPackMap
+    );
     assert_eq!(Stage::ScannerCompile.metric_id(), MetricId::ScannerCompile);
     assert_eq!(Stage::ExecutionPackMap.as_str(), "execution-pack-map");
     assert_eq!(Stage::ScannerCompile.as_str(), "scanner-compile");

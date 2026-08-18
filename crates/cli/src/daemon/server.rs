@@ -1622,7 +1622,8 @@ async fn handle_connection(
                         reason: format!("daemon: internal panic during filesystem drain: {detail}"),
                     };
                     let _ = state.record_backend_recovery(recovery); // LAW10: fault recording during panic recovery; no effect on scan findings
-                    let _ = send_response( // LAW10: reporting-only error frame delivery during panic unwind; caller transport closed; no effect on scan findings
+                    let _ = send_response(
+                        // LAW10: reporting-only error frame delivery during panic unwind; caller transport closed; no effect on scan findings
                         &mut transport,
                         Response::Error {
                             message: format!(

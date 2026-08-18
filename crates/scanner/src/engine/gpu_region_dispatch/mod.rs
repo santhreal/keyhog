@@ -939,20 +939,19 @@ impl CompiledScanner {
                 phase2_gpu_empty_complete = chunks.is_empty();
                 None
             }
-            Phase2GpuAdmissionWorkload::Full { chunks: gpu_chunks } => {
-                match catalog_opt {
-                    Some(catalog) => {
-                        phase2_gpu_coverage = Some(catalog.coverage());
-                        if !catalog.has_shards() {
-                            phase2_gpu_empty_complete = true;
-                            None
-                        } else {
-                            match scan_phase2_gpu_chunks_sharded(
-                                catalog,
-                                backend,
-                                gpu_chunks,
-                                recover_dispatch_faults,
-                            ) {
+            Phase2GpuAdmissionWorkload::Full { chunks: gpu_chunks } => match catalog_opt {
+                Some(catalog) => {
+                    phase2_gpu_coverage = Some(catalog.coverage());
+                    if !catalog.has_shards() {
+                        phase2_gpu_empty_complete = true;
+                        None
+                    } else {
+                        match scan_phase2_gpu_chunks_sharded(
+                            catalog,
+                            backend,
+                            gpu_chunks,
+                            recover_dispatch_faults,
+                        ) {
                             Ok(outcome) => {
                                 phase2_gpu_haystack_uploads = outcome.haystack_uploads;
                                 if let Some(fault) = outcome.fault.as_ref() {
@@ -979,11 +978,10 @@ impl CompiledScanner {
                                 return dispatch_failure(reason);
                             }
                         }
-                        }
                     }
-                    None => None,
                 }
-            }
+                None => None,
+            },
             Phase2GpuAdmissionWorkload::Subset {
                 indices,
                 chunks: gpu_chunks,
@@ -1001,34 +999,38 @@ impl CompiledScanner {
                             gpu_chunks.as_slice(),
                             recover_dispatch_faults,
                         ) {
-                        Ok(outcome) => {
-                            phase2_gpu_haystack_uploads = outcome.haystack_uploads;
-                            if let Some(fault) = outcome.fault.as_ref() {
-                                if gpu_dispatch_fault.is_none() {
-                                    gpu_dispatch_fault = Some(format!(
-                                        "phase-2 GPU admission dispatch failed: {fault}"
-                                    ));
-                                }
-                                for recovered in &outcome.recovered_rows {
-                                    for subset_index in recovered.clone() {
-                                        let chunk_index = indices[subset_index];
-                                        recovery_ranges.push(super::RecoveredInputRange::new(
-                                            chunk_index,
-                                            0,
-                                            chunks[chunk_index].data.len(),
+                            Ok(outcome) => {
+                                phase2_gpu_haystack_uploads = outcome.haystack_uploads;
+                                if let Some(fault) = outcome.fault.as_ref() {
+                                    if gpu_dispatch_fault.is_none() {
+                                        gpu_dispatch_fault = Some(format!(
+                                            "phase-2 GPU admission dispatch failed: {fault}"
                                         ));
                                     }
+                                    for recovered in &outcome.recovered_rows {
+                                        for subset_index in recovered.clone() {
+                                            let chunk_index = indices[subset_index];
+                                            recovery_ranges.push(super::RecoveredInputRange::new(
+                                                chunk_index,
+                                                0,
+                                                chunks[chunk_index].data.len(),
+                                            ));
+                                        }
+                                    }
                                 }
+                                let admission = expand_phase2_gpu_admission(
+                                    outcome.admission,
+                                    &indices,
+                                    full_len,
+                                );
+                                Some(admission)
                             }
-                            let admission =
-                                expand_phase2_gpu_admission(outcome.admission, &indices, full_len);
-                            Some(admission)
+                            Err(error) => {
+                                let reason =
+                                    format!("phase-2 GPU admission dispatch failed: {error}");
+                                return dispatch_failure(reason);
+                            }
                         }
-                        Err(error) => {
-                            let reason = format!("phase-2 GPU admission dispatch failed: {error}");
-                            return dispatch_failure(reason);
-                        }
-                    }
                     }
                 }
                 None => None,

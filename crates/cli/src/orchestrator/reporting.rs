@@ -426,7 +426,10 @@ pub(crate) fn report_scanner_materialization_summary(
             format!("scanner: mapped from execution pack {generation}")
         }
         Some(crate::orchestrator::ScannerMaterialization::Compiled { matcher_outcome }) => {
-            format!("scanner: compiled in process (matcher-artifact: {})", matcher_outcome.as_str())
+            format!(
+                "scanner: compiled in process (matcher-artifact: {})",
+                matcher_outcome.as_str()
+            )
         }
         None => "scanner: materialization unknown".to_string(),
     };
@@ -443,10 +446,17 @@ pub(crate) fn report_compiled_cache_summary(
     for kind in keyhog_core::CacheKind::ALL {
         let (state, entry_count) = match kind {
             keyhog_core::CacheKind::HyperscanShards => {
-                let dir = orchestrator.effective_config.hyperscan_cache_dir.clone()
+                let dir = orchestrator
+                    .effective_config
+                    .hyperscan_cache_dir
+                    .clone()
                     .or_else(|| cache_base.as_ref().map(|b| b.join("keyhog")));
-                let count = dir.as_deref().map_or(0, |d| keyhog_scanner::cache_eviction::count_matching_entries(d, *kind));
-                let state = if orchestrator.effective_config.hyperscan_cache_dir.is_none() && cache_base.is_none() {
+                let count = dir.as_deref().map_or(0, |d| {
+                    keyhog_scanner::cache_eviction::count_matching_entries(d, *kind)
+                });
+                let state = if orchestrator.effective_config.hyperscan_cache_dir.is_none()
+                    && cache_base.is_none()
+                {
                     "unusable"
                 } else if count > 0 {
                     "hit"
@@ -456,28 +466,41 @@ pub(crate) fn report_compiled_cache_summary(
                 (state, count)
             }
             keyhog_core::CacheKind::MatcherArtifacts => {
-                let dir = keyhog_scanner::configured_matcher_artifact_cache_dir()
-                    .or_else(|| cache_base.as_ref().map(|b| b.join(keyhog_core::KEYHOG_MATCHER_ARTIFACTS_SUBDIR)));
-                let count = dir.as_deref().map_or(0, |d| keyhog_scanner::cache_eviction::count_matching_entries(d, *kind));
+                let dir = keyhog_scanner::configured_matcher_artifact_cache_dir().or_else(|| {
+                    cache_base
+                        .as_ref()
+                        .map(|b| b.join(keyhog_core::KEYHOG_MATCHER_ARTIFACTS_SUBDIR))
+                });
+                let count = dir.as_deref().map_or(0, |d| {
+                    keyhog_scanner::cache_eviction::count_matching_entries(d, *kind)
+                });
                 let state = match &orchestrator.scanner_materialization {
-                    Some(crate::orchestrator::ScannerMaterialization::Compiled { matcher_outcome }) => matcher_outcome.as_str(),
-                    Some(crate::orchestrator::ScannerMaterialization::MappedPack { .. }) => "disabled",
+                    Some(crate::orchestrator::ScannerMaterialization::Compiled {
+                        matcher_outcome,
+                    }) => matcher_outcome.as_str(),
+                    Some(crate::orchestrator::ScannerMaterialization::MappedPack { .. }) => {
+                        "disabled"
+                    }
                     None => "disabled",
                 };
                 (state, count)
             }
             keyhog_core::CacheKind::GpuPrograms => {
-                let dir = cache_base.as_ref().map(|b| b.join("keyhog").join("programs"));
-                let count = dir.as_deref().map_or(0, |d| keyhog_scanner::cache_eviction::count_matching_entries(d, *kind));
+                let dir = cache_base
+                    .as_ref()
+                    .map(|b| b.join("keyhog").join("programs"));
+                let count = dir.as_deref().map_or(0, |d| {
+                    keyhog_scanner::cache_eviction::count_matching_entries(d, *kind)
+                });
                 let state = if count > 0 { "hit" } else { "compiled" };
                 (state, count)
             }
-            keyhog_core::CacheKind::DetectorPlans => {
-                ("compiled", 0)
-            }
+            keyhog_core::CacheKind::DetectorPlans => ("compiled", 0),
             keyhog_core::CacheKind::LockFiles => {
                 let dir = cache_base.as_ref().map(|b| b.join("keyhog"));
-                let count = dir.as_deref().map_or(0, |d| keyhog_scanner::cache_eviction::count_matching_entries(d, *kind));
+                let count = dir.as_deref().map_or(0, |d| {
+                    keyhog_scanner::cache_eviction::count_matching_entries(d, *kind)
+                });
                 ("active", count)
             }
         };

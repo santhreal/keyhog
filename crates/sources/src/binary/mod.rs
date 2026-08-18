@@ -39,10 +39,8 @@ pub fn binary_unreadable() -> usize {
     BINARY_UNREADABLE.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-const ALL_BINARY_COUNTERS: [&std::sync::atomic::AtomicUsize; 2] = [
-    &GHIDRA_DEGRADED_TO_STRINGS,
-    &BINARY_UNREADABLE,
-];
+const ALL_BINARY_COUNTERS: [&std::sync::atomic::AtomicUsize; 2] =
+    [&GHIDRA_DEGRADED_TO_STRINGS, &BINARY_UNREADABLE];
 
 /// Reset both binary-source counters. Public so test fixtures baselining
 /// between runs in one process clear them.

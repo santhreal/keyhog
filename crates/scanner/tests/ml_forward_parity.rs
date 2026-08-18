@@ -139,7 +139,12 @@ fn all_registered_layer_shapes_are_bit_identical_at_runtime() {
     ];
 
     for &(in_dim, out_dim) in shapes {
-        assert_layout_parity(in_dim, out_dim, 5_000, 0xcafe_babe_dead_beef ^ (in_dim as u64));
+        assert_layout_parity(
+            in_dim,
+            out_dim,
+            5_000,
+            0xcafe_babe_dead_beef ^ (in_dim as u64),
+        );
     }
 }
 
@@ -154,7 +159,11 @@ fn decision_boundary_insensitivity_at_confidence_thresholds() {
             let score = threshold + d;
             let decision1 = score >= threshold;
             let decision2 = score >= threshold;
-            assert_eq!(decision1, decision2, "decision must be deterministic at threshold {}", threshold);
+            assert_eq!(
+                decision1, decision2,
+                "decision must be deterministic at threshold {}",
+                threshold
+            );
         }
     }
 }

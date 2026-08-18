@@ -872,9 +872,8 @@ impl Runtime {
             }
         }
         drop(shards);
-        let present: [u64; GAUGE_PRESENT_WORDS] = std::array::from_fn(|i| {
-            self.inner.session_gauge_present[i].swap(0, Ordering::Relaxed)
-        });
+        let present: [u64; GAUGE_PRESENT_WORDS] =
+            std::array::from_fn(|i| self.inner.session_gauge_present[i].swap(0, Ordering::Relaxed));
         for gauge in crate::GaugeId::ALL {
             let metric_id = gauge.metric_id();
             let index = metric_id as usize;

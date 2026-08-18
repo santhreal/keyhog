@@ -142,10 +142,8 @@ fn row_77_mutation_shrunk_overlap_misses_seam_straddling_credential() {
 
 #[test]
 fn row_77_full_corpus_derived_decode_window_overlap_is_bounded() {
-    let scanner = CompiledScanner::compile(
-        vec![bounded_secret_detector("AKIA", 16)],
-    )
-    .expect("scanner must compile");
+    let scanner = CompiledScanner::compile(vec![bounded_secret_detector("AKIA", 16)])
+        .expect("scanner must compile");
 
     assert_eq!(scanner.decode_window_overlap_bytes(), 80);
 }

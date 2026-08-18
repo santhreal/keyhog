@@ -201,7 +201,6 @@ fn select_backend_for_workload(
         );
     }
 
-
     if gpu_could_engage(caps, workload.bytes, workload.pattern_count) {
         return BackendRoutingVerdict::new(
             caps,

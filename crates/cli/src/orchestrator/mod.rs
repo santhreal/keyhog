@@ -1212,8 +1212,12 @@ fn execution_pack_policy_for_args(
 /// How the scanner runtime was materialized for this scan.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ScannerMaterialization {
-    MappedPack { generation: String },
-    Compiled { matcher_outcome: keyhog_scanner::MatcherArtifactCacheOutcome },
+    MappedPack {
+        generation: String,
+    },
+    Compiled {
+        matcher_outcome: keyhog_scanner::MatcherArtifactCacheOutcome,
+    },
 }
 
 pub(crate) struct ScanOrchestrator {
@@ -1608,7 +1612,8 @@ impl ScanOrchestrator {
             let compiled = if disabled_detectors.is_empty() {
                 match detector_execution_pack.as_ref() {
                     Some(pack) => {
-                        let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
+                        let _pack_span =
+                            keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
                         scanner_materialization = Some(ScannerMaterialization::MappedPack {
                             generation: pack.path().display().to_string(),
                         });
@@ -1625,7 +1630,8 @@ impl ScanOrchestrator {
                         )
                     }
                     None => {
-                        let _compile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerCompile);
+                        let _compile_span =
+                            keyhog_profile::span(keyhog_profile::Stage::ScannerCompile);
                         let detectors = detectors.as_ref().context(
                             "embedded/debug scanner construction requires detector schemas",
                         )?;

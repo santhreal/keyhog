@@ -9,15 +9,18 @@
 //! What it does not catch: tests outside cargo-test discovery that do not execute during cargo test.
 
 use keyhog_scanner::capability_ledger::{
-    capability_ledger_summary, print_capability_ledger_summary,
-    register_capability_test, reset_capability_ledger, verify_capability_ledger_baseline,
-    CapabilityOutcome, HostClass,
+    capability_ledger_summary, print_capability_ledger_summary, register_capability_test,
+    reset_capability_ledger, verify_capability_ledger_baseline, CapabilityOutcome, HostClass,
 };
 use std::path::PathBuf;
 
 #[test]
 fn host_class_enumeration_is_derived_and_exact() {
-    assert_eq!(HostClass::ALL.len(), 6, "HostClass::ALL must contain exactly 6 host classes H0..H5");
+    assert_eq!(
+        HostClass::ALL.len(),
+        6,
+        "HostClass::ALL must contain exactly 6 host classes H0..H5"
+    );
 
     let mut seen_labels = std::collections::HashSet::new();
     for class in HostClass::ALL {
@@ -66,7 +69,10 @@ fn capability_ledger_registers_outcomes_and_enforces_baseline() {
         .iter()
         .find(|r| r.test_name == "test_absent_capability")
         .expect("absent test record must exist");
-    assert_eq!(skip_record.outcome, CapabilityOutcome::SkippedCapabilityAbsent);
+    assert_eq!(
+        skip_record.outcome,
+        CapabilityOutcome::SkippedCapabilityAbsent
+    );
 
     // 4. Verify baseline file
     let baseline_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -76,7 +82,10 @@ fn capability_ledger_registers_outcomes_and_enforces_baseline() {
         .unwrap()
         .join("scripts/gates/capability_skip_baseline.toml");
 
-    assert!(baseline_path.exists(), "capability skip baseline TOML must exist");
+    assert!(
+        baseline_path.exists(),
+        "capability skip baseline TOML must exist"
+    );
 
     // 5. Test baseline enforcement: 1 skip is within baseline for non-H2 classes
     print_capability_ledger_summary();

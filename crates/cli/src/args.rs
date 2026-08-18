@@ -284,11 +284,7 @@ pub(crate) fn validate_backend_and_gpu_flags(
 fn validate_cli_args(cli: &Cli) -> Result<(), clap::Error> {
     match &cli.command {
         Some(Command::Scan(args)) => {
-            validate_backend_and_gpu_flags(
-                args.backend.as_deref(),
-                args.no_gpu,
-                args.require_gpu,
-            )?;
+            validate_backend_and_gpu_flags(args.backend.as_deref(), args.no_gpu, args.require_gpu)?;
         }
         Some(Command::Config(args)) => {
             validate_backend_and_gpu_flags(
@@ -298,18 +294,10 @@ fn validate_cli_args(cli: &Cli) -> Result<(), clap::Error> {
             )?;
         }
         Some(Command::Watch(args)) => {
-            validate_backend_and_gpu_flags(
-                args.backend.as_deref(),
-                false,
-                false,
-            )?;
+            validate_backend_and_gpu_flags(args.backend.as_deref(), false, false)?;
         }
         Some(Command::Backend(args)) => {
-            validate_backend_and_gpu_flags(
-                None,
-                args.no_gpu,
-                args.require_gpu,
-            )?;
+            validate_backend_and_gpu_flags(None, args.no_gpu, args.require_gpu)?;
         }
         _ => {}
     }

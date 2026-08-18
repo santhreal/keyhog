@@ -6,7 +6,9 @@
 //! WHAT IT DOES NOT CATCH:
 //! Suppressions defined in external vendor gate systems outside KeyHog `.keyhogignore` files.
 
-use keyhog_core::{Allowlist, CredentialHash, MatchLocation, Severity, VerificationResult, VerifiedFinding};
+use keyhog_core::{
+    Allowlist, CredentialHash, MatchLocation, Severity, VerificationResult, VerifiedFinding,
+};
 use std::collections::HashMap;
 
 fn make_finding(detector_id: &str, file_path: &str, hash_hex: &str) -> VerifiedFinding {
@@ -102,7 +104,8 @@ hash:9999999999999999999999999999999999999999999999999999999999999999
     let unused_entries: Vec<&str> = unused.iter().map(|u| u.entry.as_str()).collect();
     assert!(unused_entries.contains(&"detector:dead-detector-never-fires"));
     assert!(unused_entries.contains(&"path:obsolete/legacy/path/*.env"));
-    assert!(unused_entries.contains(&"hash:9999999999999999999999999999999999999999999999999999999999999999"));
+    assert!(unused_entries
+        .contains(&"hash:9999999999999999999999999999999999999999999999999999999999999999"));
 }
 
 #[test]
@@ -117,7 +120,10 @@ fn mutation_planted_suppression_for_nonexistent_detector_is_identified() {
         "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
     );
     let matched = allowlist.record_match(&finding);
-    assert!(!matched, "finding for active detector does not match nonexistent suppression");
+    assert!(
+        !matched,
+        "finding for active detector does not match nonexistent suppression"
+    );
 
     let unused = allowlist.unused_entries();
     assert_eq!(unused.len(), 1);

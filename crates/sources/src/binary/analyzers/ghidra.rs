@@ -463,7 +463,8 @@ pub(in crate::binary) fn find_ghidra_headless() -> Option<PathBuf> {
 
 /// Probe Ghidra's installation directory for its version string (from `application.properties`).
 pub(in crate::binary) fn probe_ghidra_version(executable: &Path) -> Option<String> {
-    if let Ok(dir) = std::env::var("GHIDRA_INSTALL_DIR") { // LAW10: optional environment override for Ghidra location; falls through to executable parent probe
+    if let Ok(dir) = std::env::var("GHIDRA_INSTALL_DIR") {
+        // LAW10: optional environment override for Ghidra location; falls through to executable parent probe
         let prop = Path::new(&dir).join("Ghidra/application.properties");
         if let Some(v) = parse_ghidra_properties_version(&prop) {
             return Some(v);

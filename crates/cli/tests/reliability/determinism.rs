@@ -111,8 +111,18 @@ fn deterministic_baseline_and_merkle_index() {
     let baseline_a = temp_out.path().join("baseline_a.json");
     let baseline_b = temp_out.path().join("baseline_b.json");
 
-    let args_base_a = ["scan", "--baseline-out", baseline_a.to_str().unwrap(), corpus_path];
-    let args_base_b = ["scan", "--baseline-out", baseline_b.to_str().unwrap(), corpus_path];
+    let args_base_a = [
+        "scan",
+        "--baseline-out",
+        baseline_a.to_str().unwrap(),
+        corpus_path,
+    ];
+    let args_base_b = [
+        "scan",
+        "--baseline-out",
+        baseline_b.to_str().unwrap(),
+        corpus_path,
+    ];
 
     let run_a = run(Profile::Plain, &args_base_a);
     let run_b = run(Profile::Plain, &args_base_b);
@@ -129,8 +139,18 @@ fn deterministic_baseline_and_merkle_index() {
     let merkle_a = temp_out.path().join("merkle_a.json");
     let merkle_b = temp_out.path().join("merkle_b.json");
 
-    let args_merkle_a = ["scan", "--incremental-cache", merkle_a.to_str().unwrap(), corpus_path];
-    let args_merkle_b = ["scan", "--incremental-cache", merkle_b.to_str().unwrap(), corpus_path];
+    let args_merkle_a = [
+        "scan",
+        "--incremental-cache",
+        merkle_a.to_str().unwrap(),
+        corpus_path,
+    ];
+    let args_merkle_b = [
+        "scan",
+        "--incremental-cache",
+        merkle_b.to_str().unwrap(),
+        corpus_path,
+    ];
 
     let run_m_a = run(Profile::Plain, &args_merkle_a);
     let run_m_b = run(Profile::Plain, &args_merkle_b);

@@ -409,7 +409,11 @@ fn no_default_format_leaks_the_plaintext_token() {
     let formats = keyhog::args::OutputFormat::value_variants();
 
     for fmt_enum in formats {
-        let fmt = fmt_enum.to_possible_value().expect("possible value").get_name().to_string();
+        let fmt = fmt_enum
+            .to_possible_value()
+            .expect("possible value")
+            .get_name()
+            .to_string();
         for verbosity in [&[][..], &["-v"], &["-vv"], &["--quiet"]] {
             let mut args = vec!["--format", fmt.as_str()];
             args.extend_from_slice(verbosity);

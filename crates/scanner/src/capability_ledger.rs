@@ -4,9 +4,9 @@
 //! explicitly registers whether it ran or skipped due to an absent capability,
 //! and validates that skip counts do not exceed committed host-class baselines.
 
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
-use serde::{Deserialize, Serialize};
 
 pub use crate::hw_probe::HostClass;
 
@@ -51,7 +51,8 @@ pub fn register_capability_test(test_name: &str, capability: &str, is_available:
         CapabilityOutcome::SkippedCapabilityAbsent
     };
 
-    if let Ok(mut ledger) = CAPABILITY_LEDGER.lock() { // LAW10: capability test ledger recording; test-only observability
+    if let Ok(mut ledger) = CAPABILITY_LEDGER.lock() {
+        // LAW10: capability test ledger recording; test-only observability
         ledger.push(CapabilityLedgerRecord {
             test_name: test_name.to_string(),
             capability: capability.to_string(),
@@ -76,7 +77,10 @@ pub struct CapabilityLedgerSummary {
 /// Retrieve the current capability ledger summary.
 pub fn capability_ledger_summary() -> CapabilityLedgerSummary {
     let host_class = Some(HostClass::detect());
-    let records = CAPABILITY_LEDGER.lock().map(|l| l.clone()).unwrap_or_default(); // LAW10: capability test ledger snapshot; test-only observability
+    let records = CAPABILITY_LEDGER
+        .lock()
+        .map(|l| l.clone())
+        .unwrap_or_default(); // LAW10: capability test ledger snapshot; test-only observability
     let mut ran_count = 0;
     let mut skipped_count = 0;
     let mut failed_count = 0;
@@ -98,7 +102,8 @@ pub fn capability_ledger_summary() -> CapabilityLedgerSummary {
 
 /// Reset the capability ledger (for testing).
 pub fn reset_capability_ledger() {
-    if let Ok(mut ledger) = CAPABILITY_LEDGER.lock() { // LAW10: capability test ledger reset; test-only observability
+    if let Ok(mut ledger) = CAPABILITY_LEDGER.lock() {
+        // LAW10: capability test ledger reset; test-only observability
         ledger.clear();
     }
 }
@@ -109,10 +114,7 @@ pub fn print_capability_ledger_summary() {
     let class_label = summary.host_class.map(|c| c.label()).unwrap_or("unknown"); // LAW10: formatting fallback for display-only test summary
     eprintln!(
         "[CAPABILITY LEDGER] Host class: {} | Ran: {} | Skipped (absent): {} | Failed: {}",
-        class_label,
-        summary.ran_count,
-        summary.skipped_count,
-        summary.failed_count
+        class_label, summary.ran_count, summary.skipped_count, summary.failed_count
     );
 }
 

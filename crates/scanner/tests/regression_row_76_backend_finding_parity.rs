@@ -111,7 +111,12 @@ fn row_76_multi_megabyte_window_boundary_parity_across_backends() {
     let mut current_len = 0usize;
     let target_len = 2 * 1024 * 1024; // 2 MiB
 
-    let secret_line_targets = [500_000usize, 1024 * 1024 - 200, 1024 * 1024 + 200, 1_500_000];
+    let secret_line_targets = [
+        500_000usize,
+        1024 * 1024 - 200,
+        1024 * 1024 + 200,
+        1_500_000,
+    ];
     let mut targets_hit = [false; 4];
     let mut idx = 0usize;
 

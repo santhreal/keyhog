@@ -22,7 +22,8 @@ fn unbounded_detectors_straddling_seam_trigger_coverage_gap_counter() {
         .parent()
         .unwrap()
         .join("detectors");
-    let detectors = keyhog_core::load_detectors(&detector_dir).expect("detectors load successfully");
+    let detectors =
+        keyhog_core::load_detectors(&detector_dir).expect("detectors load successfully");
 
     // Dynamically derive unbounded detectors from loaded set at run time
     let unbounded_detectors: Vec<_> = detectors
@@ -78,7 +79,12 @@ fn unbounded_detectors_straddling_seam_trigger_coverage_gap_counter() {
         data: data_b.into(),
         metadata: ChunkMetadata {
             base_offset: split_offset,
-            base_line: 1 + chunk_a.data.as_bytes().iter().filter(|&&b| b == b'\n').count(),
+            base_line: 1 + chunk_a
+                .data
+                .as_bytes()
+                .iter()
+                .filter(|&&b| b == b'\n')
+                .count(),
             path: Some("id_rsa".into()),
             source_type: "file".into(),
             ..Default::default()

@@ -50,7 +50,10 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
                         path = %path.display(),
                         "matcher-artifact cache unusable: default cache location is unusable"
                     );
-                    eprintln!("warning: matcher-artifact cache unusable at {}: {error}", path.display());
+                    eprintln!(
+                        "warning: matcher-artifact cache unusable at {}: {error}",
+                        path.display()
+                    );
                     Ok(None)
                 }
             }

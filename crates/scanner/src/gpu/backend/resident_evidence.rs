@@ -1171,9 +1171,7 @@ pub(crate) fn finish_gpu_literal_evidence_by_region_resident<R>(
                         .and_then(|matches| matches.checked_mul(12))
                         .and_then(|match_bytes| bytes.checked_add(match_bytes))
                 })
-                .ok_or_else(|| {
-                    "GPU resident readback byte accounting exceeds u64".to_string()
-                })?;
+                .ok_or_else(|| "GPU resident readback byte accounting exceeds u64".to_string())?;
             evidence::record_readback(output_bytes, None);
             let consumer = consume.take().ok_or_else(|| {
                 "GPU resident literal output consumer was already invoked".to_string()

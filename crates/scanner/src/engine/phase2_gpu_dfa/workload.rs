@@ -35,7 +35,6 @@ impl<'a> Phase2GpuAdmissionWorkload<'a> {
     }
 }
 
-
 pub(in crate::engine) fn validate_phase2_gpu_trigger_rows(
     chunk_count: usize,
     trigger_count: usize,

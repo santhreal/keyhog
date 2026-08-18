@@ -121,10 +121,16 @@ fn fixed_chunks() -> Vec<Chunk> {
 fn seam_straddling_chunks() -> Vec<Chunk> {
     let mut chunks = Vec::new();
     let credentials = [
-        ("AKIAIOSFODNN7EXAMPLE", 8), // AWS access key ID
+        ("AKIAIOSFODNN7EXAMPLE", 8),                      // AWS access key ID
         ("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 15), // GitHub PAT
-        ("xoxb-123456789012-1234567890123-abcdefghijklmnopqrstuvwx", 20), // Slack token
-        ("postgres://app_user:s3cr3t_p4ssw0rd@db.example.com:5432/production_db", 30), // DB URL
+        (
+            "xoxb-123456789012-1234567890123-abcdefghijklmnopqrstuvwx",
+            20,
+        ), // Slack token
+        (
+            "postgres://app_user:s3cr3t_p4ssw0rd@db.example.com:5432/production_db",
+            30,
+        ), // DB URL
     ];
 
     for (file_idx, (secret, split_at)) in credentials.iter().enumerate() {
@@ -246,9 +252,8 @@ fn scan_coalesced_finding_parity_across_worker_counts() {
 
     // Derive worker count variant space dynamically at run time:
     // 1 worker, 2 workers, an odd count, and host maximum from pool / available parallelism.
-    let host_max = rayon::current_num_threads().max(
-        std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get),
-    );
+    let host_max = rayon::current_num_threads()
+        .max(std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get));
     let odd_count = if host_max > 3 { (host_max / 2) | 1 } else { 3 };
     let mut worker_counts = std::collections::BTreeSet::new();
     worker_counts.insert(1);

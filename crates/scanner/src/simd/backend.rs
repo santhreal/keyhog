@@ -694,7 +694,9 @@ impl HsScanner {
                                 dropped = dropped.len(),
                                 "HS shard loaded from cache"
                             );
-                            keyhog_profile::record_cache_hit(keyhog_profile::CacheId::HyperscanShard);
+                            keyhog_profile::record_cache_hit(
+                                keyhog_profile::CacheId::HyperscanShard,
+                            );
                             return Some((db, dropped));
                         }
                         Err(error) => {

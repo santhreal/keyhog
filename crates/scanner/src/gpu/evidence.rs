@@ -337,8 +337,14 @@ pub(crate) fn record_host_byte_scrub(site: GpuHostDataMovementSite, bytes: usize
 
 #[cfg(test)]
 pub(crate) fn host_data_movement_snapshot() -> (u64, u64) {
-    let copies: u64 = HOST_COPIED_BYTES.iter().map(|a| a.load(Ordering::Relaxed)).sum();
-    let scrubs: u64 = HOST_SCRUBBED_BYTES.iter().map(|a| a.load(Ordering::Relaxed)).sum();
+    let copies: u64 = HOST_COPIED_BYTES
+        .iter()
+        .map(|a| a.load(Ordering::Relaxed))
+        .sum();
+    let scrubs: u64 = HOST_SCRUBBED_BYTES
+        .iter()
+        .map(|a| a.load(Ordering::Relaxed))
+        .sum();
     (copies, scrubs)
 }
 
@@ -371,7 +377,8 @@ impl GpuApiKind {
     }
 }
 
-static INITIALIZED_GPU_APIS: [AtomicU64; 3] = [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
+static INITIALIZED_GPU_APIS: [AtomicU64; 3] =
+    [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
 
 pub(crate) fn record_gpu_api_initialized(api: GpuApiKind) {
     let idx = match api {
@@ -385,7 +392,10 @@ pub(crate) fn record_gpu_api_initialized(api: GpuApiKind) {
 #[cfg(test)]
 #[allow(dead_code)]
 pub(crate) fn initialized_gpu_api_count() -> usize {
-    INITIALIZED_GPU_APIS.iter().filter(|a| a.load(Ordering::Relaxed) > 0).count()
+    INITIALIZED_GPU_APIS
+        .iter()
+        .filter(|a| a.load(Ordering::Relaxed) > 0)
+        .count()
 }
 
 #[cfg(test)]

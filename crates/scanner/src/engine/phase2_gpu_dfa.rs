@@ -116,7 +116,6 @@ impl Phase2GpuDfaCatalog {
         !self.shards.is_empty()
     }
 
-
     pub(crate) fn coverage(&self) -> Phase2GpuDfaCoverage {
         let covered_ascii_patterns = self
             .evidence

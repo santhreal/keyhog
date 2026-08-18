@@ -516,7 +516,9 @@ impl CounterId {
             Self::DecodeTruncations => MetricId::DecodeTruncations,
             Self::DecodeOversizeSkips => MetricId::DecodeOversizeSkips,
             Self::InvalidPatternIndexSkips => MetricId::InvalidPatternIndexSkips,
-            Self::BoundaryResultCardinalityMismatches => MetricId::BoundaryResultCardinalityMismatches,
+            Self::BoundaryResultCardinalityMismatches => {
+                MetricId::BoundaryResultCardinalityMismatches
+            }
             Self::BoundarySeamTruncations => MetricId::BoundarySeamTruncations,
             Self::LineOffsetMappingMismatches => MetricId::LineOffsetMappingMismatches,
             Self::ChunkDeadlineAborts => MetricId::ChunkDeadlineAborts,

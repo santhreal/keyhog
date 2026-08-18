@@ -17,7 +17,11 @@ fn all_guard_root_states_and_modes_derived_at_runtime() {
     let mut state_labels = HashSet::new();
     for state in states {
         assert!(!state.label().is_empty(), "state label must not be empty");
-        assert!(state_labels.insert(state.label()), "state labels must be unique: {}", state.label());
+        assert!(
+            state_labels.insert(state.label()),
+            "state labels must be unique: {}",
+            state.label()
+        );
     }
 
     let modes = GuardRootMode::all();
@@ -25,7 +29,11 @@ fn all_guard_root_states_and_modes_derived_at_runtime() {
     let mut mode_labels = HashSet::new();
     for mode in modes {
         assert!(!mode.label().is_empty(), "mode label must not be empty");
-        assert!(mode_labels.insert(mode.label()), "mode labels must be unique: {}", mode.label());
+        assert!(
+            mode_labels.insert(mode.label()),
+            "mode labels must be unique: {}",
+            mode.label()
+        );
     }
 }
 
@@ -61,7 +69,11 @@ fn all_transition_pairs_consult_transition_table() {
 fn repair_indicated_states_transition_through_repair_cycle() {
     let repair_states = [GuardRootState::Degraded, GuardRootState::StalePolicy];
     for &state in &repair_states {
-        assert!(state.needs_repair(), "{:?} must indicate repair needed", state);
+        assert!(
+            state.needs_repair(),
+            "{:?} must indicate repair needed",
+            state
+        );
 
         // Transition: RepairStarted -> Indexing
         let indexing = state
@@ -94,7 +106,11 @@ fn non_repair_states_reject_repair_started() {
     ];
 
     for &state in &non_repair_states {
-        assert!(!state.needs_repair(), "{:?} does not indicate repair", state);
+        assert!(
+            !state.needs_repair(),
+            "{:?} does not indicate repair",
+            state
+        );
         let result = state.transition(&GuardTransition::RepairStarted);
         assert!(
             result.is_err(),

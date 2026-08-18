@@ -686,8 +686,7 @@ impl CoverageCounts {
             scanner_invalid_pattern_index_skips: telemetry::invalid_pattern_index_skip_count(),
             scanner_boundary_cardinality_mismatches:
                 telemetry::boundary_result_cardinality_mismatch_count(),
-            scanner_boundary_seam_truncations:
-                telemetry::boundary_seam_truncation_count(),
+            scanner_boundary_seam_truncations: telemetry::boundary_seam_truncation_count(),
             scanner_line_offset_mismatches: telemetry::line_offset_mapping_mismatch_count(),
             scanner_chunk_deadline_aborts: telemetry::chunk_deadline_abort_count(),
             scanner_binary_strings_named_exclusions:
@@ -853,9 +852,7 @@ impl CoverageGapKind {
             Self::ScannerBoundaryCardinalityMismatch => {
                 counts.scanner_boundary_cardinality_mismatches
             }
-            Self::ScannerBoundarySeamTruncation => {
-                counts.scanner_boundary_seam_truncations
-            }
+            Self::ScannerBoundarySeamTruncation => counts.scanner_boundary_seam_truncations,
             Self::ScannerLineOffsetMismatch => counts.scanner_line_offset_mismatches,
             Self::ScannerChunkDeadlineAbort => counts.scanner_chunk_deadline_aborts,
             Self::ScannerBinaryStringsNamedExclusion => {

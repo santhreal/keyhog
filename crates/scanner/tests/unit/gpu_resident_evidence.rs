@@ -289,10 +289,11 @@ fn issue32_async_slot_dense_overflow_clears_owned_buffers_and_retains_healthy_st
         2,
     )
     .expect("dense async slot submits at calibrated depth two");
-    let error = finish_gpu_literal_evidence_by_region_resident(pending, &backend, |_presence, _matches| {
-        Ok(())
-    })
-    .expect_err("dense async slot overflow fails closed to trigger exact CPU recovery");
+    let error =
+        finish_gpu_literal_evidence_by_region_resident(pending, &backend, |_presence, _matches| {
+            Ok(())
+        })
+        .expect_err("dense async slot overflow fails closed to trigger exact CPU recovery");
     assert!(error.contains("dispatch error"));
     let guard = slot.lock().expect("resident slot remains healthy");
     let GpuResidentLiteralSlot::Ready(state) = &*guard else {
@@ -426,21 +427,29 @@ fn row72_host_byte_copies_and_scrub_counter_and_credential_zeroize_guarantee() {
     let total_bytes = chunks.iter().map(|c| c.data.len()).sum::<usize>();
 
     let mut summary_found = false;
-    let _summary = crate::engine::gpu_region_batch::with_region_presence_batch(&chunks, |haystack, region_starts, _mode| {
-        let pending = submit_gpu_literal_evidence_by_region_resident(
-            &slot,
-            &matcher,
-            &backend,
-            haystack,
-            region_starts,
-            1,
-            1,
-        )?;
-        finish_gpu_literal_evidence_by_region_resident(pending, &backend, |_presence, matches| {
-            summary_found = !matches.is_empty();
-            Ok(())
-        })
-    }).expect("multi-chunk batch finishes");
+    let _summary = crate::engine::gpu_region_batch::with_region_presence_batch(
+        &chunks,
+        |haystack, region_starts, _mode| {
+            let pending = submit_gpu_literal_evidence_by_region_resident(
+                &slot,
+                &matcher,
+                &backend,
+                haystack,
+                region_starts,
+                1,
+                1,
+            )?;
+            finish_gpu_literal_evidence_by_region_resident(
+                pending,
+                &backend,
+                |_presence, matches| {
+                    summary_found = !matches.is_empty();
+                    Ok(())
+                },
+            )
+        },
+    )
+    .expect("multi-chunk batch finishes");
     assert!(summary_found, "multi-chunk finding parity exact");
 
     let (copies, scrubs) = crate::gpu::host_data_movement_snapshot();

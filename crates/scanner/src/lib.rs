@@ -79,14 +79,14 @@ pub(crate) mod assignment_keywords;
 pub mod aws;
 /// Secret-safe candidate producer and pattern provenance.
 pub(crate) mod candidate_provenance;
+/// Detector compilation into high-performance matching structures.
+pub mod capability_ledger;
 /// Service-specific credential checksum validation (GitHub, npm, Slack, etc.).
 pub mod checksum;
 /// Candidate-bounded source-code semantic roles.
 pub(crate) mod code_semantics;
 /// Compiled scanner construction and lifecycle implementation.
 mod compiled_scanner;
-/// Detector compilation into high-performance matching structures.
-pub mod capability_ledger;
 pub(crate) mod compiler;
 /// Heuristic and ML-based confidence scoring for candidate matches.
 pub mod confidence;

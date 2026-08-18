@@ -416,12 +416,16 @@ fn profiler_cache_identities(
     };
 
     let matcher_state = match &orchestrator.scanner_materialization {
-        Some(super::ScannerMaterialization::Compiled { matcher_outcome }) => match matcher_outcome {
-            keyhog_scanner::MatcherArtifactCacheOutcome::Hit => CacheState::Warm,
-            keyhog_scanner::MatcherArtifactCacheOutcome::Miss => CacheState::Cold,
-            keyhog_scanner::MatcherArtifactCacheOutcome::Invalidated { .. } => CacheState::Cold,
-            keyhog_scanner::MatcherArtifactCacheOutcome::Disabled { .. } => CacheState::Disabled,
-        },
+        Some(super::ScannerMaterialization::Compiled { matcher_outcome }) => {
+            match matcher_outcome {
+                keyhog_scanner::MatcherArtifactCacheOutcome::Hit => CacheState::Warm,
+                keyhog_scanner::MatcherArtifactCacheOutcome::Miss => CacheState::Cold,
+                keyhog_scanner::MatcherArtifactCacheOutcome::Invalidated { .. } => CacheState::Cold,
+                keyhog_scanner::MatcherArtifactCacheOutcome::Disabled { .. } => {
+                    CacheState::Disabled
+                }
+            }
+        }
         _ => CacheState::Disabled,
     };
     let matcher_artifacts = CacheLayerV2 {

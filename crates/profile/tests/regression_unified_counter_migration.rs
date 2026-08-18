@@ -259,7 +259,8 @@ fn registry_derived_reset_clears_all_registered_counters_without_manual_enumerat
     for metric in metrics_after_reset {
         if metric.metric_id.descriptor().kind == MetricKind::Counter {
             assert_eq!(
-                metric.value, 0,
+                metric.value,
+                0,
                 "counter {:?} ({}) must be 0 after reset()",
                 metric.metric_id,
                 metric.metric_id.as_str()

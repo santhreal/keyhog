@@ -425,7 +425,8 @@ fn ghidra_version_probing_parses_application_properties() {
     std::fs::write(&headless, "#!/bin/sh\n").expect("write headless");
 
     let props = app_dir.join("application.properties");
-    let props_content = "application.name=Ghidra\napplication.version=11.1.2\napplication.release.name=PUBLIC\n";
+    let props_content =
+        "application.name=Ghidra\napplication.version=11.1.2\napplication.release.name=PUBLIC\n";
     std::fs::write(&props, props_content).expect("write props");
 
     let version = ghidra::probe_ghidra_version(&headless);

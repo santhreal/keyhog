@@ -24,14 +24,14 @@ pub(crate) use backend::{
     GpuResidentLiteralOverlap, GpuResidentLiteralSlot,
 };
 #[cfg(all(test, feature = "gpu"))]
-pub(crate) use evidence::{
-    host_data_movement_snapshot, reset_host_data_movement_counters, GpuHostDataMovementSite,
-};
-#[cfg(all(test, feature = "gpu"))]
 pub(crate) use backend::{
     reset_test_max_in_flight_slots, test_max_in_flight_slots, with_test_resident_dispatch_failure,
 };
 pub(crate) use backend::{GpuBackendAcquisitionFailure, GpuBackendPeers, SelectedGpuPeer};
+#[cfg(all(test, feature = "gpu"))]
+pub(crate) use evidence::{
+    host_data_movement_snapshot, reset_host_data_movement_counters, GpuHostDataMovementSite,
+};
 type RecoveryReceiptCounter = std::sync::Arc<std::sync::atomic::AtomicU64>;
 
 thread_local! {
@@ -103,12 +103,12 @@ pub use policy::*;
 mod self_test;
 pub use self_test::*;
 
+#[cfg(all(feature = "gpu", target_os = "linux"))]
+pub(crate) use adapter_probe::linux_cuda_runtime_identity;
 #[cfg(feature = "gpu")]
 pub(crate) use adapter_probe::{
     gpu_adapter_device_identity, gpu_adapter_probe, is_software_adapter,
 };
-#[cfg(all(feature = "gpu", target_os = "linux"))]
-pub(crate) use adapter_probe::linux_cuda_runtime_identity;
 
 /// Render the feature-extraction and confidence-score timing split from typed
 /// profiler counters. The scorer records CPU work identically for every route.

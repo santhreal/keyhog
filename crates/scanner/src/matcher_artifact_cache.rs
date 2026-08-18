@@ -773,7 +773,8 @@ pub fn store_matcher_artifact(
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::symlink_metadata(cache_dir) { // LAW10: best-effort permissions check on newly created cache dir; failure surfaced if chmod fails
+        if let Ok(meta) = std::fs::symlink_metadata(cache_dir) {
+            // LAW10: best-effort permissions check on newly created cache dir; failure surfaced if chmod fails
             if !meta.file_type().is_symlink() && (meta.permissions().mode() & 0o077 != 0) {
                 std::fs::set_permissions(cache_dir, std::fs::Permissions::from_mode(0o700))
                     .map_err(|error| {

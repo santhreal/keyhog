@@ -1522,4 +1522,3 @@ impl CompiledScanner {
         Ok(self)
     }
 }
-

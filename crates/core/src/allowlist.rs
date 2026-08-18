@@ -1005,7 +1005,6 @@ fn invalid_bare_entry(entry: &str) -> Option<(&'static str, &'static str)> {
     None
 }
 
-
 pub(crate) fn allowlist_days_since_epoch_for_test(
     now: std::time::SystemTime,
 ) -> Result<i64, String> {
