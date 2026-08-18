@@ -926,7 +926,10 @@ impl CompiledScanner {
         } else {
             Phase2GpuAdmissionWorkload::Empty
         };
-        let phase2_dispatch_profile = super::profile::span(keyhog_profile::Stage::BackendDispatch);
+        let catalog_opt = self.phase2_gpu_dfa_catalog(Some(backend.id()));
+        let has_shards = catalog_opt.map_or(false, |c| !c.shards.is_empty());
+        let phase2_dispatch_profile = (phase2_gpu_workload != Phase2GpuAdmissionWorkload::Empty && has_shards)
+            .then(|| super::profile::span(keyhog_profile::Stage::BackendDispatch));
         let t_phase2_gpu = kh.then(std::time::Instant::now);
         let mut phase2_gpu_empty_complete = false;
         let mut phase2_gpu_coverage = None;
@@ -937,15 +940,19 @@ impl CompiledScanner {
                 None
             }
             Phase2GpuAdmissionWorkload::Full { chunks: gpu_chunks } => {
-                match self.phase2_gpu_dfa_catalog(Some(backend.id())) {
+                match catalog_opt {
                     Some(catalog) => {
                         phase2_gpu_coverage = Some(catalog.coverage());
-                        match scan_phase2_gpu_chunks_sharded(
-                            catalog,
-                            backend,
-                            gpu_chunks,
-                            recover_dispatch_faults,
-                        ) {
+                        if catalog.shards.is_empty() {
+                            phase2_gpu_empty_complete = true;
+                            None
+                        } else {
+                            match scan_phase2_gpu_chunks_sharded(
+                                catalog,
+                                backend,
+                                gpu_chunks,
+                                recover_dispatch_faults,
+                            ) {
                             Ok(outcome) => {
                                 phase2_gpu_haystack_uploads = outcome.haystack_uploads;
                                 if let Some(fault) = outcome.fault.as_ref() {
@@ -972,6 +979,7 @@ impl CompiledScanner {
                                 return dispatch_failure(reason);
                             }
                         }
+                        }
                     }
                     None => None,
                 }
@@ -980,15 +988,19 @@ impl CompiledScanner {
                 indices,
                 chunks: gpu_chunks,
                 full_len,
-            } => match self.phase2_gpu_dfa_catalog(Some(backend.id())) {
+            } => match catalog_opt {
                 Some(catalog) => {
                     phase2_gpu_coverage = Some(catalog.coverage());
-                    match scan_phase2_gpu_refs_sharded(
-                        catalog,
-                        backend,
-                        gpu_chunks.as_slice(),
-                        recover_dispatch_faults,
-                    ) {
+                    if catalog.shards.is_empty() {
+                        phase2_gpu_empty_complete = true;
+                        None
+                    } else {
+                        match scan_phase2_gpu_refs_sharded(
+                            catalog,
+                            backend,
+                            gpu_chunks.as_slice(),
+                            recover_dispatch_faults,
+                        ) {
                         Ok(outcome) => {
                             phase2_gpu_haystack_uploads = outcome.haystack_uploads;
                             if let Some(fault) = outcome.fault.as_ref() {
@@ -1016,6 +1028,7 @@ impl CompiledScanner {
                             let reason = format!("phase-2 GPU admission dispatch failed: {error}");
                             return dispatch_failure(reason);
                         }
+                    }
                     }
                 }
                 None => None,
