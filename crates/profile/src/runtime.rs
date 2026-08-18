@@ -121,13 +121,14 @@ impl EventLossCounts {
 struct ActiveSpan {
     runtime_key: usize,
     span_id: u64,
+    child_elapsed_ns: u64,
+    parent_slot: Option<usize>,
 }
 
 #[derive(Clone, Copy)]
 struct SpanTrace {
     record_index: usize,
     span_id: u64,
-    stack_slot: Option<usize>,
 }
 
 /// One completed span's recording payload, assembled on the guard's drop path.
@@ -135,10 +136,9 @@ struct SpanTrace {
 struct SpanOutcome {
     start_offset_ns: u64,
     elapsed_ns: u64,
-    attributed: bool,
+    self_ns: u64,
     blocked: bool,
     serial: bool,
-    outermost: bool,
 }
 
 struct RawSpanRecord {
@@ -612,6 +612,8 @@ impl Runtime {
             stack.borrow_mut()[stack_slot] = Some(ActiveSpan {
                 runtime_key,
                 span_id,
+                child_elapsed_ns: 0,
+                parent_slot: None,
             });
         });
         Some(AsyncParentGuard {
@@ -924,30 +926,35 @@ impl Runtime {
         (events, annotations, loss)
     }
 
-    fn current_parent_span_id(&self) -> u64 {
+    fn current_parent(&self) -> (Option<usize>, u64) {
         let runtime_key = Arc::as_ptr(&self.inner) as usize;
-        ACTIVE_SPANS
-            .with(|stack| {
-                stack
-                    .borrow()
-                    .iter()
-                    .rev()
-                    .flatten()
-                    .find(|active| active.runtime_key == runtime_key)
-                    .map(|active| active.span_id)
-            })
-            .or_else(|| {
-                ASYNC_PARENT_SPANS.with(|stack| {
-                    stack
-                        .borrow()
-                        .iter()
-                        .rev()
-                        .flatten()
-                        .find(|active| active.runtime_key == runtime_key)
-                        .map(|active| active.span_id)
+        let active = ACTIVE_SPANS.with(|stack| {
+            let stack = stack.borrow();
+            stack
+                .iter()
+                .enumerate()
+                .rev()
+                .find_map(|(slot, active)| {
+                    active.and_then(|a| (a.runtime_key == runtime_key).then_some((Some(slot), a.span_id)))
                 })
-            })
-            .unwrap_or(0)
+        });
+        if let Some(pair) = active {
+            return pair;
+        }
+        let async_span_id = ASYNC_PARENT_SPANS.with(|stack| {
+            stack
+                .borrow()
+                .iter()
+                .rev()
+                .flatten()
+                .find(|active| active.runtime_key == runtime_key)
+                .map(|active| active.span_id)
+        });
+        (None, async_span_id.unwrap_or(0))
+    }
+
+    fn current_parent_span_id(&self) -> u64 {
+        self.current_parent().1
     }
 
     fn reserve_span(
@@ -1000,7 +1007,6 @@ impl Runtime {
         Some(SpanTrace {
             record_index,
             span_id,
-            stack_slot,
         })
     }
 
@@ -1009,35 +1015,55 @@ impl Runtime {
         stage: Stage,
         started: Instant,
         parent_span_id: u64,
+        parent_slot: Option<usize>,
         worker_id: u64,
-    ) -> Option<SpanTrace> {
-        if !self.inner.session_recording {
-            return None;
-        }
+    ) -> (Option<SpanTrace>, Option<usize>) {
         let stack_slot = ACTIVE_SPANS.with(|stack| stack.borrow().iter().position(Option::is_none));
         let Some(stack_slot) = stack_slot else {
             self.inner
                 .session_dropped_spans
                 .fetch_add(1, Ordering::Relaxed);
-            return None;
+            return (None, None);
         };
-        let trace =
-            self.reserve_span(stage, started, parent_span_id, Some(stack_slot), worker_id)?;
+        let trace = self.reserve_span(stage, started, parent_span_id, Some(stack_slot), worker_id);
         let runtime_key = Arc::as_ptr(&self.inner) as usize;
+        let span_id = trace.as_ref().map_or(0, |t| t.span_id);
         ACTIVE_SPANS.with(|stack| {
             stack.borrow_mut()[stack_slot] = Some(ActiveSpan {
                 runtime_key,
-                span_id: trace.span_id,
+                span_id,
+                child_elapsed_ns: 0,
+                parent_slot,
             });
         });
-        Some(trace)
+        (trace, Some(stack_slot))
     }
 
-    fn begin_span(&self, stage: Stage, started: Instant, worker_id: u64) -> Option<SpanTrace> {
-        let parent_span_id = self.current_parent_span_id();
-        self.begin_span_with(stage, started, parent_span_id, worker_id)
-    }
 
+    fn pop_active_span(&self, stack_slot: Option<usize>, elapsed_ns: u64) -> u64 {
+        let Some(stack_slot) = stack_slot else {
+            return elapsed_ns;
+        };
+        let runtime_key = Arc::as_ptr(&self.inner) as usize;
+        let child_elapsed_ns = ACTIVE_SPANS.with(|stack| {
+            let mut stack = stack.borrow_mut();
+            if let Some(active) = stack[stack_slot].take() {
+                if active.runtime_key == runtime_key {
+                    if let Some(parent_slot) = active.parent_slot {
+                        if let Some(parent) = stack[parent_slot].as_mut() {
+                            if parent.runtime_key == runtime_key {
+                                parent.child_elapsed_ns =
+                                    parent.child_elapsed_ns.saturating_add(elapsed_ns);
+                            }
+                        }
+                    }
+                    return active.child_elapsed_ns;
+                }
+            }
+            0
+        });
+        elapsed_ns.saturating_sub(child_elapsed_ns)
+    }
     fn begin_async_span(
         &self,
         stage: Stage,
@@ -1052,14 +1078,6 @@ impl Runtime {
     }
 
     fn finish_span(&self, trace: SpanTrace, inclusive_ns: u64) {
-        if let Some(stack_slot) = trace.stack_slot {
-            ACTIVE_SPANS.with(|stack| {
-                let mut stack = stack.borrow_mut();
-                if stack[stack_slot].is_some_and(|active| active.span_id == trace.span_id) {
-                    stack[stack_slot] = None;
-                }
-            });
-        }
         let mut records = match self.inner.session_spans.lock() {
             Ok(records) => records,
             Err(poisoned) => poisoned.into_inner(),
@@ -1181,6 +1199,7 @@ impl Runtime {
     fn record(&self, shard: Option<&WorkerShard>, stage: Stage, outcome: SpanOutcome) {
         let index = stage.index();
         let elapsed_ns = outcome.elapsed_ns;
+        let self_ns = outcome.self_ns;
         if self.inner.session_recording {
             let Some(shard) = shard else {
                 return;
@@ -1198,10 +1217,13 @@ impl Runtime {
                 outcome.start_offset_ns.saturating_add(elapsed_ns),
                 Ordering::Relaxed,
             );
-            if outcome.attributed {
-                shard.attributed_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
-                shard.legacy_attributed_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
+            // Every non-blocked stage carries its self-time (exclusive elapsed time) in attributed_ns.
+            // Blocked wait is never attributed execution.
+            if !outcome.blocked {
+                shard.attributed_ns[index].fetch_add(self_ns, Ordering::Relaxed);
+                shard.legacy_attributed_ns[index].fetch_add(self_ns, Ordering::Relaxed);
             }
+
             if outcome.blocked {
                 shard.blocked_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
                 shard.blocked_calls[index].fetch_add(1, Ordering::Relaxed);
@@ -1210,26 +1232,22 @@ impl Runtime {
                 shard.serial_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
                 shard.serial_calls[index].fetch_add(1, Ordering::Relaxed);
             }
-            // Only the outermost span on a thread contributes occupancy, so a
-            // nested span never counts its parent's time a second time.
-            if outcome.outermost {
-                shard.top_level_calls.fetch_add(1, Ordering::Relaxed);
-                if outcome.blocked {
-                    shard
-                        .top_level_blocked_ns
-                        .fetch_add(elapsed_ns, Ordering::Relaxed);
-                } else {
-                    shard
-                        .top_level_busy_ns
-                        .fetch_add(elapsed_ns, Ordering::Relaxed);
-                }
+            // Worker occupancy is computed from self-time: a worker is credited once
+            // for each nanosecond it actually spends executing or waiting in blocked state.
+            shard.top_level_calls.fetch_add(1, Ordering::Relaxed);
+            if outcome.blocked {
+                shard
+                    .top_level_blocked_ns
+                    .fetch_add(self_ns, Ordering::Relaxed);
+            } else {
+                shard
+                    .top_level_busy_ns
+                    .fetch_add(self_ns, Ordering::Relaxed);
             }
             return;
         }
-        self.inner.elapsed_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
-        self.inner.calls[index].fetch_add(1, Ordering::Relaxed);
-        if outcome.attributed {
-            self.inner.attributed_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
+        if !outcome.blocked {
+            self.inner.attributed_ns[index].fetch_add(self_ns, Ordering::Relaxed);
         }
     }
 
@@ -2252,12 +2270,9 @@ impl Drop for AsyncSpan {
             SpanOutcome {
                 start_offset_ns: runtime.offset_ns(started),
                 elapsed_ns,
-                attributed: self.attributed,
+                self_ns: elapsed_ns,
                 blocked: false,
                 serial: false,
-                // An async span can be polled on any thread, so it never
-                // owns a worker's outermost interval.
-                outermost: false,
             },
         );
         if let Some(trace) = self.trace {
@@ -2365,7 +2380,7 @@ pub struct Span {
     stage: Stage,
     started: Option<Instant>,
     trace: Option<SpanTrace>,
-    attributed: bool,
+    stack_slot: Option<usize>,
     blocked: bool,
     serial: bool,
     outermost: bool,
@@ -2391,7 +2406,7 @@ fn span_impl(
             stage,
             started: None,
             trace: None,
-            attributed: false,
+            stack_slot: None,
             blocked: false,
             serial: false,
             outermost: false,
@@ -2401,25 +2416,19 @@ fn span_impl(
     let shard = runtime.as_ref().and_then(Runtime::worker_shard);
     let worker_id = shard.as_ref().map_or(0, |shard| shard.sequence);
     let started = runtime.as_ref().map(|_| Instant::now());
-    // Depth is tracked for every recording guard, including guards whose span
-    // record was dropped for capacity, so occupancy never double-counts a
-    // nested region just because the forest was truncated.
     let outermost =
         started.is_some() && SPAN_DEPTH.with(|depth| depth.replace(depth.get() + 1) == 0);
-    let trace = match (runtime.as_ref(), started, parent_override) {
-        (Some(runtime), Some(started), Some(parent)) => {
-            let parent_span_id = if runtime.context_id() == parent.context_id() {
-                parent.span_id()
-            } else {
-                0
+    let (trace, stack_slot) = match (runtime.as_ref(), started) {
+        (Some(runtime), Some(started)) => {
+            let (parent_slot, current_parent_id) = runtime.current_parent();
+            let parent_span_id = match parent_override {
+                Some(parent) if runtime.context_id() == parent.context_id() => parent.span_id(),
+                _ => current_parent_id,
             };
-            runtime.begin_span_with(stage, started, parent_span_id, worker_id)
+            runtime.begin_span_with(stage, started, parent_span_id, parent_slot, worker_id)
         }
-        (Some(runtime), Some(started), None) => runtime.begin_span(stage, started, worker_id),
-        _ => None,
+        _ => (None, None),
     };
-    // Blocked wait is never attributed execution.
-    let attributed = !blocked && runtime.is_some() && current_work_origin().is_attributed_work();
     if trace.is_some() {
         crate::allocation::stage_context_push(stage);
     }
@@ -2429,7 +2438,7 @@ fn span_impl(
         stage,
         started,
         trace,
-        attributed,
+        stack_slot,
         blocked,
         serial,
         outermost,
@@ -2513,12 +2522,9 @@ impl DecisionTimer {
                     SpanOutcome {
                         start_offset_ns: runtime.offset_ns(self.started),
                         elapsed_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
-                        attributed: false,
+                        self_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
                         blocked: false,
                         serial: false,
-                        // The caller owns the enclosing span, if any; a decision
-                        // timer never claims a worker's outermost interval.
-                        outermost: false,
                     },
                 );
             }
@@ -2535,16 +2541,16 @@ impl Drop for Span {
         };
         SPAN_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
         let elapsed_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        let self_ns = runtime.pop_active_span(self.stack_slot, elapsed_ns);
         runtime.record(
             self.shard.as_deref(),
             self.stage,
             SpanOutcome {
                 start_offset_ns: runtime.offset_ns(started),
                 elapsed_ns,
-                attributed: self.attributed,
+                self_ns,
                 blocked: self.blocked,
                 serial: self.serial,
-                outermost: self.outermost,
             },
         );
         if let Some(trace) = self.trace {
