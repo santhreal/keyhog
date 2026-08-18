@@ -126,7 +126,9 @@ fn resolve_route_across_points(
         gpu_pipeline_depth: resolved
             .iter()
             .find(|route| route.backend == backend)
-            .map_or(selected.gpu_pipeline_depth, |route| route.gpu_pipeline_depth),
+            .map_or(selected.gpu_pipeline_depth, |route| {
+                route.gpu_pipeline_depth
+            }),
     };
     points
         .iter()
@@ -137,6 +139,33 @@ fn resolve_route_across_points(
                 && point.measured_routes().contains(&default_plan)
         })
         .then_some(default_plan)
+}
+
+/// Reconcile every measured band of one workload family into one route.
+///
+/// A family shares the detector corpus, decode state and set of source classes
+/// and differs only in size band. Reconciling it pools the bands' calibration
+/// points through [`resolve_route_across_points`], so a family is resolved by
+/// exactly the rule a single class is: a backend must be measured at every
+/// pooled point and proved slower at none, and points that agree on the backend
+/// while splitting on the plan resolve to the compiled default plan.
+///
+/// Demanding full-route unanimity across bands instead reproduced, one level
+/// up, the bug that rule was written for. On a 16-core AVX-512 host the six
+/// measured decode-admitted bands of the default policy all selected
+/// cpu-fallback and split three ways on the phase-2 localizer plan, which is a
+/// sub-plan coin flip between routes within a millisecond of each other. Every
+/// unmeasured band of that family then failed closed with exit 2 even though
+/// nothing about the backend was ever in doubt.
+pub(super) fn reconcile_route_across_decisions(
+    members: &[&AutorouteDecision],
+    persistent_runtime: bool,
+) -> Option<MeasuredRoute> {
+    let points: Vec<&AutorouteCalibrationPoint> = members
+        .iter()
+        .flat_map(|decision| decision.calibration_points.iter())
+        .collect();
+    resolve_route_across_points(&points, persistent_runtime, None)
 }
 
 fn paired_route_trials_are_faster(selected: &[u128], competitor: &[u128]) -> bool {
@@ -1213,8 +1242,7 @@ impl AutorouteDecision {
         // Comparing the backends directly here refused the reconcilable case
         // before the resolver ever saw it, and one refused class refused the
         // whole generation, so the installer could not finish.
-        let mut merged: Vec<&AutorouteCalibrationPoint> =
-            self.calibration_points.iter().collect();
+        let mut merged: Vec<&AutorouteCalibrationPoint> = self.calibration_points.iter().collect();
         merged.push(&point);
         let reconciled_one_shot = resolve_route_across_points(&merged, false, None);
         let reconciled_daemon = resolve_route_across_points(&merged, true, None);
@@ -1545,8 +1573,9 @@ impl AutorouteDecision {
 
     /// Reconcile every measured point in the class into one route.
     ///
-    /// The backend needs unanimity: that is the thing autoroute selects, and a
-    /// class whose points disagree about it is genuinely unresolved.
+    /// Points that disagree about the backend resolve to the lowest-complexity
+    /// backend measured at every point and proved slower at none. A real
+    /// crossover leaves nothing non-inferior everywhere and stays unresolved.
     ///
     /// The execution plan on top of that backend is reconciled rather than
     /// required to match. Points that agree on the backend but split on the

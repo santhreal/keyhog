@@ -213,8 +213,9 @@ fn cached_router_replays_cpu_identity_when_runtime_policy_disables_gpu() {
         "filesystem",
     )];
     let pattern_count = scanner.runtime_status().pattern_count;
-    let key = workload_key_with_plan(&batch, pattern_count, scanner.decode_workload_plan())
-        .expect("CPU-policy workload classified");
+    let key =
+        super::super::workload::workload_key(&batch, pattern_count, scanner.decode_workload_plan())
+            .expect("CPU-policy workload classified");
     let decisions = HashMap::from([(
         key,
         AutorouteDecision::new(

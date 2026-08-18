@@ -7,6 +7,7 @@
 
 use super::*;
 use keyhog_core::Source;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn scan_policy_plan_covers_every_digest_changing_preset() {
@@ -58,18 +59,58 @@ fn only_inconclusive_timing_failures_are_retryable() {
     )));
 }
 
+/// Calibration persists its decisions under the config digest its own argv
+/// resolves, and a later scan looks them up under the digest ITS argv resolves.
+/// Any flag calibration adds that the digest hashes therefore hides the whole
+/// generation from every scan.
+///
+/// `--no-gpu` was such a flag. On a host with no eligible GPU every one of the
+/// four calibrated policies was written under a `gpu_runtime_policy = Disabled`
+/// digest, and the ordinary scan that followed reported "7 calibrated
+/// config(s), none matching config digest" and exited 2.
+///
+/// The preset list is read from `SCAN_POLICY_PRESETS` at run time, so a new
+/// preset is covered without editing this test.
 #[test]
-fn calibration_runtime_explicitly_disables_gpu_when_no_physical_adapter_exists() {
-    let args = calibration_scan_args(None, None, false).expect("internal scan args");
-    assert!(args.no_gpu);
-    assert!(!args.autoroute_gpu);
+fn calibration_argv_resolves_the_config_digest_a_plain_scan_requests() {
+    let digest_of = |args: &mut crate::args::ScanArgs| {
+        let resolved = crate::orchestrator_config::resolve_scan_config(args)
+            .expect("calibration and scan argv both resolve");
+        crate::orchestrator_config::autoroute_config_digest(&resolved)
+    };
+    for policy in std::iter::once(None).chain(SCAN_POLICY_PRESETS.iter().copied().map(Some)) {
+        let mut plain_argv = vec![OsString::from("keyhog-scan"), OsString::from("--no-config")];
+        if let Some(policy) = policy {
+            plain_argv.push(OsString::from(policy));
+        }
+        let mut plain = crate::args::ScanArgs::try_parse_from(plain_argv)
+            .expect("a documented preset parses as a plain scan");
+        let scanned = digest_of(&mut plain);
+        for include_gpu in [true, false] {
+            let mut calibration = calibration_scan_args(None, policy, include_gpu)
+                .expect("internal calibration scan args");
+            assert_eq!(
+                digest_of(&mut calibration),
+                scanned,
+                "calibration for {} with include_gpu={include_gpu} must persist under the digest \
+                 the same scan requests",
+                policy.unwrap_or("the default policy"),
+            );
+        }
+    }
 }
 
 #[test]
 fn calibration_runtime_admits_gpu_only_when_requested() {
-    let args = calibration_scan_args(None, None, true).expect("internal scan args");
-    assert!(!args.no_gpu);
-    assert!(args.autoroute_gpu);
+    let without = calibration_scan_args(None, None, false).expect("internal scan args");
+    assert!(!without.autoroute_gpu);
+    assert!(
+        !without.no_gpu,
+        "declining GPU candidates must not change the scan's resolved GPU policy"
+    );
+    let with = calibration_scan_args(None, None, true).expect("internal scan args");
+    assert!(with.autoroute_gpu);
+    assert!(!with.no_gpu);
 }
 
 #[test]
@@ -215,11 +256,12 @@ fn bounded_e2e_workload_fixture_keeps_verified_buckets() {
 #[test]
 fn workload_plan_matches_the_installer_ladder() {
     let plan = core_workload_plan();
-    // 1 stdin + 31 single-file + both edges of every fused count bucket for
-    // full-size and extracted payloads + two metadata shapes per source class.
+    // 1 stdin + 30 plain single-file + 3 decode-heavy single-file + both edges
+    // of every fused count bucket for full-size and extracted payloads + two
+    // metadata shapes per source class.
     assert_eq!(
         plan.len(),
-        32 + 2 * crate::orchestrator_config::fused_batch_calibration_counts().len()
+        34 + 2 * crate::orchestrator_config::fused_batch_calibration_counts().len()
             + 2 * crate::orchestrator::canonical_source_classes().len()
     );
     let labels: Vec<&str> = plan.iter().map(Workload::label).collect();
@@ -229,6 +271,8 @@ fn workload_plan_matches_the_installer_ladder() {
     assert!(labels.contains(&"16 KiB workload"));
     assert!(labels.contains(&"256 KiB workload"));
     assert!(labels.contains(&"4 MiB workload"));
+    assert!(labels.contains(&"decode-heavy 4 KiB workload"));
+    assert!(labels.contains(&"decode-heavy 64 KiB workload"));
     assert!(labels.contains(&"decode-heavy 256 KiB workload"));
     assert!(labels.contains(&"32 MiB workload"));
     assert!(labels.contains(&"1 x 4 KiB files workload"));
@@ -439,4 +483,47 @@ fn measurement_receipts_round_trip_exact_route_identity() {
         read_measurement_receipts(&path).expect("read receipts"),
         receipts
     );
+}
+
+/// `decode_admitted` is a keyed workload dimension, and a routing family is
+/// only reusable evidence when at least two of its size bands were measured.
+/// A ladder that probes one decode state at a single size therefore leaves
+/// every decoding scan uncalibrated, whatever else it measures.
+///
+/// The band set is derived from the plan at run time, so shrinking or
+/// relabelling the decode-heavy probes turns this test red instead of
+/// silently reintroducing a single-band family.
+///
+/// WHAT IT DOES NOT CATCH: whether the measured bands bracket a real
+/// production workload. It proves invariance is measurable, not that any
+/// particular scan is covered.
+#[test]
+fn workload_plan_measures_both_decode_states_across_multiple_size_bands() {
+    let mut bands: BTreeMap<bool, BTreeSet<u32>> = BTreeMap::new();
+    for workload in core_workload_plan() {
+        if let Workload::File {
+            bytes,
+            decode_heavy,
+            ..
+        } = workload
+        {
+            bands
+                .entry(decode_heavy)
+                .or_default()
+                .insert(u64::from(bytes as u64).next_power_of_two().trailing_zeros());
+        }
+    }
+    assert_eq!(
+        bands.keys().copied().collect::<Vec<_>>(),
+        vec![false, true],
+        "the ladder must probe both decode states"
+    );
+    for (decode_heavy, measured) in &bands {
+        assert!(
+            measured.len() >= 2,
+            "decode_heavy={decode_heavy} is measured at {} size band(s); a single-band \
+             family is never reusable evidence, so every decoding scan would fail closed",
+            measured.len()
+        );
+    }
 }

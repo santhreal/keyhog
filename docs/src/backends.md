@@ -176,11 +176,16 @@ backend and localization plan.
 
 Two inputs with the same byte count can have different winners. Autoroute also
 keys evidence by logarithmic buckets for bytes, chunk count, largest source
-size, and detector pattern count. Decoder work is identified by the observed
-decoder-kind mask, candidate-count bucket, candidate-byte bucket, and an
-explicit unknown-state bit. Source family, resolved configuration, build
-features, and host identity also participate. It does not interpolate from a
-neighbouring key; a measured key covers only the values grouped into that key.
+size, and detector pattern count, plus one boolean recording whether any
+decoder was admitted. Source family, resolved configuration, build features,
+and host identity also participate.
+
+A measured key covers only the values grouped into that key. A size band nobody
+measured is served only when at least two measured bands of the same source
+class and decode state reconcile to one route: a backend measured at every one
+of them and proved slower at none, on the compiled default plan when they split
+on the plan. Never for a GPU route. See
+[Autoroute calibration](./reference/autoroute-calibration.md).
 
 Runtime lifetime matters too. A one-shot process includes GPU first-dispatch
 cost. A ready daemon has already initialized accelerator state and uses the warm

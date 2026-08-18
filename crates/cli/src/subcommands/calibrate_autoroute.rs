@@ -273,6 +273,16 @@ fn core_workload_plan() -> Vec<Workload> {
             decode_heavy: false,
         },
         Workload::File {
+            label: "decode-heavy 4 KiB workload",
+            bytes: 4 * 1024,
+            decode_heavy: true,
+        },
+        Workload::File {
+            label: "decode-heavy 64 KiB workload",
+            bytes: 64 * 1024,
+            decode_heavy: true,
+        },
+        Workload::File {
             label: "decode-heavy 256 KiB workload",
             bytes: 256 * 1024,
             decode_heavy: true,
@@ -517,6 +527,11 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
         measured_routes.extend(policy_receipts);
     }
 
+    if let Some(binding) = resolve_execution_pack_binding(args.execution_packs.as_deref())? {
+        crate::orchestrator::bind_autoroute_cache_to_execution_packs(&staged_cache_path, binding)
+            .context("binding all-policy calibration evidence to exact execution packs")?;
+    }
+
     let staged_inspection = crate::orchestrator::inspect_autoroute_cache(Some(&staged_cache_path));
     if let Some(error) = staged_inspection.error.as_deref() {
         anyhow::bail!(
@@ -590,6 +605,35 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
     Ok(ExitCode::SUCCESS)
 }
 
+/// The execution-pack generation this calibration binds its evidence to.
+///
+/// An operator who names a generation gets it or an error: an unauthenticated
+/// directory they asked for is a failure, not something to work around.
+///
+/// With no flag the installed generation is used when it authenticates, because
+/// that is the artifact set the probes just ran against. Requiring the flag
+/// instead left every ordinary install unbound: `install.sh` calls
+/// `keyhog calibrate-autoroute` with no arguments, so `keyhog doctor` reported
+/// `route binding MISSING` on a host that had just calibrated successfully, and
+/// the repair line it printed named a hidden flag. A missing or unauthenticated
+/// generation leaves the evidence unbound, exactly as an install without packs
+/// does.
+fn resolve_execution_pack_binding(
+    requested: Option<&Path>,
+) -> Result<Option<crate::execution_pack_install::ExecutionPackGenerationBinding>> {
+    if let Some(directory) = requested {
+        return crate::execution_pack_install::load_authenticated_binding(directory)
+            .map(Some)
+            .context("loading authenticated execution-pack generation for calibration");
+    }
+    let installed = crate::execution_pack_install::installed_execution_pack_directory()
+        .context("resolving the installed execution-pack generation for calibration")?;
+    if !installed.exists() {
+        return Ok(None);
+    }
+    Ok(crate::execution_pack_install::load_authenticated_binding(&installed).ok())
+}
+
 pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     // Calibration EXISTS to persist routing decisions; `--autoroute-cache off`
     // disables persistence, so every probe would fail closed ("calibration did
@@ -606,12 +650,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
              default cache, or pass a writable file path."
         );
     }
-    let execution_pack_binding = args
-        .execution_packs
-        .as_deref()
-        .map(crate::execution_pack_install::load_authenticated_binding)
-        .transpose()
-        .context("loading authenticated execution-pack generation for calibration")?;
+    let execution_pack_binding = resolve_execution_pack_binding(args.execution_packs.as_deref())?;
     if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
         if !args.quiet {
             println!(
@@ -1002,6 +1041,21 @@ fn calibration_point_summary_count(
     Ok(measured_points.len())
 }
 
+/// Argv for one calibration pass.
+///
+/// `include_gpu` admits GPU candidates through `--autoroute-gpu`, which is
+/// deliberately outside `autoroute_config_digest` so a calibrated decision
+/// serves the later scan that does not repeat the flag. Its absence must stay
+/// equally invisible to that digest, so a host without an eligible GPU drops
+/// the flag instead of passing `--no-gpu`.
+///
+/// `--no-gpu` resolves `gpu_runtime_policy = Disabled`, and that policy IS
+/// hashed: it changes which backends a scan may use. Passing it here wrote
+/// every measured decision under a config digest no ordinary scan requests. On
+/// a host with no eligible GPU that was every decision in the cache: a
+/// completed install persisted 635 decisions across four policies, and the very
+/// next `keyhog scan` reported "7 calibrated config(s), none matching config
+/// digest" and exited 2.
 fn calibration_scan_args(
     autoroute_cache: Option<&Path>,
     policy: Option<&str>,
@@ -1010,13 +1064,11 @@ fn calibration_scan_args(
     let mut argv = vec![
         OsString::from("keyhog-scan"),
         OsString::from("--autoroute-calibrate"),
-        OsString::from(if include_gpu {
-            "--autoroute-gpu"
-        } else {
-            "--no-gpu"
-        }),
         OsString::from("--no-config"),
     ];
+    if include_gpu {
+        argv.push(OsString::from("--autoroute-gpu"));
+    }
     if let Some(cache) = autoroute_cache {
         argv.push(OsString::from("--autoroute-cache"));
         argv.push(cache.as_os_str().to_owned());

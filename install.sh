@@ -1240,6 +1240,9 @@ prime_autoroute_cache() {
     byte_sizes="1 2 4 8 16 32 64 128 256 512"
     kib_sizes="1 2 4 8 16 32 64 128 256 512"
     mib_sizes="1 2 4 8 16 32"
+    # decode_admitted is a keyed routing dimension, so the decoding state needs
+    # more than one measured size band or every decoding scan stays uncalibrated.
+    decode_heavy_kib_sizes="4 64 256"
     # Directory scans have a distinct source identity from a direct file scan.
     # Include the one-file bucket used by small repositories and install smoke
     # tests; calibrating a same-sized file path cannot stand in for it.
@@ -1262,7 +1265,9 @@ prime_autoroute_cache() {
         for _mib in $mib_sizes; do
             core_total=$((core_total + 1))
         done
-        core_total=$((core_total + 1)) # decode-heavy 256 KiB
+        for _dkib in $decode_heavy_kib_sizes; do
+            core_total=$((core_total + 1))
+        done
         for _count in $many_file_counts; do
             core_total=$((core_total + 1))
         done
@@ -1364,18 +1369,20 @@ prime_autoroute_cache() {
         fi
     done
 
-    idx=$((idx + 1))
-    probe="$tmpdir/probe-decode-heavy-256kib.txt"
-    out="$tmpdir/out-decode-heavy-256kib.json"
-    err="$tmpdir/err-decode-heavy-256kib.txt"
-    label="decode-heavy 256 KiB workload"
-    if ! make_decode_heavy_calibration_probe_kib "$probe" 256; then
-        printf '  [%s/%s] FAIL %s\n' "$idx" "$total" "$label"
-        err "Could not create decode-heavy autoroute calibration probe at $probe."
-        failed=1
-    elif ! run_autoroute_probe "$idx" "$total" "$label" "$probe" "$out" "$err"; then
-        failed=1
-    fi
+    for dkib in $decode_heavy_kib_sizes; do
+        idx=$((idx + 1))
+        probe="$tmpdir/probe-decode-heavy-${dkib}kib.txt"
+        out="$tmpdir/out-decode-heavy-${dkib}kib.json"
+        err="$tmpdir/err-decode-heavy-${dkib}kib.txt"
+        label="decode-heavy ${dkib} KiB workload"
+        if ! make_decode_heavy_calibration_probe_kib "$probe" "$dkib"; then
+            printf '  [%s/%s] FAIL %s\n' "$idx" "$total" "$label"
+            err "Could not create decode-heavy autoroute calibration probe at $probe."
+            failed=1
+        elif ! run_autoroute_probe "$idx" "$total" "$label" "$probe" "$out" "$err"; then
+            failed=1
+        fi
+    done
 
     for file_count in $many_file_counts; do
         idx=$((idx + 1))

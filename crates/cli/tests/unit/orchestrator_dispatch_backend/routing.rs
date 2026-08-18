@@ -662,7 +662,8 @@ fn issue32_autoroute_cache_roundtrip_and_digest_invalidation() {
         &Some(path.clone()),
         &None,
     )
-    .expect("persisted localization plan replays");
+    .expect("persisted localization plan replays")
+    .route;
     assert_eq!(replayed.backend, ScanBackend::SimdCpu);
     assert!(replayed.phase2_plain_localizer);
     assert!(!replayed.phase2_keyword_localizer);
@@ -4513,45 +4514,222 @@ fn gpu_decision() -> AutorouteDecision {
     AutorouteDecision::new(ScanBackend::GpuWgpu, 8 * 1024 * 1024, 1, 20, None, Some(5))
 }
 
+/// An exact calibrated bucket is served as measured.
 #[test]
-fn bucket_resolution_exact_hit_wins() {
+fn persisted_router_serves_the_exact_calibrated_bucket() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(key.clone(), cpu_decision(ScanBackend::SimdCpu));
-    assert_eq!(
-        resolve_bucket(&decisions, &key),
-        BucketResolution::Exact(ScanBackend::SimdCpu)
-    );
+    let route = resolve_persisted_route(
+        &decisions,
+        key,
+        AutorouteRuntimeClass::OneShot,
+        &Some(std::path::PathBuf::from("autoroute.json")),
+        &None,
+    )
+    .expect("an exactly calibrated bucket must route")
+    .route;
+    assert_eq!(route.backend, ScanBackend::SimdCpu);
 }
 
+/// WHY: this test asserted the opposite, that agreeing neighbouring size
+/// buckets must NOT resolve an unmeasured bucket. Held literally, that rule
+/// makes the product unusable: the reachable key grid is about 1.45 million
+/// cells (13,685 valid byte/chunk/max-file triples x 2 decode states x 53
+/// source classes) and the probe ladder runs 725 probes, so measuring every
+/// cell would take roughly 484 hours. A freshly calibrated install exited 2 on
+/// a two-file directory, and adding one file to a directory that had just
+/// scanned broke it again.
+///
+/// Agreement across every measured band of the same source class and decode
+/// state is itself a measurement: it says the winner does not depend on size
+/// across the measured range. Serving it guesses nothing, benchmarks nothing at
+/// scan time, and substitutes no backend.
+///
+/// WHAT IT DOES NOT CATCH: a crossover that sits entirely between two measured
+/// bands and inverts back before the next one. Nothing short of measuring that
+/// band can see it, which is why the ladder still sweeps sizes.
 #[test]
-fn bucket_resolution_rejects_agreeing_cpu_neighbours() {
-    // Matching CPU decisions on neighbouring size buckets do not prove which
-    // backend is fastest for the unmeasured bucket.
+fn persisted_router_serves_the_route_every_measured_sibling_agreed_on() {
     let base = test_workload_key();
-    let lo = WorkloadKey {
-        bytes_bucket: 8,
-        ..base.clone()
-    };
-    let hi = WorkloadKey {
-        bytes_bucket: 12,
-        ..base.clone()
-    };
     let mut decisions = HashMap::new();
-    decisions.insert(lo, cpu_decision(ScanBackend::SimdCpu));
-    decisions.insert(hi, cpu_decision(ScanBackend::SimdCpu));
+    for bytes_bucket in [8, 12] {
+        decisions.insert(
+            WorkloadKey {
+                bytes_bucket,
+                ..base.clone()
+            },
+            cpu_decision(ScanBackend::SimdCpu),
+        );
+    }
     let requested = WorkloadKey {
         bytes_bucket: 10,
         ..base.clone()
     };
+
+    let route = resolve_persisted_route(
+        &decisions,
+        requested,
+        AutorouteRuntimeClass::OneShot,
+        &Some(std::path::PathBuf::from("autoroute.json")),
+        &None,
+    )
+    .expect("an unmeasured band inside a unanimous family must route")
+    .route;
     assert_eq!(
-        resolve_bucket(&decisions, &requested),
-        BucketResolution::Unresolved
+        route.backend,
+        ScanBackend::SimdCpu,
+        "the served route must be the one every measured sibling produced"
     );
 }
 
+/// A cell that WAS measured and still resolves no route is a refusal this
+/// exact workload's own evidence produced, and unanimous neighbours must not
+/// override it. The exact cell is a member of its own family, so the rule that
+/// carries this is the one that withdraws reuse for a sibling resolving no
+/// route: skipping such a sibling instead would serve the neighbours' route
+/// over a measurement that refused. Here the exact row names a backend this
+/// build cannot parse, which is what a cache row from a foreign build with an
+/// unknown backend looks like.
 #[test]
-fn persisted_router_rejects_agreeing_neighbours_without_exact_evidence() {
+fn persisted_router_does_not_let_neighbours_override_a_measured_refusal() {
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    for bytes_bucket in [8, 12] {
+        decisions.insert(
+            WorkloadKey {
+                bytes_bucket,
+                ..base.clone()
+            },
+            cpu_decision(ScanBackend::SimdCpu),
+        );
+    }
+    let requested = WorkloadKey {
+        bytes_bucket: 10,
+        ..base.clone()
+    };
+    let mut row =
+        serde_json::to_value(cpu_decision(ScanBackend::SimdCpu)).expect("a decision serializes");
+    row["backend"] = serde_json::Value::String("quantum-regex".into());
+    decisions.insert(
+        requested.clone(),
+        serde_json::from_value(row).expect("a decision with an unknown backend still deserializes"),
+    );
+
+    assert!(
+        refuses(&decisions, requested).contains("no persisted fastest-correct backend decision"),
+        "a measured cell that resolves no route must stay refused"
+    );
+}
+
+/// An accelerated route is only usable with a recovery peer, and the recovery
+/// peer comes from a decision. A reused route has no row at its own key, so
+/// deriving recovery from `decisions[key]` yields nothing and the scan fails
+/// with "does not resolve one confidence-supported remaining measured-correct
+/// recovery peer" - the reuse would be dead on arrival for every accelerated
+/// route. The resolver therefore returns the decision that authorized the
+/// route, and recovery is derived from that.
+///
+/// WHAT IT DOES NOT CATCH: whether the family agreed on the recovery peer.
+/// That is enforced separately inside the family rule.
+#[test]
+fn a_reused_route_still_carries_the_recovery_peer_its_family_measured() {
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    for bytes_bucket in [8, 12] {
+        decisions.insert(
+            WorkloadKey {
+                bytes_bucket,
+                ..base.clone()
+            },
+            cpu_decision(ScanBackend::SimdCpu),
+        );
+    }
+    let resolved = resolve_persisted_route(
+        &decisions,
+        WorkloadKey {
+            bytes_bucket: 10,
+            ..base.clone()
+        },
+        AutorouteRuntimeClass::OneShot,
+        &Some(std::path::PathBuf::from("autoroute.json")),
+        &None,
+    )
+    .expect("an unmeasured band inside a unanimous family must route");
+    assert_eq!(resolved.route.backend, ScanBackend::SimdCpu);
+
+    let recovery = automatic_recovery_plan(
+        Some(resolved.decision),
+        resolved.route.backend,
+        AutorouteRuntimeClass::OneShot,
+    )
+    .expect("a reused accelerated route must resolve its recovery peer")
+    .expect("an accelerated route always has a recovery peer");
+    assert_eq!(
+        recovery.backend,
+        ScanBackend::CpuFallback,
+        "recovery must be the peer the authorizing decision measured"
+    );
+}
+
+/// A decision authorizes a route AND the peer that recovers it. Two bands can
+/// agree that SIMD wins and still disagree on what to fall back to when SIMD
+/// faults mid-scan, because the peer ordering behind the winner differs. The
+/// resolver hands the caller ONE authorizing decision, so without recovery
+/// agreement the served recovery peer would depend on which sibling the hash
+/// map happened to yield first.
+#[test]
+fn bucket_resolution_fails_closed_when_the_family_disagrees_on_the_recovery_peer() {
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    // Both bands select SimdCpu; the remaining peers are ordered oppositely, so
+    // the recovery peer is GpuWgpu in one band and CpuFallback in the other.
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 8,
+            ..base.clone()
+        },
+        AutorouteDecision::new(
+            ScanBackend::SimdCpu,
+            8 * 1024 * 1024,
+            1,
+            12,
+            Some(50),
+            Some(20),
+        ),
+    );
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 12,
+            ..base.clone()
+        },
+        AutorouteDecision::new(
+            ScanBackend::SimdCpu,
+            8 * 1024 * 1024,
+            1,
+            12,
+            Some(20),
+            Some(50),
+        ),
+    );
+
+    assert!(
+        refuses(
+            &decisions,
+            WorkloadKey {
+                bytes_bucket: 10,
+                ..base.clone()
+            }
+        )
+        .contains("no persisted fastest-correct backend decision"),
+        "a family that recovers differently is not one measured answer"
+    );
+}
+
+/// The other half of the same contract: disagreement is a real crossover, and
+/// it must still fail closed rather than pick the nearer or cheaper side.
+#[test]
+fn persisted_router_fails_closed_when_measured_siblings_disagree() {
     let base = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
@@ -4566,7 +4744,7 @@ fn persisted_router_rejects_agreeing_neighbours_without_exact_evidence() {
             bytes_bucket: 12,
             ..base.clone()
         },
-        cpu_decision(ScanBackend::SimdCpu),
+        cpu_decision(ScanBackend::CpuFallback),
     );
     let requested = WorkloadKey {
         bytes_bucket: 10,
@@ -4580,12 +4758,86 @@ fn persisted_router_rejects_agreeing_neighbours_without_exact_evidence() {
         &Some(std::path::PathBuf::from("autoroute.json")),
         &None,
     )
-    .expect_err("production autoroute lookup must require an exact bucket");
+    .expect_err("a disagreeing family must not resolve a route");
     assert!(
         error
             .to_string()
             .contains("no persisted fastest-correct backend decision"),
-        "missing exact evidence must surface the calibration error: {error}"
+        "a real crossover must surface the calibration error: {error}"
+    );
+}
+
+/// A different source class is a different question, so its measurements must
+/// not answer this one however unanimous they are.
+#[test]
+fn persisted_router_ignores_measurements_from_another_source_class() {
+    let base = test_workload_key();
+    // Two agreeing foreign bands: enough to be reusable evidence for their OWN
+    // class, so only the class filter can refuse this request.
+    let mut decisions = HashMap::new();
+    for bytes_bucket in [8, 12] {
+        let mut foreign = WorkloadKey {
+            bytes_bucket,
+            ..base.clone()
+        };
+        foreign.source_mixture = test_source_mixture("web");
+        decisions.insert(foreign, cpu_decision(ScanBackend::SimdCpu));
+    }
+
+    let error = resolve_persisted_route(
+        &decisions,
+        WorkloadKey {
+            bytes_bucket: 10,
+            ..base.clone()
+        },
+        AutorouteRuntimeClass::OneShot,
+        &Some(std::path::PathBuf::from("autoroute.json")),
+        &None,
+    )
+    .expect_err("another source class must not resolve this workload");
+    assert!(
+        error
+            .to_string()
+            .contains("no persisted fastest-correct backend decision"),
+        "cross-class reuse must stay refused: {error}"
+    );
+}
+
+/// Decode state is part of the question too: a family measured without decoder
+/// work says nothing about a workload that decodes.
+#[test]
+fn persisted_router_ignores_measurements_from_another_decode_state() {
+    let base = test_workload_key();
+    // Two agreeing bands in the OTHER decode state: reusable evidence there,
+    // and still no evidence at all here.
+    let mut decisions = HashMap::new();
+    for bytes_bucket in [8, 12] {
+        decisions.insert(
+            WorkloadKey {
+                bytes_bucket,
+                decode_admitted: !base.decode_admitted,
+                ..base.clone()
+            },
+            cpu_decision(ScanBackend::SimdCpu),
+        );
+    }
+
+    let error = resolve_persisted_route(
+        &decisions,
+        WorkloadKey {
+            bytes_bucket: 10,
+            ..base.clone()
+        },
+        AutorouteRuntimeClass::OneShot,
+        &Some(std::path::PathBuf::from("autoroute.json")),
+        &None,
+    )
+    .expect_err("another decode state must not resolve this workload");
+    assert!(
+        error
+            .to_string()
+            .contains("no persisted fastest-correct backend decision"),
+        "cross-decode reuse must stay refused: {error}"
     );
 }
 
@@ -4846,39 +5098,189 @@ fn daemon_without_valid_autoroute_evidence_fails_closed() {
     }
 }
 
+fn refuses(decisions: &HashMap<WorkloadKey, AutorouteDecision>, requested: WorkloadKey) -> String {
+    resolve_persisted_route(
+        decisions,
+        requested,
+        AutorouteRuntimeClass::OneShot,
+        &Some(std::path::PathBuf::from("autoroute.json")),
+        &None,
+    )
+    .expect_err("this workload must not resolve a route")
+    .to_string()
+}
+
+/// Invariance is measured per family, not per axis, so a unanimous family
+/// serves an unmeasured maximum-file band the same way it serves an unmeasured
+/// byte band.
 #[test]
-fn bucket_resolution_rejects_neighbours_along_max_file_axis() {
-    // The exactness requirement applies independently to every workload axis.
+fn bucket_resolution_reuses_a_unanimous_family_along_the_max_file_axis() {
     let base = test_workload_key();
     let mut decisions = HashMap::new();
-    decisions.insert(
-        WorkloadKey {
-            max_file_bucket: 4,
-            ..base.clone()
-        },
-        cpu_decision(ScanBackend::CpuFallback),
-    );
-    decisions.insert(
+    for max_file_bucket in [8, 12] {
+        decisions.insert(
+            WorkloadKey {
+                max_file_bucket,
+                ..base.clone()
+            },
+            cpu_decision(ScanBackend::SimdCpu),
+        );
+    }
+    let route = resolve_persisted_route(
+        &decisions,
         WorkloadKey {
             max_file_bucket: 10,
             ..base.clone()
         },
-        cpu_decision(ScanBackend::CpuFallback),
-    );
-    let requested = WorkloadKey {
-        max_file_bucket: 7,
-        ..base.clone()
+        AutorouteRuntimeClass::OneShot,
+        &Some(std::path::PathBuf::from("autoroute.json")),
+        &None,
+    )
+    .expect("a unanimous family covers every size axis")
+    .route;
+    assert_eq!(route.backend, ScanBackend::SimdCpu);
+}
+
+/// One measured band of a family: cpu-fallback wins the backend outright, and
+/// `faster_plan` wins the phase-2 plan. With `measure_default` the band also
+/// measures the compiled default plan `(true, true)`.
+fn plan_split_band(
+    sample_bytes: u64,
+    faster_plan: (bool, bool),
+    measure_default: bool,
+) -> AutorouteDecision {
+    let mut route_timings = vec![RouteTimingEvidence::new(
+        MeasuredRoute {
+            backend: ScanBackend::SimdCpu,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
+        },
+        BackendTimingEvidence::constant_ms(50_000, AUTOROUTE_CALIBRATION_TRIALS),
+    )];
+    let plans: Vec<(bool, bool)> = if measure_default {
+        vec![(false, false), (true, true)]
+    } else {
+        vec![faster_plan]
     };
-    assert_eq!(
-        resolve_bucket(&decisions, &requested),
-        BucketResolution::Unresolved
+    route_timings.extend(plans.into_iter().map(|(plain, keyword)| {
+        let ms = if (plain, keyword) == faster_plan {
+            10
+        } else {
+            90
+        };
+        RouteTimingEvidence::new(
+            MeasuredRoute {
+                backend: ScanBackend::CpuFallback,
+                phase2_plain_localizer: plain,
+                phase2_keyword_localizer: keyword,
+                gpu_pipeline_depth: 1,
+            },
+            BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS),
+        )
+    }));
+    let mut decision = AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::CpuFallback,
+        sample_bytes,
+        1,
+        test_measurement_shape_evidence(sample_bytes, 1),
+        0x5A17_D0C5_5A17_D0C5,
+        1,
+        route_timings,
+        true,
+        true,
+    );
+    let resolved = decision
+        .resolved_routing_route()
+        .expect("a separated lead resolves");
+    decision.backend = resolved.backend.label().to_string();
+    decision.phase2_plain_localizer = resolved.phase2_plain_localizer;
+    decision.phase2_keyword_localizer = resolved.phase2_keyword_localizer;
+    decision
+}
+
+/// A band whose fastest plan differs from its neighbour's is still the same
+/// routing decision, so the family serves the compiled default plan both bands
+/// measured.
+///
+/// This is the shape a real calibration produces. On a 16-core AVX-512 host the
+/// six measured decode-admitted bands of the default policy all selected
+/// cpu-fallback and split three ways on the phase-2 localizer, with warm
+/// medians within 8% of each other. Demanding full-route agreement across bands
+/// refused every unmeasured band of that family, which is exit 2 on an ordinary
+/// scan of a freshly calibrated install.
+#[test]
+fn bucket_resolution_reuses_the_compiled_default_when_bands_split_on_the_plan() {
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 8,
+            ..base.clone()
+        },
+        plan_split_band(8 * 1024 * 1024, (true, true), true),
+    );
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 12,
+            ..base.clone()
+        },
+        plan_split_band(12 * 1024 * 1024, (false, false), true),
+    );
+    let route = resolve_persisted_route(
+        &decisions,
+        WorkloadKey {
+            bytes_bucket: 10,
+            ..base.clone()
+        },
+        AutorouteRuntimeClass::OneShot,
+        &Some(std::path::PathBuf::from("autoroute.json")),
+        &None,
+    )
+    .expect("bands that agree on the backend must serve the unmeasured band")
+    .route;
+    assert_eq!(route.backend, ScanBackend::CpuFallback);
+    assert!(
+        route.phase2_plain_localizer && route.phase2_keyword_localizer,
+        "a split plan must land on the compiled default, not on either band's pick"
     );
 }
 
+/// The reconciled plan is only served when every band measured it. A band that
+/// never ran the compiled default proves nothing about it, so the family stays
+/// unresolved rather than serving a route one of its bands never executed.
+#[test]
+fn bucket_resolution_refuses_a_plan_a_band_never_measured() {
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 8,
+            ..base.clone()
+        },
+        plan_split_band(8 * 1024 * 1024, (true, true), true),
+    );
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 12,
+            ..base.clone()
+        },
+        plan_split_band(12 * 1024 * 1024, (false, false), false),
+    );
+    assert!(refuses(
+        &decisions,
+        WorkloadKey {
+            bytes_bucket: 10,
+            ..base.clone()
+        }
+    )
+    .contains("no persisted fastest-correct backend decision"));
+}
+
+/// SimdCpu below, CpuFallback above: the winner is NOT stable across the
+/// interval, so the band between them must fail closed and never guess a side.
 #[test]
 fn bucket_resolution_fails_closed_when_cpu_neighbours_disagree() {
-    // SimdCpu below, CpuFallback above: the backend choice is NOT stable across
-    // the interval, so the in-between bucket must fail closed (never guess one).
     let base = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
@@ -4895,50 +5297,47 @@ fn bucket_resolution_fails_closed_when_cpu_neighbours_disagree() {
         },
         cpu_decision(ScanBackend::CpuFallback),
     );
-    let requested = WorkloadKey {
-        bytes_bucket: 10,
-        ..base.clone()
-    };
-    assert_eq!(
-        resolve_bucket(&decisions, &requested),
-        BucketResolution::Unresolved
-    );
+    assert!(refuses(
+        &decisions,
+        WorkloadKey {
+            bytes_bucket: 10,
+            ..base.clone()
+        }
+    )
+    .contains("no persisted fastest-correct backend decision"));
 }
 
+/// GPU correctness, not only GPU speed, varies with input size (cf. #18). A GPU
+/// route's parity receipt, batch input limit, and slot capacities are bound to
+/// the shape that was measured, so two agreeing GPU neighbours must NOT cover
+/// the band between them even though two agreeing CPU neighbours do.
 #[test]
 fn bucket_resolution_never_interpolates_across_gpu_buckets() {
-    // GPU correctness can vary with input size (cf. #18), so even two agreeing
-    // GPU neighbours must NOT generalize (the in-between bucket fails closed).
     let base = test_workload_key();
     let mut decisions = HashMap::new();
-    decisions.insert(
+    for bytes_bucket in [8, 12] {
+        decisions.insert(
+            WorkloadKey {
+                bytes_bucket,
+                ..base.clone()
+            },
+            gpu_decision(),
+        );
+    }
+    assert!(refuses(
+        &decisions,
         WorkloadKey {
-            bytes_bucket: 8,
+            bytes_bucket: 10,
             ..base.clone()
-        },
-        gpu_decision(),
-    );
-    decisions.insert(
-        WorkloadKey {
-            bytes_bucket: 12,
-            ..base.clone()
-        },
-        gpu_decision(),
-    );
-    let requested = WorkloadKey {
-        bytes_bucket: 10,
-        ..base.clone()
-    };
-    assert_eq!(
-        resolve_bucket(&decisions, &requested),
-        BucketResolution::Unresolved
-    );
+        }
+    )
+    .contains("no persisted fastest-correct backend decision"));
 }
 
+/// One measured band is not evidence that the winner is size-independent, so a
+/// family of one never covers anything but itself.
 #[test]
-fn bucket_resolution_requires_both_brackets() {
-    // Only a lower neighbour exists (nothing above the requested size): the
-    // bucket is not bracketed, so there is no sound interpolation.
+fn bucket_resolution_requires_more_than_one_measured_band() {
     let base = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
@@ -4948,55 +5347,114 @@ fn bucket_resolution_requires_both_brackets() {
         },
         cpu_decision(ScanBackend::SimdCpu),
     );
-    let requested = WorkloadKey {
-        bytes_bucket: 10,
-        ..base.clone()
-    };
-    assert_eq!(
-        resolve_bucket(&decisions, &requested),
-        BucketResolution::Unresolved
-    );
+    assert!(refuses(
+        &decisions,
+        WorkloadKey {
+            bytes_bucket: 10,
+            ..base.clone()
+        }
+    )
+    .contains("no persisted fastest-correct backend decision"));
 }
 
+/// Neighbours that differ on a NON-size dimension describe a different workload
+/// question and must not answer this one.
 #[test]
 fn bucket_resolution_does_not_cross_non_size_dimensions() {
-    // Neighbours that differ on a NON-size dimension (here source mixture)
-    // describe a different workload shape and must not bracket the request.
     let base = test_workload_key();
     let mut decisions = HashMap::new();
-    decisions.insert(
-        WorkloadKey {
-            bytes_bucket: 8,
-            source_mixture: test_source_mixture("filesystem"),
+    for bytes_bucket in [8, 12] {
+        let mut foreign = WorkloadKey {
+            bytes_bucket,
             ..base.clone()
-        },
-        cpu_decision(ScanBackend::SimdCpu),
-    );
-    decisions.insert(
+        };
+        foreign.source_mixture = test_source_mixture("web");
+        decisions.insert(foreign, cpu_decision(ScanBackend::SimdCpu));
+    }
+    assert!(refuses(
+        &decisions,
         WorkloadKey {
-            bytes_bucket: 12,
-            source_mixture: test_source_mixture("filesystem"),
+            bytes_bucket: 10,
             ..base.clone()
-        },
-        cpu_decision(ScanBackend::SimdCpu),
-    );
-    let requested = WorkloadKey {
-        bytes_bucket: 10,
-        source_mixture: test_source_mixture("web"),
-        ..base.clone()
-    };
-    assert_eq!(
-        resolve_bucket(&decisions, &requested),
-        BucketResolution::Unresolved
-    );
+        }
+    )
+    .contains("no persisted fastest-correct backend decision"));
 }
 
 // --- Below-floor workloads still require exact evidence ---------------------
 
+/// Below the smallest measured band is still inside a unanimous family: every
+/// measurement of this source class and decode state chose the same route, so
+/// that route is what the calibration found, at every size it looked at.
+///
+/// WHAT IT DOES NOT CATCH: a backend that wins only below the smallest band
+/// ever probed. The ladder probes down to 1 B for exactly that reason.
 #[test]
-fn bucket_resolution_rejects_below_floor_cpu_extrapolation() {
-    // Fixed setup cost alone cannot prove the fastest backend for an unmeasured
-    // smaller workload, so even a CPU-only calibrated frontier must fail closed.
+fn bucket_resolution_reuses_a_unanimous_family_below_the_measured_floor() {
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    for bucket in [8, 12] {
+        decisions.insert(
+            WorkloadKey {
+                bytes_bucket: bucket,
+                max_file_bucket: bucket,
+                ..base.clone()
+            },
+            cpu_decision(ScanBackend::SimdCpu),
+        );
+    }
+    let route = resolve_persisted_route(
+        &decisions,
+        WorkloadKey {
+            bytes_bucket: 3,
+            max_file_bucket: 3,
+            ..base.clone()
+        },
+        AutorouteRuntimeClass::OneShot,
+        &Some(std::path::PathBuf::from("autoroute.json")),
+        &None,
+    )
+    .expect("a unanimous family covers a smaller band than it measured")
+    .route;
+    assert_eq!(route.backend, ScanBackend::SimdCpu);
+}
+
+/// Correlated bytes/max-file movement is the ordinary single-file shape, and a
+/// unanimous family covers it like any other unmeasured band.
+#[test]
+fn bucket_resolution_reuses_a_unanimous_family_between_single_file_rungs() {
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    for bucket in [8, 12] {
+        decisions.insert(
+            WorkloadKey {
+                bytes_bucket: bucket,
+                max_file_bucket: bucket,
+                ..base.clone()
+            },
+            cpu_decision(ScanBackend::SimdCpu),
+        );
+    }
+    let route = resolve_persisted_route(
+        &decisions,
+        WorkloadKey {
+            bytes_bucket: 10,
+            max_file_bucket: 10,
+            ..base.clone()
+        },
+        AutorouteRuntimeClass::OneShot,
+        &Some(std::path::PathBuf::from("autoroute.json")),
+        &None,
+    )
+    .expect("a unanimous family covers the band between two single-file rungs")
+    .route;
+    assert_eq!(route.backend, ScanBackend::SimdCpu);
+}
+
+/// Disagreeing single-file rungs have no single fastest-correct answer between
+/// them, so the middle stays fail-closed and never guesses a side.
+#[test]
+fn bucket_resolution_does_not_interpolate_between_disagreeing_single_file_rungs() {
     let base = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
@@ -5013,167 +5471,105 @@ fn bucket_resolution_rejects_below_floor_cpu_extrapolation() {
             max_file_bucket: 12,
             ..base.clone()
         },
-        cpu_decision(ScanBackend::SimdCpu),
-    );
-    let requested = WorkloadKey {
-        bytes_bucket: 3,
-        max_file_bucket: 3,
-        ..base.clone()
-    };
-    assert_eq!(
-        resolve_bucket(&decisions, &requested),
-        BucketResolution::Unresolved
-    );
-}
-
-#[test]
-fn bucket_resolution_rejects_between_single_file_rungs() {
-    // Correlated bytes/max-file buckets are still a distinct unmeasured workload
-    // identity; agreeing endpoints are not a calibrated decision for the middle.
-    let base = test_workload_key();
-    let lo = WorkloadKey {
-        bytes_bucket: 6,
-        max_file_bucket: 6,
-        ..base.clone()
-    };
-    let hi = WorkloadKey {
-        bytes_bucket: 8,
-        max_file_bucket: 8,
-        ..base.clone()
-    };
-    let mut decisions = HashMap::new();
-    decisions.insert(lo, cpu_decision(ScanBackend::SimdCpu));
-    decisions.insert(hi, cpu_decision(ScanBackend::SimdCpu));
-    let requested = WorkloadKey {
-        bytes_bucket: 7,
-        max_file_bucket: 7,
-        ..base.clone()
-    };
-    assert_eq!(
-        resolve_bucket(&decisions, &requested),
-        BucketResolution::Unresolved
-    );
-}
-
-#[test]
-fn bucket_resolution_does_not_interpolate_between_disagreeing_single_file_rungs() {
-    // The diagonal bracket is only sound when both single-file rungs AGREE: a query
-    // between a SimdCpu rung and a CpuFallback rung has no single fastest-correct
-    // answer, so it must stay fail-closed (Unresolved), never guess one side.
-    let base = test_workload_key();
-    let mut decisions = HashMap::new();
-    decisions.insert(
-        WorkloadKey {
-            bytes_bucket: 6,
-            max_file_bucket: 6,
-            ..base.clone()
-        },
-        cpu_decision(ScanBackend::SimdCpu),
-    );
-    decisions.insert(
-        WorkloadKey {
-            bytes_bucket: 8,
-            max_file_bucket: 8,
-            ..base.clone()
-        },
         cpu_decision(ScanBackend::CpuFallback),
     );
-    let requested = WorkloadKey {
-        bytes_bucket: 7,
-        max_file_bucket: 7,
-        ..base.clone()
-    };
-    assert_eq!(
-        resolve_bucket(&decisions, &requested),
-        BucketResolution::Unresolved,
-        "disagreeing single-file brackets must fail closed, not pick a side"
-    );
+    assert!(refuses(
+        &decisions,
+        WorkloadKey {
+            bytes_bucket: 10,
+            max_file_bucket: 10,
+            ..base.clone()
+        }
+    )
+    .contains("no persisted fastest-correct backend decision"));
 }
 
+/// A CPU rung and a GPU rung are a disagreement like any other, so the band
+/// between them fails closed. Unanimous-GPU families are refused separately by
+/// `bucket_resolution_never_interpolates_across_gpu_buckets`; this case is
+/// caught by the disagreement rule and does not depend on the GPU exemption.
 #[test]
 fn bucket_resolution_does_not_interpolate_single_file_across_a_gpu_rung() {
-    // GPU correctness varies with input size, so it can never anchor a diagonal
-    // bracket: a single-file query whose only upper neighbour is GPU has just one
-    // CPU side (the lower rung) and stays fail-closed, never a one-sided guess and
-    // never a clamp toward GPU.
     let base = test_workload_key();
     let mut decisions = HashMap::new();
-    decisions.insert(
-        WorkloadKey {
-            bytes_bucket: 6,
-            max_file_bucket: 6,
-            ..base.clone()
-        },
-        cpu_decision(ScanBackend::SimdCpu),
-    );
     decisions.insert(
         WorkloadKey {
             bytes_bucket: 8,
             max_file_bucket: 8,
             ..base.clone()
         },
-        gpu_decision(),
-    );
-    let requested = WorkloadKey {
-        bytes_bucket: 7,
-        max_file_bucket: 7,
-        ..base.clone()
-    };
-    assert_eq!(
-        resolve_bucket(&decisions, &requested),
-        BucketResolution::Unresolved,
-        "a GPU rung must not anchor a single-file diagonal bracket"
-    );
-}
-
-#[test]
-fn bucket_resolution_does_not_clamp_below_a_gpu_floor() {
-    // GPU correctness can vary with input size, so a below-floor query whose only
-    // calibrated neighbour is GPU must still fail closed, never clamp to GPU, and
-    // no CPU-class evidence exists for this class.
-    let base = test_workload_key();
-    let mut decisions = HashMap::new();
-    decisions.insert(
-        WorkloadKey {
-            bytes_bucket: 8,
-            ..base.clone()
-        },
-        gpu_decision(),
-    );
-    let requested = WorkloadKey {
-        bytes_bucket: 3,
-        ..base.clone()
-    };
-    assert_eq!(
-        resolve_bucket(&decisions, &requested),
-        BucketResolution::Unresolved
-    );
-}
-
-#[test]
-fn bucket_resolution_does_not_clamp_an_uncalibrated_class() {
-    // No calibrated bucket shares the request's non-size dimensions: the workload
-    // CLASS itself was never calibrated, so there is no floor to clamp under
-    // fail closed rather than invent one.
-    let base = test_workload_key();
-    let mut decisions = HashMap::new();
-    decisions.insert(
-        WorkloadKey {
-            bytes_bucket: 8,
-            source_mixture: test_source_mixture("filesystem"),
-            ..base.clone()
-        },
         cpu_decision(ScanBackend::SimdCpu),
     );
-    let requested = WorkloadKey {
-        bytes_bucket: 3,
-        source_mixture: test_source_mixture("web"),
-        ..base.clone()
-    };
-    assert_eq!(
-        resolve_bucket(&decisions, &requested),
-        BucketResolution::Unresolved
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: 12,
+            max_file_bucket: 12,
+            ..base.clone()
+        },
+        gpu_decision(),
     );
+    assert!(refuses(
+        &decisions,
+        WorkloadKey {
+            bytes_bucket: 10,
+            max_file_bucket: 10,
+            ..base.clone()
+        }
+    )
+    .contains("no persisted fastest-correct backend decision"));
+}
+
+/// A below-floor query whose only calibrated neighbours are GPU must fail
+/// closed, never clamp to GPU.
+#[test]
+fn bucket_resolution_does_not_clamp_below_a_gpu_floor() {
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    for bucket in [8, 12] {
+        decisions.insert(
+            WorkloadKey {
+                bytes_bucket: bucket,
+                max_file_bucket: bucket,
+                ..base.clone()
+            },
+            gpu_decision(),
+        );
+    }
+    assert!(refuses(
+        &decisions,
+        WorkloadKey {
+            bytes_bucket: 3,
+            max_file_bucket: 3,
+            ..base.clone()
+        }
+    )
+    .contains("no persisted fastest-correct backend decision"));
+}
+
+/// No calibrated bucket shares the request's non-size dimensions, so the
+/// workload CLASS itself was never calibrated and there is nothing to reuse.
+#[test]
+fn bucket_resolution_does_not_clamp_an_uncalibrated_class() {
+    let base = test_workload_key();
+    let mut decisions = HashMap::new();
+    for bucket in [8, 12] {
+        let mut foreign = WorkloadKey {
+            bytes_bucket: bucket,
+            max_file_bucket: bucket,
+            ..base.clone()
+        };
+        foreign.source_mixture = test_source_mixture("web");
+        decisions.insert(foreign, cpu_decision(ScanBackend::SimdCpu));
+    }
+    assert!(refuses(
+        &decisions,
+        WorkloadKey {
+            bytes_bucket: 3,
+            max_file_bucket: 3,
+            ..base.clone()
+        }
+    )
+    .contains("no persisted fastest-correct backend decision"));
 }
 
 #[test]
