@@ -420,7 +420,7 @@ fn profiler_cache_identities(
             keyhog_scanner::MatcherArtifactCacheOutcome::Hit => CacheState::Warm,
             keyhog_scanner::MatcherArtifactCacheOutcome::Miss => CacheState::Cold,
             keyhog_scanner::MatcherArtifactCacheOutcome::Invalidated { .. } => CacheState::Cold,
-            keyhog_scanner::MatcherArtifactCacheOutcome::Disabled => CacheState::Disabled,
+            keyhog_scanner::MatcherArtifactCacheOutcome::Disabled { .. } => CacheState::Disabled,
         },
         _ => CacheState::Disabled,
     };

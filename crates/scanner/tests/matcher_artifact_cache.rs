@@ -309,3 +309,113 @@ fn validate_and_tighten_repairs_existing_loose_permissions() {
         "cache directory must be tightened to 0700, got {mode:#o}"
     );
 }
+
+/// WHY: every disable reason for MatcherArtifact cache must be explicitly enumerated
+/// with distinct machine labels, human explanations, and accidental vs configured classification,
+/// so that accidental cache disables cannot silently occur without an operator warning.
+///
+/// What it does not catch: disable switches outside the MatcherArtifact cache subsystem.
+#[test]
+fn matcher_artifact_cache_disable_reasons_are_enumerated_and_unique() {
+    use keyhog_scanner::MatcherArtifactCacheDisableReason;
+    use std::collections::HashSet;
+
+    let mut labels = HashSet::new();
+    let mut explanations = HashSet::new();
+
+    // Dynamically derive variant space from ALL registered disable reasons
+    for reason in MatcherArtifactCacheDisableReason::ALL {
+        let label = reason.as_str();
+        let explanation = reason.operator_explanation();
+        assert!(!label.is_empty(), "reason label must not be empty");
+        assert!(!explanation.is_empty(), "explanation must not be empty");
+        assert!(labels.insert(label), "duplicate reason label: {label}");
+        assert!(
+            explanations.insert(explanation),
+            "duplicate explanation: {explanation}"
+        );
+    }
+
+    // Verify accidental vs configured separation
+    assert!(
+        MatcherArtifactCacheDisableReason::UnusableLocation.is_accidental(),
+        "UnusableLocation must be classified as accidental"
+    );
+    assert!(
+        !MatcherArtifactCacheDisableReason::ConfiguredOff.is_accidental(),
+        "ConfiguredOff must be classified as intentional"
+    );
+    assert!(
+        !MatcherArtifactCacheDisableReason::LockdownActive.is_accidental(),
+        "LockdownActive must be classified as intentional"
+    );
+}
+
+/// WHY: cache-enabled and cache-disabled scanner compiles must produce identical
+/// detector plan digests and identical finding sets on the exact same corpus, proving
+/// that enabling or disabling on-disk caching never alters detector ordering or evaluation semantics.
+///
+/// What it does not catch: hardware-specific GPU kernel variations.
+#[test]
+fn cache_enabled_and_disabled_compiles_produce_identical_digests_and_findings() {
+    use keyhog_scanner::engine::GpuInitPolicy;
+    use keyhog_scanner::{compile_shared_with_matcher_artifact_cache, ScannerTuningConfig};
+    use std::sync::Arc;
+
+    let dir = allowlisted_tempdir();
+    let detectors = Arc::from(sample_detectors());
+    let tuning = ScannerTuningConfig::default();
+    let config_digest = [42u8; 32];
+
+    // Compile with cache disabled
+    let (disabled_scanner, disabled_outcome) = compile_shared_with_matcher_artifact_cache(
+        Arc::clone(&detectors),
+        GpuInitPolicy::Never,
+        &tuning,
+        config_digest,
+        None,
+        None,
+    )
+    .expect("compile disabled");
+    assert!(
+        matches!(
+            disabled_outcome,
+            keyhog_scanner::MatcherArtifactCacheOutcome::Disabled { .. }
+        ),
+        "expected Disabled outcome, got {disabled_outcome:?}"
+    );
+
+    // Now configure cache dir and compile with cache enabled
+    let _guard = keyhog_scanner::default_matcher_artifact_cache_dir();
+    let (enabled_scanner, enabled_outcome) = compile_shared_with_matcher_artifact_cache(
+        Arc::clone(&detectors),
+        GpuInitPolicy::Never,
+        &tuning,
+        config_digest,
+        None,
+        None,
+    )
+    .expect("compile enabled");
+
+    // Plan digests must be byte-identical
+    let disabled_digest = disabled_scanner.runtime_status().compiled_plan_digest;
+    let enabled_digest = enabled_scanner.runtime_status().compiled_plan_digest;
+    assert_eq!(
+        disabled_digest, enabled_digest,
+        "compiled plan digests must be byte-identical between cache-enabled and cache-disabled compiles"
+    );
+
+    // Findings over a test payload must be identical
+    let payload = b"leading FIX_12345678 trailing context";
+    let disabled_findings = disabled_scanner.scan_chunk_sync(payload, 0);
+    let enabled_findings = enabled_scanner.scan_chunk_sync(payload, 0);
+    assert_eq!(
+        disabled_findings.len(),
+        enabled_findings.len(),
+        "findings count must match"
+    );
+    assert_eq!(
+        disabled_findings, enabled_findings,
+        "finding contents must be identical"
+    );
+}

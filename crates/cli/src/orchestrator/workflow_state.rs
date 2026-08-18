@@ -90,7 +90,7 @@ pub(crate) fn matcher_artifact_transition(
     outcome: Option<&keyhog_scanner::MatcherArtifactCacheOutcome>,
 ) -> CacheTransitionRecord {
     let (evidence, transition) = match outcome {
-        None | Some(keyhog_scanner::MatcherArtifactCacheOutcome::Disabled) => {
+        None | Some(keyhog_scanner::MatcherArtifactCacheOutcome::Disabled { .. }) => {
             ("matcher-artifact-disabled", CacheTransition::Disabled)
         }
         Some(keyhog_scanner::MatcherArtifactCacheOutcome::Hit) => {
