@@ -133,6 +133,7 @@ pub enum MetricId {
     BackendAcquire,
     BackendInit,
     Teardown,
+    ScanPipeline,
 }
 
 /// Stable identifier for a top-level production pipeline stage.
@@ -740,6 +741,7 @@ impl From<crate::Stage> for MetricId {
             crate::Stage::BackendAcquire => Self::BackendAcquire,
             crate::Stage::BackendInit => Self::BackendInit,
             crate::Stage::Teardown => Self::Teardown,
+            crate::Stage::ScanPipeline => Self::ScanPipeline,
         }
     }
 }
@@ -1555,10 +1557,16 @@ pub static METRICS: [MetricDescriptor; MetricId::COUNT] = [
         MetricKind::Duration,
         MetricUnit::Nanoseconds,
     ),
+    metric(
+        MetricId::ScanPipeline,
+        "scan-pipeline",
+        MetricKind::Duration,
+        MetricUnit::Nanoseconds,
+    ),
 ];
 
 impl MetricId {
-    pub const COUNT: usize = 128;
+    pub const COUNT: usize = 129;
 
     /// Return static metadata with no lookup allocation or hashing.
     #[inline]

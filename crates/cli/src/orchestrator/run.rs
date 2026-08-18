@@ -1481,7 +1481,7 @@ impl ScanOrchestrator {
 
         operator_profile.transition(keyhog_profile::RunState::Scanning);
         let all_matches = {
-            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::BackendDispatch);
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ScanPipeline);
             self.scan_sources(sources, show_progress, merkle, incremental_cache_path)?
         };
         operator_profile.transition(keyhog_profile::RunState::Resolving);

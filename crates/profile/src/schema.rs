@@ -73,11 +73,13 @@ pub enum Stage {
     BackendInit,
     /// Releasing scanner plans, backend resources, and retained buffers.
     Teardown,
+    /// Top-level pipeline container wrapping full source scanning.
+    ScanPipeline,
 }
 
 impl Stage {
     /// Every stage in stable wire order.
-    pub const ALL: [Self; 34] = [
+    pub const ALL: [Self; 35] = [
         Self::SourceAcquire,
         Self::SourceWalk,
         Self::SourceRead,
@@ -112,6 +114,7 @@ impl Stage {
         Self::BackendAcquire,
         Self::BackendInit,
         Self::Teardown,
+        Self::ScanPipeline,
     ];
 
     #[inline]
@@ -159,7 +162,14 @@ impl Stage {
             Self::BackendAcquire => MetricId::BackendAcquire,
             Self::BackendInit => MetricId::BackendInit,
             Self::Teardown => MetricId::Teardown,
+            Self::ScanPipeline => MetricId::ScanPipeline,
         }
+    }
+
+    /// Whether this stage is an outer container rather than a leaf stage.
+    #[inline]
+    pub const fn is_container(self) -> bool {
+        matches!(self, Self::ScanPipeline)
     }
 
     /// Stable text label used by human reports.
@@ -198,7 +208,8 @@ impl Stage {
             | Self::ExecutionPackMap
             | Self::BackendAcquire
             | Self::BackendInit
-            | Self::Teardown => MacroStageId::Scan,
+            | Self::Teardown
+            | Self::ScanPipeline => MacroStageId::Scan,
             Self::Suppression | Self::ResultMerge => MacroStageId::Resolve,
             Self::LiveVerification => MacroStageId::Verify,
             Self::Reporting => MacroStageId::Report,
@@ -557,7 +568,7 @@ impl RunProfile {
         if let Some(stage) = self
             .stages
             .iter()
-            .filter(|stage| stage.stage != Stage::BackendDispatch)
+            .filter(|stage| !stage.stage.is_container())
             .max_by_key(|stage| stage.elapsed_ns)
         {
             output.push_str(&format!(

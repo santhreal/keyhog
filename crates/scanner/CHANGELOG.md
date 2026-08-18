@@ -2,6 +2,7 @@
 
 
 ## 0.5.80 - 2026-08-17
+- fix(profile): separate Stage::ScanPipeline container from leaf Stage::BackendDispatch to prevent container-duration distortion in bottleneck and cost tables.
 - fix(runtime): enforce panic = "unwind" in release profile to enable catch_unwind GPU isolation boundaries and degradation in shipped release binaries.
 - fix(gpu): lazy-scope GPU API initialization to only the selected scan backend route and eliminate redundant WGPU enumeration during CUDA and CPU scans.
 - perf(gpu): eliminate intermediate host buffer copies and redundant scrubs on GPU region dispatch, enforcing <= 1 copy per dispatched byte with host data movement instrumentation.
