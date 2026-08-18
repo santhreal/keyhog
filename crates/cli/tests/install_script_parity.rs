@@ -124,6 +124,20 @@ fn parse_sh_flags(content: &str) -> BTreeSet<String> {
     flags
 }
 
+/// PowerShell switches are PascalCase (`-NoCalibrate`); the shell spells the
+/// same flag `--no-calibrate`. Fold the PowerShell name to the shell one so the
+/// two documented sets are comparable as sets.
+fn kebab_case(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 2);
+    for (index, ch) in name.chars().enumerate() {
+        if ch.is_ascii_uppercase() && index > 0 {
+            out.push('-');
+        }
+        out.extend(ch.to_lowercase());
+    }
+    out
+}
+
 fn parse_ps1_flags(content: &str) -> BTreeSet<String> {
     let mut flags = BTreeSet::new();
     let mut in_flags = false;
@@ -140,17 +154,9 @@ fn parse_ps1_flags(content: &str) -> BTreeSet<String> {
             }
             if let Some(rest) = trimmed.strip_prefix("#") {
                 let text = rest.trim();
-                if text.starts_with("-") {
-                    let flag = text
-                        .split_whitespace()
-                        .next()
-                        .unwrap()
-                        .trim_start_matches("-")
-                        .to_lowercase()
-                        .replace("dir", "-dir")
-                        .replace("file", "-file")
-                        .replace("color", "-color");
-                    flags.insert(flag);
+                if text.starts_with('-') {
+                    let flag = text.split_whitespace().next().unwrap();
+                    flags.insert(kebab_case(flag.trim_start_matches('-')));
                 }
             }
         }
@@ -226,6 +232,16 @@ fn install_scripts_share_public_signing_key_and_repo() {
     );
 }
 
+/// WHY: this file's contract is "exact functional parity for every public mode,
+/// parameter, and security verification step", and this test asserted only that
+/// each script documents at least one flag. It could not fail on the bug it
+/// names. It did not: `install.sh --no-calibrate` had no PowerShell
+/// counterpart, so a Windows install had no way to skip the autoroute
+/// measurement phase that a POSIX install skips with one flag, and neither did
+/// `--no-prompt` or `--help`.
+///
+/// WHAT IT DOES NOT CATCH: a flag documented on both sides and implemented on
+/// one. The behavior half is asserted below against the argument parsers.
 #[test]
 fn install_scripts_share_common_flags() {
     let root = repo_root();
@@ -239,10 +255,113 @@ fn install_scripts_share_common_flags() {
         !sh_flags.is_empty(),
         "install.sh must document common flags"
     );
-    assert!(
-        !ps1_flags.is_empty(),
-        "install.ps1 must document common flags"
+    assert_eq!(
+        sh_flags, ps1_flags,
+        "install.sh and install.ps1 must document identical common flags\n  \
+         only in install.sh: {:?}\n  only in install.ps1: {:?}",
+        sh_flags.difference(&ps1_flags).collect::<Vec<_>>(),
+        ps1_flags.difference(&sh_flags).collect::<Vec<_>>(),
     );
+
+    // Every documented flag must be a real parameter, not prose. The shell
+    // parses flags in a `case`; PowerShell declares them in `param()`.
+    for flag in &sh_flags {
+        assert!(
+            sh_content.contains(&format!("--{flag}")),
+            "install.sh documents --{flag} but never parses it"
+        );
+        let switch: String = flag
+            .split('-')
+            .map(|word| {
+                let mut chars = word.chars();
+                match chars.next() {
+                    Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                    None => String::new(),
+                }
+            })
+            .collect();
+        assert!(
+            ps1_content.contains(&format!("${switch},"))
+                || ps1_content.contains(&format!("${switch} ")),
+            "install.ps1 documents -{switch} but never declares it as a parameter"
+        );
+    }
+}
+
+/// WHY: `--no-calibrate` is the flag that decides whether an install runs the
+/// autoroute measurement ladder, minutes of probes, or finishes immediately.
+/// Documenting it is not implementing it: the switch has to reach the finalize
+/// step, skip the calibration call, and say so, on both platforms.
+///
+/// WHAT IT DOES NOT CATCH: that the skipped install is still usable with an
+/// explicit `--backend`. The install-from-build fixtures cover that end to end.
+#[test]
+fn skipping_calibration_is_implemented_on_both_platforms() {
+    let root = repo_root();
+    let sh_content = std::fs::read_to_string(root.join("install.sh")).expect("read install.sh");
+    let ps1_content = std::fs::read_to_string(root.join("install.ps1")).expect("read install.ps1");
+
+    assert!(
+        sh_content.contains("--no-calibrate)") && sh_content.contains("SKIP_CALIBRATION=1"),
+        "install.sh must bind --no-calibrate to SKIP_CALIBRATION"
+    );
+    assert!(
+        ps1_content.contains("if ($NoCalibrate) {"),
+        "install.ps1 must branch on -NoCalibrate before calibrating"
+    );
+
+    // The notice and the calibration call must be the two arms of ONE branch.
+    // A notice printed anywhere else is an install that says it skipped
+    // calibration and then spends the minutes anyway.
+    for (name, content, notice, guard, call) in [
+        (
+            "install.sh",
+            &sh_content,
+            "Skipped autoroute calibration by explicit --no-calibrate.",
+            "SKIP_CALIBRATION",
+            "prime_autoroute_cache",
+        ),
+        (
+            "install.ps1",
+            &ps1_content,
+            "Skipped autoroute calibration by explicit -NoCalibrate.",
+            "$NoCalibrate",
+            "Invoke-AutorouteCalibration",
+        ),
+    ] {
+        let lines: Vec<&str> = content.lines().collect();
+        let notice_at = lines
+            .iter()
+            .position(|line| line.contains(notice))
+            .unwrap_or_else(|| panic!("{name} must say out loud that it skipped calibration"));
+
+        // Backwards: the branch the notice sits in must be the one the flag opens.
+        // A notice printed above the branch is an install that reports a skip and
+        // then spends the minutes anyway.
+        let opener = lines[..notice_at]
+            .iter()
+            .rev()
+            .find(|line| line.contains("if ") || line.contains("if("))
+            .unwrap_or_else(|| panic!("{name}: the skip notice is not inside any branch"));
+        assert!(
+            opener.contains(guard),
+            "{name}: the skip notice must be inside the {guard} branch, found: {opener}"
+        );
+
+        // Forwards: the opposite arm is the calibration the flag replaces.
+        let alternative = lines[notice_at + 1..]
+            .iter()
+            .take(4)
+            .find(|line| line.contains("elif") || line.contains("elseif"))
+            .unwrap_or_else(|| {
+                panic!("{name}: the skip notice must be one arm of the calibration branch")
+            });
+        assert!(
+            alternative.contains(call),
+            "{name}: the arm opposite the skip notice must be the {call} the flag replaces, \
+             found: {alternative}"
+        );
+    }
 }
 
 /// WHY: the only automatic execution-pack producer used to live in

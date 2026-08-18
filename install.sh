@@ -25,6 +25,7 @@
 #                       keyhog doctor, and rollback on failure.
 #   --install-dir=PATH  override the default install directory
 #   --yes / -y          non-interactive: accept defaults, no prompts
+#   --no-prompt         never prompt; treat every question as its default
 #   --insecure          proceed when local proof files are absent; a mismatch
 #                       still fails
 #   --no-calibrate      install and verify without measuring autoroute
@@ -205,11 +206,13 @@ confirm() {
 
 usage() {
     # When invoked from a file (`sh install.sh --help`) the header comment IS
-    # the help, so reproduce it from $0. When $0 is not readable, fall back to a
-    # built-in synopsis so --help still works.
+    # the help, so reproduce it from $0. Take the comment block itself rather
+    # than a pinned line range: a range goes stale the next time a flag is
+    # documented. When $0 is not readable, fall back to a built-in synopsis so
+    # --help still works.
     help_text=""
     if [ -r "$0" ]; then
-        help_text=$(sed -n '2,36p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//')
+        help_text=$(awk 'NR==1 {next} /^#/ {sub(/^# ?/, ""); print; next} {exit}' "$0" 2>/dev/null)
     fi
     if [ -n "$help_text" ]; then
         printf '%s\n' "$help_text"

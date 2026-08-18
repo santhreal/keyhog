@@ -22,9 +22,12 @@
 #                         PATH.gpu-literals.tar.gz sidecar unless -Insecure.
 #   -InstallDir PATH      override the default install directory
 #   -Yes                  non-interactive: accept defaults, no prompts
+#   -NoPrompt             never prompt; treat every question as its default
 #   -Insecure             proceed when local proof files are absent; a
 #                         mismatch still fails
+#   -NoCalibrate          install and verify without measuring autoroute
 #   -NoColor              disable ANSI colors
+#   -Help                 show this help and exit
 #
 # Env overrides:
 #   $env:NO_COLOR
@@ -36,7 +39,10 @@ param(
     [switch]$Uninstall,
     [switch]$Yes,
     [switch]$NoColor,
+    [switch]$NoCalibrate,
+    [switch]$NoPrompt,
     [switch]$Insecure,
+    [switch]$Help,
     [string]$FromFile,
     [string]$InstallDir = $(Join-Path $env:LOCALAPPDATA 'keyhog\bin')
 )
@@ -55,7 +61,7 @@ $Script:GpuProgramsCacheWasMissing = $false
 # ============================================================
 
 $Script:UseColor = -not $NoColor -and -not $env:NO_COLOR -and ($Host.UI.SupportsVirtualTerminal)
-$Script:Interactive = [Environment]::UserInteractive
+$Script:Interactive = [Environment]::UserInteractive -and -not $NoPrompt
 
 function Use-Color { param($Text, $Color)
     if ($Script:UseColor) { Write-Host $Text -ForegroundColor $Color } else { Write-Host $Text }
@@ -67,6 +73,37 @@ function Ok   { param($t) Write-Status 'PASS' $t 'Green' }
 function Warn { param($t) Write-Status 'WARN' $t 'Yellow' }
 function Err  { param($t) Write-Status 'FAIL' $t 'Red' }
 function Dim  { param($t) Use-Color $t 'DarkGray' }
+
+# `-Help` prints the header comment, the same contract as `install.sh --help`:
+# the header IS the help, so there is no second copy to drift. Fall back to a
+# built-in synopsis when the script is piped in and $PSCommandPath is empty.
+function Show-Usage {
+    $text = @()
+    if ($PSCommandPath -and (Test-Path -PathType Leaf $PSCommandPath)) {
+        foreach ($line in (Get-Content -LiteralPath $PSCommandPath)) {
+            if ($line -notmatch '^#') { break }
+            $text += ($line -replace '^#\s?', '')
+        }
+    }
+    if ($text.Count -gt 0) {
+        $text | ForEach-Object { Write-Host $_ }
+    } else {
+        Write-Host "KeyHog installer (Windows, PowerShell 5+)."
+        Write-Host ""
+        Write-Host "This script installs a binary you already have. It does not download"
+        Write-Host "from GitHub releases. For the current release, run:"
+        Write-Host "  cargo install keyhog --locked"
+        Write-Host ""
+        Write-Host "Install a local binary:"
+        Write-Host "  .\install.ps1 -FromFile .\keyhog.exe"
+        Write-Host ""
+        Write-Host "Modes:  (default) install/upgrade   -Diagnose   -Calibrate   -Uninstall"
+        Write-Host "Flags:  -FromFile PATH  -InstallDir PATH"
+        Write-Host "        -Yes  -NoPrompt  -NoCalibrate  -Insecure"
+        Write-Host "Env:    NO_COLOR"
+    }
+    exit 0
+}
 
 function Show-Banner {
     if ($Script:Interactive) {
@@ -1646,7 +1683,10 @@ function Finalize-Install {
             Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the binary whose execution packs could not be published; no working keyhog was overwritten."
             return $false
         }
-        if (-not (Invoke-AutorouteCalibration -BinPath $BinPath)) {
+        if ($NoCalibrate) {
+            Warn "Skipped autoroute calibration by explicit -NoCalibrate."
+            Warn "Run install.ps1 -Calibrate before relying on automatic routing; explicit --backend routes work immediately."
+        } elseif (-not (Invoke-AutorouteCalibration -BinPath $BinPath)) {
             Err "Autoroute calibration failed; refusing to leave an install whose default auto route is not usable."
             Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the uncalibrated binary; no working keyhog was overwritten."
             return $false
@@ -1903,6 +1943,8 @@ function Do-Calibrate {
 # ============================================================
 # main
 # ============================================================
+
+if ($Help) { Show-Usage }
 
 Show-Banner
 
