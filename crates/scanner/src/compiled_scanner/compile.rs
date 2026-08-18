@@ -53,6 +53,7 @@ fn selected_gpu_peer(backend: crate::hw_probe::ScanBackend) -> SelectedGpuPeer {
                         caps.total_memory
                     );
                     let runtime_identity = crate::gpu::linux_cuda_runtime_identity()
+                        .inspect_err(|diagnostic| {
                             tracing::warn!(
                                 target: "keyhog::routing",
                                 %diagnostic,
@@ -908,7 +909,7 @@ impl CompiledScanner {
                                     caps.compute_capability.1,
                                     caps.total_memory
                                 ));
-                                match linux_cuda_runtime_identity() {
+                                match crate::gpu::linux_cuda_runtime_identity() {
                                     Ok(identity) => peers.cuda_runtime_identity = Some(identity),
                                     Err(diagnostic) => {
                                         tracing::warn!(
@@ -1306,9 +1307,7 @@ impl CompiledScanner {
         // index has consumed it; the lazy SIMD plan then shares one Arc owner
         // instead of cloning the complete table until first backend use.
         #[cfg(feature = "simd")]
-        let simd_compile_plan = if selected_backend
-            .is_none_or(|backend| backend == crate::hw_probe::ScanBackend::SimdCpu)
-        {
+        let simd_compile_plan = if !selected_backend.is_some_and(|backend| backend.is_gpu()) {
             let ac_literals: std::sync::Arc<[String]> =
                 std::mem::take(&mut state.ac_literals).into();
             match packed_simd_program {

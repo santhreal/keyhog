@@ -39,6 +39,7 @@ fn probe() -> Option<GpuAdapterProbe> {
     super::evidence::record_gpu_api_initialized(super::evidence::GpuApiKind::Wgpu);
     let instance = wgpu::Instance::default();
     let mut adapters = instance
+        .enumerate_adapters(wgpu::Backends::all())
         .into_iter()
         .enumerate()
         .map(|(adapter_index, adapter)| {
@@ -86,6 +87,7 @@ pub(crate) fn probe_wgpu_device_exposures(
 ) -> Result<Vec<super::device_set::GpuDeviceExposure>, String> {
     super::evidence::record_gpu_api_initialized(super::evidence::GpuApiKind::Wgpu);
     let instance = wgpu::Instance::default();
+    let mut adapters = instance
         .enumerate_adapters(wgpu::Backends::all())
         .into_iter()
         .enumerate()

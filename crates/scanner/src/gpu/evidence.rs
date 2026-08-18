@@ -295,6 +295,7 @@ pub(crate) enum GpuHostDataMovementSite {
     RegionPresenceScratchScrub,
 }
 
+#[allow(dead_code)]
 impl GpuHostDataMovementSite {
     pub(crate) const ALL: &'static [Self] = &[
         Self::RegionPresenceScratchCoalesce,
@@ -352,12 +353,14 @@ pub(crate) fn reset_host_data_movement_counters() {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[allow(dead_code)]
 pub(crate) enum GpuApiKind {
     Cuda,
     Metal,
     Wgpu,
 }
 
+#[allow(dead_code)]
 impl GpuApiKind {
     pub(crate) const fn label(self) -> &'static str {
         match self {

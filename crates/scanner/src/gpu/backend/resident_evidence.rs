@@ -262,7 +262,7 @@ impl ResidentLiteralCapacity {
             required_haystack_bytes,
             haystack_bytes,
             regions,
-            max_matches: GPU_FUSED_MATCH_CAP.min(pipeline.slot_match_capacity),
+            max_matches: pipeline.slot_match_capacity,
             presence_words,
             pipeline,
         }
@@ -773,7 +773,6 @@ pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
 #[must_use = "pending GPU resident evidence must be retired before its IO slot can be reused"]
 pub(crate) struct PendingGpuResidentLiteralEvidence<'a> {
     slot: &'a std::sync::Mutex<GpuResidentLiteralSlot>,
-    matcher: &'a vyre::scan::GpuLiteralSet,
     session_index: usize,
     backend_code: u64,
     pending: Option<vyre::scan::PendingResidentFusedRegion>,
@@ -1108,7 +1107,6 @@ pub(crate) fn submit_gpu_literal_evidence_by_region_resident<'a>(
     Ok(PendingGpuResidentLiteralEvidence {
         backend_code: evidence::backend_code(backend.id()),
         slot,
-        matcher,
         session_index,
         pending: Some(pending),
         submitted_at,
@@ -1129,7 +1127,6 @@ pub(crate) fn finish_gpu_literal_evidence_by_region_resident<R>(
             "GPU resident literal pipeline disappeared before pending work was retired".to_string(),
         );
     };
-    let slot_match_capacity = state.config.slot_match_capacity;
     let session = state
         .sessions
         .get_mut(pending.session_index)
@@ -1139,11 +1136,11 @@ pub(crate) fn finish_gpu_literal_evidence_by_region_resident<R>(
     if !session.in_flight {
         return Err("GPU resident pending IO slot was already retired".to_string());
     }
-    let mut dispatch = pending
+    let dispatch = pending
         .pending
         .take()
         .ok_or_else(|| "GPU resident pending dispatch was already consumed".to_string())?;
-    let mut submitted_at = pending.submitted_at;
+    let submitted_at = pending.submitted_at;
     let mut consume = Some(consume);
 
     let timing = dispatch

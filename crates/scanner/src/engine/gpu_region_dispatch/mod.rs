@@ -927,8 +927,8 @@ impl CompiledScanner {
             Phase2GpuAdmissionWorkload::Empty
         };
         let catalog_opt = self.phase2_gpu_dfa_catalog(Some(backend.id()));
-        let has_shards = catalog_opt.map_or(false, |c| !c.shards.is_empty());
-        let phase2_dispatch_profile = (phase2_gpu_workload != Phase2GpuAdmissionWorkload::Empty && has_shards)
+        let has_shards = catalog_opt.map_or(false, |c| c.has_shards());
+        let phase2_dispatch_profile = (!phase2_gpu_workload.is_empty() && has_shards)
             .then(|| super::profile::span(keyhog_profile::Stage::BackendDispatch));
         let t_phase2_gpu = kh.then(std::time::Instant::now);
         let mut phase2_gpu_empty_complete = false;
@@ -943,7 +943,7 @@ impl CompiledScanner {
                 match catalog_opt {
                     Some(catalog) => {
                         phase2_gpu_coverage = Some(catalog.coverage());
-                        if catalog.shards.is_empty() {
+                        if !catalog.has_shards() {
                             phase2_gpu_empty_complete = true;
                             None
                         } else {
@@ -991,7 +991,7 @@ impl CompiledScanner {
             } => match catalog_opt {
                 Some(catalog) => {
                     phase2_gpu_coverage = Some(catalog.coverage());
-                    if catalog.shards.is_empty() {
+                    if !catalog.has_shards() {
                         phase2_gpu_empty_complete = true;
                         None
                     } else {

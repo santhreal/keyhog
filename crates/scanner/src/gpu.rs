@@ -23,13 +23,13 @@ pub(crate) use backend::{
     gpu_resident_literal_required_device_bytes, scan_gpu_literal_evidence_by_region_resident,
     GpuResidentLiteralOverlap, GpuResidentLiteralSlot,
 };
-#[cfg(feature = "gpu")]
-pub(crate) use evidence::{GpuApiKind, GpuHostDataMovementSite};
 #[cfg(all(test, feature = "gpu"))]
 pub(crate) use evidence::{
     host_data_movement_snapshot, initialized_gpu_api_count, initialized_gpu_api_counts,
-    reset_host_data_movement_counters, reset_initialized_gpu_api_counters,
+    reset_host_data_movement_counters, reset_initialized_gpu_api_counters, GpuApiKind,
+    GpuHostDataMovementSite,
 };
+#[cfg(all(test, feature = "gpu"))]
 pub(crate) use backend::{
     reset_test_max_in_flight_slots, test_max_in_flight_slots, with_test_resident_dispatch_failure,
 };
