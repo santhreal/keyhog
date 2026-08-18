@@ -9,7 +9,7 @@ fn scan(path: &std::path::Path) -> std::process::Output {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            crate::support::DIAGNOSTIC_BACKEND,
             "--format",
             "github-annotations",
         ])
@@ -24,7 +24,7 @@ fn scan_directory_with_cap(path: &std::path::Path) -> std::process::Output {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            crate::support::DIAGNOSTIC_BACKEND,
             "--max-file-size",
             "15B",
             "--format",

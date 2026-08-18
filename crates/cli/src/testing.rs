@@ -485,6 +485,24 @@ pub trait CliTestApi {
     ) -> Result<StaticRecoveryMergeSnapshot>;
 }
 
+/// The recovery peer a failed accelerator can hand a batch to in THIS build.
+///
+/// `portable,gpu` is a shipped configuration (the macOS and Windows ships), so
+/// a harness that always names `SimdCpu` fails on a build with no Hyperscan and
+/// reports the routing refusal as lost recovery. Production resolves the peer
+/// from measured calibration evidence, which can only name a backend this
+/// binary carries; this mirrors that constraint.
+fn recovery_peer_for_this_build() -> keyhog_scanner::ScanBackend {
+    #[cfg(feature = "simd")]
+    {
+        keyhog_scanner::ScanBackend::SimdCpu
+    }
+    #[cfg(not(feature = "simd"))]
+    {
+        keyhog_scanner::ScanBackend::CpuFallback
+    }
+}
+
 impl CliTestApi for TestApi {
     fn removed_verification_state(&self, result: &keyhog_core::VerificationResult) -> &'static str {
         crate::subcommands::diff::removed_state_label_for_test(result)
@@ -1027,9 +1045,9 @@ impl CliTestApi for TestApi {
             None,
             scanner.execution_route_for_backend(keyhog_scanner::ScanBackend::GpuWgpu),
             recover_automatic_backend_faults.then_some(crate::orchestrator::BackendRecoveryPlan {
-                backend: keyhog_scanner::ScanBackend::SimdCpu,
+                backend: recovery_peer_for_this_build(),
                 execution_route: scanner
-                    .execution_route_for_backend(keyhog_scanner::ScanBackend::SimdCpu),
+                    .execution_route_for_backend(recovery_peer_for_this_build()),
             }),
         )?;
         if recover_automatic_backend_faults && !outcome.recovered {
