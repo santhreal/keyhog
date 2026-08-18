@@ -117,7 +117,7 @@ async fn start(
 async fn stop(socket: Option<PathBuf>) -> Result<ExitCode> {
     let socket = socket.unwrap_or_else(default_socket_path); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
                                                              // `connect_any_version`, not `connect`: a daemon left running across a
-                                                             // `keyhog update` reports an older keyhog version, and the whole point of
+                                                             // binary upgrade reports an older keyhog version, and the whole point of
                                                              // `daemon stop` is to clear exactly that stale daemon. The strict
                                                              // version-gated `connect` (used by the scan route) would REFUSE to talk to
                                                              // it, stranding the stale process; `stop` must still be able to shut it down.
@@ -213,7 +213,7 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
         // socket path and the operator had nothing to act on (KH-641).
         Err(typed_error) => return status_over_control_channel(&socket, typed_error).await,
     };
-    // Surface staleness LOUDLY: a daemon left running across a `keyhog update`
+    // Surface staleness LOUDLY: a daemon left running across a binary upgrade
     // serves an OLDER detector corpus. The scan route already refuses it
     // (`connect` fails closed), but an operator running `status` must SEE that
     // the daemon is stale, otherwise the healthy-looking uptime line hides the

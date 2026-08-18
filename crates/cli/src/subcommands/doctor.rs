@@ -541,7 +541,7 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
             Err(error) => {
                 healthy = false;
                 println!(
-                    "  pack state     {red}INVALID{reset}  {dim}{error:#}; repair: `keyhog repair --force`{reset}"
+                    "  pack state     {red}INVALID{reset}  {dim}{error:#}; rebuild with `keyhog compile-execution-packs`{reset}"
                 );
                 None
             }

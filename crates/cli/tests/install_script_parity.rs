@@ -191,8 +191,9 @@ fn install_scripts_expose_matching_modes_and_parity() {
         "install.sh and install.ps1 must document identical public modes"
     );
 
-    // Assert mandatory canonical modes
-    for required in &["default", "repair", "diagnose", "calibrate", "uninstall"] {
+    // Mandatory canonical modes. `repair` went with the retired binary-asset
+    // channel: reinstalling now means `cargo install --locked --force keyhog`.
+    for required in &["default", "diagnose", "calibrate", "uninstall"] {
         assert!(
             sh_modes.contains(*required),
             "installer modes must contain mandatory '{required}' mode"
@@ -222,22 +223,6 @@ fn install_scripts_share_public_signing_key_and_repo() {
     assert!(
         ps1_content.contains("santhreal/keyhog"),
         "install.ps1 must target canonical santhreal/keyhog repository"
-    );
-}
-
-#[test]
-fn install_scripts_share_canonical_endpoints() {
-    let root = repo_root();
-    let sh_content = std::fs::read_to_string(root.join("install.sh")).expect("read install.sh");
-    let ps1_content = std::fs::read_to_string(root.join("install.ps1")).expect("read install.ps1");
-
-    assert!(
-        sh_content.contains("https://santh.dev/keyhog/install.sh"),
-        "install.sh must declare its canonical https://santh.dev endpoint"
-    );
-    assert!(
-        ps1_content.contains("https://santh.dev/keyhog/install.ps1"),
-        "install.ps1 must declare its canonical https://santh.dev endpoint"
     );
 }
 

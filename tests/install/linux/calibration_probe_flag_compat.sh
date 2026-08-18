@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 #
 # Regression: install.sh autoroute-calibration probe must (1) work against a
-# released binary that predates `--no-config` (it only has `--config <PATH>`),
-# and (2) surface the real reason when a probe fails instead of a blind failure label.
+# binary that predates `--no-config` (it only has `--config <PATH>`), and
+# (2) surface the real reason when a probe fails instead of a blind failure label.
 #
-# Dogfood origin: a clean `sh install.sh` of the published v0.5.40 CUDA build
-# ran the calibration with `keyhog scan <probe> --no-config ...`; that binary
-# rejects `--no-config` (clap: "unexpected argument '--no-config'"), so all
-# three probes failed and the installer swallowed the cause with
-# `>/dev/null 2>&1` (Law 10) - the install read as a broken product. The fix
-# detects the binary's actual config flag via `--help` and prints the real
-# stderr line on failure.
+# `--from-file` installs whatever binary the operator supplies, which may be
+# older than this script. One such binary ran the calibration with
+# `keyhog scan <probe> --no-config ...` and rejected the flag (clap:
+# "unexpected argument '--no-config'"), so all three probes failed and the
+# installer swallowed the cause with `>/dev/null 2>&1` (Law 10) - the install
+# read as a broken product. The fix detects the binary's actual config flag
+# via `--help` and prints the real stderr line on failure.
 #
-# This test mocks the published binary (rejects --no-config, accepts --config)
-# and a hard-failing binary, drives `install.sh --calibrate` against each, and
-# asserts the PASS / surfaced-reason behavior. Offline, deterministic, no network.
+# This test mocks an older binary (rejects --no-config, accepts --config) and a
+# hard-failing binary, drives `install.sh --calibrate` against each, and
+# asserts the PASS / surfaced-reason behavior. Offline, deterministic.
 
 set -u
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"

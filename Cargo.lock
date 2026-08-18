@@ -2772,14 +2772,12 @@ dependencies = [
  "keyhog-verifier",
  "libc",
  "mimalloc",
- "minisign-verify",
  "notify",
  "parking_lot",
  "proptest",
  "rand 0.8.6",
  "rayon",
  "regex",
- "reqwest",
  "semver",
  "serde",
  "serde_json",
@@ -3276,12 +3274,6 @@ dependencies = [
  "mime",
  "unicase",
 ]
-
-[[package]]
-name = "minisign-verify"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e856fdd13623a2f5f2f54676a4ee49502a96a80ef4a62bcedd23d52427c44d43"
 
 [[package]]
 name = "miniz_oxide"

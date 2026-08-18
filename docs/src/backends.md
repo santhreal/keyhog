@@ -29,8 +29,7 @@ keyhog backend --autoroute
 keyhog scan .
 ```
 
-The last command is equivalent to `keyhog scan . --backend auto`. The historical
-verified binary-asset installers run the all-preset calibration sweep. Cargo
+The last command is equivalent to `keyhog scan . --backend auto`. Cargo
 cannot execute a binary after `cargo install`, so run the first command once
 after installing a multi-backend Cargo build and again after any binary, driver,
 hardware, or routing-relevant configuration change. A scalar-only build needs no

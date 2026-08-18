@@ -886,24 +886,6 @@ keyhog completion elvish > ~/.config/elvish/lib/keyhog.elv
 | `--bloom-evidence` | `PATH` |  | Read a `bloom-evidence-v1` receipt produced by `keyhog bloom-diagnostic`. The receipt must match this binary's detector corpus and prove exact enabled-versus-bypassed finding parity |
 <!-- /keyhog-generated: cli-reference command="doctor" -->
 
-### `keyhog update`
-
-<!-- keyhog-generated: cli-reference command="update" -->
-| Argument | Value | Default | Description |
-|----------|-------|---------|-------------|
-| `--check` |  |  | Only check whether the GitHub binary-asset channel offers a newer release; do not install. Exits 10 when a newer asset exists, 0 otherwise |
-| `--version` | `SEMVER` |  | Install an exact release version (e.g. `1.2.3` or `v1.2.3`). Canonical SemVer is required; a leading `v` is normalized. Valid prereleases are accepted. Use this to pin a version or downgrade |
-<!-- /keyhog-generated: cli-reference command="update" -->
-
-### `keyhog repair`
-
-<!-- keyhog-generated: cli-reference command="repair" -->
-| Argument | Value | Default | Description |
-|----------|-------|---------|-------------|
-| `--force` |  |  | Reinstall even if the scan-engine self-test currently passes |
-| `--version` | `SEMVER` |  | Reinstall an exact release version (e.g. `1.2.3` or `v1.2.3`). Canonical SemVer is required; a leading `v` is normalized. Valid prereleases are accepted. Use this to pin a version or downgrade |
-<!-- /keyhog-generated: cli-reference command="repair" -->
-
 ### `keyhog uninstall`
 
 <!-- keyhog-generated: cli-reference command="uninstall" -->
@@ -912,25 +894,14 @@ keyhog completion elvish > ~/.config/elvish/lib/keyhog.elv
 | `--yes` |  |  | Actually remove the binary. Without this, uninstall is a safe dry run that only reports what would be removed |
 <!-- /keyhog-generated: cli-reference command="uninstall" -->
 
-Linux uses one GPU-capable artifact that probes CUDA and WGPU at runtime. These
-commands therefore have no backend or artifact-variant selector.
-Implicit resolution excludes drafts and prereleases and requires the binary,
-checksum, signature, GPU-literal sidecar, sidecar checksum, and sidecar
-signature. An explicit `--version` may select a published prerelease but never
-a draft. It accepts canonical SemVer only, normalizes an optional leading `v`,
-and binds the request to the identical returned release tag before downloading.
+Linux uses one GPU-capable artifact that probes CUDA and WGPU at runtime, so
+`uninstall` has no backend or artifact-variant selector.
 
-`keyhog update` reports one of three verdicts. `PASS` means the channel's
-newest asset is exactly this build. `WARN` means this build is newer than the
-newest asset, so the channel cannot tell you whether a newer KeyHog exists;
-update with `cargo install --locked --force keyhog` instead. Otherwise it
-reports the newer asset and, under `--check`, exits `10`. Both `PASS` and
-`WARN` exit `0`, because neither installs anything.
-
-Automatic releases publish crates.io packages only. The binary-asset channel
-can therefore sit many versions behind crates.io, and `keyhog update` never
-reports a stale install as current. See
-[Install](../install.md) for the asset matrix.
+There is no `keyhog update` or `keyhog repair`. KeyHog has no self-update
+path: automatic releases publish crates.io packages only, and no workflow
+builds, signs, or uploads release binaries. Update and repair the same way you
+installed, with `cargo install --locked --force keyhog`. See
+[Install](../install.md).
 
 ## Root options
 

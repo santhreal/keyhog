@@ -1,6 +1,5 @@
 //! Install integrity bypasses must be explicit flags, never ambient env.
 
-use keyhog::testing::{CliTestApi as _, API};
 use std::collections::BTreeSet;
 
 fn keyhog_env_tokens(script: &str) -> BTreeSet<String> {
@@ -53,9 +52,14 @@ fn keyhog_env_token_inventory_normalizes_case_for_power_shell() {
     );
 }
 
+/// WHY: every installer behavior must come from an explicit flag. Ambient
+/// `KEYHOG_*` environment configuration is invisible at the call site, so a
+/// stale exported value silently changes what gets installed. The last one,
+/// `KEYHOG_VERSION`, went with the retired binary-asset channel: there is no
+/// version to pin when there is nothing to download.
 #[test]
-fn installer_keyhog_env_surface_is_exactly_the_install_pin() {
-    let allowed = BTreeSet::from(["KEYHOG_VERSION".to_owned()]);
+fn installers_read_no_ambient_keyhog_env() {
+    let allowed: BTreeSet<String> = BTreeSet::new();
     for (name, script) in [
         ("install.sh", include_str!("../../../install.sh")),
         ("install.ps1", include_str!("../../../install.ps1")),
@@ -63,9 +67,9 @@ fn installer_keyhog_env_surface_is_exactly_the_install_pin() {
         let actual = keyhog_env_tokens(script);
         assert_eq!(
             actual, allowed,
-            "{name} must not grow ambient KEYHOG_* installer configuration. \
-             The only surviving installer env is KEYHOG_VERSION as the release pin; \
-             local files, destination, insecure mode, calibration, and behavior use explicit flags."
+            "{name} must not read ambient KEYHOG_* installer configuration. \
+             Local files, destination, insecure mode, calibration, and behavior \
+             all use explicit flags."
         );
     }
 }
@@ -142,86 +146,100 @@ fn install_scripts_keep_explicit_insecure_flags() {
     );
 }
 
-/// Legacy binary-asset installers retain their pinned signature key even though the canonical Cargo install guide no longer publishes that bootstrap detail.
+/// WHY: `--from-file` is the only install path, so the pinned minisign key and
+/// the fail-closed branch around it are the whole authenticity story. Both
+/// scripts must pin the SAME key: a divergence would let one platform accept
+/// an artifact the other rejects. Does not catch a key that is pinned
+/// identically in both scripts but is the wrong key.
 #[test]
-fn legacy_bootstrap_installers_verify_release_minisig_with_updater_key() {
-    let public_key = API.release_public_key();
+fn installers_pin_one_minisign_key_and_fail_closed_on_a_bad_local_signature() {
+    const PINNED: &str = "RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go";
     for (name, script) in [
         ("install.sh", include_str!("../../../install.sh")),
         ("install.ps1", include_str!("../../../install.ps1")),
     ] {
         assert!(
-            script.contains(public_key),
-            "{name} must embed the same minisign release public key as the Rust updater"
-        );
-        assert!(
-            script.contains(".minisig"),
-            "{name} must download and verify release .minisig sidecars"
+            script.contains(PINNED),
+            "{name} must pin the shared minisign public key"
         );
         assert!(
             script.contains("minisign"),
-            "{name} must invoke minisign for bootstrap release authenticity"
+            "{name} must invoke minisign to verify a supplied local signature"
         );
         assert!(
-            script.contains("Minisign signature verification failed"),
-            "{name} must fail closed on invalid release signatures"
-        );
-        assert!(
-            script.contains("Refusing to install an unverified keyhog binary."),
-            "{name} must refuse unsigned/unverified bootstrap assets by default"
+            script.contains("Refusing to install an unverified keyhog binary.")
+                || script.contains(
+                    "Refusing to install an artifact signed by the wrong key or modified after signing."
+                ),
+            "{name} must refuse an artifact whose signature does not verify"
         );
     }
 }
 
+/// WHY: the scripts install a bundle the operator already holds. A download
+/// would resurrect the retired binary-asset channel, which failed silently by
+/// searching backward for an older release that still had assets.
+/// `scripts/gates/release_channel_coherence.py` enforces the same class from
+/// the workflow side; this catches the script-side shapes directly.
 #[test]
-fn bootstrap_installers_verify_gpu_literal_sidecars_before_installing_cache_artifacts() {
+fn installers_have_no_network_fetch_path() {
+    for (name, script, fetchers) in [
+        (
+            "install.sh",
+            include_str!("../../../install.sh"),
+            &["curl ", "wget ", "api.github.com", "releases/download"][..],
+        ),
+        (
+            "install.ps1",
+            include_str!("../../../install.ps1"),
+            &[
+                "Invoke-WebRequest",
+                "Invoke-RestMethod",
+                "api.github.com",
+                "releases/download",
+            ][..],
+        ),
+    ] {
+        for fetcher in fetchers {
+            assert!(
+                !script.contains(fetcher),
+                "{name} must not fetch anything; found `{fetcher}`. \
+                 Installs take a local bundle via --from-file."
+            );
+        }
+    }
+}
+
+/// WHY: a GPU literal sidecar seeds the compiled-matcher cache, so a hostile
+/// archive would plant files outside it. The sidecar must be signature- and
+/// checksum-checked and archive-validated BEFORE extraction, and a failure
+/// must roll the cache back rather than leave it half-seeded.
+#[test]
+fn installers_verify_gpu_literal_sidecars_before_seeding_the_cache() {
     let sh = include_str!("../../../install.sh");
     assert!(
-        sh.contains("verify_release_signature \"$sidecar_tmp\" \"$sidecar_name\"")
-            && sh.contains("verify_checksum \"$sidecar_tmp\" \"$sidecar_name\"")
-            && sh.contains("stage_local_gpu_literal_sidecar")
+        sh.contains("stage_local_gpu_literal_sidecar")
+            && sh.contains("verify_local_signature_if_present \"$local_sidecar\" \"$local_sig\"")
+            && sh.contains("verify_local_checksum \"$local_sidecar\" \"$local_sum\"")
             && sh.contains("--from-file requires a sibling GPU literal sidecar")
             && sh.contains("validate_gpu_literal_sidecar_archive")
             && sh.contains("GPU literal artifact sidecar contains link entries.")
             && sh.contains("backup_gpu_programs_cache_for_install")
             && sh.contains("restore_gpu_programs_cache_backup")
-            && sh.contains("clear_gpu_programs_cache_backup")
-            && !sh.contains("[ -z \"$FROM_FILE\" ] || return 0"),
+            && sh.contains("clear_gpu_programs_cache_backup"),
         "install.sh must verify and inspect GPU literal sidecar archives before extraction"
     );
 
     let ps1 = include_str!("../../../install.ps1");
     assert!(
-        ps1.contains("Verify-ReleaseSignature -BinaryPath $sidecarPath -AssetName $sidecarName")
-            && ps1.contains("Verify-Checksum -BinaryPath $sidecarPath -AssetName $sidecarName")
+        ps1.contains("Stage-LocalGpuLiteralSidecar")
+            && ps1.contains("Verify-LocalChecksum -BinaryPath $localSidecar -SumFile $localSum")
             && ps1.contains("-FromFile requires a sibling GPU literal sidecar")
             && ps1.contains("Test-GpuLiteralSidecarArchive")
             && ps1.contains("GPU literal artifact sidecar contains a link entry")
             && ps1.contains("Backup-GpuProgramsCacheForInstall")
             && ps1.contains("Restore-GpuProgramsCacheBackup")
-            && ps1.contains("Clear-GpuProgramsCacheBackup")
-            && !ps1.contains("if ($FromFile) { return $true }"),
+            && ps1.contains("Clear-GpuProgramsCacheBackup"),
         "install.ps1 must verify and inspect GPU literal sidecar archives before extraction"
-    );
-}
-
-#[test]
-fn bootstrap_installers_reject_binary_release_tag_mismatch() {
-    let sh = include_str!("../../../install.sh");
-    assert!(
-        sh.contains("observed_tag=$(version_tag_from_text \"$verify_out\")")
-            && sh.contains("[ \"$observed_tag\" != \"$TAG\" ]")
-            && sh.contains("Candidate binary version does not match release tag")
-            && sh.contains("possible substitution or downgrade attack"),
-        "install.sh must verify the installed binary version against the resolved release tag"
-    );
-
-    let ps1 = include_str!("../../../install.ps1");
-    assert!(
-        ps1.contains("$observedTag = Get-VersionTagFromText -Text ($out | Out-String)")
-            && ps1.contains("$observedTag -ne $Script:Tag")
-            && ps1.contains("Candidate binary version does not match release tag")
-            && ps1.contains("possible substitution or downgrade attack"),
-        "install.ps1 must verify the installed binary version against the resolved release tag"
     );
 }

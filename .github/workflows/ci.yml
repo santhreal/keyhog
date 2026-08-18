@@ -306,6 +306,11 @@ jobs:
         run: cargo test -p keyhog --test vyre_pin_coherence_lane3 --no-default-features --features ci-lean --profile ci-test
       - name: cli coherence binaries
         run: cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test --test coherence_wiring_lane7 --test lane10_verification_doc_coherence --test coherence_verify_count
+      - name: cli advertised surface pins
+        run: >
+          cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test
+          --test lane5_cli_subcommand_surface_matrix
+          --test regression_cli_version_help
 
   integration-detector-contracts:
     name: Integration (detector + recall contracts)
@@ -473,11 +478,12 @@ jobs:
         env:
           REQUIRE_INSTALL_LINTERS: '1'
         run: bash scripts/gates/install_static_analysis.sh
-      # No Rust build needed: both harnesses mock curl / uname / nvidia-smi /
-      # ldconfig / ldd and the downloaded binary, so install.sh runs fully
-      # offline. The hosted runner has no CUDA stack, so the CUDA-detection
-      # cases that get skipped on a developer's GPU box all execute here -
-      # full coverage of every mode, flag, detection branch, and failure path.
+      # No Rust build needed: the installers never fetch anything (installs
+      # take a local --from-file bundle), and both harnesses mock uname /
+      # nvidia-smi / ldconfig / ldd plus the installed binary. The hosted
+      # runner has no CUDA stack, so the CUDA-detection cases that get skipped
+      # on a developer's GPU box all execute here - full coverage of every
+      # mode, flag, detection branch, and failure path.
       - name: install.sh syntax
         run: sh -n install.sh
       - name: install.ps1 parse check

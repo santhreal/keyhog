@@ -1,47 +1,42 @@
 # KeyHog installer (Windows, PowerShell 5+).
-# Canonical endpoint: https://santh.dev/keyhog/install.ps1
 #
-# Authenticated install from one tagged release:
-#   $Tag = 'v0.5.45'
-#   $Base = "https://github.com/santhreal/keyhog/releases/download/$Tag"
-#   $PublicKey = 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
-#   iwr "$Base/install.ps1" -OutFile keyhog-install.ps1
-#   iwr "$Base/install.ps1.minisig" -OutFile keyhog-install.ps1.minisig
-#   minisign -Vm keyhog-install.ps1 -x keyhog-install.ps1.minisig -P $PublicKey
-#   .\keyhog-install.ps1 -Version $Tag
+# This installer does NOT download from GitHub releases. KeyHog publishes to
+# crates.io only; the signed binary-asset channel was retired. Install the
+# current release with:
+#
+#   cargo install keyhog --locked
+#
+# Use this script to install a binary you already have, such as a CI artifact,
+# an air-gapped transfer, or a local build:
+#
+#   .\install.ps1 -FromFile .\keyhog.exe
 #
 # Modes:
-#   (default)        install or upgrade keyhog
-#   -Repair          detect a broken install and re-download
+#   (default)        install or upgrade keyhog from -FromFile
 #   -Diagnose        print full host + binary status, make no changes
 #   -Calibrate       rerun visible autoroute calibration for the installed binary
 #   -Uninstall       remove the binary
 #
 # Common flags:
-#   -Version vX.Y.Z       pin a release tag (default: latest stable complete bundle)
-#   -FromFile PATH        install a pre-built/pre-downloaded keyhog.exe instead
-#                         of querying GitHub (offline / air-gapped / CI proving).
-#                         Requires PATH.sha256, PATH.gpu-literals.tar.gz, and
-#                         PATH.gpu-literals.tar.gz.sha256 unless -Insecure is explicit.
+#   -FromFile PATH        REQUIRED to install. Verifies PATH.sha256 and the
+#                         PATH.gpu-literals.tar.gz sidecar unless -Insecure.
 #   -InstallDir PATH      override the default install directory
 #   -Yes                  non-interactive: accept defaults, no prompts
-#   -Insecure             allow install only when release signature/checksum
-#                         proof is unavailable; fetched mismatches still fail
+#   -Insecure             proceed when local proof files are absent; a
+#                         mismatch still fails
 #   -NoColor              disable ANSI colors
 #
 # Env overrides:
-#   $env:KEYHOG_VERSION, $env:GITHUB_TOKEN, $env:NO_COLOR
+#   $env:NO_COLOR
 
 [CmdletBinding()]
 param(
-    [switch]$Repair,
     [switch]$Diagnose,
     [switch]$Calibrate,
     [switch]$Uninstall,
     [switch]$Yes,
     [switch]$NoColor,
     [switch]$Insecure,
-    [string]$Version = $env:KEYHOG_VERSION,
     [string]$FromFile,
     [string]$InstallDir = $(Join-Path $env:LOCALAPPDATA 'keyhog\bin')
 )
@@ -50,7 +45,6 @@ $ErrorActionPreference = 'Stop'
 $Repo = 'santhreal/keyhog'
 $Script:ReleasePublicKey = 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 $Script:InsecureInstall = [bool]$Insecure
-$Script:LatestReleaseAlias = $false
 $Script:GpuLiteralSidecarPath = $null
 $Script:GpuProgramsCacheBackupPath = $null
 $Script:GpuProgramsCacheWasMissing = $false
@@ -228,182 +222,6 @@ function Get-GpuInfo {
     return $gpus
 }
 
-function Resolve-Asset {
-    $arch = Get-Arch
-    if ($arch -ne 'x86_64') {
-        Err "Only Windows x86_64 is supported. (Win32 arch code: $($arch -replace 'unsupported-',''))"
-        Err "ARM64 Windows native binaries are not produced by the keyhog release workflow yet."
-        exit 1
-    }
-    $Script:Asset = 'keyhog-windows-x86_64.exe'
-
-    $gpus = Get-GpuInfo
-    $nv = $gpus | Where-Object { $_ -match 'NVIDIA' } | Select-Object -First 1
-    if ($nv) {
-        $Script:GpuNote = "Detected NVIDIA GPU ($nv). Installing the portable no-system-library Windows build (no Hyperscan, WGPU, or CUDA asset in the current release)."
-    } elseif ($gpus.Count -gt 0) {
-        $Script:GpuNote = "Detected non-NVIDIA GPU(s): $($gpus -join ', '). Installing the portable no-system-library Windows build (no Hyperscan, WGPU, or CUDA asset in the current release)."
-    } else {
-        $Script:GpuNote = "No GPU detected. Installing the portable no-system-library Windows build (no Hyperscan, WGPU, or CUDA asset in the current release)."
-    }
-}
-
-function Resolve-Tag {
-    if ($Version) {
-        # keyhog release tags are all v-prefixed (vX.Y.Z). Accept a bare
-        # semver too (`-Version X.Y.Z`): a download URL built from the
-        # un-prefixed tag 404s. Normalise a digit-leading
-        # version to the v-prefixed tag; leave an explicit v… or any other
-        # ref untouched.
-        if ($Version -match '^[0-9]') { $Script:Tag = "v$Version" } else { $Script:Tag = $Version }
-        return
-    }
-    $Script:Tag = 'latest'
-}
-
-function Invoke-GitHubApi {
-    param([string]$Uri)
-    $headers = @{}
-    if ($env:GITHUB_TOKEN) {
-        $headers['Authorization'] = "Bearer $env:GITHUB_TOKEN"
-        $headers['X-GitHub-Api-Version'] = '2022-11-28'
-    }
-    if ($headers.Count -gt 0) {
-        return Invoke-RestMethod -Uri $Uri -Headers $headers -ErrorAction Stop
-    }
-    return Invoke-RestMethod -Uri $Uri -ErrorAction Stop
-}
-
-function Resolve-TagFromApi {
-    # Select the newest stable, published release with the complete signed
-    # Windows bundle. Any-asset admission can choose a partial or other-host
-    # release and fail after claiming it was installable.
-    # This is the Windows mirror of install.sh's resolve_tag_from_api fallback.
-    try {
-        $releases = Invoke-GitHubApi -Uri "https://api.github.com/repos/$Repo/releases?per_page=10"
-    } catch {
-        Err "Could not query GitHub releases API: $_"
-        Err "Try -Version vX.Y.Z with a known published release tag explicitly."
-        exit 1
-    }
-    $required = @(
-        $Script:Asset,
-        "$($Script:Asset).sha256",
-        "$($Script:Asset).minisig",
-        "$($Script:Asset).gpu-literals.tar.gz",
-        "$($Script:Asset).gpu-literals.tar.gz.sha256",
-        "$($Script:Asset).gpu-literals.tar.gz.minisig"
-    )
-    foreach ($r in $releases) {
-        if ($r.draft -or $r.prerelease) { continue }
-        $names = @($r.assets | ForEach-Object { $_.name })
-        $complete = $true
-        foreach ($name in $required) {
-            if ($names -notcontains $name) { $complete = $false; break }
-        }
-        if ($complete) {
-            $Script:Tag = $r.tag_name
-            return
-        }
-    }
-    Err "No stable GitHub release in the last 10 has the complete signed bundle for $($Script:Asset)."
-    Err "Required: binary, SHA-256, minisign, GPU literal sidecar, sidecar SHA-256, and sidecar minisign."
-    Err "Try -Version vX.Y.Z with a known published release tag explicitly."
-    exit 1
-}
-
-function Test-ReleaseBundleComplete {
-    param([string]$Tag)
-    $required = @(
-        $Script:Asset,
-        "$($Script:Asset).sha256",
-        "$($Script:Asset).minisig",
-        "$($Script:Asset).gpu-literals.tar.gz",
-        "$($Script:Asset).gpu-literals.tar.gz.sha256",
-        "$($Script:Asset).gpu-literals.tar.gz.minisig"
-    )
-    foreach ($name in $required) {
-        $url = "https://github.com/$Repo/releases/download/$Tag/$name"
-        try {
-            [void](Invoke-WebRequestWithRetry -Uri $url -Method Head -Attempts 3)
-        } catch {
-            return $false
-        }
-    }
-    return $true
-}
-
-function Resolve-TagFromLatestRedirect {
-    param([string]$Name)
-    if (-not $Name) { return $false }
-    $url = "https://github.com/$Repo/releases/latest/download/$Name"
-    $location = $null
-    try {
-        $response = Invoke-WebRequestWithRetry -Uri $url -Method Head -MaximumRedirection 0 -Attempts 3
-        if ($response.Headers -and $response.Headers.Location) {
-            $location = [string]$response.Headers.Location
-        }
-    } catch {
-        $resp = $_.Exception.Response
-        if (-not $resp) { return $false }
-        if ($resp.Headers -and $resp.Headers.Location) {
-            $location = [string]$resp.Headers.Location
-        }
-    }
-    if ($location -and $location -match '/releases/download/([^/]+)/') {
-        $candidate = $Matches[1]
-        if (-not (Test-ReleaseBundleComplete -Tag $candidate)) { return $false }
-        $Script:Tag = $candidate
-        return $true
-    }
-    return $false
-}
-
-function Resolve-OperatorReleaseTag {
-    Resolve-Tag
-    $Script:LatestReleaseAlias = $false
-    if (-not $Version -and $Script:Tag -eq 'latest') {
-        if (Resolve-TagFromLatestRedirect -Name $Script:Asset) {
-            $Script:LatestReleaseAlias = $true
-            return
-        }
-        Warn "Latest release redirect did not prove a complete signed host bundle; checking recent stable releases."
-        Resolve-TagFromApi
-        $Script:LatestReleaseAlias = $true
-    }
-}
-
-function Get-ReleaseTagLabel {
-    if ($Script:LatestReleaseAlias) { return "$($Script:Tag) (latest)" }
-    return $Script:Tag
-}
-
-function Get-VersionTagFromText {
-    param([string]$Text)
-    if ($Text -match '(v[0-9][0-9A-Za-z._-]*)') { return $Matches[1] }
-    return $null
-}
-
-function Show-InstalledReleaseRelation {
-    param([string]$Existing)
-    if (-not $Script:LatestReleaseAlias -or -not $Existing) { return }
-    $existingTag = Get-VersionTagFromText -Text $Existing
-    if (-not $existingTag) { return }
-    if ($existingTag -eq $Script:Tag) {
-        Say "  Update:        up to date"
-    } else {
-        Say "  Update:        update available ($existingTag -> $($Script:Tag))"
-    }
-}
-
-function Get-ReleaseAssetUrl {
-    param([string]$Name)
-    if ($Script:Tag -eq 'latest') {
-        return "https://github.com/$Repo/releases/latest/download/$Name"
-    }
-    return "https://github.com/$Repo/releases/download/$($Script:Tag)/$Name"
-}
-
 function Get-CurrentBinary {
     $candidate = Join-Path $InstallDir 'keyhog.exe'
     if (Test-Path $candidate) { return $candidate }
@@ -421,49 +239,6 @@ function Get-CurrentVersion {
 # ============================================================
 # install flow
 # ============================================================
-
-function Invoke-WebRequestWithRetry {
-    # Shared retry for every GitHub CDN hit (HEAD and GET). Download-Asset
-    # already retried; HEAD probes used to fail closed on the first blip (KH-1309).
-    param(
-        [Parameter(Mandatory = $true)][string]$Uri,
-        [string]$OutPath,
-        [string]$Method = "Get",
-        [int]$MaximumRedirection = 5,
-        [int]$Attempts = 5
-    )
-    for ($i = 1; $i -le $Attempts; $i++) {
-        try {
-            $params = @{
-                Uri                = $Uri
-                Method             = $Method
-                UseBasicParsing    = $true
-                ErrorAction        = "Stop"
-                MaximumRedirection = $MaximumRedirection
-            }
-            if ($OutPath) { $params["OutFile"] = $OutPath }
-            return Invoke-WebRequest @params
-        } catch {
-            if ($i -ge $Attempts) { throw }
-            $delay = [math]::Min(2 * $i, 10)
-            Warn "  request attempt $i/$Attempts failed: $($_.Exception.Message)"
-            Dim  "  retrying in ${delay}s..."
-            Start-Sleep -Seconds $delay
-        }
-    }
-}
-
-function Download-Asset {
-    param($Name, $OutPath)
-    $url = Get-ReleaseAssetUrl -Name $Name
-    if ($Script:Interactive) { Info "Downloading $Name from $($Script:Tag)..." }
-    else { Say "keyhog: downloading $url" }
-    # Retry transient network failures. GitHub's CDN occasionally drops a
-    # multi-MB transfer mid-stream ("The connection was closed unexpectedly"),
-    # which failed the Windows install-from-scratch smoke even though the asset
-    # was present and correctly named.
-    [void](Invoke-WebRequestWithRetry -Uri $url -OutPath $OutPath -Method Get)
-}
 
 function Allow-UnverifiedInstall {
     param([string]$Reason)
@@ -504,112 +279,6 @@ function Find-Minisign {
     return $null
 }
 
-function Get-HttpStatusCode {
-    # Extract the HTTP status code from a terminating web-request error, or 0 if
-    # the failure carried no HTTP response (a DNS/timeout/connection transport
-    # error). Works across Windows PowerShell 5.1 (System.Net.WebException) and
-    # PowerShell 7+ (HttpResponseException): both expose Exception.Response.StatusCode.
-    param($ErrorRecord)
-    $resp = $null
-    try { $resp = $ErrorRecord.Exception.Response } catch { $resp = $null }
-    if ($null -ne $resp) {
-        try { return [int]$resp.StatusCode } catch { }
-    }
-    try {
-        if ($null -ne $ErrorRecord.Exception.PSObject.Properties['StatusCode']) {
-            return [int]$ErrorRecord.Exception.StatusCode
-        }
-    } catch { }
-    return 0
-}
-
-function Verify-ReleaseSignature {
-    param($BinaryPath, $AssetName)
-    $sigPath = [System.IO.Path]::GetTempFileName()
-    try {
-        try {
-            Download-Asset -Name "$AssetName.minisig" -OutPath $sigPath
-        } catch {
-            # Classify the failure: a genuine HTTP 404 means the signature is
-            # absent, but a network/transport error must NOT be silently
-            # downgraded to "no signature published" and skipped (fail closed
-            # for security controls). Download-Asset already retried transients.
-            $code = Get-HttpStatusCode $_
-            if ($code -eq 404) {
-                return (Allow-UnverifiedInstall "No .minisig signature was published for $AssetName at $($Script:Tag).")
-            }
-            return (Allow-UnverifiedInstall "Could not fetch the .minisig signature for $AssetName ($($_.Exception.Message)): a network/transport failure, not a missing signature. A retry may succeed.")
-        }
-        if ((Get-Item $sigPath).Length -eq 0) {
-            return (Allow-UnverifiedInstall "No .minisig signature was published for $AssetName at $($Script:Tag).")
-        }
-
-        $minisign = Find-Minisign
-        if (-not $minisign) {
-            return (Allow-UnverifiedInstall "minisign is not installed, so the $AssetName release signature cannot be verified.")
-        }
-
-        $output = & $minisign -Vm $BinaryPath -P $Script:ReleasePublicKey -x $sigPath 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            Ok "Minisign signature verified."
-            return $true
-        }
-        Err "Minisign signature verification failed for $AssetName."
-        if ($output) { Err "  $output" }
-        Err "Refusing to install. The release asset may have been tampered with or signed by the wrong key."
-        return $false
-    } finally {
-        Remove-Item -Force $sigPath -ErrorAction SilentlyContinue
-    }
-}
-
-function Verify-Checksum {
-    param($BinaryPath, $AssetName)
-    $checksumUrl = Get-ReleaseAssetUrl -Name "$AssetName.sha256"
-    $expected = $null
-    # Fetch the published checksum with transient-retry, classifying failures so
-    # a network/transport error is never silently downgraded to "no checksum
-    # published" and skipped (fail closed for security controls). A genuine HTTP
-    # 404 (asset absent) fails fast; only non-404 transport errors are retried,
-    # matching Download-Asset's policy, and a persistent one is surfaced honestly.
-    $attempts = 5
-    for ($i = 1; $i -le $attempts; $i++) {
-        try {
-            $line = Invoke-RestMethod -Uri $checksumUrl -ErrorAction Stop
-            if ($line) { $expected = ($line -split '\s+')[0] }
-            break
-        } catch {
-            $code = Get-HttpStatusCode $_
-            if ($code -eq 404) {
-                return (Allow-UnverifiedInstall "No .sha256 checksum was published for $AssetName at $($Script:Tag).")
-            }
-            if ($i -ge $attempts) {
-                return (Allow-UnverifiedInstall "Could not fetch the .sha256 checksum for $AssetName ($($_.Exception.Message)): a network/transport failure, not a missing checksum. A retry may succeed.")
-            }
-            $delay = [math]::Min(2 * $i, 10)
-            Warn "  checksum fetch attempt $i/$attempts failed: $($_.Exception.Message)"
-            Start-Sleep -Seconds $delay
-        }
-    }
-    if (-not $expected) {
-        return (Allow-UnverifiedInstall "No .sha256 checksum was published for $AssetName at $($Script:Tag).")
-    }
-    try {
-        $hash = (Get-FileHash -Algorithm SHA256 -Path $BinaryPath -ErrorAction Stop).Hash.ToLowerInvariant()
-    } catch {
-        return (Allow-UnverifiedInstall "Get-FileHash could not verify ${AssetName}: $($_.Exception.Message)")
-    }
-    if ($hash -eq $expected.ToLowerInvariant()) {
-        Ok "SHA256 verified ($expected)."
-        return $true
-    }
-    Err "SHA256 mismatch on $AssetName!"
-    Err "  Expected: $expected"
-    Err "  Got:      $hash"
-    Err "Refusing to install. The download may have been corrupted or tampered with."
-    return $false
-}
-
 # Verify $BinaryPath against a LOCAL checksum file $SumFile (a `<sha256>  <name>`
 # line, as written by `Get-FileHash ... | Format-Table` or shipped beside a
 # release asset). Used by -FromFile installs so an offline/CI install can still
@@ -640,6 +309,34 @@ function Verify-LocalChecksum {
     Err "  Expected: $expected"
     Err "  Got:      $hash"
     Err "Refusing to install the local binary."
+    return $false
+}
+
+# Verify $BinaryPath against a LOCAL minisign signature when a sibling
+# `.minisig` is present, using the pinned release public key. Parity with
+# install.sh's verify_local_signature_if_present: an absent signature is not an
+# error (offline checksum-only bundles stay supported), but a present one must
+# verify or the install stops.
+function Verify-LocalSignature {
+    param($BinaryPath, $SigFile, $Label)
+    if (-not (Test-Path -PathType Leaf $SigFile)) { return $true }
+    if ((Get-Item $SigFile).Length -eq 0) {
+        Err "Local Minisign signature is empty for ${Label}: $SigFile"
+        return $false
+    }
+    $minisign = Find-Minisign
+    if (-not $minisign) {
+        Err "minisign is required to verify the supplied local signature for $Label."
+        Show-MinisignInstallHint
+        return $false
+    }
+    & $minisign -Vm $BinaryPath -P $Script:ReleasePublicKey -x $SigFile *> $null
+    if ($LASTEXITCODE -eq 0) {
+        Ok "Local Minisign signature verified for $Label."
+        return $true
+    }
+    Err "Local Minisign signature verification failed for $Label."
+    Err "Refusing to install an artifact signed by the wrong key or modified after signing."
     return $false
 }
 
@@ -739,8 +436,8 @@ function Restore-GpuProgramsCacheBackup {
     }
 }
 
-function Download-VerifiedGpuLiteralSidecar {
-    $sidecarName = if ($FromFile) { [System.IO.Path]::GetFileName("$FromFile.gpu-literals.tar.gz") } else { "$($Script:Asset).gpu-literals.tar.gz" }
+function Stage-LocalGpuLiteralSidecar {
+    $sidecarName = [System.IO.Path]::GetFileName("$FromFile.gpu-literals.tar.gz")
     $sidecarPath = [System.IO.Path]::GetTempFileName()
     try {
         if ($FromFile) {
@@ -753,6 +450,9 @@ function Download-VerifiedGpuLiteralSidecar {
             }
             if ((Get-Item $localSidecar).Length -eq 0) {
                 Err "GPU literal artifact sidecar $localSidecar is empty."
+                return $false
+            }
+            if (-not (Verify-LocalSignature -BinaryPath $localSidecar -SigFile "$localSidecar.minisig" -Label "GPU literal sidecar")) {
                 return $false
             }
             if (Test-Path -PathType Leaf $localSum) {
@@ -771,32 +471,8 @@ function Download-VerifiedGpuLiteralSidecar {
                 return $false
             }
         } else {
-            try {
-                Download-Asset -Name $sidecarName -OutPath $sidecarPath
-            } catch {
-                # Classify the fetch failure (Law 10: never conflate a transport
-                # failure with a missing asset). Only a real 404 means the sidecar
-                # was not published; a network/DNS/transport error (status 0 or
-                # 5xx) must NOT tell the operator to rebuild the release workflow
-                # for an asset that may well be present.
-                $code = Get-HttpStatusCode $_
-                if ($code -eq 404) {
-                    Err "No GPU literal artifact sidecar was published for $($Script:Asset) at $($Script:Tag)."
-                    Err "Refusing to install a release that would recompile shipped detector matchers at runtime."
-                    Err "Fix: rebuild the release workflow so $sidecarName, $sidecarName.sha256, and $sidecarName.minisig are uploaded."
-                } else {
-                    Err "Could not download the GPU literal artifact sidecar $sidecarName (network/transport error $code, not a missing asset): $($_.Exception.Message)"
-                    Err "This is a network/transport failure, so the sidecar may well be published; a retry may succeed."
-                    Err "Refusing to install a release whose shipped detector matchers could not be fetched (they must not be recompiled at runtime)."
-                }
-                return $false
-            }
-            if (-not (Verify-ReleaseSignature -BinaryPath $sidecarPath -AssetName $sidecarName)) {
-                return $false
-            }
-            if (-not (Verify-Checksum -BinaryPath $sidecarPath -AssetName $sidecarName)) {
-                return $false
-            }
+            Err "-FromFile is required to install."
+            return $false
         }
         if ((Get-Item $sidecarPath).Length -eq 0) {
             Err "GPU literal artifact sidecar $sidecarName is empty."
@@ -1678,35 +1354,30 @@ function Stage-Install {
             exit 1
         }
     } else {
-        try {
-            Download-Asset -Name $Script:Asset -OutPath $tmp
-        } catch {
-            Err "Download failed. Is the release published yet? Browse https://github.com/$Repo/releases"
-            Err "Underlying error: $_"
-            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
-            exit 1
-        }
+        Err "-FromFile PATH is required."
+        Err "This installer does not download release binaries."
+        Err "Install the current release with: cargo install keyhog --locked"
+        Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+        exit 1
     }
     # Empty-source guard (parity with install.sh): a 0-byte file would still
     # be "installed" as a do-nothing stub. This and the checksum check run
     # BEFORE any overwrite, so a pre-existing working binary is never touched.
     if ((Get-Item $tmp).Length -eq 0) {
-        if ($FromFile) {
-            Err "-FromFile source $FromFile is empty (0 bytes)."
-        } else {
-            Err "Downloaded asset $($Script:Asset) is empty (0 bytes)."
-            Err "The release asset may be missing or the download was interrupted."
-        }
+        Err "-FromFile source $FromFile is empty (0 bytes)."
         Remove-Item -Force $tmp -ErrorAction SilentlyContinue
         exit 1
     }
-    # Release verification happens BEFORE we overwrite, so a corrupt or unsigned
-    # artifact can never replace a working binary. Downloads check the release's
-    # per-asset .minisig and .sha256; a -FromFile install requires a sibling
-    # PATH.sha256 unless the operator explicitly accepts an unverified local
-    # artifact.
+    # Verification happens BEFORE we overwrite, so a corrupt or unsigned
+    # artifact can never replace a working binary. A -FromFile install verifies
+    # a sibling PATH.minisig when present and requires a sibling PATH.sha256
+    # unless the operator explicitly accepts an unverified local artifact.
     if ($FromFile) {
         $localSum = "$FromFile.sha256"
+        if (-not (Verify-LocalSignature -BinaryPath $tmp -SigFile "$FromFile.minisig" -Label "local binary")) {
+            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+            exit 1
+        }
         if (Test-Path -PathType Leaf $localSum) {
             if (-not (Verify-LocalChecksum -BinaryPath $tmp -SumFile $localSum)) {
                 Remove-Item -Force $tmp -ErrorAction SilentlyContinue
@@ -1718,21 +1389,7 @@ function Stage-Install {
                 exit 1
             }
         }
-        if (-not (Download-VerifiedGpuLiteralSidecar)) {
-            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
-            Clear-GpuLiteralSidecarTemp
-            exit 1
-        }
-    } else {
-        if (-not (Verify-ReleaseSignature -BinaryPath $tmp -AssetName $Script:Asset)) {
-            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
-            exit 1
-        }
-        if (-not (Verify-Checksum -BinaryPath $tmp -AssetName $Script:Asset)) {
-            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
-            exit 1
-        }
-        if (-not (Download-VerifiedGpuLiteralSidecar)) {
+        if (-not (Stage-LocalGpuLiteralSidecar)) {
             Remove-Item -Force $tmp -ErrorAction SilentlyContinue
             Clear-GpuLiteralSidecarTemp
             exit 1
@@ -1785,22 +1442,10 @@ function Test-Binary {
     if ($LASTEXITCODE -ne 0) {
         Err "Installed binary at $BinPath ran but exited $LASTEXITCODE (--version failed)."
         Err "  output: $out"
-        Err "The download may be corrupt or the wrong build for this machine."
+        Err "The binary may be corrupt or the wrong build for this machine."
         return $false
     }
     $firstLine = $out | Select-Object -First 1
-    if ($Script:Tag -and $Script:Tag -ne 'latest' -and $Script:Tag -ne '(local file)') {
-        $observedTag = Get-VersionTagFromText -Text ($out | Out-String)
-        if (-not $observedTag) {
-            Err "Installed binary did not report a version tag; refusing to trust release $($Script:Tag)."
-            return $false
-        }
-        if ($observedTag -ne $Script:Tag) {
-            Err "Candidate binary version does not match release tag: binary reports $observedTag but release resolved $($Script:Tag)."
-            Err "Refusing to install a mismatched binary (possible substitution or downgrade attack)."
-            return $false
-        }
-    }
     Ok "Installed $firstLine"
     return $true
 }
@@ -1883,13 +1528,11 @@ function Finalize-Install {
 function Show-Summary {
     Info "Host: windows-$(Get-Arch)"
     Say  "  GPU note: $($Script:GpuNote)"
-    Say  "  Picked asset:  $($Script:Asset)"
+    Say  "  Source binary: $($Script:Asset)"
     Say  "  Install dir:   $InstallDir"
-    Say  "  Release tag:   $(Get-ReleaseTagLabel)"
     $existing = Get-CurrentVersion
     if ($existing) {
         Say "  Existing:      $existing"
-        Show-InstalledReleaseRelation -Existing $existing
     }
 }
 
@@ -2015,8 +1658,10 @@ function Do-Install {
         $Script:Tag = '(local file)'
         $Script:GpuNote = "installing local binary: $FromFile"
     } else {
-        Resolve-Asset
-        Resolve-OperatorReleaseTag
+        Err "-FromFile PATH is required."
+        Err "This installer does not download release binaries."
+        Err "Install the current release with: cargo install keyhog --locked"
+        exit 1
     }
     Show-Summary
     if ($Script:Interactive -and -not $Yes) {
@@ -2048,64 +1693,6 @@ function Do-Install {
     Say "  keyhog scan .            # scan the current directory"
     Say "  keyhog scan --help       # full options"
     Say "  keyhog --version         # verify"
-}
-
-function Do-Repair {
-    Info "Repair mode."
-    Resolve-Asset
-    Resolve-OperatorReleaseTag
-    $bin = Get-CurrentBinary
-    if (-not $bin) {
-        Warn "No existing keyhog binary found. Installing fresh."
-        $bin = Stage-Install
-        if (-not (Backup-GpuProgramsCacheForInstall)) {
-            Rollback-StagedInstallAfterSidecarFailure -BinPath $bin
-            Err "Repair failed while backing up GPU literal cache state."
-            exit 1
-        }
-        if (-not (Install-VerifiedGpuLiteralSidecar)) {
-            Restore-GpuProgramsCacheBackup | Out-Null
-            Rollback-StagedInstallAfterSidecarFailure -BinPath $bin
-            Err "Repair failed while seeding shipped GPU literal artifacts."
-            exit 1
-        }
-        if (-not (Finalize-Install -BinPath $bin)) {
-            Restore-GpuProgramsCacheBackup | Out-Null
-            Clear-GpuLiteralSidecarTemp
-            Err "Repair failed; see above."
-            exit 1
-        }
-        Clear-GpuProgramsCacheBackup
-        Ok "Repair complete."
-        return
-    }
-    Say "Found existing binary: $bin"
-    & $bin --version > $null 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Ok "Binary runs cleanly. Repair will download and verify $($Script:Asset) before replacing it (-Repair)."
-    } else {
-        Warn "Existing binary does not run. Replacing with $($Script:Asset)."
-    }
-    $newBin = Stage-Install
-    if (-not (Backup-GpuProgramsCacheForInstall)) {
-        Rollback-StagedInstallAfterSidecarFailure -BinPath $newBin
-        Err "Repair failed while backing up GPU literal cache state."
-        exit 1
-    }
-    if (-not (Install-VerifiedGpuLiteralSidecar)) {
-        Restore-GpuProgramsCacheBackup | Out-Null
-        Rollback-StagedInstallAfterSidecarFailure -BinPath $newBin
-        Err "Repair failed while seeding shipped GPU literal artifacts."
-        exit 1
-    }
-    if (-not (Finalize-Install -BinPath $newBin)) {
-        Restore-GpuProgramsCacheBackup | Out-Null
-        Clear-GpuLiteralSidecarTemp
-        Err "Repair failed; your previous binary was preserved where possible (see above)."
-        exit 1
-    }
-    Clear-GpuProgramsCacheBackup
-    Ok "Repair complete."
 }
 
 function Do-Diagnose {
@@ -2142,13 +1729,8 @@ function Do-Diagnose {
         Warn "  $InstallDir is NOT on PATH."
     }
     Write-Host ""
-    Use-Color "Latest release" 'White'
-    Resolve-Asset
-    Resolve-OperatorReleaseTag
-    Say "  Tag: $(Get-ReleaseTagLabel)"
-    $existing = Get-CurrentVersion
-    Show-InstalledReleaseRelation -Existing $existing
-    Say "  Would install: $($Script:Asset)"
+    Use-Color "Current release" 'White'
+    Say "  Install the current release with: cargo install keyhog --locked"
 }
 
 function Do-Uninstall {
@@ -2186,8 +1768,7 @@ function Do-Calibrate {
 
 Show-Banner
 
-if ($Repair)         { Do-Repair }
-elseif ($Diagnose)   { Do-Diagnose }
+if ($Diagnose)       { Do-Diagnose }
 elseif ($Calibrate)  { Do-Calibrate }
 elseif ($Uninstall)  { Do-Uninstall }
 else                 { Do-Install }

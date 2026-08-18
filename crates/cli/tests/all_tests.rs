@@ -35,7 +35,6 @@ pub mod docs_claim_matches_router;
 pub mod feature_matrix_combination_parity;
 pub mod install_script_parity;
 pub mod lane10_daemon_terminal_failure;
-pub mod lane10_installer_orphan_reap;
 pub mod lane10_silent_fallback_surfacing;
 pub mod platform_compat;
 pub mod profiling_reporting;

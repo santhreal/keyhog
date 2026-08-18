@@ -18,6 +18,8 @@
 #   #5 complexity_budget: engine growth, stale slack, or metric drift
 #   org_audit.py: stale claims/owners, generated LOC-cap bloat, evidence wiring
 #   install_static_analysis: install.sh/install.ps1 lint/static parser coverage
+#   release_channel_coherence: an install/update path may not consume release
+#     assets that no workflow produces, and a named workflow job must exist
 #   cli_claims_check.sh: no hallucinated CLI flags in canonical docs
 #   entrypoints_check.sh: pre-commit hook + composite Action stay wired
 #   ci-operability: workflow, metadata, fuzz/dogfood, and pin contracts
@@ -181,6 +183,10 @@ run "GPU wiring: GPU targets are feature-built, unabsorbed, wired, and the relea
   python3 -B scripts/gates/gpu_wired.py
 run "GPU wiring unit tests: static fixture workflows and folded scalar parsing" \
   python3 -B -m unittest scripts.tests.test_gpu_wired -v
+run "Release channel self-test: frozen channels and phantom workflow jobs are detected" \
+  python3 -B scripts/gates/release_channel_coherence.py --self-test
+run "Release channel coherence: no install path consumes assets no workflow produces" \
+  python3 -B scripts/gates/release_channel_coherence.py
 run "Continue-on-error self-test: un-prefixed absorbed test/lint steps are detected" \
   python3 -B scripts/gates/no_continue_on_error.py --self-test
 run "Continue-on-error: workflow error absorption adheres to Row 5 informational policy" \

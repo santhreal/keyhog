@@ -17,10 +17,8 @@ pub(crate) mod explain;
 #[cfg(unix)]
 pub(crate) mod guard;
 pub(crate) mod hook;
-pub(crate) mod repair;
 pub(crate) mod scan;
 pub(crate) mod scan_system;
 pub(crate) mod triage;
 pub(crate) mod uninstall;
-pub(crate) mod update;
 pub(crate) mod watch;

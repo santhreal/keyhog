@@ -3,6 +3,8 @@
 ## 0.5.80 - 2026-08-17
 
 - Include known reason and repair command in daemon warm-route errors and startup banner instead of hiding them behind a generic fallback. Apply the same fix to the daemon status command. Make is_work_request exhaustive so adding a new Request variant causes a compile error. Add regression tests pinning daemon server pure-function behaviors before modularization.
+- Removed `keyhog update` and `keyhog repair`, and the download, signature-verification, asset-selection, self-replace, backup/rollback, and orphan-reaping code behind them. They installed from a signed binary-asset release channel that no workflow produces; because each searched backward for a release that still carried a complete bundle, the dead channel installed a 33-version-stale binary instead of failing. Update and repair with `cargo install --locked --force keyhog`. `EXIT_REPAIR_FAILED` and `EXIT_UPDATE_AVAILABLE` are gone; exit 4 is now produced by `doctor` and `backend --self-test` only.
+- Exit code 10 now means exactly one thing, a live credential confirmed by `scan --verify`. Its second meaning, a newer release found by `update --check`, went with the retired channel. Exit code 4 drops `repair` from its producer list.
 
 ## 0.5.79 - 2026-08-16
 
