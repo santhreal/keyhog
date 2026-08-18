@@ -564,6 +564,27 @@ impl ScannerCoverageGapEvent {
             Self::BinaryStringsNamedExclusion => "binary_strings_named_exclusions",
         }
     }
+
+    pub(crate) const fn counter_id(self) -> keyhog_profile::CounterId {
+        match self {
+            Self::StructuredParseFailure => keyhog_profile::CounterId::StructuredParseFailures,
+            Self::StructuredOversizeSkip => keyhog_profile::CounterId::StructuredOversizeSkips,
+            Self::DecodeTruncation => keyhog_profile::CounterId::DecodeTruncations,
+            Self::DecodeOversizeSkip => keyhog_profile::CounterId::DecodeOversizeSkips,
+            Self::InvalidPatternIndexSkip => keyhog_profile::CounterId::InvalidPatternIndexSkips,
+            Self::BoundaryResultCardinalityMismatch => {
+                keyhog_profile::CounterId::BoundaryResultCardinalityMismatches
+            }
+            Self::BoundarySeamTruncation => keyhog_profile::CounterId::BoundarySeamTruncations,
+            Self::LineOffsetMappingMismatch => {
+                keyhog_profile::CounterId::LineOffsetMappingMismatches
+            }
+            Self::ChunkDeadlineAbort => keyhog_profile::CounterId::ChunkDeadlineAborts,
+            Self::BinaryStringsNamedExclusion => {
+                keyhog_profile::CounterId::BinaryStringsNamedExclusions
+            }
+        }
+    }
 }
 
 /// Exact scanner-owned coverage-gap counters at one point in time.
@@ -627,6 +648,7 @@ pub(crate) fn record_scanner_coverage_gap(
     event: ScannerCoverageGapEvent,
 ) -> RecordedScannerCoverageGap {
     let previous = event.counter().fetch_add(1, Ordering::Relaxed);
+    keyhog_profile::add_counter(event.counter_id(), 1);
     RecordedScannerCoverageGap {
         event,
         previous,
@@ -685,11 +707,10 @@ pub fn vendored_path_suppression_enabled() -> bool {
     VENDORED_PATH_SUPPRESSION_ENABLED.load(Ordering::Relaxed)
 }
 
-/// Record one finding dropped because its path is a vendored/minified bundle.
 pub(crate) fn record_vendored_path_suppression() {
     VENDORED_PATH_SUPPRESSIONS.fetch_add(1, Ordering::Relaxed);
+    keyhog_profile::add_counter(keyhog_profile::CounterId::VendoredPathSuppressions, 1);
 }
-
 /// Findings dropped by the vendored/minified path suppression this scan.
 pub fn vendored_path_suppression_count() -> usize {
     VENDORED_PATH_SUPPRESSIONS.load(Ordering::Relaxed)
@@ -742,7 +763,7 @@ fn record_example_suppression_in(
     reason: &'static str,
 ) {
     example_suppressions.fetch_add(1, Ordering::Relaxed);
-
+    keyhog_profile::add_counter(keyhog_profile::CounterId::ExampleSuppressions, 1);
     // KH-120: Wrap dogfood logging events behind static capability flags to eliminate overhead during silent scans.
     if !is_dogfood_enabled() {
         return;
@@ -1014,6 +1035,7 @@ pub(crate) fn reset_example_suppression_count() {
 /// correctly across the IPC boundary.
 pub fn add_example_suppressions(n: usize) {
     cell().example_suppressions.fetch_add(n, Ordering::Relaxed);
+    keyhog_profile::add_counter(keyhog_profile::CounterId::ExampleSuppressions, n as u64);
 }
 
 /// Record that a file matched a structured-format heuristic but failed to parse,
@@ -1311,6 +1333,8 @@ fn drain_event_buffers(
 pub(crate) fn record_file_scanned(bytes: usize) {
     FILES_SCANNED.fetch_add(1, Ordering::Relaxed);
     BYTES_SCANNED.fetch_add(bytes, Ordering::Relaxed);
+    keyhog_profile::add_counter(keyhog_profile::CounterId::FilesScanned, 1);
+    keyhog_profile::add_counter(keyhog_profile::CounterId::BytesScanned, bytes as u64);
 }
 
 pub(crate) fn global_scan_counts() -> (usize, usize) {
@@ -1322,14 +1346,17 @@ pub(crate) fn global_scan_counts() -> (usize, usize) {
 
 pub(crate) fn record_file_skipped() {
     SKIPPED_FILES.fetch_add(1, Ordering::Relaxed);
+    keyhog_profile::add_counter(keyhog_profile::CounterId::SkippedFiles, 1);
 }
 
 pub(crate) fn record_match_found() {
     TOTAL_MATCHES.fetch_add(1, Ordering::Relaxed);
+    keyhog_profile::add_counter(keyhog_profile::CounterId::MatchesFound, 1);
 }
 
 pub(crate) fn record_gpu_dispatch() {
     GPU_DISPATCHES.fetch_add(1, Ordering::Relaxed);
+    keyhog_profile::add_counter(keyhog_profile::CounterId::GpuDispatchCalls, 1);
 }
 
 /// Reset process-global telemetry that is scoped to one scan.

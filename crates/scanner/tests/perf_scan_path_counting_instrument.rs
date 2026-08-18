@@ -8,7 +8,6 @@
 //! OS-level kernel page table allocations outside the Rust global allocator.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::engine::scan_pipeline::ScanInput;
 use keyhog_scanner::CompiledScanner;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -97,7 +96,7 @@ fn measure_scan<T>(f: impl FnOnce() -> T) -> (T, usize, usize, usize) {
 
 fn make_test_scanner() -> CompiledScanner {
     let specs = keyhog_core::load_embedded_detectors_or_fail().expect("embedded detectors must load");
-    CompiledScanner::compile_from_specs(&specs).expect("compile scanner")
+    CompiledScanner::compile(specs).expect("compile scanner")
 }
 
 #[test]
@@ -105,26 +104,25 @@ fn scan_path_counting_instrument_measures_allocations_and_finding_parity() {
     let scanner = make_test_scanner();
 
     // Planted secrets corpus: AWS Access Key ID + Slack token
-    let sample = b"export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\nexport SLACK_BOT_TOKEN=xoxb-123456789012-1234567890123-abcdefghijklmnopqrstuvwx\n";
-    let chunk = Chunk::new(
-        keyhog_core::ChunkLocation::new("test.env", 0),
-        sample.to_vec(),
-    );
+    let sample = "export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\nexport SLACK_BOT_TOKEN=xoxb-123456789012-1234567890123-abcdefghijklmnopqrstuvwx\n";
+    let chunk = Chunk {
+        data: sample.into(),
+        metadata: keyhog_core::ChunkMetadata::default(),
+    };
 
     // Warm-up run
-    let base_findings = scanner.scan_chunk(&chunk);
+    let base_findings = scanner.scan(&chunk).expect("base scan");
     assert!(!base_findings.is_empty(), "must find planted secrets");
 
     // Measured trial 1
     let (findings1, allocs1, total_bytes1, peak1) = measure_scan(|| {
-        scanner.scan_chunk(&chunk)
+        scanner.scan(&chunk).expect("trial 1 scan")
     });
 
     // Measured trial 2
     let (findings2, allocs2, total_bytes2, peak2) = measure_scan(|| {
-        scanner.scan_chunk(&chunk)
+        scanner.scan(&chunk).expect("trial 2 scan")
     });
-
     // Parity assertion
     assert_eq!(findings1.len(), base_findings.len(), "finding count parity");
     assert_eq!(findings2.len(), base_findings.len(), "finding count parity across trials");
@@ -144,20 +142,25 @@ fn scan_path_counting_instrument_measures_allocations_and_finding_parity() {
 fn scan_scaling_ratio_is_bounded_with_chunk_size() {
     let scanner = make_test_scanner();
 
-    let text_small = b"const MSG = 'hello world';\n".repeat(100);
-    let text_large = b"const MSG = 'hello world';\n".repeat(1000);
+    let text_small = "const MSG = 'hello world';\n".repeat(100);
+    let text_large = "const MSG = 'hello world';\n".repeat(1000);
 
-    let chunk_small = Chunk::new(keyhog_core::ChunkLocation::new("small.js", 0), text_small);
-    let chunk_large = Chunk::new(keyhog_core::ChunkLocation::new("large.js", 0), text_large);
+    let chunk_small = Chunk {
+        data: text_small.into(),
+        metadata: keyhog_core::ChunkMetadata::default(),
+    };
+    let chunk_large = Chunk {
+        data: text_large.into(),
+        metadata: keyhog_core::ChunkMetadata::default(),
+    };
 
     let (_, _allocs_small, bytes_small, _peak_small) = measure_scan(|| {
-        scanner.scan_chunk(&chunk_small)
+        scanner.scan(&chunk_small).expect("scan small")
     });
 
     let (_, _allocs_large, bytes_large, _peak_large) = measure_scan(|| {
-        scanner.scan_chunk(&chunk_large)
+        scanner.scan(&chunk_large).expect("scan large")
     });
-
     // Ratio validation (Row 35): scan path passthrough must not allocate O(N^2) memory
     let growth = bytes_large.saturating_sub(bytes_small);
     assert!(growth < 1024 * 1024, "memory growth across 10x input size must remain strictly bounded (growth = {} bytes)", growth);

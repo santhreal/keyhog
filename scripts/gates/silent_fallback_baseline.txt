@@ -24,8 +24,6 @@ crates/cli/src/daemon/server.rs::let _ = sender.blocking_send(MassFilesystemMess
 crates/cli/src/daemon/server.rs::let _ = state.guard.remove_root(canonical.as_bytes());
 crates/cli/src/daemon/server.rs::policy_identity: identity.clone().unwrap_or_else(|| {
 crates/cli/src/daemon/transport.rs::.unwrap_or_else(|| "keyhog.sock".to_string());
-crates/cli/src/matcher_cache_path.rs::tracing::debug!( error = %error, "matcher-artifact cache disabled: no default cache location" );
-crates/cli/src/matcher_cache_path.rs::tracing::debug!( error = %error, path = %path.display(), "matcher-artifact cache disabled: default cache location is unusable" );
 crates/cli/src/orchestrator/dispatch.rs::.unwrap_or_else(|| Ok(Vec::new()))
 crates/cli/src/orchestrator/dispatch/backend.rs::let _ = (
 crates/cli/src/orchestrator/dispatch/backend.rs::let reason = self.cache_load_error.as_deref().unwrap_or_else(|| {

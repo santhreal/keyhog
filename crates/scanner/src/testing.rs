@@ -4958,6 +4958,7 @@ impl AlphabetScreen {
         // SAFETY: forwarded from caller.
         unsafe { self.0.screen_avx2(data) }
     }
+}
 
 pub fn assert_alphabet_prefilter_backend_parity(targets: &[String], data: &[u8]) -> bool {
     let mask_scalar = AlphabetMask::from_bytes_scalar(data);

@@ -17,7 +17,7 @@ mod support;
 
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::testing::decode_source_windows_for_test;
-use keyhog_scanner::{CompiledScanner, ScannerConfig};
+use keyhog_scanner::CompiledScanner;
 
 fn bounded_secret_detector(prefix: &str, secret_len: usize) -> DetectorSpec {
     DetectorSpec {

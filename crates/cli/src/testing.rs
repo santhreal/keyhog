@@ -225,6 +225,12 @@ pub trait CliTestApi {
         &self,
         kind: &str,
     ) -> Option<crate::daemon::protocol::Request>;
+    #[cfg(unix)]
+    fn spawn_daemon_for_test(
+        &self,
+        socket_path: PathBuf,
+        detectors: Vec<keyhog_core::DetectorSpec>,
+    ) -> tokio::task::JoinHandle<Result<()>>;
     fn cli_error_exit_code(&self, error: &anyhow::Error) -> u8;
 
     fn baseline_version(&self) -> u32;
@@ -769,6 +775,34 @@ impl CliTestApi for TestApi {
         kind: &str,
     ) -> Option<crate::daemon::protocol::Request> {
         crate::daemon::protocol::sample_request_for_kind(kind)
+    }
+    #[cfg(unix)]
+    fn spawn_daemon_for_test(
+        &self,
+        socket_path: PathBuf,
+        detectors: Vec<keyhog_core::DetectorSpec>,
+    ) -> tokio::task::JoinHandle<Result<()>> {
+        tokio::spawn(async move {
+            let rules_digest = keyhog_core::detector_digest().to_owned();
+            let options = crate::daemon::server::ServerOptions {
+                request_read_timeout: std::time::Duration::from_secs(30),
+                mass_service: false,
+                mass_gpu_primary_required: false,
+            };
+            crate::daemon::server::run_with_backend_override(
+                socket_path,
+                detectors,
+                rules_digest,
+                options,
+                Some(keyhog_scanner::ScanBackend::CpuFallback),
+                None,
+                keyhog_sources::guard::GuardReconciliationConfig::default(),
+                None,
+                None,
+                None,
+            )
+            .await
+        })
     }
     fn cli_error_exit_code(&self, error: &anyhow::Error) -> u8 {
         crate::cli_error_exit_code(error)

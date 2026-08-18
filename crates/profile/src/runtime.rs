@@ -287,6 +287,8 @@ const fn zero_metric_values() -> [AtomicU64; crate::MetricId::COUNT] {
     [const { AtomicU64::new(0) }; crate::MetricId::COUNT]
 }
 
+const GAUGE_PRESENT_WORDS: usize = (crate::MetricId::COUNT + 63) / 64;
+
 const fn zero_latency_buckets() -> [[AtomicU64; LATENCY_BUCKET_COUNT]; STAGE_COUNT] {
     [const { [const { AtomicU64::new(0) }; LATENCY_BUCKET_COUNT] }; STAGE_COUNT]
 }
@@ -390,7 +392,7 @@ struct RuntimeInner {
     attributed_ns: [AtomicU64; STAGE_COUNT],
     session_shards: Mutex<Vec<Arc<WorkerShard>>>,
     session_gauge_values: [AtomicU64; crate::MetricId::COUNT],
-    session_gauge_present: [AtomicU64; 2],
+    session_gauge_present: [AtomicU64; GAUGE_PRESENT_WORDS],
     input_bytes: AtomicU64,
     input_units: AtomicU64,
     session_recording: bool,
@@ -452,7 +454,7 @@ impl RuntimeInner {
             attributed_ns: zero_counters(),
             session_shards: Mutex::new(Vec::new()),
             session_gauge_values: zero_metric_values(),
-            session_gauge_present: [const { AtomicU64::new(0) }; 2],
+            session_gauge_present: [const { AtomicU64::new(0) }; GAUGE_PRESENT_WORDS],
             input_bytes: AtomicU64::new(0),
             input_units: AtomicU64::new(0),
             session_recording,
@@ -870,10 +872,9 @@ impl Runtime {
             }
         }
         drop(shards);
-        let present = [
-            self.inner.session_gauge_present[0].swap(0, Ordering::Relaxed),
-            self.inner.session_gauge_present[1].swap(0, Ordering::Relaxed),
-        ];
+        let present: [u64; GAUGE_PRESENT_WORDS] = std::array::from_fn(|i| {
+            self.inner.session_gauge_present[i].swap(0, Ordering::Relaxed)
+        });
         for gauge in crate::GaugeId::ALL {
             let metric_id = gauge.metric_id();
             let index = metric_id as usize;

@@ -47,7 +47,7 @@ thread_local! {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum RegionPresenceBatchMode {
+pub(crate) enum RegionPresenceBatchMode {
     BorrowedSingleChunk,
     RawScratch,
     ShardedScratch,
@@ -650,7 +650,7 @@ pub(crate) fn region_presence_batch_capture(
     })
 }
 
-pub(super) fn with_region_presence_batch<R>(
+pub(crate) fn with_region_presence_batch<R>(
     chunks: &[keyhog_core::Chunk],
     f: impl FnOnce(&[u8], &[u32], RegionPresenceBatchMode) -> std::result::Result<R, String>,
 ) -> std::result::Result<R, String> {

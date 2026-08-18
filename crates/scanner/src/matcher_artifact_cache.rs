@@ -773,7 +773,7 @@ pub fn store_matcher_artifact(
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::symlink_metadata(cache_dir) {
+        if let Ok(meta) = std::fs::symlink_metadata(cache_dir) { // LAW10: best-effort permissions check on newly created cache dir; failure surfaced if chmod fails
             if !meta.file_type().is_symlink() && (meta.permissions().mode() & 0o077 != 0) {
                 std::fs::set_permissions(cache_dir, std::fs::Permissions::from_mode(0o700))
                     .map_err(|error| {
@@ -1159,7 +1159,7 @@ fn compile_without_matcher_artifact_cache(
 ) -> Result<(CompiledScanner, MatcherArtifactCacheOutcome)> {
     let sorted = match CanonicalDetectorExecutionIr::compile(detectors.as_ref()) {
         Ok(ir) => Arc::from(ir.detectors().to_vec()),
-        Err(_) => normalize_detectors_for_matcher_compile(detectors),
+        Err(_) => normalize_detectors_for_matcher_compile(detectors), // LAW10: fallback normalization if canonical IR compilation fails; recall-preserving
     };
     compile_with_matcher_artifact_outcome(
         sorted,

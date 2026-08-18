@@ -25,9 +25,7 @@ pub(crate) use backend::{
 };
 #[cfg(all(test, feature = "gpu"))]
 pub(crate) use evidence::{
-    host_data_movement_snapshot, initialized_gpu_api_count, initialized_gpu_api_counts,
-    reset_host_data_movement_counters, reset_initialized_gpu_api_counters, GpuApiKind,
-    GpuHostDataMovementSite,
+    host_data_movement_snapshot, reset_host_data_movement_counters, GpuHostDataMovementSite,
 };
 #[cfg(all(test, feature = "gpu"))]
 pub(crate) use backend::{

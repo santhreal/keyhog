@@ -41,7 +41,7 @@ fn no_gpu_with_gpu_backend_is_rejected_at_parse_time() {
             "--backend {} with --no-gpu must be rejected at parse time",
             backend
         );
-        let err = result.unwrap_err().to_string();
+        let err = result.err().expect("must be error").to_string();
         assert!(
             err.contains("--no-gpu") && err.contains("--backend"),
             "error must name both conflicting flags: got: {}",
@@ -77,7 +77,7 @@ fn metal_backend_on_non_macos_is_rejected_before_scan() {
             "--backend {} on non-macOS must be rejected at parse",
             backend
         );
-        let err = result.unwrap_err().to_string();
+        let err = result.err().expect("must be error").to_string();
         assert!(
             err.contains("only supported on macOS"),
             "error must state that metal is only supported on macOS: got: {}",

@@ -14,7 +14,7 @@
 use keyhog_scanner::gpu::{gpu_runtime_policy, set_gpu_runtime_policy, GpuRuntimePolicy};
 use keyhog_scanner::hw_probe::testing::{
     cpu_tier_backend, gpu_could_engage, parse_backend_str, select_backend,
-    select_backend_for_batch, select_backend_for_batch_verdict, select_backend_verdict,
+    select_backend_for_batch, select_backend_verdict,
     BackendRoutingReason, HardwareCaps, ScanBackend,
 };
 use keyhog_scanner::testing::{clear_test_backend_override, set_test_backend_override, thresholds};

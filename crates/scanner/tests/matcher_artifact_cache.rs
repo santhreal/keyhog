@@ -358,11 +358,11 @@ fn matcher_artifact_cache_disable_reasons_are_enumerated_and_unique() {
 /// What it does not catch: hardware-specific GPU kernel variations.
 #[test]
 fn cache_enabled_and_disabled_compiles_produce_identical_digests_and_findings() {
-    use keyhog_scanner::engine::GpuInitPolicy;
+    use keyhog_scanner::GpuInitPolicy;
     use keyhog_scanner::{compile_shared_with_matcher_artifact_cache, ScannerTuningConfig};
     use std::sync::Arc;
 
-    let dir = allowlisted_tempdir();
+    let _dir = allowlisted_tempdir();
     let detectors = Arc::from(sample_detectors());
     let tuning = ScannerTuningConfig::default();
     let config_digest = [42u8; 32];
@@ -370,7 +370,7 @@ fn cache_enabled_and_disabled_compiles_produce_identical_digests_and_findings() 
     // Compile with cache disabled
     let (disabled_scanner, disabled_outcome) = compile_shared_with_matcher_artifact_cache(
         Arc::clone(&detectors),
-        GpuInitPolicy::Never,
+        GpuInitPolicy::ForceDisabled,
         &tuning,
         config_digest,
         None,
@@ -387,9 +387,9 @@ fn cache_enabled_and_disabled_compiles_produce_identical_digests_and_findings() 
 
     // Now configure cache dir and compile with cache enabled
     let _guard = keyhog_scanner::default_matcher_artifact_cache_dir();
-    let (enabled_scanner, enabled_outcome) = compile_shared_with_matcher_artifact_cache(
+    let (enabled_scanner, _enabled_outcome) = compile_shared_with_matcher_artifact_cache(
         Arc::clone(&detectors),
-        GpuInitPolicy::Never,
+        GpuInitPolicy::ForceDisabled,
         &tuning,
         config_digest,
         None,
@@ -406,9 +406,13 @@ fn cache_enabled_and_disabled_compiles_produce_identical_digests_and_findings() 
     );
 
     // Findings over a test payload must be identical
-    let payload = b"leading FIX_12345678 trailing context";
-    let disabled_findings = disabled_scanner.scan_chunk_sync(payload, 0);
-    let enabled_findings = enabled_scanner.scan_chunk_sync(payload, 0);
+    let payload = "leading FIX_12345678 trailing context";
+    let chunk = keyhog_core::Chunk {
+        data: payload.into(),
+        metadata: keyhog_core::ChunkMetadata::default(),
+    };
+    let disabled_findings = disabled_scanner.scan(&chunk).expect("scan disabled");
+    let enabled_findings = enabled_scanner.scan(&chunk).expect("scan enabled");
     assert_eq!(
         disabled_findings.len(),
         enabled_findings.len(),

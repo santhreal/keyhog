@@ -353,6 +353,14 @@ pub mod regression_reverse_decode_depth;
 pub mod regression_reverse_decoy_suppress;
 #[path = "regression_reverse_integrity_decoy_suppression.rs"]
 pub mod regression_reverse_integrity_decoy_suppression;
+#[path = "regression_row_76_backend_finding_parity.rs"]
+pub mod regression_row_76_backend_finding_parity;
+#[path = "regression_row_77_decode_window_overlap_derived.rs"]
+pub mod regression_row_77_decode_window_overlap_derived;
+#[path = "regression_row_78_boundary_seam_truncation_counted.rs"]
+pub mod regression_row_78_boundary_seam_truncation_counted;
+#[path = "regression_row_79_capability_ledger_and_vacuous_gate.rs"]
+pub mod regression_row_79_capability_ledger_and_vacuous_gate;
 #[path = "regression_saas_platform_token_recall.rs"]
 pub mod regression_saas_platform_token_recall;
 #[path = "regression_scan_telemetry_rayon_scope.rs"]

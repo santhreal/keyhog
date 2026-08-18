@@ -167,6 +167,13 @@ fn collect_matching_entries(cache_root: &Path, kind: CacheKind, out: &mut Vec<Ca
     collect_matching_entries_bounded(cache_root, kind, out, true);
 }
 
+/// Count cached files matching the specified kind without eviction.
+pub fn count_matching_entries(cache_root: &Path, kind: CacheKind) -> usize {
+    let mut out = Vec::new();
+    collect_matching_entries(cache_root, kind, &mut out);
+    out.len()
+}
+
 fn collect_matching_entries_bounded(
     dir: &Path,
     kind: CacheKind,

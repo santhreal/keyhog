@@ -389,7 +389,7 @@ fn profiler_cache_identities(
         }),
     };
 
-    let hyperscan_path = orchestrator.effective_config.hyperscan_cache_path.as_deref();
+    let hyperscan_path = orchestrator.effective_config.hyperscan_cache_dir.as_deref();
     let hyperscan_state = match hyperscan_path {
         None => CacheState::Disabled,
         Some(path) if path.exists() => CacheState::Warm,
@@ -492,7 +492,7 @@ fn profiler_cache_transitions(
         ),
         super::workflow_state::verifier_transition(orchestrator.effective_config.report.verify, 0),
         super::workflow_state::hyperscan_shard_transition(
-            orchestrator.effective_config.hyperscan_cache_path.as_deref(),
+            orchestrator.effective_config.hyperscan_cache_dir.as_deref(),
             0,
             0,
         ),
@@ -1904,7 +1904,7 @@ impl ScanOrchestrator {
             show_progress && progress_ansi,
             self.scanner_materialization.as_ref(),
         );
-        report_compiled_cache_summary(show_progress && progress_ansi, self);
+        report_compiled_cache_summary(show_progress && progress_ansi, &self);
         dump_dogfood_trace();
 
         tracing::info!(

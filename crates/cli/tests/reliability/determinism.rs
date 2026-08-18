@@ -70,7 +70,7 @@ fn planted_corpus() -> tempfile::TempDir {
 #[test]
 fn deterministic_scan_formats_across_all_registered_reporters() {
     use clap::ValueEnum;
-    use keyhog::args::scan::OutputFormat;
+    use keyhog::args::OutputFormat;
 
     let corpus = planted_corpus();
     let corpus_path = corpus.path().to_str().expect("valid utf-8 path");

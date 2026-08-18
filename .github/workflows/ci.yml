@@ -169,6 +169,7 @@ jobs:
           --no-default-features --features ci-lean --profile ci-test
           --test perf_alloc_batch_topology
           --test perf_alloc_trigger_scratch
+          --test perf_scan_path_counting_instrument
       - name: scanner CI target wiring gates
         run: cargo test -p keyhog-scanner --test unit_gates_live ci_scanner --no-default-features --features ci-lean --profile ci-test -- --nocapture
       - name: scanner GPU literal artifact writer

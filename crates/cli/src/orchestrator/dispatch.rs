@@ -1220,12 +1220,7 @@ impl ScanOrchestrator {
             return self.scan_sources_fused(sources, show_progress, merkle, incremental_path);
         }
 
-        keyhog_sources::reset_skipped_over_max_size();
-        // Binary-source degradation counters live in a separate module from the
-        // walker skip counters, so reset them alongside (otherwise Ghidra-fallback
-        // / unreadable-binary totals leak across scans in `watch`/multi-scan runs).
-        #[cfg(feature = "binary")]
-        keyhog_sources::reset_binary_counters();
+        keyhog_sources::reset_for_scan();
 
         let progress = CoalescedProgressTicker::spawn(show_progress && !self.args.stream);
 

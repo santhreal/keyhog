@@ -167,28 +167,42 @@ impl<T: AsRef<str>> PartialEq<Vec<T>> for ObservedPaths {
 /// assert!(allowlist.ignored_detectors.contains("demo-token"));
 /// # Ok(()) }
 /// ```
+/// Kind of allowlist rule parsed from `.keyhogignore`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AllowlistRuleKind {
+    /// Credential hash match.
     Hash(CredentialHash),
+    /// Detector ID ignore match.
     Detector(String),
+    /// File path ignore match.
     Path(String),
 }
 
+/// Parsed allowlist rule with execution match counter.
 #[derive(Debug, Clone)]
 pub struct AllowlistRule {
+    /// 1-based source line number.
     pub line_number: usize,
+    /// Raw rule entry text.
     pub entry: String,
+    /// Parsed rule classification.
     pub kind: AllowlistRuleKind,
+    /// Atomic match counter incremented upon rule evaluation match.
     pub matches: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
+/// Unused allowlist entry report descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnusedAllowlistEntry {
+    /// 1-based source line number.
     pub line_number: usize,
+    /// Raw rule entry text.
     pub entry: String,
+    /// Number of times matched during scan (0 for unused).
     pub match_count: usize,
 }
 
+/// Parsed `.keyhogignore` rules with compiled lookup structures and attribution.
 #[derive(Debug, serde::Serialize)]
 pub struct Allowlist {
     /// SHA-256 hashes of credentials to ignore.
@@ -327,7 +341,7 @@ impl Allowlist {
     /// assert!(allowlist.is_path_ignored("app/.env"));
     /// # Ok(()) }
     /// ```
-    pub(crate) fn parse(content: &str) -> Self {
+    pub fn parse(content: &str) -> Self {
         Self::parse_with_policy(content, AllowlistMetadataPolicy::default())
     }
 
@@ -523,6 +537,7 @@ impl Allowlist {
                     matches: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
                 });
                 log_metadata_audit("hash", entry, &parsed_meta);
+            } else if let Some((field, detail)) = invalid_bare_entry(entry) {
                 al.push_invalid_entry_violation(line_number + 1, entry, field, detail);
                 tracing::warn!(
                     "invalid allowlist entry at line {}: '{}'",
@@ -989,6 +1004,7 @@ fn invalid_bare_entry(entry: &str) -> Option<(&'static str, &'static str)> {
     }
     None
 }
+
 
 pub(crate) fn allowlist_days_since_epoch_for_test(
     now: std::time::SystemTime,

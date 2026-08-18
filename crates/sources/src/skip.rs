@@ -167,6 +167,29 @@ impl SourceSkipEvent {
             Self::GitLfsPointer => &GIT_LFS_POINTER,
         }
     }
+
+    pub(crate) const fn counter_id(self) -> keyhog_profile::CounterId {
+        match self {
+            Self::OverMaxSize => keyhog_profile::CounterId::SkippedOverMaxSize,
+            Self::Binary => keyhog_profile::CounterId::SkippedBinary,
+            Self::Excluded => keyhog_profile::CounterId::SkippedExcluded,
+            Self::Unreadable => keyhog_profile::CounterId::SkippedUnreadable,
+            Self::GitObjectUnreadable => keyhog_profile::CounterId::GitObjectUnreadable,
+            Self::ArchiveTruncated => keyhog_profile::CounterId::SkippedArchiveTruncated,
+            #[cfg(feature = "binary")]
+            Self::BinarySectionNameUnresolved => {
+                keyhog_profile::CounterId::BinarySectionNameUnresolved
+            }
+            Self::SourceTruncated => keyhog_profile::CounterId::SourceTruncated,
+            Self::StructuredSourceParseFailure => {
+                keyhog_profile::CounterId::StructuredSourceParseFailures
+            }
+            Self::ArchiveDuplicateScanUnavailable => {
+                keyhog_profile::CounterId::ArchiveDuplicateScanUnavailable
+            }
+            Self::GitLfsPointer => keyhog_profile::CounterId::GitLfsPointer,
+        }
+    }
 }
 
 /// Receipt proving a source skip event passed through the typed recorder.
@@ -185,6 +208,7 @@ pub(crate) fn record_skip_event(event: SourceSkipEvent) -> RecordedSkipEvent {
 pub(crate) fn record_skip_events(event: SourceSkipEvent, delta: usize) -> RecordedSkipEvent {
     await_recording_admission();
     let previous = event.counter().fetch_add(delta, Relaxed);
+    keyhog_profile::add_counter(event.counter_id(), delta as u64);
     RecordedSkipEvent {
         event,
         previous,
@@ -245,27 +269,39 @@ pub fn git_object_unreadable() -> usize {
     skip_counts().git_object_unreadable
 }
 
-/// Reset every skip counter. Public so test fixtures and the orchestrator can
-/// baseline between scans in one process.
+const ALL_SKIP_COUNTERS: [&AtomicUsize; 11] = [
+    &SKIPPED_OVER_MAX_SIZE,
+    &SKIPPED_BINARY,
+    &SKIPPED_EXCLUDED,
+    &SKIPPED_UNREADABLE,
+    &GIT_OBJECT_UNREADABLE,
+    &SKIPPED_ARCHIVE_TRUNCATED,
+    &BINARY_SECTION_NAME_UNRESOLVED,
+    &SOURCE_TRUNCATED,
+    &STRUCTURED_SOURCE_PARSE_FAILURES,
+    &ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE,
+    &GIT_LFS_POINTER,
+];
+
+/// Reset every skip counter.
 pub(crate) fn reset_skip_counters() {
-    SKIPPED_OVER_MAX_SIZE.store(0, Relaxed);
-    SKIPPED_BINARY.store(0, Relaxed);
-    SKIPPED_EXCLUDED.store(0, Relaxed);
-    SKIPPED_UNREADABLE.store(0, Relaxed);
-    GIT_OBJECT_UNREADABLE.store(0, Relaxed);
-    SKIPPED_ARCHIVE_TRUNCATED.store(0, Relaxed);
-    BINARY_SECTION_NAME_UNRESOLVED.store(0, Relaxed);
-    SOURCE_TRUNCATED.store(0, Relaxed);
-    STRUCTURED_SOURCE_PARSE_FAILURES.store(0, Relaxed);
-    ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE.store(0, Relaxed);
-    GIT_LFS_POINTER.store(0, Relaxed);
+    for counter in ALL_SKIP_COUNTERS {
+        counter.store(0, Relaxed);
+    }
+}
+
+/// Reset all sources runtime counters for a new scan.
+pub fn reset_for_scan() {
+    reset_skip_counters();
+    #[cfg(feature = "binary")]
+    crate::binary::reset_binary_counters();
 }
 
 /// Reset the over-max-size counter. Retained for API compatibility (Law 3);
 /// resets every skip counter so a fixture baselining between runs clears them
 /// all, not just the size counter.
 pub fn reset_skipped_over_max_size() {
-    reset_skip_counters();
+    reset_for_scan();
 }
 
 // ---------------------------------------------------------------------------

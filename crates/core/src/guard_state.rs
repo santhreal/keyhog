@@ -219,7 +219,7 @@ impl GuardTransition {
             GuardTransition::Stopped,
         ]
     }
-
+    /// Human-readable kebab-case label for this transition.
     pub fn label(&self) -> &'static str {
         match self {
             GuardTransition::ReconciliationStarted => "reconciliation-started",

@@ -9,6 +9,7 @@ pub mod allowlist_extended;
 pub mod allowlist_future_dated_entries_load;
 pub mod allowlist_hash_parse_non_ascii_does_not_panic;
 pub mod allowlist_inline_metadata_reason_parsed;
+pub mod allowlist_match_attribution;
 pub mod allowlist_mixed_prefixed_and_bare_entries_load;
 pub mod allowlist_system_clock_before_epoch_rejected;
 pub mod allowlist_unknown_metadata_keys_not_fatal;

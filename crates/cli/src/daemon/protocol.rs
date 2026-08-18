@@ -169,7 +169,7 @@ pub(crate) const MASS_BATCH_CHUNKS: usize = 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
-pub(crate) enum Request {
+pub enum Request {
     /// First message on every connection. Server replies with
     /// [`Response::Hello`] containing its `WIRE_VERSION` so the client
     /// can refuse mismatched daemons.
@@ -627,7 +627,7 @@ pub(crate) fn guard_commit_receipt_wire_len(
 /// `GuardCommitBegin`. Carries no payload bytes, only identity metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct GuardWireManifestEntry {
+pub struct GuardWireManifestEntry {
     /// Path bytes as hex-encoded UTF-8 (non-UTF-8 paths are hex-escaped).
     pub path: String,
     /// Entry kind label: "file", "symlink", "submodule", "deletion".
@@ -1087,23 +1087,28 @@ pub(crate) fn sample_request_for_kind(kind: &str) -> Option<Request> {
             entries: vec![],
         }),
         "GuardCommitBlob" => Some(Request::GuardCommitBlob {
-            tx_id: 1,
-            oid: "0".repeat(40),
+            transaction_id: 1,
+            blob_oid: "0".repeat(40),
+            object_size: 0,
             payload: vec![],
         }),
-        "GuardCommitFinish" => Some(Request::GuardCommitFinish { tx_id: 1 }),
+        "GuardCommitFinish" => Some(Request::GuardCommitFinish {
+            transaction_id: 1,
+            client_objects_streamed: 0,
+            client_bytes_streamed: 0,
+        }),
         "GuardAdd" => Some(Request::GuardAdd {
-            repo_path: "/tmp".to_string(),
+            root: "/tmp".to_string(),
             mode: "audit".to_string(),
         }),
         "GuardRemove" => Some(Request::GuardRemove {
-            repo_path: "/tmp".to_string(),
+            root: "/tmp".to_string(),
         }),
         "GuardStatus" => Some(Request::GuardStatus {
-            repo_path: "/tmp".to_string(),
+            root: "/tmp".to_string(),
         }),
         "GuardReconcile" => Some(Request::GuardReconcile {
-            repo_path: "/tmp".to_string(),
+            root: "/tmp".to_string(),
         }),
         "GuardList" => Some(Request::GuardList),
         _ => None,

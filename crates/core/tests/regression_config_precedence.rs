@@ -247,7 +247,7 @@ fn out_of_range_env_value_rejected_exact_error() {
     std::env::remove_var(key);
     assert_eq!(
         err,
-        ResolveError::Validate("min_confidence must be between 0.0 and 1.0, found 1.5".to_string())
+        ResolveError::Validate("min_confidence must be between 0.0 and 1.0, found 1.5. Fix: pass a confidence threshold between 0.0 and 1.0 (e.g. 0.8)".to_string())
     );
 }
 
@@ -262,7 +262,7 @@ fn negative_env_value_rejected_exact_error() {
     assert_eq!(
         err,
         ResolveError::Validate(
-            "min_confidence must be between 0.0 and 1.0, found -0.25".to_string()
+            "min_confidence must be between 0.0 and 1.0, found -0.25. Fix: pass a confidence threshold between 0.0 and 1.0 (e.g. 0.8)".to_string()
         )
     );
 }
@@ -372,7 +372,7 @@ fn out_of_range_env_depth_rejected_exact_error() {
     std::env::remove_var(key);
     assert_eq!(
         err,
-        ResolveError::Validate("max_decode_depth exceeds limit of 10, found 11".to_string())
+        ResolveError::Validate("max_decode_depth exceeds limit of 10, found 11. Fix: reduce max_decode_depth to <= 10".to_string())
     );
     // Boundary twin: exactly the limit (10) from env is accepted.
     let key2 = "KEYHOG_TEST_DEPTH_AT_LIMIT";

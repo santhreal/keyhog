@@ -215,6 +215,7 @@ impl Stage {
             | Self::Teardown
             | Self::ScanPipeline
             | Self::ScannerCompile => MacroStageId::Scan,
+            Self::Suppression | Self::ResultMerge => MacroStageId::Resolve,
             Self::LiveVerification => MacroStageId::Verify,
             Self::Reporting => MacroStageId::Report,
         }

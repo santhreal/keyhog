@@ -1614,13 +1614,15 @@ async fn handle_connection(
                         "unknown panic payload".to_string()
                     };
                     let recovery = BackendRecoveryStatus {
-                        recovering_backend: "daemon-request-dispatch".to_string(),
-                        fallback_backend: "error-response".to_string(),
+                        failed_backend: "daemon-request-dispatch".to_string(),
+                        recovery_backend: "error-response".to_string(),
+                        recovered_ranges: Vec::new(),
+                        recovered_chunks: 0,
                         recovered_bytes: 0,
                         reason: format!("daemon: internal panic during filesystem drain: {detail}"),
                     };
-                    let _ = state.record_backend_recovery(recovery);
-                    let _ = send_response(
+                    let _ = state.record_backend_recovery(recovery); // LAW10: fault recording during panic recovery; no effect on scan findings
+                    let _ = send_response( // LAW10: reporting-only error frame delivery during panic unwind; caller transport closed; no effect on scan findings
                         &mut transport,
                         Response::Error {
                             message: format!(
@@ -1805,12 +1807,14 @@ async fn handle_connection(
                     "unknown panic payload".to_string()
                 };
                 let recovery = BackendRecoveryStatus {
-                    recovering_backend: "daemon-request-dispatch".to_string(),
-                    fallback_backend: "error-response".to_string(),
+                    failed_backend: "daemon-request-dispatch".to_string(),
+                    recovery_backend: "error-response".to_string(),
+                    recovered_ranges: Vec::new(),
+                    recovered_chunks: 0,
                     recovered_bytes: 0,
                     reason: format!("daemon: internal panic during request: {detail}"),
                 };
-                let _ = state.record_backend_recovery(recovery);
+                let _ = state.record_backend_recovery(recovery); // LAW10: fault recording during panic recovery; no effect on scan findings
                 Response::Error {
                     message: format!("daemon: internal panic during request: {detail}"),
                 }

@@ -1610,7 +1610,7 @@ impl ScanOrchestrator {
                     Some(pack) => {
                         let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
                         scanner_materialization = Some(ScannerMaterialization::MappedPack {
-                            generation: pack.generation.clone(),
+                            generation: pack.path().display().to_string(),
                         });
                         // Keep Result intact so the shared with_context below
                         // still labels pack-backed scanner materialization.
@@ -1892,6 +1892,7 @@ impl ScanOrchestrator {
             detector_corpus_provenance,
             detector_corpus_digest,
             scanner,
+            scanner_materialization: None,
             signatures,
             test_fixture_suppressions,
             disabled_detectors: std::collections::HashSet::new(),

@@ -8,7 +8,6 @@
 
 use keyhog_core::{Allowlist, CredentialHash, MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
-use std::path::Path;
 
 fn make_finding(detector_id: &str, file_path: &str, hash_hex: &str) -> VerifiedFinding {
     let hash_bytes = hex::decode(hash_hex).expect("decode hex");

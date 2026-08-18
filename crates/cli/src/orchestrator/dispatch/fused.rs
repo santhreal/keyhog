@@ -292,9 +292,7 @@ impl ScanOrchestrator {
         use rayon::prelude::*;
         use std::sync::atomic::{AtomicUsize, Ordering};
 
-        keyhog_sources::reset_skipped_over_max_size();
-        #[cfg(feature = "binary")]
-        keyhog_sources::reset_binary_counters();
+        keyhog_sources::reset_for_scan();
 
         let progress_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let progress_handle = if show_progress && !self.args.stream {

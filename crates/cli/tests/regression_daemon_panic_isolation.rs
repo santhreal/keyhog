@@ -16,31 +16,15 @@
 #![cfg(unix)]
 
 use keyhog::testing::{CliTestApi as _, API};
-use keyhog_scanner::CompiledScanner;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::path::Path;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
-fn sample_compiled_scanner() -> Arc<CompiledScanner> {
-    let mut spec = keyhog_core::DetectorSpec::default();
-    spec.id = "test-detector".to_string();
-    spec.pattern = r"test_secret_[a-z0-9]{16}".to_string();
-    spec.keywords = vec!["test_secret_".to_string()];
-    spec.min_confidence = 0.5;
-
-    let scanner = CompiledScanner::compile(
-        vec![spec],
-        keyhog_scanner::ScanBackend::Cpu,
-        false,
-        &keyhog_scanner::ScannerEngineConfig::default(),
-    )
-    .expect("compile test scanner");
-    Arc::new(scanner)
+fn sample_detector_specs() -> Vec<keyhog_core::DetectorSpec> {
+    keyhog_core::load_embedded_detectors_or_fail().expect("embedded detectors must load")
 }
 
 async fn send_raw_frame(stream: &mut UnixStream, json_payload: &str) -> anyhow::Result<()> {
@@ -104,21 +88,8 @@ async fn all_daemon_request_kinds_isolate_panics_under_shipped_profile() {
         .expect("secure runtime dir");
     let socket_path = runtime_dir.path().join("panic_isolation.sock");
 
-    let scanner = sample_compiled_scanner();
-    let options = keyhog::daemon::server::ServerOptions {
-        request_read_timeout: Duration::from_secs(30),
-        mass_service: true,
-        mass_gpu_primary_required: false,
-        backend_override: Some(keyhog_scanner::ScanBackend::Cpu),
-        guard_options: keyhog::daemon::guard_runtime::GuardOptions::default(),
-    };
-
-    let server_handle = tokio::spawn({
-        let socket_path = socket_path.clone();
-        async move {
-            let _ = keyhog::daemon::server::serve_scanner_with_options(scanner, socket_path, options).await;
-        }
-    });
+    let detectors = sample_detector_specs();
+    let server_handle = API.spawn_daemon_for_test(socket_path.clone(), detectors);
 
     // Wait for socket to become ready
     let deadline = std::time::Instant::now() + Duration::from_secs(10);

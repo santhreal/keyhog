@@ -217,6 +217,12 @@ run "Artifact size ceiling: release profiles strip symbols and binaries meet cei
   python3 -B scripts/gates/artifact_size_ceiling.py
 run "Artifact size ceiling unit tests: platform ceiling thresholds" \
   python3 -B -m unittest scripts.tests.test_artifact_size_ceiling -v
+run "Unified counter ownership self-test: single counter owner and static mapping" \
+  python3 -B scripts/gates/unified_counter_ownership.py --self-test
+run "Unified counter ownership: profile metrics ownership and zero stray counters" \
+  python3 -B scripts/gates/unified_counter_ownership.py
+run "Unified counter ownership unit tests: static analysis of process-global counter ownership" \
+  python3 -B -m unittest scripts.tests.test_unified_counter_ownership -v
 run "Mutation gate self-test: AST mutation generator catches surviving mutants" \
   python3 -B scripts/gates/mutation_gate.py --self-test
 run "Mutation gate unit tests: operator inversion and comment preservation" \

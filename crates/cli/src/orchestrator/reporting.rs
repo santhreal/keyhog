@@ -443,10 +443,10 @@ pub(crate) fn report_compiled_cache_summary(
     for kind in keyhog_core::CacheKind::ALL {
         let (state, entry_count) = match kind {
             keyhog_core::CacheKind::HyperscanShards => {
-                let dir = orchestrator.effective_config.hyperscan_cache_path.clone()
+                let dir = orchestrator.effective_config.hyperscan_cache_dir.clone()
                     .or_else(|| cache_base.as_ref().map(|b| b.join("keyhog")));
                 let count = dir.as_deref().map_or(0, |d| keyhog_scanner::cache_eviction::count_matching_entries(d, *kind));
-                let state = if orchestrator.effective_config.hyperscan_cache_path.is_none() && cache_base.is_none() {
+                let state = if orchestrator.effective_config.hyperscan_cache_dir.is_none() && cache_base.is_none() {
                     "unusable"
                 } else if count > 0 {
                     "hit"

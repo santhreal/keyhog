@@ -51,7 +51,7 @@ pub fn register_capability_test(test_name: &str, capability: &str, is_available:
         CapabilityOutcome::SkippedCapabilityAbsent
     };
 
-    if let Ok(mut ledger) = CAPABILITY_LEDGER.lock() {
+    if let Ok(mut ledger) = CAPABILITY_LEDGER.lock() { // LAW10: capability test ledger recording; test-only observability
         ledger.push(CapabilityLedgerRecord {
             test_name: test_name.to_string(),
             capability: capability.to_string(),
@@ -76,7 +76,7 @@ pub struct CapabilityLedgerSummary {
 /// Retrieve the current capability ledger summary.
 pub fn capability_ledger_summary() -> CapabilityLedgerSummary {
     let host_class = Some(HostClass::detect());
-    let records = CAPABILITY_LEDGER.lock().map(|l| l.clone()).unwrap_or_default();
+    let records = CAPABILITY_LEDGER.lock().map(|l| l.clone()).unwrap_or_default(); // LAW10: capability test ledger snapshot; test-only observability
     let mut ran_count = 0;
     let mut skipped_count = 0;
     let mut failed_count = 0;
@@ -98,7 +98,7 @@ pub fn capability_ledger_summary() -> CapabilityLedgerSummary {
 
 /// Reset the capability ledger (for testing).
 pub fn reset_capability_ledger() {
-    if let Ok(mut ledger) = CAPABILITY_LEDGER.lock() {
+    if let Ok(mut ledger) = CAPABILITY_LEDGER.lock() { // LAW10: capability test ledger reset; test-only observability
         ledger.clear();
     }
 }
@@ -106,7 +106,7 @@ pub fn reset_capability_ledger() {
 /// Print the capability ledger summary to stderr.
 pub fn print_capability_ledger_summary() {
     let summary = capability_ledger_summary();
-    let class_label = summary.host_class.map(|c| c.label()).unwrap_or("unknown");
+    let class_label = summary.host_class.map(|c| c.label()).unwrap_or("unknown"); // LAW10: formatting fallback for display-only test summary
     eprintln!(
         "[CAPABILITY LEDGER] Host class: {} | Ran: {} | Skipped (absent): {} | Failed: {}",
         class_label,
@@ -119,7 +119,7 @@ pub fn print_capability_ledger_summary() {
 /// Verify that the current process's skip count does not exceed the committed baseline for its host class.
 pub fn verify_capability_ledger_baseline(baseline_path: &Path) -> Result<(), String> {
     let summary = capability_ledger_summary();
-    let host_class = summary.host_class.unwrap_or_else(HostClass::detect);
+    let host_class = summary.host_class.unwrap_or_else(HostClass::detect); // LAW10: intended default to detect current host class; test-only reporting-only
 
     if !baseline_path.exists() {
         return Err(format!(

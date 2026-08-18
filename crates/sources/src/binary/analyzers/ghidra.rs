@@ -18,6 +18,7 @@ const GHIDRA_SCAN_CHUNK_BYTES: usize = crate::strings::BOUNDED_DERIVED_TEXT_CHUN
 pub(in crate::binary) struct GhidraAnalyzer {
     executable: PathBuf,
     arguments: Vec<OsString>,
+    #[allow(dead_code)]
     version: Option<String>,
 }
 
@@ -39,6 +40,7 @@ impl GhidraAnalyzer {
         }
     }
 
+    #[allow(dead_code)]
     pub fn version(&self) -> Option<&str> {
         self.version.as_deref()
     }
@@ -461,7 +463,7 @@ pub(in crate::binary) fn find_ghidra_headless() -> Option<PathBuf> {
 
 /// Probe Ghidra's installation directory for its version string (from `application.properties`).
 pub(in crate::binary) fn probe_ghidra_version(executable: &Path) -> Option<String> {
-    if let Ok(dir) = std::env::var("GHIDRA_INSTALL_DIR") {
+    if let Ok(dir) = std::env::var("GHIDRA_INSTALL_DIR") { // LAW10: optional environment override for Ghidra location; falls through to executable parent probe
         let prop = Path::new(&dir).join("Ghidra/application.properties");
         if let Some(v) = parse_ghidra_properties_version(&prop) {
             return Some(v);
@@ -479,7 +481,7 @@ pub(in crate::binary) fn probe_ghidra_version(executable: &Path) -> Option<Strin
 }
 
 fn parse_ghidra_properties_version(path: &Path) -> Option<String> {
-    let content = std::fs::read_to_string(path).ok()?;
+    let content = std::fs::read_to_string(path).ok()?; // LAW10: best-effort version metadata read; unreadable properties file returns None with no effect on scan recall
     let mut version = None;
     let mut release = None;
     for line in content.lines() {

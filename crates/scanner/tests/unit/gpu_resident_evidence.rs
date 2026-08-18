@@ -414,8 +414,14 @@ fn row72_host_byte_copies_and_scrub_counter_and_credential_zeroize_guarantee() {
 
     // 2. Multi-chunk coalesced: at most 1 host copy per byte, exactly 1 scrub on release
     crate::gpu::reset_host_data_movement_counters();
-    let chunk1 = keyhog_core::Chunk::new("c1", secret);
-    let chunk2 = keyhog_core::Chunk::new("c2", b"another_chunk_data");
+    let chunk1 = keyhog_core::Chunk {
+        data: std::str::from_utf8(secret).unwrap().into(),
+        metadata: keyhog_core::ChunkMetadata::default(),
+    };
+    let chunk2 = keyhog_core::Chunk {
+        data: "another_chunk_data".into(),
+        metadata: keyhog_core::ChunkMetadata::default(),
+    };
     let chunks = vec![chunk1, chunk2];
     let total_bytes = chunks.iter().map(|c| c.data.len()).sum::<usize>();
 

@@ -61,6 +61,7 @@ pub(crate) fn install_compiled_gpu_literal_artifact(
     matcher_bytes: &[u8],
 ) -> Result<InstalledGpuLiteralArtifact> {
     INSTALL_COMPILED_INVOCATIONS.fetch_add(1, Ordering::Relaxed);
+    keyhog_profile::add_counter(keyhog_profile::CounterId::GpuCompileCalls, 1);
     if !cache_key.starts_with("lit-ci-") {
         return Err(ScanError::Gpu(format!(
             "packed GPU matcher cache key {cache_key:?} is not a fused case-insensitive matcher key"
@@ -107,6 +108,7 @@ pub(crate) fn install_compiled_gpu_literal_artifact(
 
 pub(crate) fn record_runtime_gpu_literal_compiler_invocation() {
     RUNTIME_COMPILER_INVOCATIONS.fetch_add(1, Ordering::Relaxed);
+    keyhog_profile::add_counter(keyhog_profile::CounterId::GpuCompileCalls, 1);
 }
 
 #[doc(hidden)]

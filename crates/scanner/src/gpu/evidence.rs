@@ -383,11 +383,13 @@ pub(crate) fn record_gpu_api_initialized(api: GpuApiKind) {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn initialized_gpu_api_count() -> usize {
     INITIALIZED_GPU_APIS.iter().filter(|a| a.load(Ordering::Relaxed) > 0).count()
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn initialized_gpu_api_counts() -> (u64, u64, u64) {
     (
         INITIALIZED_GPU_APIS[0].load(Ordering::Relaxed),
@@ -397,12 +399,12 @@ pub(crate) fn initialized_gpu_api_counts() -> (u64, u64, u64) {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn reset_initialized_gpu_api_counters() {
     for a in &INITIALIZED_GPU_APIS {
         a.store(0, Ordering::Relaxed);
     }
 }
-
 /// Current (resident, peak) device-byte tracker state; test diagnostics only.
 #[cfg(test)]
 pub(crate) fn resident_bytes_snapshot() -> (u64, u64) {

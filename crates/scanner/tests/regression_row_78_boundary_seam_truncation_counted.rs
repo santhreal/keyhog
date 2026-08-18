@@ -89,7 +89,7 @@ fn unbounded_detectors_straddling_seam_trigger_coverage_gap_counter() {
     let straddle_results = scanner
         .scan_coalesced(&[chunk_a, chunk_b])
         .expect("straddling coalesced scan succeeds");
-    let straddle_match_count: usize = straddle_results.iter().map(|m| m.len()).sum();
+    let _straddle_match_count: usize = straddle_results.iter().map(|m| m.len()).sum();
 
     // Coverage-gap counter must fire
     let gap_count = boundary_seam_truncation_count();
