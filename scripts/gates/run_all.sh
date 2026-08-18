@@ -193,6 +193,12 @@ run "Vacuous tests: capability-conditional tests safely arm policies or register
   python3 -B scripts/gates/vacuous_tests.py
 run "Vacuous tests unit tests: static early-return analysis across test targets" \
   python3 -B -m unittest scripts.tests.test_vacuous_tests -v
+run "Regression contracts self-test: class-closing WHY comments and variant derivation" \
+  python3 -B scripts/gates/regression_contracts.py --self-test
+run "Regression contracts: class-closing WHY comments and runtime variant derivation" \
+  python3 -B scripts/gates/regression_contracts.py
+run "Regression contracts unit tests: static analysis of class-closing regression tests" \
+  python3 -B -m unittest scripts.tests.test_regression_contracts -v
 run "Mutation gate self-test: AST mutation generator catches surviving mutants" \
   python3 -B scripts/gates/mutation_gate.py --self-test
 run "Mutation gate unit tests: operator inversion and comment preservation" \

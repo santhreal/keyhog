@@ -14,7 +14,7 @@
 //! 3. Resolution priority alignment (`resolution_priority = 2`) across all database
 //!    connection string detectors (`redis-connection-string`, `mongodb-connection-string`,
 //!    `neon-db-connection-string`, `postgresql-connection-string`).
-
+//! What it does not catch: detectors whose verification requires live network requests.
 #[path = "support/mod.rs"]
 mod support;
 

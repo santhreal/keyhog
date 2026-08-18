@@ -12,8 +12,7 @@
 //! credential across every offset spanning window boundaries and verifies that:
 //! 1. The credential is found at every single offset when the derived overlap is used.
 //! 2. Mutation test: shrinking the derived overlap by even 1 byte causes a seam miss.
-
-#[path = "support/mod.rs"]
+//! What it does not catch: unbounded patterns whose width exceeds available memory bounds.
 mod support;
 
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};

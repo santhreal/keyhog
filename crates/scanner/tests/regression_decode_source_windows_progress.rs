@@ -5,6 +5,7 @@
 //! to advance (`start = next = start`), creating an infinite loop that allocated matches
 //! without bound. This suite verifies strict window advancement, termination under deadline,
 //! and complete coverage across multi-byte UTF-8 scalar boundaries.
+//! What it does not catch: memory allocation exhaustion outside the decode loop.
 
 #![cfg(feature = "decode")]
 
