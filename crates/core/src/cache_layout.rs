@@ -79,10 +79,12 @@ impl CacheKind {
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
             .is_some_and(|n| n == "programs");
-        let is_program_file = file_name.ends_with(".bin")
-            || (file_name.len() == 64 && file_name.chars().all(|c| c.is_ascii_hexdigit()))
-            || file_name.starts_with("gpu-");
-        if in_programs_dir || is_program_file {
+        let is_gpu_matcher_file = file_name.starts_with("gpu-") && file_name.ends_with(".bin");
+        let is_program_binary = in_programs_dir
+            && (file_name.ends_with(".bin")
+                || (file_name.len() == 64 && file_name.chars().all(|c| c.is_ascii_hexdigit()))
+                || file_name.starts_with("gpu-"));
+        if is_gpu_matcher_file || is_program_binary {
             return Some(Self::GpuPrograms);
         }
         None
@@ -109,7 +111,7 @@ impl CacheKind {
             },
             Self::MatcherArtifacts => CacheEvictionPolicy {
                 max_entries: 8,
-                max_bytes: 256 * 1024 * 1024, // 256 MiB
+                max_bytes: 2 * 1024 * 1024 * 1024, // 2 GiB (allows 8 entries at the 256 MiB per-file limit)
                 max_lock_age_secs: 600,
             },
             Self::LockFiles => CacheEvictionPolicy {

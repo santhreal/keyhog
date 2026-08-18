@@ -235,3 +235,58 @@ fn reconcile_all_cache_kinds_processes_mixed_cache_root() {
         );
     }
 }
+
+#[test]
+fn eviction_ignores_symlinks_and_never_deletes_outside_files() {
+    let temp_cache = TempDir::new().expect("tempdir cache");
+    let temp_outside = TempDir::new().expect("tempdir outside");
+
+    let outside_file = temp_outside.path().join("valuable.bin");
+    std::fs::write(&outside_file, b"do not delete me").expect("write outside file");
+
+    // Create a symlink inside cache_dir pointing to the outside directory or file
+    #[cfg(unix)]
+    {
+        let symlink_dir = temp_cache.path().join("programs");
+        let _ = std::os::unix::fs::symlink(temp_outside.path(), &symlink_dir);
+
+        let policy = CacheEvictionPolicy::new(0, 0, 600);
+        let report = evict_cache_dir_with_policy(temp_cache.path(), CacheKind::GpuPrograms, policy);
+
+        assert_eq!(
+            report.evicted_count, 0,
+            "Symlinked directories must not be traversed or evicted"
+        );
+        assert!(
+            outside_file.exists(),
+            "Files outside cache root must never be unlinked via symlinks"
+        );
+    }
+}
+
+#[test]
+fn eviction_ignores_deeply_nested_subdirectories() {
+    let temp = TempDir::new().expect("tempdir");
+    let cache_dir = temp.path();
+
+    let deep_dir = cache_dir.join("programs").join("nested").join("deep");
+    std::fs::create_dir_all(&deep_dir).expect("create deep dir");
+
+    let deep_file = deep_dir.join("gpu-deep.bin");
+    std::fs::write(&deep_file, b"deep artifact").expect("write deep file");
+
+    let past = SystemTime::now() - Duration::from_secs(7200);
+    set_mtime(&deep_file, past);
+
+    let policy = CacheEvictionPolicy::new(0, 0, 600);
+    let report = evict_cache_dir_with_policy(cache_dir, CacheKind::GpuPrograms, policy);
+
+    assert_eq!(
+        report.evicted_count, 0,
+        "Files in subdirectories deeper than programs/ must not be collected"
+    );
+    assert!(
+        deep_file.exists(),
+        "Deeply nested file must remain untouched"
+    );
+}

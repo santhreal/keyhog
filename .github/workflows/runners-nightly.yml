@@ -66,7 +66,7 @@ jobs:
             --test companion_contracts_runner \
             --test cve_replay_runner
 
-      - name: informational: Perf / timing regression guards (nightly, non-blocking)
+      - name: "informational: Perf / timing regression guards (nightly, non-blocking)"
         # Allocation- and time-budget guards (oom skip-gate, per-input quadratic
         # guard, perf floors). Too machine-variance-sensitive for the blocking PR
         # gate, but real regression guards, run nightly on a fresh runner with
@@ -85,7 +85,7 @@ jobs:
             --test performance_regression \
             --test lane6_adversarial_boundary_cases
 
-      - name: informational: Host-dependent + recall-debt trackers (nightly, informational)
+      - name: "informational: Host-dependent + recall-debt trackers (nightly, informational)"
         # These are NOT blockable on hosted CI: backend-parity/*-matrix compare
         # SimdCpu/CpuFallback/GPU (the GPU legs need an adapter this runner does
         # not have, so those cases fail here and are absorbed); and the
@@ -126,7 +126,7 @@ jobs:
             --test phase2_no_hit_branch_recall \
             --test openai_html_comment_bug_62
 
-      - name: informational: Chunk-AD contract validation (nightly)
+      - name: "informational: Chunk-AD contract validation (nightly)"
         # `chunk_ad_runner` is a corpus harness, it validates the contract TOMLs
         # named in KEYHOG_CHUNK_IDS. Provision the id list from the shipped
         # detector set so it actually runs in CI instead of being an orphan.

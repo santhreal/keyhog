@@ -87,7 +87,6 @@ pub fn evict_cache_dir_with_policy(
             }
         }
         retained_count += 1;
-        remaining_count = remaining_count.saturating_sub(1);
     }
 
     report.retained_count = retained_count;
@@ -122,8 +121,15 @@ fn collect_stale_locks_bounded(cache_dir: &Path, max_age: Duration, top_level: b
     let mut removed = 0;
 
     for entry in read_dir.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        // Refuse symlinks: never follow symlinks
+        if file_type.is_symlink() {
+            continue;
+        }
         let path = entry.path();
-        if path.is_dir() {
+        if file_type.is_dir() {
             // Only inspect immediate `programs/` subfolder when at top level
             if top_level && path.file_name().and_then(|n| n.to_str()) == Some("programs") {
                 removed += collect_stale_locks_bounded(&path, max_age, false);
@@ -156,19 +162,34 @@ fn collect_stale_locks_bounded(cache_dir: &Path, max_age: Duration, top_level: b
     }
     removed
 }
-fn collect_matching_entries(dir: &Path, kind: CacheKind, out: &mut Vec<CacheEntry>) {
+
+fn collect_matching_entries(cache_root: &Path, kind: CacheKind, out: &mut Vec<CacheEntry>) {
+    collect_matching_entries_bounded(cache_root, kind, out, true);
+}
+
+fn collect_matching_entries_bounded(
+    dir: &Path,
+    kind: CacheKind,
+    out: &mut Vec<CacheEntry>,
+    top_level: bool,
+) {
     let Ok(read_dir) = std::fs::read_dir(dir) else {
         return;
     };
 
     for entry in read_dir.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        // Refuse symlinks: never follow symlinks outside cache root
+        if file_type.is_symlink() {
+            continue;
+        }
         let path = entry.path();
-        if path.is_dir() {
-            // For GPU programs or subdirectories, inspect inner contents
-            if kind == CacheKind::GpuPrograms
-                || path.file_name().and_then(|n| n.to_str()) == Some("programs")
-            {
-                collect_matching_entries(&path, kind, out);
+        if file_type.is_dir() {
+            // Only inspect immediate `programs/` subfolder when at top level
+            if top_level && path.file_name().and_then(|n| n.to_str()) == Some("programs") {
+                collect_matching_entries_bounded(&path, kind, out, false);
             }
             continue;
         }
