@@ -175,6 +175,20 @@ jobs:
         run: cargo test -p keyhog-scanner --test gpu_literal_artifact_writer --no-default-features --features ci-lean --profile ci-test
       - name: scanner adversarial dead corpus
         run: cargo test -p keyhog-scanner --test adversarial_suite --no-default-features --features ci-lean --profile ci-test
+      - name: scanner backend, corpus, and packing contracts
+        run: >
+          cargo test -p keyhog-scanner --no-fail-fast
+          --no-default-features --features ci-lean --profile ci-test
+          --test backend_and_detector_class_api
+          --test decode_budget_streaming
+          --test detector_corpus_backend_parity
+          --test detector_primary_regex_dedup_ratchet
+          --test massive_adversarial_runner
+          --test metal_backend_contract
+          --test packed_simd_native_shards
+          --test packed_simd_phase2_shards
+          --test perf_alloc_evidence_relations
+          --test scan_backend_parity_proptest
       - name: RawMatch total-order gate
         run: cargo test -p keyhog-core --test new_core_finding_dedup --profile ci-test
 
@@ -311,6 +325,94 @@ jobs:
           cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test
           --test lane5_cli_subcommand_surface_matrix
           --test regression_cli_version_help
+      - name: cli e2e and heavy spawning suites
+        run: >
+          cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test --no-fail-fast
+          --test action_report_receipt_contract
+          --test config_hermetic
+          --test detector_overlay_modes
+          --test dogfood_all
+          --test e2e_backend
+          --test e2e_calibrate
+          --test e2e_completion
+          --test e2e_diff
+          --test e2e_explain
+          --test e2e_format_and_backend_equivalence
+          --test e2e_hook_install
+          --test e2e_watch
+          --test execution_pack_install
+          --test gap_all
+          --test github_actions_exit_preservation
+          --test lane10_daemon_e2e_lifecycle
+          --test lane5_sarif_schema_and_scale_matrix
+          --test lane5_scan_flag_and_exit_matrix
+          --test live_verify
+          --test profile_process_boundary
+          --test stress_all
+          --test tool_contract
+          --test triage_cli
+      - name: cli audit suites
+        run: >
+          cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test --no-fail-fast
+          --test audit_arch_wiring
+          --test audit_capability
+          --test audit_coherence
+          --test audit_generalization
+          --test audit_insufficiency
+          --test audit_research_innovation
+          --test audit_testing_dogfood
+      - name: cli regression CLI surface suites
+        run: >
+          cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test --no-fail-fast
+          --test regression_cli_aux_subcommands_e2e
+          --test regression_cli_backend_matrix
+          --test regression_cli_baseline_diff
+          --test regression_cli_calibrate_autoroute_e2e
+          --test regression_cli_completion_shells
+          --test regression_cli_config_file_load
+          --test regression_cli_config_init
+          --test regression_cli_config_path
+          --test regression_cli_config_surface
+          --test regression_cli_daemon_status
+          --test regression_cli_diff_baseline_depth
+          --test regression_cli_exclude_glob
+          --test regression_cli_exit_codes
+          --test regression_cli_explain_detectors
+          --test regression_cli_git_toggle
+          --test regression_cli_glob_filters
+          --test regression_cli_guard_massive_diff_simulation
+          --test regression_cli_json_shape
+          --test regression_cli_max_depth
+          --test regression_cli_min_severity
+          --test regression_cli_multiple_paths
+          --test regression_cli_no_color
+          --test regression_cli_output_file
+          --test regression_cli_output_path
+          --test regression_cli_quiet_flag
+          --test regression_cli_redact_flag
+          --test regression_cli_sarif_output_file
+          --test regression_cli_scan_diff_explain_e2e
+          --test regression_cli_scan_format_matrix
+          --test regression_cli_scan_stdin
+          --test regression_cli_scan_summary
+          --test regression_cli_stdin_scan
+          --test regression_cli_threads_determinism
+          --test regression_cli_verbosity_flags
+          --test regression_cli_version_coherence
+          --test regression_daemon_custom_replacement_corpus
+          --test regression_daemon_suppression_parity
+          --test regression_empty_scan_is_not_clean
+          --test regression_error_messages_actionable
+          --test regression_exit_code_contract
+          --test regression_exit_code_matrix
+          --test regression_explain_no_quality_noise
+          --test regression_har_source_parse_gap_visible
+          --test regression_removed_verification_state
+          --test regression_scans_user_detectors_directory
+          --test regression_self_scan_segment_suppression_visible
+          --test regression_uninstall_surfaces_cache
+          --test regression_vendored_minified_finding_reachable
+          --test regression_zip64_duplicate_scan_gap_visible
 
   integration-detector-contracts:
     name: Integration (detector + recall contracts)
