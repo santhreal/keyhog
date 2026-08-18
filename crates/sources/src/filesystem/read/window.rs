@@ -832,7 +832,7 @@ mod sparse_tests {
     fn all_hole_extent_plan_is_empty() {
         let ranges = scripted_ranges(
             8 * 1024 * 1024,
-            128 * 1024,
+            keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES as u64,
             vec![(0, libc::SEEK_DATA, Ok(None))],
         )
         .expect("all-hole extent plan");
@@ -846,7 +846,7 @@ mod sparse_tests {
     fn extent_query_errors_return_rewound_buffered_fallback() {
         let error = scripted_ranges(
             8 * 1024 * 1024,
-            128 * 1024,
+            keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES as u64,
             vec![(
                 0,
                 libc::SEEK_DATA,
@@ -890,8 +890,8 @@ mod sparse_tests {
     #[test]
     fn sparse_file_streams_start_and_end_data_with_bounded_windows() {
         const FILE_LEN: u64 = 32 * 1024 * 1024;
-        const WINDOW_SIZE: usize = 1024 * 1024;
-        const OVERLAP: usize = 128 * 1024;
+        const WINDOW_SIZE: usize = keyhog_core::DEFAULT_WINDOW_SIZE_BYTES;
+        const OVERLAP: usize = keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES;
         const START_SECRET: &str = "START_CREDENTIAL=alpha\n";
         const END_SECRET: &str = "END_CREDENTIAL=omega";
 
@@ -974,14 +974,14 @@ mod sparse_tests {
         let metadata = sparse.as_file().metadata().expect("all-hole metadata");
         assert_eq!(metadata.blocks(), 0, "test fixture allocated data blocks");
         assert!(
-            discover_sparse_ranges(sparse.as_file(), FILE_LEN, 128 * 1024)
+            discover_sparse_ranges(sparse.as_file(), FILE_LEN, keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES)
                 .expect("query all-hole extents")
                 .is_empty()
         );
 
         let mut windows = 0usize;
         let mut errors = Vec::new();
-        let outcome = for_each_file_windowed_mmap(sparse.path(), 1024 * 1024, 128 * 1024, |row| {
+        let outcome = for_each_file_windowed_mmap(sparse.path(), keyhog_core::DEFAULT_WINDOW_SIZE_BYTES, keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES, |row| {
             match row {
                 Ok(_) => windows += 1,
                 Err(error) => errors.push(error.to_string()),

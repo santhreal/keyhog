@@ -39,8 +39,8 @@ pub use crate::matcher_artifact_cache::{
 // scanner-owned switch that can disagree with it.
 pub use crate::scan_profile::{dump as profile_dump, reset as profile_reset};
 pub use crate::types::{
-    regex_dfa_limit_default, set_regex_dfa_limit, ScanExecutionRoute, ScannerConfig,
-    ScannerTuningConfig,
+    regex_dfa_limit_default, set_regex_dfa_limit, MAX_SCAN_CHUNK_BYTES, WINDOW_OVERLAP_BYTES,
+    ScanExecutionRoute, ScannerConfig, ScannerTuningConfig,
 };
 pub use crate::util_hash::{FNV_OFFSET_BASIS, FNV_PRIME};
 pub use keyhog_profile::{detail as profile_detail, set_detail as set_profile_detail, Detail};

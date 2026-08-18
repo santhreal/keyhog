@@ -57,8 +57,8 @@ fn unbounded_detectors_straddling_seam_trigger_coverage_gap_counter() {
     );
 
     // Split across two contiguous chunks A and B
-    // Chunk A is 140 KiB (> 128 KiB MAX_BOUNDARY_SEAM_BYTES)
-    let split_offset = 140 * 1024;
+    // Chunk A is wider than MAX_BOUNDARY_SEAM_BYTES
+    let split_offset = MAX_BOUNDARY_SEAM_BYTES + (12 * 1024);
     assert!(split_offset < total_len);
 
     let data_a = total_pem[..split_offset].to_string();

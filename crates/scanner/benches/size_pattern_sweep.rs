@@ -35,8 +35,8 @@ const SIZES: &[usize] = &[
 ];
 
 const DETECTOR_COUNTS: &[usize] = &[10, 100, 500];
-const WINDOW_BYTES: usize = 1024 * 1024;
-const WINDOW_OVERLAP: usize = 128 * 1024;
+const WINDOW_BYTES: usize = keyhog_core::DEFAULT_WINDOW_SIZE_BYTES;
+const WINDOW_OVERLAP: usize = keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES;
 
 /// Select `n` detectors at even intervals through the canonical corpus so each
 /// tier spans the alphabetized vendor and regex-shape distribution.

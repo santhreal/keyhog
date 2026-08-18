@@ -15,14 +15,14 @@ pub(crate) const MAX_WINDOW_DEDUP_ENTRIES: usize = 100_000;
 /// Maximum bytes scanned in a single chunk. Files larger than this are split
 /// into overlapping windows. 1 MiB keeps peak RSS predictable under parallel
 /// scanning with `rayon` (N threads × 1 MiB per chunk = bounded memory).
-pub(crate) const MAX_SCAN_CHUNK_BYTES: usize = 1024 * 1024;
+pub const MAX_SCAN_CHUNK_BYTES: usize = keyhog_core::DEFAULT_WINDOW_SIZE_BYTES;
 
 /// Overlap between adjacent scan windows when a file exceeds
 /// `MAX_SCAN_CHUNK_BYTES`. Must be larger than the longest secret the scanner
 /// can detect to avoid missing secrets that straddle a chunk boundary.
 /// 128 KiB covers PEM-encoded RSA-8192 keys, large JWTs, and multi-line
 /// concatenated secrets with generous margin.
-pub(crate) const WINDOW_OVERLAP_BYTES: usize = 128 * 1024;
+pub const WINDOW_OVERLAP_BYTES: usize = keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES;
 
 pub(crate) const FIRST_CAPTURE_GROUP_INDEX: usize = 1;
 pub(crate) const FIRST_LINE_NUMBER: usize = 1;

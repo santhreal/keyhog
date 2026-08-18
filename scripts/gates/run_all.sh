@@ -227,6 +227,10 @@ run "Unified host parallelism self-test: single host width owner and zero stray 
   python3 -B scripts/gates/unified_host_parallelism.py --self-test
 run "Unified host parallelism: canonical keyhog_profile host width ownership" \
   python3 -B scripts/gates/unified_host_parallelism.py
+run "Unified window overlap self-test: single canonical window overlap owner and zero redeclarations" \
+  python3 -B scripts/gates/unified_window_overlap.py --self-test
+run "Unified window overlap: canonical keyhog_core window overlap ownership" \
+  python3 -B scripts/gates/unified_window_overlap.py
 run "Timing log profile identity self-test: diagnostic log lines without profile identity are detected" \
   python3 -B scripts/gates/timing_log_profile_identity.py --self-test
 run "Timing log profile identity: all diagnostic timing figures derive from registered profile metrics" \

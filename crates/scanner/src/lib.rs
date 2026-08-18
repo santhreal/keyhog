@@ -171,7 +171,7 @@ pub(crate) mod segment_attribution;
 /// strings (file paths, commit SHAs).
 pub(crate) mod static_intern;
 /// Shared types for the scanner engine.
-pub(crate) mod types;
+pub mod types;
 
 // Internal modules.
 pub(crate) mod adjudicate;
