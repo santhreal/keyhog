@@ -721,6 +721,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
             Some(transaction.staged_path()),
             *policy,
             physical_gpu_available,
+            args.no_config,
         )
         .with_context(|| format!("constructing {policy_label} calibration runtime"))?;
         let mut orchestrator = ScanOrchestrator::new(scan_args)
@@ -1056,16 +1057,25 @@ fn calibration_point_summary_count(
 /// completed install persisted 635 decisions across four policies, and the very
 /// next `keyhog scan` reported "7 calibrated config(s), none matching config
 /// digest" and exited 2.
+///
+/// `no_config` is the same reasoning applied to `.keyhog.toml`: the digest
+/// hashes the resolved configuration, so calibration resolves the repository
+/// config exactly when the scans it serves will. Only a caller that wants the
+/// compiled-in host baseline, such as an installer running from whatever
+/// directory the install was started in, passes it.
 fn calibration_scan_args(
     autoroute_cache: Option<&Path>,
     policy: Option<&str>,
     include_gpu: bool,
+    no_config: bool,
 ) -> Result<ScanArgs> {
     let mut argv = vec![
         OsString::from("keyhog-scan"),
         OsString::from("--autoroute-calibrate"),
-        OsString::from("--no-config"),
     ];
+    if no_config {
+        argv.push(OsString::from("--no-config"));
+    }
     if include_gpu {
         argv.push(OsString::from("--autoroute-gpu"));
     }

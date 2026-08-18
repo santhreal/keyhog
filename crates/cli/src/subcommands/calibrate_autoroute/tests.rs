@@ -69,6 +69,13 @@ fn only_inconclusive_timing_failures_are_retryable() {
 /// digest, and the ordinary scan that followed reported "7 calibrated
 /// config(s), none matching config digest" and exited 2.
 ///
+/// `--no-config` is the same class, reached from the other side. Calibration
+/// used to pass it unconditionally, so calibrating inside a repository that
+/// carries a `.keyhog.toml` published every decision under the compiled-in
+/// baseline digest while the scans in that repository asked for the resolved
+/// one. It is now a caller decision, and BOTH modes are pinned here: the digest
+/// must match the scan that resolves configuration the same way.
+///
 /// The preset list is read from `SCAN_POLICY_PRESETS` at run time, so a new
 /// preset is covered without editing this test.
 #[test]
@@ -79,38 +86,66 @@ fn calibration_argv_resolves_the_config_digest_a_plain_scan_requests() {
         crate::orchestrator_config::autoroute_config_digest(&resolved)
     };
     for policy in std::iter::once(None).chain(SCAN_POLICY_PRESETS.iter().copied().map(Some)) {
-        let mut plain_argv = vec![OsString::from("keyhog-scan"), OsString::from("--no-config")];
-        if let Some(policy) = policy {
-            plain_argv.push(OsString::from(policy));
-        }
-        let mut plain = crate::args::ScanArgs::try_parse_from(plain_argv)
-            .expect("a documented preset parses as a plain scan");
-        let scanned = digest_of(&mut plain);
-        for include_gpu in [true, false] {
-            let mut calibration = calibration_scan_args(None, policy, include_gpu)
-                .expect("internal calibration scan args");
-            assert_eq!(
-                digest_of(&mut calibration),
-                scanned,
-                "calibration for {} with include_gpu={include_gpu} must persist under the digest \
-                 the same scan requests",
-                policy.unwrap_or("the default policy"),
-            );
+        for no_config in [true, false] {
+            let mut plain_argv = vec![OsString::from("keyhog-scan")];
+            if no_config {
+                plain_argv.push(OsString::from("--no-config"));
+            }
+            if let Some(policy) = policy {
+                plain_argv.push(OsString::from(policy));
+            }
+            let mut plain = crate::args::ScanArgs::try_parse_from(plain_argv)
+                .expect("a documented preset parses as a plain scan");
+            let scanned = digest_of(&mut plain);
+            for include_gpu in [true, false] {
+                let mut calibration = calibration_scan_args(None, policy, include_gpu, no_config)
+                    .expect("internal calibration scan args");
+                assert_eq!(
+                    digest_of(&mut calibration),
+                    scanned,
+                    "calibration for {} with include_gpu={include_gpu} no_config={no_config} must \
+                     persist under the digest the same scan requests",
+                    policy.unwrap_or("the default policy"),
+                );
+            }
         }
     }
 }
 
 #[test]
 fn calibration_runtime_admits_gpu_only_when_requested() {
-    let without = calibration_scan_args(None, None, false).expect("internal scan args");
+    let without = calibration_scan_args(None, None, false, false).expect("internal scan args");
     assert!(!without.autoroute_gpu);
     assert!(
         !without.no_gpu,
         "declining GPU candidates must not change the scan's resolved GPU policy"
     );
-    let with = calibration_scan_args(None, None, true).expect("internal scan args");
+    let with = calibration_scan_args(None, None, true, false).expect("internal scan args");
     assert!(with.autoroute_gpu);
     assert!(!with.no_gpu);
+}
+
+/// Which configuration calibration measures under is a caller decision, and
+/// the default is the one an operator's scans use. `resolve_scan_config`
+/// short-circuits to the compiled-in baseline the moment `no_config` is set
+/// (`config.rs`), so this bit alone decides whether a repository
+/// `.keyhog.toml` is inside the persisted digest. The unit-test process has no
+/// discovered config, which is exactly why the digest gate above cannot see a
+/// mode mix-up: assert the bit itself.
+#[test]
+fn calibration_resolves_repository_config_unless_the_caller_declines_it() {
+    let resolving = calibration_scan_args(None, None, false, false).expect("internal scan args");
+    assert!(
+        !resolving.no_config,
+        "a bare `keyhog calibrate-autoroute` must measure the configuration the \
+         scans in this directory resolve"
+    );
+    let baseline = calibration_scan_args(None, None, false, true).expect("internal scan args");
+    assert!(
+        baseline.no_config,
+        "an installer priming a host baseline must be able to decline the \
+         repository configuration it happens to be standing in"
+    );
 }
 
 #[test]

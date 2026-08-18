@@ -898,7 +898,18 @@ function Invoke-AutorouteCalibration {
             }
             $coreViaSubcommand = ($topHelp -match 'calibrate-autoroute')
             if ($coreViaSubcommand) {
-                $coreOutput = (& $BinPath calibrate-autoroute --quiet | Out-String)
+                # Calibration measures under the RESOLVED scan configuration.
+                # install.ps1 runs from whatever directory the operator started
+                # it in, which may be a repository with a `.keyhog.toml` that
+                # has nothing to do with the host baseline being primed, so
+                # decline it here. An operator whose repository carries one
+                # reruns `keyhog calibrate-autoroute` inside it. Binaries that
+                # predate the flag calibrate without it.
+                $coreCalibrateArgs = @('calibrate-autoroute')
+                $coreHelp = (& $BinPath calibrate-autoroute --help 2>$null | Out-String)
+                if ($coreHelp -match '--no-config') { $coreCalibrateArgs += '--no-config' }
+                $coreCalibrateArgs += '--quiet'
+                $coreOutput = (& $BinPath @coreCalibrateArgs | Out-String)
                 if ($LASTEXITCODE -ne 0) {
                     Err "The installed binary's canonical core autoroute calibration failed."
                     return $false

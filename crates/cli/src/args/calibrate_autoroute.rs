@@ -55,6 +55,21 @@ pub struct CalibrateAutorouteArgs {
     #[arg(long, value_enum, default_value_t = AutorouteCalibrationPolicy::All)]
     pub policy: AutorouteCalibrationPolicy,
 
+    /// Calibrate the compiled-in defaults instead of the repository config.
+    ///
+    /// Routing decisions are stored under the RESOLVED scan configuration, so
+    /// calibration must resolve the same `.keyhog.toml` walk-up the scans that
+    /// follow it resolve. Skipping the file writes every decision under a
+    /// digest no scan in that repository requests, and the next `keyhog scan`
+    /// fails closed with "none matching config digest".
+    ///
+    /// Pass this to prime a host baseline that is independent of whatever
+    /// directory calibration ran in. Installers do exactly that, and an
+    /// operator whose repository carries a `.keyhog.toml` reruns the bare
+    /// command inside the repository.
+    #[arg(long)]
+    pub no_config: bool,
+
     /// Suppress the per-probe progress lines; print only the final summary.
     #[arg(long)]
     pub quiet: bool,

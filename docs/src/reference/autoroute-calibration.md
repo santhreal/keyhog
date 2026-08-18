@@ -197,6 +197,24 @@ publishes only after every workload in the selected policy succeeds. Use the
 default all-policy sweep for a new installation. Use a focused policy to repair
 or refresh only the preset you run.
 
+### Which configuration the run measures
+
+Route decisions are stored under the resolved scan configuration, and a
+`.keyhog.toml` found on the walk-up from the working directory is part of it.
+Run `keyhog calibrate-autoroute` from the repository whose scans it serves.
+Running it elsewhere primes the compiled-in defaults, and a scan inside a
+repository that carries a `.keyhog.toml` then reports `none matching config
+digest` and exits 2.
+
+```sh
+keyhog calibrate-autoroute                 # measures ./.keyhog.toml if present
+keyhog calibrate-autoroute --no-config     # measures the compiled-in defaults
+```
+
+`install.sh` and `install.ps1` pass `--no-config`. An install runs from an
+arbitrary directory, so it primes the host baseline; calibrate again inside a
+repository that overrides scan policy.
+
 
 This drives the core stdin + filesystem workload ladder across every scan
 preset. Plain single-file probes cover every power-of-two size band from 1 byte

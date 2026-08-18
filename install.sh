@@ -1144,7 +1144,19 @@ prime_autoroute_cache() {
         return 1
     fi
     if printf '%s\n' "$top_help" | grep -q -- 'calibrate-autoroute'; then
-        if ! core_output="$("$bin" calibrate-autoroute --quiet)"; then
+        # Calibration measures under the RESOLVED scan configuration. install.sh
+        # runs from whatever directory the operator started it in, which may be
+        # a repository with a `.keyhog.toml` that has nothing to do with the
+        # host baseline being primed, so decline it here. An operator whose
+        # repository carries one reruns `keyhog calibrate-autoroute` inside it.
+        # Binaries that predate the flag calibrate without it, exactly as the
+        # `--no-config` probe above handles older scan surfaces.
+        core_no_config=""
+        if "$bin" calibrate-autoroute --help 2>/dev/null | grep -q -- '--no-config'; then
+            core_no_config="--no-config"
+        fi
+        # shellcheck disable=SC2086
+        if ! core_output="$("$bin" calibrate-autoroute $core_no_config --quiet)"; then
             err "The installed binary's canonical core autoroute calibration failed."
             return 1
         fi
