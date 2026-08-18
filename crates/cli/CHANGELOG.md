@@ -2,6 +2,7 @@
 
 ## 0.5.80 - 2026-08-17
 
+- test(cli): assert incremental Merkle cache detection across four adversarial change kinds and verify interrupt recovery without state corruption (`incremental_rescan_reports_unchanged_secret`, `sigint_mid_scan_exits_130`).
 - test(cli): enforce exit code totality through real binary execution across all scan-reachable codes and assert corrective action guidance on error enum variants (`regression_exit_code_matrix`).
 - fix(daemon): wrap daemon request dispatch and filesystem drain in `catch_unwind` isolation boundaries under shipped `panic = "unwind"` release profile, preventing server crash on internal request panics.
 - feat(cache): hook detector plan save operations into `keyhog_scanner::evict_cache_dir_with_policy` using `CacheKind::DetectorPlans`.
