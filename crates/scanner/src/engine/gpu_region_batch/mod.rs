@@ -103,6 +103,11 @@ impl<'a> ZeroRegionPresenceScratch<'a> {
 
 impl Drop for ZeroRegionPresenceScratch<'_> {
     fn drop(&mut self) {
+        #[cfg(feature = "gpu")]
+        crate::gpu::evidence::record_host_byte_scrub(
+            crate::gpu::evidence::GpuHostDataMovementSite::RegionPresenceScratchScrub,
+            self.scratch.haystack.len(),
+        );
         self.scratch.haystack.fill(0);
         self.scratch.haystack.clear();
         self.scratch.region_starts.clear();
@@ -461,7 +466,6 @@ pub(super) fn build_region_presence_batch(
     let total = region_presence_batch_len(chunks)?;
     validate_region_presence_batch_len(total)?;
 
-    scratch.haystack.fill(0);
     scratch.haystack.clear();
     scratch.region_starts.clear();
     scratch
@@ -476,6 +480,11 @@ pub(super) fn build_region_presence_batch(
         scratch.region_starts.push(scratch.haystack.len() as u32);
         let bytes = chunk.data.as_bytes();
         scratch.haystack.extend_from_slice(bytes);
+        #[cfg(feature = "gpu")]
+        crate::gpu::evidence::record_host_byte_copy(
+            crate::gpu::evidence::GpuHostDataMovementSite::RegionPresenceScratchCoalesce,
+            bytes.len(),
+        );
         if idx + 1 != chunks.len() {
             scratch.haystack.push(0);
         }

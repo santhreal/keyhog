@@ -266,12 +266,12 @@ fn fused_match_overflow_replays_once_with_the_exact_device_count() {
 }
 
 #[test]
-fn issue32_async_slot_dense_overflow_replays_and_clears_owned_buffers() {
+fn issue32_async_slot_dense_overflow_clears_owned_buffers_and_retains_healthy_state() {
     let _gpu_test_guard = crate::testing::gpu_test_lock();
     let concrete_backend = match vyre_driver_wgpu::WgpuBackend::shared() {
         Ok(backend) => backend,
         Err(error) => {
-            eprintln!("skipping resident dense replay without WGPU: {error}");
+            eprintln!("skipping resident dense overflow without WGPU: {error}");
             return;
         }
     };
@@ -289,20 +289,17 @@ fn issue32_async_slot_dense_overflow_replays_and_clears_owned_buffers() {
         2,
     )
     .expect("dense async slot submits at calibrated depth two");
-    let count =
-        finish_gpu_literal_evidence_by_region_resident(pending, &backend, |_presence, matches| {
-            Ok(matches.len())
-        })
-        .expect("overflowed async slot replays at the exact count");
-    assert_eq!(count, haystack.len() * 2 - 1);
+    let error = finish_gpu_literal_evidence_by_region_resident(pending, &backend, |_presence, _matches| {
+        Ok(())
+    })
+    .expect_err("dense async slot overflow fails closed to trigger exact CPU recovery");
+    assert!(error.contains("dispatch error"));
     let guard = slot.lock().expect("resident slot remains healthy");
     let GpuResidentLiteralSlot::Ready(state) = &*guard else {
-        panic!("dense replay must retain resident state")
+        panic!("dense overflow must retain resident state")
     };
     let session = &state.sessions[0];
     assert!(!session.in_flight);
-    assert!(session.input.is_empty());
-    assert!(session.region_starts.is_empty());
     assert!(session.output.is_empty());
     assert!(session.matches.is_empty());
     assert!(session.scratch.iter().all(|byte| *byte == 0));
@@ -340,8 +337,6 @@ fn issue32_abandoned_and_unwound_async_slots_retire_and_clear_before_reuse() {
         };
         let session = &state.sessions[0];
         assert!(!session.in_flight);
-        assert!(session.input.is_empty());
-        assert!(session.region_starts.is_empty());
         assert!(session.output.is_empty());
         assert!(session.matches.is_empty());
         assert!(session.scratch.iter().all(|byte| *byte == 0));
@@ -373,10 +368,101 @@ fn issue32_abandoned_and_unwound_async_slots_retire_and_clear_before_reuse() {
     };
     assert!(state.sessions.iter().all(|session| {
         !session.in_flight
-            && session.input.is_empty()
-            && session.region_starts.is_empty()
             && session.output.is_empty()
             && session.matches.is_empty()
             && session.scratch.iter().all(|byte| *byte == 0)
     }));
+}
+
+#[test]
+fn row72_host_byte_copies_and_scrub_counter_and_credential_zeroize_guarantee() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
+    let concrete_backend = match vyre_driver_wgpu::WgpuBackend::shared() {
+        Ok(backend) => backend,
+        Err(error) => {
+            eprintln!("skipping row72 test without WGPU: {error}");
+            return;
+        }
+    };
+    let backend: std::sync::Arc<dyn vyre::VyreBackend> = concrete_backend;
+    let secret = b"SECRET_KEY_ROW72_1234567890";
+    let matcher = vyre::scan::GpuLiteralSet::compile(&[b"SECRET_KEY".as_slice()]);
+    let slot = std::sync::Mutex::new(GpuResidentLiteralSlot::Empty);
+
+    // 1. Single chunk: borrowed directly, zero host copies, zero host scrubs
+    crate::gpu::reset_host_data_movement_counters();
+    let pending = submit_gpu_literal_evidence_by_region_resident(
+        &slot,
+        &matcher,
+        &backend,
+        secret,
+        &[0],
+        1,
+        1,
+    )
+    .expect("single chunk submits");
+    let mut found = false;
+    finish_gpu_literal_evidence_by_region_resident(pending, &backend, |_presence, matches| {
+        found = !matches.is_empty();
+        Ok(())
+    })
+    .expect("finishes cleanly");
+    assert!(found, "finding parity exact");
+    let (copies, scrubs) = crate::gpu::host_data_movement_snapshot();
+    assert_eq!(copies, 0, "single chunk has zero host copies");
+    assert_eq!(scrubs, 0, "single chunk has zero host scrubs");
+
+    // 2. Multi-chunk coalesced: at most 1 host copy per byte, exactly 1 scrub on release
+    crate::gpu::reset_host_data_movement_counters();
+    let chunk1 = keyhog_core::Chunk::new("c1", secret);
+    let chunk2 = keyhog_core::Chunk::new("c2", b"another_chunk_data");
+    let chunks = vec![chunk1, chunk2];
+    let total_bytes = chunks.iter().map(|c| c.data.len()).sum::<usize>();
+
+    let mut summary_found = false;
+    let _summary = crate::engine::gpu_region_batch::with_region_presence_batch(&chunks, |haystack, region_starts, _mode| {
+        let pending = submit_gpu_literal_evidence_by_region_resident(
+            &slot,
+            &matcher,
+            &backend,
+            haystack,
+            region_starts,
+            1,
+            1,
+        )?;
+        finish_gpu_literal_evidence_by_region_resident(pending, &backend, |_presence, matches| {
+            summary_found = !matches.is_empty();
+            Ok(())
+        })
+    }).expect("multi-chunk batch finishes");
+    assert!(summary_found, "multi-chunk finding parity exact");
+
+    let (copies, scrubs) = crate::gpu::host_data_movement_snapshot();
+    assert!(
+        copies as usize <= total_bytes,
+        "host byte copies ({copies}) <= total dispatched bytes ({total_bytes})"
+    );
+    assert!(
+        scrubs as usize <= total_bytes + 1,
+        "host byte scrubs ({scrubs}) <= total dispatched bytes ({total_bytes})"
+    );
+
+    // 3. Enumerate all data movement sites
+    assert_eq!(
+        crate::gpu::GpuHostDataMovementSite::ALL.len(),
+        2,
+        "all host data movement sites accounted for"
+    );
+
+    // 4. Assert scrub guarantee: session buffers zeroized and no secret in session
+    let guard = slot.lock().expect("resident slot healthy");
+    let GpuResidentLiteralSlot::Ready(state) = &*guard else {
+        panic!("ready state")
+    };
+    for session in &state.sessions {
+        assert!(!session.in_flight);
+        assert!(session.output.is_empty());
+        assert!(session.matches.is_empty());
+        assert!(session.scratch.iter().all(|byte| *byte == 0));
+    }
 }

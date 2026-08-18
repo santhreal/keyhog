@@ -289,6 +289,68 @@ pub(crate) fn note_device_free(bytes: u64) {
     keyhog_profile::set_gauge(GaugeId::GpuResidentBytes, current);
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub(crate) enum GpuHostDataMovementSite {
+    RegionPresenceScratchCoalesce,
+    RegionPresenceScratchScrub,
+}
+
+impl GpuHostDataMovementSite {
+    pub(crate) const ALL: &'static [Self] = &[
+        Self::RegionPresenceScratchCoalesce,
+        Self::RegionPresenceScratchScrub,
+    ];
+
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::RegionPresenceScratchCoalesce => "region-presence-scratch-coalesce",
+            Self::RegionPresenceScratchScrub => "region-presence-scratch-scrub",
+        }
+    }
+}
+
+static HOST_COPIED_BYTES: [AtomicU64; 2] = [AtomicU64::new(0), AtomicU64::new(0)];
+static HOST_SCRUBBED_BYTES: [AtomicU64; 2] = [AtomicU64::new(0), AtomicU64::new(0)];
+
+pub(crate) fn record_host_byte_copy(site: GpuHostDataMovementSite, bytes: usize) {
+    if bytes == 0 {
+        return;
+    }
+    let idx = match site {
+        GpuHostDataMovementSite::RegionPresenceScratchCoalesce => 0,
+        GpuHostDataMovementSite::RegionPresenceScratchScrub => 1,
+    };
+    HOST_COPIED_BYTES[idx].fetch_add(bytes as u64, Ordering::Relaxed);
+}
+
+pub(crate) fn record_host_byte_scrub(site: GpuHostDataMovementSite, bytes: usize) {
+    if bytes == 0 {
+        return;
+    }
+    let idx = match site {
+        GpuHostDataMovementSite::RegionPresenceScratchCoalesce => 0,
+        GpuHostDataMovementSite::RegionPresenceScratchScrub => 1,
+    };
+    HOST_SCRUBBED_BYTES[idx].fetch_add(bytes as u64, Ordering::Relaxed);
+}
+
+#[cfg(test)]
+pub(crate) fn host_data_movement_snapshot() -> (u64, u64) {
+    let copies: u64 = HOST_COPIED_BYTES.iter().map(|a| a.load(Ordering::Relaxed)).sum();
+    let scrubs: u64 = HOST_SCRUBBED_BYTES.iter().map(|a| a.load(Ordering::Relaxed)).sum();
+    (copies, scrubs)
+}
+
+#[cfg(test)]
+pub(crate) fn reset_host_data_movement_counters() {
+    for a in &HOST_COPIED_BYTES {
+        a.store(0, Ordering::Relaxed);
+    }
+    for a in &HOST_SCRUBBED_BYTES {
+        a.store(0, Ordering::Relaxed);
+    }
+}
+
 /// Current (resident, peak) device-byte tracker state; test diagnostics only.
 #[cfg(test)]
 pub(crate) fn resident_bytes_snapshot() -> (u64, u64) {
