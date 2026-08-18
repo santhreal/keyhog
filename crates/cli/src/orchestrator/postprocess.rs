@@ -154,13 +154,22 @@ pub(crate) fn suppresses_test_fixture(
 }
 
 pub(crate) fn suppresses_allowlist_match(allowlist: &keyhog_core::Allowlist, m: &RawMatch) -> bool {
+    let mut suppressed = false;
     if let Some(path) = m.location.file_path.as_deref() {
         if allowlist.is_path_ignored(path) {
-            return true;
+            allowlist.record_path_match(path);
+            suppressed = true;
         }
     }
-    allowlist.credential_hashes.contains(&m.credential_hash)
-        || allowlist.ignored_detectors.contains(&*m.detector_id)
+    if allowlist.credential_hashes.contains(&m.credential_hash) {
+        allowlist.record_hash_match(&m.credential_hash);
+        suppressed = true;
+    }
+    if allowlist.ignored_detectors.contains(&*m.detector_id) {
+        allowlist.record_detector_match(&m.detector_id);
+        suppressed = true;
+    }
+    suppressed
 }
 
 /// Order every match by a TOTAL key before dedup, so neither the reported order

@@ -2,6 +2,7 @@
 
 ## 0.5.80 - 2026-08-17
 
+- feat(allowlist): implement match attribution tracking and unused suppression entry reporting across detector, path, and hash rules (`AllowlistRule`, `UnusedAllowlistEntry`).
 - feat(cache): add `cache_layout` module with canonical `CacheKind` enumeration, path classification, and `CacheEvictionPolicy` contracts.
 - style: format guard massive diff test and git sources modules.
 
