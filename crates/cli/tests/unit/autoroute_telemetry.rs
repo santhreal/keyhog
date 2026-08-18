@@ -80,30 +80,14 @@ fn missing_buckets_are_listed_most_expensive_first() {
 /// has to hold one entry before the reset clears it.
 fn reset_probe_key() -> WorkloadKey {
     use super::super::super::workload::{
-        Phase1AdmissionKey, Phase2KeywordTriggerKey, SourceMixtureKey,
+        SourceMixtureKey,
     };
     WorkloadKey {
         bytes_bucket: 1,
         chunks_bucket: 1,
         max_file_bucket: 1,
         pattern_bucket: 1,
-        phase1: Phase1AdmissionKey {
-            alphabet_rejected_chunks_bucket: 0,
-            alphabet_rejected_bytes_bucket: 0,
-            bigram_rejected_chunks_bucket: 0,
-            bigram_rejected_bytes_bucket: 0,
-            admitted_chunks_bucket: 1,
-            admitted_bytes_bucket: 1,
-        },
-        phase2_keyword_triggers: Phase2KeywordTriggerKey {
-            chunks_bucket: 0,
-            bytes_bucket: 0,
-            count_bucket: 0,
-        },
-        decode_kind_mask: 0,
-        decode_candidate_count_bucket: 0,
-        decode_candidate_bytes_bucket: 0,
-        decode_unknown: false,
+        decode_admitted: false,
         source_mixture: SourceMixtureKey {
             entries: Vec::new(),
         },

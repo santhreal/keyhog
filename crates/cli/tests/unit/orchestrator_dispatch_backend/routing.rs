@@ -306,7 +306,7 @@ fn policy_specific_scanner_plans_share_one_cache_corpus_identity() {
 fn unknown_decoder_sketch_maps_to_visible_conservative_workload_fields() {
     assert_eq!(
         decode_workload_projection(keyhog_scanner::decode::DecodeAdmissionSketch::UNKNOWN),
-        (0, 8, 16, true)
+        true
     );
 }
 
@@ -323,22 +323,11 @@ fn disabled_or_ineligible_decode_work_contributes_exact_zero() {
         DecodeAdmissionSketch::NONE,
         "disabled decode must neither consume sample budget nor project work"
     );
-    let key = workload_key_with_plan(
-        &batch,
-        902,
-        all_admitted_phase1(&batch),
-        keyhog_scanner::Phase2KeywordTriggerSummary::default(),
-        disabled,
-    )
-    .expect("disabled decode workload remains classifiable");
+    let key = workload_key_with_plan(&batch, 902, disabled)
+        .expect("disabled decode workload remains classifiable");
     assert_eq!(
-        (
-            key.decode_kind_mask,
-            key.decode_candidate_count_bucket,
-            key.decode_candidate_bytes_bucket,
-            key.decode_unknown,
-        ),
-        (0, 0, 0, false)
+        key.decode_admitted, false,
+        "disabled decode must project no decoder work"
     );
 
     let over_limit = DecodeWorkloadPlan::from_limits(1, 8);
@@ -615,10 +604,7 @@ fn issue32_autoroute_cache_roundtrip_and_digest_invalidation() {
         "\"gpu_runtime_backend\"",
         "\"gpu_driver_runtime_identity\"",
         "\"gpu_batch_input_limit_bytes\"",
-        "\"decode_kind_mask\"",
-        "\"decode_candidate_count_bucket\"",
-        "\"decode_candidate_bytes_bucket\"",
-        "\"decode_unknown\"",
+        "\"decode_admitted\"",
         "\"candidate_receipts\"",
         "\"phase2_plain_localizer\":true",
         "\"phase2_keyword_localizer\":false",
@@ -647,6 +633,15 @@ fn issue32_autoroute_cache_roundtrip_and_digest_invalidation() {
     );
     for derived in [
         "\"decode_density_bucket\"",
+        "\"decode_kind_mask\"",
+        "\"decode_unknown\"",
+        "\"decode_candidate_count_bucket\"",
+        "\"decode_candidate_bytes_bucket\"",
+        "\"phase1\"",
+        "\"phase2_keyword_triggers\"",
+        "\"chunk_ratio\"",
+        "\"payload_ratio\"",
+        "\"max_span_bucket\"",
         "\"simd_timing\"",
         "\"confidence_interval_95_ns\"",
         "\"best_ns\"",
@@ -1003,11 +998,6 @@ fn multi_config_cache_accumulates_buckets_across_sequential_saves() {
     let mut large_key = small_key.clone();
     large_key.bytes_bucket = large_key.bytes_bucket.saturating_add(3);
     large_key.max_file_bucket = large_key.max_file_bucket.saturating_add(3);
-    large_key.phase1.admitted_bytes_bucket =
-        large_key.phase1.admitted_bytes_bucket.saturating_add(3);
-    large_key.source_mixture.entries[0].max_span_bucket = large_key.source_mixture.entries[0]
-        .max_span_bucket
-        .saturating_add(3);
     assert_ne!(
         small_key, large_key,
         "test needs two distinct workload buckets"
@@ -2373,28 +2363,14 @@ fn cached_router_fails_closed_for_invalid_autoroute_state() {
         "token = abc\n".repeat(64),
         "filesystem",
     )];
-    let hit_admission = scanner.phase1_admission_plan(&hit_batch);
-    let hit_key = workload_key_with_plan(
-        &hit_batch,
-        pattern_count,
-        hit_admission.summary(),
-        hit_admission.phase2_keyword_triggers(),
-        test_decode_workload_plan(),
-    )
-    .expect("hit workload classified");
+    let hit_key = workload_key_with_plan(&hit_batch, pattern_count, test_decode_workload_plan())
+        .expect("hit workload classified");
     let miss_batch = vec![test_chunk_with_source(
         "token = abc\n".repeat(4096),
         "filesystem",
     )];
-    let miss_admission = scanner.phase1_admission_plan(&miss_batch);
-    let miss_key = workload_key_with_plan(
-        &miss_batch,
-        pattern_count,
-        miss_admission.summary(),
-        miss_admission.phase2_keyword_triggers(),
-        test_decode_workload_plan(),
-    )
-    .expect("miss workload classified");
+    let miss_key = workload_key_with_plan(&miss_batch, pattern_count, test_decode_workload_plan())
+        .expect("miss workload classified");
     assert_ne!(
         hit_key, miss_key,
         "test must exercise a real cache miss for a different workload bucket"

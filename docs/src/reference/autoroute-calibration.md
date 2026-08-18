@@ -55,13 +55,22 @@ while each workload decision retains its own authenticated weights, budgets,
 pipeline depths, detector/config digests, and correctness receipt. Normal scans
 never retime or rebalance the set.
 
-The workload key preserves the canonical source execution mixture, not only the
-top-level source families. Each sorted, raw-label-free BLAKE3 identity and size-provenance
-entry records exact reduced chunk and payload proportions plus the maximum
-source-span band. Reordering chunks keeps the same complete workload key.
-Scaling every class equally keeps only the source-mixture component stable;
-size, admission, and decoder bands can still change. Any different reduced
-mixture, including 31:1 versus 1:31, requires its own measured route.
+A route class must be something calibration can enumerate ahead of any scan.
+The workload key is therefore the shape of the work, not a measurement of the
+bytes: logarithmic byte, chunk, maximum-file, and pattern bands, the decoder
+kind mask, the unknown-decoder flag, and the canonical set of source execution
+classes with each class's size provenance. Reordering chunks keeps the same
+key. Changing the proportion between two source classes, the phase-one
+admission outcome, the phase-two keyword density, or the number of decode
+candidates does not: those are properties of the input, and a key that
+contained them made every scan an uncalibrated class.
+
+Calibration still observes those statistics. It logs the phase-2 keyword
+trigger counts for each measured decision on the `keyhog::routing` tracing
+target, and every persisted point records its exact sample byte count, chunk
+count, and measurement shape digest. They describe a measurement; they do not
+select one.
+
 Noncanonical, duplicate, inconsistent, or oversized persisted mixtures
 invalidate the cache instead of being normalized silently.
 Each persisted decision also carries a digest of the complete workload key.

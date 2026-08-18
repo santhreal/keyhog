@@ -207,7 +207,13 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
 // rejected on the version gate and recalibrated.
 // v56: authenticated ordered-device routes include adapter name and PCI
 // vendor/device identity. v55 routes lack those live-census bindings.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 57;
+// v58: the workload key drops the content-derived dimensions (phase-1
+// admission counts, phase-2 keyword trigger counts, decode candidate counts,
+// per-source chunk/payload ratios and span buckets). Those are measurements of
+// the scanned bytes, not properties of the workload class, so lookup, which is
+// exact-match, missed on every real scan and failed closed with exit 2. v57
+// keys carry them and cannot be compared against v58 keys.
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 58;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_ACCELERATOR_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -456,8 +462,6 @@ impl CachedBackendRouter {
         let key = match workload_key(
             batch,
             self.pattern_count,
-            phase1_plan.summary(),
-            phase1_plan.phase2_keyword_triggers(),
             self.decode_workload_plan.clone(),
         ) {
             Ok(key) => key,
@@ -788,8 +792,6 @@ impl MeasuredBackendRouter {
         let key = match workload_key(
             batch,
             self.pattern_count,
-            phase1_plan.summary(),
-            phase1_plan.phase2_keyword_triggers(),
             self.decode_workload_plan.clone(),
         ) {
             Ok(key) => key,
