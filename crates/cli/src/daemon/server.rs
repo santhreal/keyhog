@@ -24,8 +24,6 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{mpsc, Mutex, Notify, OwnedMutexGuard, Semaphore};
 
 const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
-static DAEMON_SOURCE_COVERAGE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 static TEST_PANIC_INJECTION_KIND: parking_lot::RwLock<Option<String>> =
     parking_lot::RwLock::new(None);
 
@@ -1204,104 +1202,97 @@ fn spawn_mass_filesystem_source(
 ) -> mpsc::Receiver<MassFilesystemMessage> {
     let (sender, receiver) = mpsc::channel(2);
     tokio::task::spawn_blocking(move || {
-        let _coverage_guard = match DAEMON_SOURCE_COVERAGE_LOCK.lock() {
-            Ok(guard) => guard,
-            Err(_) => {
-                // LAW10: poisoned coverage lock => fail closed with an explicit daemon error response.
-                let _ = sender.blocking_send(MassFilesystemMessage::Error(
-                    // LAW10: unused-binding marker; a dropped receiver leaves no consumer, so send status has no runtime effect and is not a fallback.
-                    "daemon: source coverage lock poisoned".to_string(),
-                ));
+        let source_telemetry = Arc::new(keyhog_sources::SourceSkipTelemetry::new());
+        keyhog_sources::with_source_telemetry(&source_telemetry, || {
+            let mut source = keyhog_sources::FilesystemSource::new(root.clone())
+                .with_max_file_size(max_file_size)
+                .with_ignore_paths(ignore_paths)
+                .with_default_excludes(respect_default_excludes);
+            if let Some(threads) = reader_threads {
+                source = source.with_reader_threads(threads);
+            }
+            if let Some(index) = merkle.as_ref() {
+                source = source.with_merkle_skip(index.clone());
+            }
+            let mut batch = Vec::with_capacity(MASS_BATCH_CHUNKS);
+            let mut batch_bytes = 0usize;
+            let mut source_failed = 0usize;
+            let mut content_skipped_unchanged = 0usize;
+            for chunk_result in source.chunks() {
+                let chunk = match chunk_result {
+                    Ok(chunk) => chunk,
+                    Err(error) => {
+                        source_failed = source_failed.saturating_add(1);
+                        tracing::warn!(
+                            "mass daemon local filesystem source {}: {error}",
+                            root.display()
+                        );
+                        continue;
+                    }
+                };
+                if let (Some(index), Some(path)) = (merkle.as_ref(), chunk.metadata.path.as_deref())
+                {
+                    let _profile_span =
+                        keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
+                    if index.record_chunk_path_at_offset_and_check_unchanged(
+                        std::path::Path::new(path),
+                        chunk.metadata.base_offset as u64,
+                        chunk.metadata.mtime_ns.unwrap_or(0),
+                        chunk.metadata.size_bytes.unwrap_or(0),
+                        chunk.data.as_bytes(),
+                    ) {
+                        content_skipped_unchanged = content_skipped_unchanged.saturating_add(1);
+                        continue;
+                    }
+                }
+                let chunks = match crate::subcommands::scan::split_chunk_for_mass(chunk) {
+                    Ok(chunks) => chunks,
+                    Err(error) => {
+                        source_failed = source_failed.saturating_add(1);
+                        tracing::warn!(
+                            "mass daemon local filesystem chunk {}: {error:#}",
+                            root.display()
+                        );
+                        continue;
+                    }
+                };
+                for chunk in chunks {
+                    let chunk_bytes = chunk.data.len();
+                    if !batch.is_empty()
+                        && (batch.len() >= MASS_BATCH_CHUNKS
+                            || batch_bytes.saturating_add(chunk_bytes) > MASS_BATCH_BYTES)
+                    {
+                        if sender
+                            .blocking_send(MassFilesystemMessage::Batch(std::mem::take(&mut batch)))
+                            .is_err()
+                        {
+                            return;
+                        }
+                        batch = Vec::with_capacity(MASS_BATCH_CHUNKS);
+                        batch_bytes = 0;
+                    }
+                    batch_bytes = batch_bytes.saturating_add(chunk_bytes);
+                    batch.push(chunk);
+                }
+            }
+            let skipped_unchanged = source
+                .skipped_unchanged_count()
+                .saturating_add(content_skipped_unchanged);
+            if !batch.is_empty()
+                && sender
+                    .blocking_send(MassFilesystemMessage::Batch(batch))
+                    .is_err()
+            {
                 return;
             }
-        };
-        let before = keyhog_sources::skip_counts();
-        let mut source = keyhog_sources::FilesystemSource::new(root.clone())
-            .with_max_file_size(max_file_size)
-            .with_ignore_paths(ignore_paths)
-            .with_default_excludes(respect_default_excludes);
-        if let Some(threads) = reader_threads {
-            source = source.with_reader_threads(threads);
-        }
-        if let Some(index) = merkle.as_ref() {
-            source = source.with_merkle_skip(index.clone());
-        }
-
-        let mut batch = Vec::with_capacity(MASS_BATCH_CHUNKS);
-        let mut batch_bytes = 0usize;
-        let mut source_failed = 0usize;
-        let mut content_skipped_unchanged = 0usize;
-        for chunk_result in source.chunks() {
-            let chunk = match chunk_result {
-                Ok(chunk) => chunk,
-                Err(error) => {
-                    source_failed = source_failed.saturating_add(1);
-                    tracing::warn!(
-                        "mass daemon local filesystem source {}: {error}",
-                        root.display()
-                    );
-                    continue;
-                }
-            };
-            if let (Some(index), Some(path)) = (merkle.as_ref(), chunk.metadata.path.as_deref()) {
-                let _profile_span = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
-                if index.record_chunk_path_at_offset_and_check_unchanged(
-                    std::path::Path::new(path),
-                    chunk.metadata.base_offset as u64,
-                    chunk.metadata.mtime_ns.unwrap_or(0),
-                    chunk.metadata.size_bytes.unwrap_or(0),
-                    chunk.data.as_bytes(),
-                ) {
-                    content_skipped_unchanged = content_skipped_unchanged.saturating_add(1);
-                    continue;
-                }
-            }
-            let chunks = match crate::subcommands::scan::split_chunk_for_mass(chunk) {
-                Ok(chunks) => chunks,
-                Err(error) => {
-                    source_failed = source_failed.saturating_add(1);
-                    tracing::warn!(
-                        "mass daemon local filesystem chunk {}: {error:#}",
-                        root.display()
-                    );
-                    continue;
-                }
-            };
-            for chunk in chunks {
-                let chunk_bytes = chunk.data.len();
-                if !batch.is_empty()
-                    && (batch.len() >= MASS_BATCH_CHUNKS
-                        || batch_bytes.saturating_add(chunk_bytes) > MASS_BATCH_BYTES)
-                {
-                    if sender
-                        .blocking_send(MassFilesystemMessage::Batch(std::mem::take(&mut batch)))
-                        .is_err()
-                    {
-                        return;
-                    }
-                    batch = Vec::with_capacity(MASS_BATCH_CHUNKS);
-                    batch_bytes = 0;
-                }
-                batch_bytes = batch_bytes.saturating_add(chunk_bytes);
-                batch.push(chunk);
-            }
-        }
-        let skipped_unchanged = source
-            .skipped_unchanged_count()
-            .saturating_add(content_skipped_unchanged);
-        if !batch.is_empty()
-            && sender
-                .blocking_send(MassFilesystemMessage::Batch(batch))
-                .is_err()
-        {
-            return;
-        }
-        let mut gaps = source_coverage_gaps_since(before);
-        gaps.source_failed = gaps.source_failed.saturating_add(source_failed);
-        let _ = sender.blocking_send(MassFilesystemMessage::Complete {
-            source_coverage_gaps: gaps,
-            skipped_unchanged,
-        }); // LAW10: a dropped receiver leaves no consumer, so send status cannot change recall.
+            let counts = source_telemetry.snapshot();
+            let mut gaps = source_coverage_gaps_from_counts(&counts);
+            gaps.source_failed = gaps.source_failed.saturating_add(source_failed);
+            let _ = sender.blocking_send(MassFilesystemMessage::Complete {
+                source_coverage_gaps: gaps,
+                skipped_unchanged,
+            }); // LAW10: a dropped receiver leaves no consumer, so send status cannot change recall.
+        });
     });
     receiver
 }
@@ -3156,6 +3147,7 @@ async fn scan_path(
     let fragment_scan_lock = state.fragment_scan_lock.clone();
     let resolved_owned = resolved.clone();
     let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+    let source_telemetry = Arc::new(keyhog_sources::SourceSkipTelemetry::new());
     if dogfood {
         telemetry.enable_dogfood();
     }
@@ -3181,7 +3173,8 @@ async fn scan_path(
                 Option<BackendRecoveryStatus>,
             ),
         > {
-            let (chunks, source_coverage_gaps) = daemon_scan_path_chunks(&resolved_owned)?;
+            let (chunks, source_coverage_gaps) =
+                daemon_scan_path_chunks(&resolved_owned, &source_telemetry)?;
             pinned.verify_unreplaced(&resolved_owned)?;
             if chunks.iter().all(|chunk| chunk.data.is_empty()) {
                 return Ok((Vec::new(), telemetry.drain(), source_coverage_gaps, None));
@@ -3711,74 +3704,78 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
     let guard_filter = state.guard_filter.clone();
     let _fragment_guard = fragment_scan_lock.lock_owned().await;
     scanner.clear_fragment_cache();
-    let skip_before = keyhog_sources::skip_counts();
+    let source_telemetry = Arc::new(keyhog_sources::SourceSkipTelemetry::new());
+    let source_telemetry_bg = Arc::clone(&source_telemetry);
     let result = tokio::task::spawn_blocking(move || -> Result<(usize, usize)> {
-        let source = keyhog_sources::FilesystemSource::new(root_path.clone());
-        let mut total_blockers = 0usize;
-        let mut total_gaps = 0usize;
-        for chunk_result in source.chunks() {
-            let chunk = match chunk_result {
-                Ok(c) => c,
-                Err(_) => {
-                    total_gaps += 1;
+        keyhog_sources::with_source_telemetry(&source_telemetry_bg, || -> Result<(usize, usize)> {
+            let source = keyhog_sources::FilesystemSource::new(root_path.clone());
+            let mut total_blockers = 0usize;
+            let mut total_gaps = 0usize;
+            for chunk_result in source.chunks() {
+                let chunk = match chunk_result {
+                    Ok(c) => c,
+                    Err(_) => {
+                        total_gaps += 1;
+                        continue;
+                    }
+                };
+                if chunk.data.is_empty() {
                     continue;
                 }
-            };
-            if chunk.data.is_empty() {
-                continue;
-            }
-            let telemetry = std::sync::Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
-            let scan_out = keyhog_scanner::telemetry::with_scan_telemetry(
-                &telemetry,
-                || -> Result<Vec<RawMatch>> {
-                    let batch = vec![chunk];
-                    let total_bytes: usize = batch.iter().map(|c| c.data.len()).sum();
-                    keyhog_profile::add_input_units(1);
-                    keyhog_profile::add_input_bytes(total_bytes as u64);
-                    let selection =
-                        router.choose_with_plan(scanner.as_ref(), backend_override, &batch)?;
-                    let outcome = crate::orchestrator::scan_selected_batch(
-                        scanner.as_ref(),
-                        &batch,
-                        selection.backend,
-                        #[cfg(feature = "gpu")]
-                        selection.ordered_gpu.as_deref(),
-                        selection.phase1_plan.as_ref(),
-                        selection.execution_route,
-                        selection
-                            .recovery_plan
-                            .filter(|_| recover_automatic_backend_faults),
-                    )
-                    .with_context(|| {
-                        format!(
-                            "daemon: guard baseline scan failed for {}",
-                            root_path.display()
+                let telemetry =
+                    std::sync::Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+                let scan_out = keyhog_scanner::telemetry::with_scan_telemetry(
+                    &telemetry,
+                    || -> Result<Vec<RawMatch>> {
+                        let batch = vec![chunk];
+                        let total_bytes: usize = batch.iter().map(|c| c.data.len()).sum();
+                        keyhog_profile::add_input_units(1);
+                        keyhog_profile::add_input_bytes(total_bytes as u64);
+                        let selection =
+                            router.choose_with_plan(scanner.as_ref(), backend_override, &batch)?;
+                        let outcome = crate::orchestrator::scan_selected_batch(
+                            scanner.as_ref(),
+                            &batch,
+                            selection.backend,
+                            #[cfg(feature = "gpu")]
+                            selection.ordered_gpu.as_deref(),
+                            selection.phase1_plan.as_ref(),
+                            selection.execution_route,
+                            selection
+                                .recovery_plan
+                                .filter(|_| recover_automatic_backend_faults),
                         )
-                    })?;
-                    let raw: Vec<RawMatch> = outcome.per_chunk.into_iter().flatten().collect();
-                    Ok(raw)
-                },
-            );
-            match scan_out {
-                Ok(raw_matches) => match guard_filter
-                    .finalize_default_policy_blocker_count(&scanner, raw_matches)
-                {
-                    Some(count) => total_blockers += count,
-                    None => total_gaps += 1,
-                },
-                Err(_) => {
-                    total_gaps += 1;
+                        .with_context(|| {
+                            format!(
+                                "daemon: guard baseline scan failed for {}",
+                                root_path.display()
+                            )
+                        })?;
+                        let raw: Vec<RawMatch> = outcome.per_chunk.into_iter().flatten().collect();
+                        Ok(raw)
+                    },
+                );
+                match scan_out {
+                    Ok(raw_matches) => match guard_filter
+                        .finalize_default_policy_blocker_count(&scanner, raw_matches)
+                    {
+                        Some(count) => total_blockers += count,
+                        None => total_gaps += 1,
+                    },
+                    Err(_) => {
+                        total_gaps += 1;
+                    }
                 }
             }
-        }
-        Ok((total_blockers, total_gaps))
+            Ok((total_blockers, total_gaps))
+        })
     })
     .await;
     // Count files the source quietly skipped (oversized, binary,
     // unreadable, truncated) as coverage gaps. The source records
     // these in process-global counters rather than as Err items.
-    let skip_after = keyhog_sources::skip_counts();
-    let skip_delta = skip_after.total().saturating_sub(skip_before.total());
+    let skip_after = source_telemetry.snapshot();
+    let skip_delta = skip_after.total();
     match result {
         Ok(Ok((blockers, gaps))) => {
             let total_gaps = gaps + skip_delta;
@@ -3794,58 +3791,47 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
     }
 }
 
-fn daemon_scan_path_chunks(path: &Path) -> Result<(Vec<Chunk>, SourceCoverageGaps)> {
-    let _coverage_guard = DAEMON_SOURCE_COVERAGE_LOCK
-        .lock()
-        .map_err(|_| anyhow::anyhow!("daemon: source coverage lock poisoned"))?;
-    let before = keyhog_sources::skip_counts();
-    let source = keyhog_sources::FilesystemSource::new(path.to_path_buf());
-    let mut chunks = Vec::new();
-    for chunk in source.chunks() {
-        let chunk = chunk.with_context(|| {
-            format!("daemon: expanding filesystem source for {}", path.display())
-        })?;
-        if chunk.data.len() > crate::orchestrator::COALESCED_CHUNK_SCAN_CEILING_BYTES {
-            let chunk_path = match chunk.metadata.path.as_deref() {
-                Some(path) => path.to_owned(),
-                None => path.display().to_string(),
-            };
-            anyhow::bail!(
-                "daemon: refusing chunk over {} MiB from {}. Pass --daemon=off to use the full in-process scanner.",
-                crate::orchestrator::COALESCED_CHUNK_SCAN_CEILING_MB,
-                chunk_path
-            );
+fn daemon_scan_path_chunks(
+    path: &Path,
+    source_telemetry: &Arc<keyhog_sources::SourceSkipTelemetry>,
+) -> Result<(Vec<Chunk>, SourceCoverageGaps)> {
+    keyhog_sources::with_source_telemetry(source_telemetry, || -> Result<_> {
+        let source = keyhog_sources::FilesystemSource::new(path.to_path_buf());
+        let mut chunks = Vec::new();
+        for chunk in source.chunks() {
+            let chunk = chunk.with_context(|| {
+                format!("daemon: expanding filesystem source for {}", path.display())
+            })?;
+            if chunk.data.len() > crate::orchestrator::COALESCED_CHUNK_SCAN_CEILING_BYTES {
+                let chunk_path = match chunk.metadata.path.as_deref() {
+                    Some(path) => path.to_owned(),
+                    None => path.display().to_string(),
+                };
+                anyhow::bail!(
+                    "daemon: refusing chunk over {} MiB from {}. Pass --daemon=off to use the full in-process scanner.",
+                    crate::orchestrator::COALESCED_CHUNK_SCAN_CEILING_MB,
+                    chunk_path
+                );
+            }
+            chunks.push(chunk);
         }
-        chunks.push(chunk);
-    }
-    Ok((chunks, source_coverage_gaps_since(before)))
+        let counts = source_telemetry.snapshot();
+        Ok((chunks, source_coverage_gaps_from_counts(&counts)))
+    })
 }
 
-fn source_coverage_gaps_since(before: keyhog_sources::SkipCounts) -> SourceCoverageGaps {
-    let after = keyhog_sources::skip_counts();
+fn source_coverage_gaps_from_counts(counts: &keyhog_sources::SkipCounts) -> SourceCoverageGaps {
     SourceCoverageGaps {
-        over_max_size: after.over_max_size.saturating_sub(before.over_max_size),
-        binary: after.binary.saturating_sub(before.binary),
-        unreadable: after.unreadable.saturating_sub(before.unreadable),
-        git_object_unreadable: after
-            .git_object_unreadable
-            .saturating_sub(before.git_object_unreadable),
-        archive_truncated: after
-            .archive_truncated
-            .saturating_sub(before.archive_truncated),
-        binary_section_name_unresolved: after
-            .binary_section_name_unresolved
-            .saturating_sub(before.binary_section_name_unresolved),
-        source_truncated: after
-            .source_truncated
-            .saturating_sub(before.source_truncated),
-        structured_source_parse_failures: after
-            .structured_source_parse_failures
-            .saturating_sub(before.structured_source_parse_failures),
-        archive_duplicate_scan_unavailable: after
-            .archive_duplicate_scan_unavailable
-            .saturating_sub(before.archive_duplicate_scan_unavailable),
-        git_lfs_pointer: after.git_lfs_pointer.saturating_sub(before.git_lfs_pointer),
+        over_max_size: counts.over_max_size,
+        binary: counts.binary,
+        unreadable: counts.unreadable,
+        git_object_unreadable: counts.git_object_unreadable,
+        archive_truncated: counts.archive_truncated,
+        binary_section_name_unresolved: counts.binary_section_name_unresolved,
+        source_truncated: counts.source_truncated,
+        structured_source_parse_failures: counts.structured_source_parse_failures,
+        archive_duplicate_scan_unavailable: counts.archive_duplicate_scan_unavailable,
+        git_lfs_pointer: counts.git_lfs_pointer,
         source_failed: 0,
     }
 }

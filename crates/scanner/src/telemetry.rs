@@ -21,7 +21,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 /// A single dogfood event. Variants are intentionally narrow - anything
 /// scanner-internal that would help a user understand a missed or
@@ -223,7 +223,7 @@ fn recover_telemetry_lock<'a, T>(mutex: &'a Mutex<T>) -> std::sync::MutexGuard<'
 }
 
 #[derive(Default)]
-struct StaticRecoveryTelemetry {
+pub(crate) struct StaticRecoveryTelemetry {
     counts: [AtomicU64; StaticRecoveryRejection::ALL.len()],
     supported: AtomicU64,
     unsupported: AtomicU64,
@@ -231,7 +231,7 @@ struct StaticRecoveryTelemetry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum EmittedDogfoodKey {
+pub(crate) enum EmittedDogfoodKey {
     Suppression(String),
     #[cfg(feature = "decode")]
     StaticRecovery {
@@ -301,40 +301,47 @@ fn saturating_add_atomic(counter: &AtomicU64, amount: u64) {
     }
 }
 
-#[derive(Default)]
-struct Telemetry {
-    dogfood_enabled: AtomicBool,
-    example_suppressions: AtomicUsize,
-    events: Mutex<Vec<DogfoodEvent>>,
-    /// Namespaced keys for events already emitted by this trace. Suppression
-    /// events key by credential hash. Static recovery keys by path and reason.
-    /// The same credential is adjudicated by several pipeline stages (the
-    /// example-token gate AND a shape/weak-anchor gate can both drop the same
-    /// `AKIA…EXAMPLE` key), so without this the `--dogfood` trace emitted one
-    /// event per STAGE (duplicate noise for one logical suppression (KH-GAP-091)).
-    /// Keyed without the reason/stage so the FIRST stage to record a credential
-    /// wins and later stages are deduped; the example counter keeps its own
-    /// (reason-keyed) dedup so per-stage COUNTS are unaffected.
-    emitted_suppression_events: Mutex<HashSet<EmittedDogfoodKey>>,
-    detail_events_dropped: AtomicUsize,
-    static_recovery: StaticRecoveryTelemetry,
+/// Per-request scanner telemetry container.
+///
+/// Scoped container that replaces process-global mutable counters. CLI scans
+/// and long-lived daemon workers both use [`ScanTelemetry`] scopes installed
+/// via [`with_scan_telemetry`] so concurrent scans do not share counts/events.
+pub struct ScanTelemetry {
+    pub(crate) dogfood_enabled: AtomicBool,
+    pub(crate) example_suppressions: AtomicUsize,
+    pub(crate) events: Mutex<Vec<DogfoodEvent>>,
+    pub(crate) emitted_suppression_events: Mutex<HashSet<EmittedDogfoodKey>>,
+    pub(crate) detail_events_dropped: AtomicUsize,
+    pub(crate) static_recovery: StaticRecoveryTelemetry,
+    pub(crate) vendored_path_suppressions: AtomicUsize,
+    pub(crate) vendored_path_suppression_enabled: AtomicBool,
+    pub(crate) coverage_gaps: [AtomicUsize; ScannerCoverageGapEvent::ALL.len()],
+    pub(crate) files_scanned: AtomicUsize,
+    pub(crate) bytes_scanned: AtomicUsize,
+    pub(crate) skipped_files: AtomicUsize,
+    pub(crate) total_matches: AtomicUsize,
+    pub(crate) gpu_dispatches: AtomicUsize,
 }
 
-/// Per-request scanner telemetry used by daemon scan workers.
-///
-/// The regular CLI process still uses the process-global telemetry cell because
-/// it runs one scan per process. A daemon serves many client requests in one
-/// process, so each request owns one `ScanTelemetry` and installs it with
-/// [`with_scan_telemetry`] for the duration of the scan. Recorders then route
-/// counts/events into that scope instead of the process-global cell.
-#[derive(Default)]
-pub struct ScanTelemetry {
-    dogfood_enabled: AtomicBool,
-    example_suppressions: AtomicUsize,
-    events: Mutex<Vec<DogfoodEvent>>,
-    emitted_suppression_events: Mutex<HashSet<EmittedDogfoodKey>>,
-    detail_events_dropped: AtomicUsize,
-    static_recovery: StaticRecoveryTelemetry,
+impl Default for ScanTelemetry {
+    fn default() -> Self {
+        Self {
+            dogfood_enabled: AtomicBool::new(false),
+            example_suppressions: AtomicUsize::new(0),
+            events: Mutex::new(Vec::new()),
+            emitted_suppression_events: Mutex::new(HashSet::new()),
+            detail_events_dropped: AtomicUsize::new(0),
+            static_recovery: StaticRecoveryTelemetry::default(),
+            vendored_path_suppressions: AtomicUsize::new(0),
+            vendored_path_suppression_enabled: AtomicBool::new(true),
+            coverage_gaps: std::array::from_fn(|_| AtomicUsize::new(0)),
+            files_scanned: AtomicUsize::new(0),
+            bytes_scanned: AtomicUsize::new(0),
+            skipped_files: AtomicUsize::new(0),
+            total_matches: AtomicUsize::new(0),
+            gpu_dispatches: AtomicUsize::new(0),
+        }
+    }
 }
 
 impl ScanTelemetry {
@@ -342,19 +349,39 @@ impl ScanTelemetry {
         Self::default()
     }
 
+    pub fn reset(&self) {
+        self.dogfood_enabled.store(false, Ordering::Relaxed);
+        self.example_suppressions.store(0, Ordering::Relaxed);
+        self.detail_events_dropped.store(0, Ordering::Relaxed);
+        self.static_recovery.reset();
+        self.vendored_path_suppressions.store(0, Ordering::Relaxed);
+        self.vendored_path_suppression_enabled
+            .store(true, Ordering::Relaxed);
+        for gap in &self.coverage_gaps {
+            gap.store(0, Ordering::Relaxed);
+        }
+        self.files_scanned.store(0, Ordering::Relaxed);
+        self.bytes_scanned.store(0, Ordering::Relaxed);
+        self.skipped_files.store(0, Ordering::Relaxed);
+        self.total_matches.store(0, Ordering::Relaxed);
+        self.gpu_dispatches.store(0, Ordering::Relaxed);
+        recover_telemetry_lock(&self.events).clear();
+        recover_telemetry_lock(&self.emitted_suppression_events).clear();
+    }
+
     pub fn enable_dogfood(&self) {
         self.dogfood_enabled.store(true, Ordering::Relaxed);
     }
 
-    fn is_dogfood_enabled(&self) -> bool {
+    pub fn is_dogfood_enabled(&self) -> bool {
         self.dogfood_enabled.load(Ordering::Relaxed)
     }
 
-    fn example_suppression_count(&self) -> usize {
+    pub fn example_suppression_count(&self) -> usize {
         self.example_suppressions.load(Ordering::Relaxed)
     }
 
-    fn drain_events(&self) -> Vec<DogfoodEvent> {
+    pub fn drain_events(&self) -> Vec<DogfoodEvent> {
         drain_event_buffers(&self.events, &self.emitted_suppression_events)
     }
 
@@ -370,6 +397,7 @@ impl ScanTelemetry {
     }
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ScanTelemetrySnapshot {
     pub example_suppressions: u64,
     pub dogfood_events: Vec<DogfoodEvent>,
@@ -379,10 +407,11 @@ pub struct ScanTelemetrySnapshot {
 }
 
 thread_local! {
-    static CURRENT_SCAN_TELEMETRY: RefCell<Option<Arc<ScanTelemetry>>> = RefCell::new(None);
+    static CURRENT_SCAN_TELEMETRY: RefCell<Option<Arc<ScanTelemetry>>> = const { RefCell::new(None) };
+    static DEFAULT_THREAD_TELEMETRY: Arc<ScanTelemetry> = Arc::new(ScanTelemetry::new());
 }
 
-struct ScanTelemetryRestore {
+pub struct ScanTelemetryRestore {
     previous: Option<Arc<ScanTelemetry>>,
 }
 
@@ -395,30 +424,42 @@ impl Drop for ScanTelemetryRestore {
     }
 }
 
-/// Run `f` with `telemetry` installed for scanner telemetry recorders on this
-/// thread. Nested scopes restore the previous owner on drop, including during
-/// unwinding.
-pub fn with_scan_telemetry<R>(telemetry: &Arc<ScanTelemetry>, f: impl FnOnce() -> R) -> R {
+/// Enter a scan telemetry scope on this thread, restoring previous scope on drop.
+pub fn enter_scan_telemetry_scope(telemetry: &Arc<ScanTelemetry>) -> ScanTelemetryRestore {
     let previous = CURRENT_SCAN_TELEMETRY.with(|slot| {
         let mut slot = slot.borrow_mut();
         slot.replace(Arc::clone(telemetry))
     });
-    let _restore = ScanTelemetryRestore { previous };
+    ScanTelemetryRestore { previous }
+}
+
+/// Run `f` with `telemetry` installed for scanner telemetry recorders on this
+/// thread. Nested scopes restore the previous owner on drop, including during
+/// unwinding.
+pub fn with_scan_telemetry<R>(telemetry: &Arc<ScanTelemetry>, f: impl FnOnce() -> R) -> R {
+    let _restore = enter_scan_telemetry_scope(telemetry);
     f()
 }
 
-fn current_scan_telemetry() -> Option<Arc<ScanTelemetry>> {
-    CURRENT_SCAN_TELEMETRY.with(|slot| slot.borrow().clone())
+/// Return the currently active scan telemetry handle for this thread.
+pub fn current_scan_telemetry() -> Arc<ScanTelemetry> {
+    CURRENT_SCAN_TELEMETRY.with(|slot| {
+        if let Some(current) = &*slot.borrow() {
+            Arc::clone(current)
+        } else {
+            DEFAULT_THREAD_TELEMETRY.with(|default| Arc::clone(default))
+        }
+    })
 }
 
 /// Capture the request-scoped telemetry owner before dispatching work to a
 /// thread pool. Rayon workers do not inherit thread-local state automatically.
 pub(crate) fn capture_scan_telemetry() -> Option<Arc<ScanTelemetry>> {
-    current_scan_telemetry()
+    CURRENT_SCAN_TELEMETRY.with(|slot| slot.borrow().clone())
 }
 
 /// Install a captured request scope for one worker closure. When no request
-/// scope exists, execute directly so normal CLI scans retain the global path.
+/// scope exists, execute directly.
 pub(crate) fn with_captured_scan_telemetry<R>(
     telemetry: Option<&Arc<ScanTelemetry>>,
     f: impl FnOnce() -> R,
@@ -428,79 +469,6 @@ pub(crate) fn with_captured_scan_telemetry<R>(
         None => f(),
     }
 }
-
-fn current_scan_dogfood_enabled() -> Option<bool> {
-    CURRENT_SCAN_TELEMETRY.with(|slot| {
-        slot.borrow()
-            .as_ref()
-            .map(|telemetry| telemetry.is_dogfood_enabled())
-    })
-}
-
-// Global lock-free telemetry counters (KH-116)
-static FILES_SCANNED: AtomicUsize = AtomicUsize::new(0);
-static BYTES_SCANNED: AtomicUsize = AtomicUsize::new(0);
-static SKIPPED_FILES: AtomicUsize = AtomicUsize::new(0);
-static TOTAL_MATCHES: AtomicUsize = AtomicUsize::new(0);
-static GPU_DISPATCHES: AtomicUsize = AtomicUsize::new(0);
-/// Files that MATCHED a structured-format heuristic (k8s Secret, Terraform
-/// state, Jupyter notebook, docker-compose) but FAILED to parse, so the
-/// structured decode-through (e.g. base64-encoded secrets inside a k8s `data:`
-/// block) was NOT applied. The raw text is still scanned, so this is not a total
-/// miss, but credentials only reachable via the structured decode are silently
-/// lost on the offending file. Counted (not just `tracing::debug!`-logged, which
-/// is filtered out at default verbosity) so the scan can surface the coverage
-/// gap loudly at completion (Law 10).
-static STRUCTURED_PARSE_FAILURES: AtomicUsize = AtomicUsize::new(0);
-/// A chunk matched a structured decode-through format (k8s Secret /
-/// docker-compose / tfstate / Jupyter notebook) but exceeded
-/// `MAX_STRUCTURED_PARSE_BYTES`, so its structured decode-through (base64
-/// `data:` decoding) was skipped. Distinct from a parse FAILURE: the file is
-/// well-formed, just too large for the structured pass. The raw bytes are still
-/// scanned, but the regular scan does not recover base64-encoded values, so this
-/// is a real recall gap the reporter must surface (Law 10) rather than the bare
-/// `return None` that previously dropped it silently.
-static STRUCTURED_OVERSIZE_SKIPS: AtomicUsize = AtomicUsize::new(0);
-/// Decode-through work was truncated by a safety budget/cap. The raw chunk is
-/// still scanned, but secrets only reachable after an omitted recursive decode
-/// layer may be missed, so the CLI must surface this as a coverage gap.
-static DECODE_TRUNCATIONS: AtomicUsize = AtomicUsize::new(0);
-/// A chunk carried decode candidates (`decoder_admission` would have admitted
-/// it) but exceeded `max_decode_bytes`, so decode-through never ran on it at
-/// all. Distinct from `DECODE_TRUNCATIONS`, which counts decode work that
-/// started and was cut short: here the whole pass was declined up front. The raw
-/// bytes are still scanned, but nothing base64/hex/URL-encoded inside the chunk
-/// is recovered, so lowering `--decode-size-limit` used to drop findings with no
-/// operator-visible signal at all.
-static DECODE_OVERSIZE_SKIPS: AtomicUsize = AtomicUsize::new(0);
-#[cfg(test)]
-thread_local! {
-    static THREAD_DECODE_TRUNCATIONS: std::cell::Cell<usize> =
-        const { std::cell::Cell::new(0) };
-}
-/// A trigger bitmap or compiled pattern-index side table referenced a pattern
-/// outside the compiled pattern bitmap. That loses phase-2 admission/expansion
-/// coverage for the affected pattern, so the operator must see the partial scan.
-static INVALID_PATTERN_INDEX_SKIPS: AtomicUsize = AtomicUsize::new(0);
-/// Cross-chunk boundary reassembly could not run because the caller supplied a
-/// result vector with different cardinality than the chunk vector.
-static BOUNDARY_RESULT_CARDINALITY_MISMATCHES: AtomicUsize = AtomicUsize::new(0);
-/// Cross-chunk boundary reassembly context was truncated by MAX_BOUNDARY_SEAM_BYTES
-/// for unbounded active generators (an unbounded detector regex or entropy).
-static BOUNDARY_SEAM_TRUNCATIONS: AtomicUsize = AtomicUsize::new(0);
-/// Multiline/structured reassembly produced a synthetic finding mapping whose
-/// source line was not present in the caller-provided line-offset table.
-static LINE_OFFSET_MAPPING_MISMATCHES: AtomicUsize = AtomicUsize::new(0);
-/// A configured per-chunk deadline elapsed before the scanner completed every
-/// detection and post-processing stage for that chunk.
-static CHUNK_DEADLINE_ABORTS: AtomicUsize = AtomicUsize::new(0);
-
-/// Named-detector matches dropped by the binary-strings noise gate because the
-/// match carried no structural proof (KH-1064). Not a source skip: the bytes
-/// were scanned and a detector did fire, but the finding was withheld. It is
-/// counted so a zero-finding binary scan can still say what it excluded
-/// instead of reporting an unqualified clean.
-static BINARY_STRINGS_NAMED_EXCLUSIONS: AtomicUsize = AtomicUsize::new(0);
 
 /// Scanner coverage gap recorded when a scanner-owned transform did not run to
 /// full coverage. These are not source skips: raw bytes still flow through the
@@ -535,18 +503,18 @@ impl ScannerCoverageGapEvent {
         Self::BinaryStringsNamedExclusion,
     ];
 
-    pub(crate) fn counter(self) -> &'static AtomicUsize {
+    pub(crate) const fn index(self) -> usize {
         match self {
-            Self::StructuredParseFailure => &STRUCTURED_PARSE_FAILURES,
-            Self::StructuredOversizeSkip => &STRUCTURED_OVERSIZE_SKIPS,
-            Self::DecodeTruncation => &DECODE_TRUNCATIONS,
-            Self::DecodeOversizeSkip => &DECODE_OVERSIZE_SKIPS,
-            Self::InvalidPatternIndexSkip => &INVALID_PATTERN_INDEX_SKIPS,
-            Self::BoundaryResultCardinalityMismatch => &BOUNDARY_RESULT_CARDINALITY_MISMATCHES,
-            Self::BoundarySeamTruncation => &BOUNDARY_SEAM_TRUNCATIONS,
-            Self::LineOffsetMappingMismatch => &LINE_OFFSET_MAPPING_MISMATCHES,
-            Self::ChunkDeadlineAbort => &CHUNK_DEADLINE_ABORTS,
-            Self::BinaryStringsNamedExclusion => &BINARY_STRINGS_NAMED_EXCLUSIONS,
+            Self::StructuredParseFailure => 0,
+            Self::StructuredOversizeSkip => 1,
+            Self::DecodeTruncation => 2,
+            Self::DecodeOversizeSkip => 3,
+            Self::InvalidPatternIndexSkip => 4,
+            Self::BoundaryResultCardinalityMismatch => 5,
+            Self::BoundarySeamTruncation => 6,
+            Self::LineOffsetMappingMismatch => 7,
+            Self::ChunkDeadlineAbort => 8,
+            Self::BinaryStringsNamedExclusion => 9,
         }
     }
 
@@ -585,6 +553,16 @@ impl ScannerCoverageGapEvent {
             }
         }
     }
+
+    pub(crate) fn count(self) -> usize {
+        let t = current_scan_telemetry();
+        t.coverage_gaps[self.index()].load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn store(self, value: usize) {
+        let t = current_scan_telemetry();
+        t.coverage_gaps[self.index()].store(value, Ordering::Relaxed);
+    }
 }
 
 /// Exact scanner-owned coverage-gap counters at one point in time.
@@ -599,12 +577,9 @@ pub struct ScannerCoverageSnapshot {
 impl ScannerCoverageSnapshot {
     #[must_use]
     pub fn capture() -> Self {
+        let t = current_scan_telemetry();
         Self {
-            counts: std::array::from_fn(|index| {
-                ScannerCoverageGapEvent::ALL[index]
-                    .counter()
-                    .load(Ordering::Relaxed)
-            }),
+            counts: std::array::from_fn(|index| t.coverage_gaps[index].load(Ordering::Relaxed)),
         }
     }
 
@@ -647,7 +622,8 @@ pub(crate) struct RecordedScannerCoverageGap {
 pub(crate) fn record_scanner_coverage_gap(
     event: ScannerCoverageGapEvent,
 ) -> RecordedScannerCoverageGap {
-    let previous = event.counter().fetch_add(1, Ordering::Relaxed);
+    let t = current_scan_telemetry();
+    let previous = t.coverage_gaps[event.index()].fetch_add(1, Ordering::Relaxed);
     keyhog_profile::add_counter(event.counter_id(), 1);
     RecordedScannerCoverageGap {
         event,
@@ -656,64 +632,41 @@ pub(crate) fn record_scanner_coverage_gap(
     }
 }
 
-// Global static dogfood capability flag for fast opt-in checking (KH-120)
-static DOGFOOD_ENABLED: AtomicBool = AtomicBool::new(false);
-
-/// Findings dropped by the vendored/minified PATH suppression
-/// (`suppression::path_filter::looks_like_vendored_minified_path`).
-///
-/// This is a PRECISION policy, not a coverage boundary: the bytes were read and
-/// matched, then the finding was thrown away because of where the file sits. A
-/// dropped finding that nobody counts is a silent miss, and minified frontend
-/// bundles are one of the places a build pipeline most often inlines a real API
-/// key. The CLI reports this counter as its own coverage-gap row so the operator
-/// sees that findings existed and learns the flag that surfaces them.
-static VENDORED_PATH_SUPPRESSIONS: AtomicUsize = AtomicUsize::new(0);
-
-/// Whether the vendored/minified path suppression applies at all. On by default
-/// (vendored trees are noisy); `--no-default-excludes` turns it off, because a
-/// flag that says it disables exclusions must disable every one of them.
-static VENDORED_PATH_SUPPRESSION_ENABLED: AtomicBool = AtomicBool::new(true);
-
-fn cell() -> &'static Telemetry {
-    static CELL: OnceLock<Telemetry> = OnceLock::new();
-    CELL.get_or_init(Telemetry::default)
-}
-
-/// Enable dogfood event capture for the current process. Idempotent.
 pub fn enable_dogfood() {
-    DOGFOOD_ENABLED.store(true, Ordering::Relaxed);
-    cell().dogfood_enabled.store(true, Ordering::Relaxed);
+    current_scan_telemetry().enable_dogfood();
 }
 
 pub fn is_dogfood_enabled() -> bool {
-    if let Some(enabled) = current_scan_dogfood_enabled() {
-        return enabled;
-    }
-    DOGFOOD_ENABLED.load(Ordering::Relaxed)
+    current_scan_telemetry().is_dogfood_enabled()
 }
-
 /// Enable or disable the vendored/minified path suppression for this process.
 ///
 /// Call AFTER [`reset_for_scan`], which restores the default. The suppression is
 /// consulted on every surviving finding, so the read below is a relaxed atomic
 /// load and nothing more.
 pub fn set_vendored_path_suppression(enabled: bool) {
-    VENDORED_PATH_SUPPRESSION_ENABLED.store(enabled, Ordering::Relaxed);
+    current_scan_telemetry()
+        .vendored_path_suppression_enabled
+        .store(enabled, Ordering::Relaxed);
 }
 
-/// Whether the vendored/minified path suppression is currently applied.
 pub fn vendored_path_suppression_enabled() -> bool {
-    VENDORED_PATH_SUPPRESSION_ENABLED.load(Ordering::Relaxed)
+    current_scan_telemetry()
+        .vendored_path_suppression_enabled
+        .load(Ordering::Relaxed)
 }
 
 pub(crate) fn record_vendored_path_suppression() {
-    VENDORED_PATH_SUPPRESSIONS.fetch_add(1, Ordering::Relaxed);
+    current_scan_telemetry()
+        .vendored_path_suppressions
+        .fetch_add(1, Ordering::Relaxed);
     keyhog_profile::add_counter(keyhog_profile::CounterId::VendoredPathSuppressions, 1);
 }
-/// Findings dropped by the vendored/minified path suppression this scan.
+
 pub fn vendored_path_suppression_count() -> usize {
-    VENDORED_PATH_SUPPRESSIONS.load(Ordering::Relaxed)
+    current_scan_telemetry()
+        .vendored_path_suppressions
+        .load(Ordering::Relaxed)
 }
 
 /// Record one example/placeholder suppression. The default path is only the
@@ -725,21 +678,7 @@ pub fn record_example_suppression(
     credential: &str,
     reason: &'static str,
 ) {
-    if let Some(t) = current_scan_telemetry() {
-        record_example_suppression_in(
-            &t.example_suppressions,
-            &t.events,
-            &t.emitted_suppression_events,
-            &t.detail_events_dropped,
-            detector,
-            path,
-            credential,
-            reason,
-        );
-        return;
-    }
-
-    let t = cell();
+    let t = current_scan_telemetry();
     record_example_suppression_in(
         &t.example_suppressions,
         &t.events,
@@ -843,22 +782,10 @@ fn mark_suppression_event_emitted(
 /// drops are a `--dogfood`-only diagnostic. Dedup reuses the shared seen-set
 /// (keyed with a `shape\0` prefix so it can't collide with example keys).
 pub(crate) fn record_shape_suppression(path: Option<&str>, credential: &str, reason: &'static str) {
-    // Cheap atomic first - the common (no-dogfood) scan pays nothing beyond this.
     if !is_dogfood_enabled() {
         return;
     }
-    if let Some(t) = current_scan_telemetry() {
-        record_shape_suppression_in(
-            &t.events,
-            &t.emitted_suppression_events,
-            &t.detail_events_dropped,
-            path,
-            credential,
-            reason,
-        );
-        return;
-    }
-    let t = cell();
+    let t = current_scan_telemetry();
     record_shape_suppression_in(
         &t.events,
         &t.emitted_suppression_events,
@@ -877,30 +804,9 @@ pub(crate) fn record_static_recovery_rejection(
     expression_offset: usize,
     reason: StaticRecoveryRejection,
 ) {
-    if let Some(t) = current_scan_telemetry() {
-        t.static_recovery.record(reason);
-        if !t.is_dogfood_enabled() {
-            return;
-        }
-        if !mark_static_recovery_event_emitted(
-            &t.emitted_suppression_events,
-            &t.detail_events_dropped,
-            metadata,
-            expression_offset,
-            reason,
-        ) {
-            return;
-        }
-        push_dogfood_detail(
-            &t.events,
-            &t.detail_events_dropped,
-            static_recovery_event(metadata, expression_offset, reason),
-        );
-        return;
-    }
-    let t = cell();
+    let t = current_scan_telemetry();
     t.static_recovery.record(reason);
-    if !t.dogfood_enabled.load(Ordering::Relaxed) {
+    if !t.is_dogfood_enabled() {
         return;
     }
     if !mark_static_recovery_event_emitted(
@@ -919,18 +825,15 @@ pub(crate) fn record_static_recovery_rejection(
     );
 }
 
-/// Record successfully recovered static expressions in the bounded status.
 #[cfg(feature = "decode")]
 pub(crate) fn record_static_recovery_supported(count: usize) {
     if count == 0 {
         return;
     }
     let amount = u64::try_from(count).unwrap_or(u64::MAX); // LAW10: usize is at most 64 bits on every supported target, so this fallback is unreachable; saturation stays conservative if that target contract ever expands.
-    if let Some(t) = current_scan_telemetry() {
-        t.static_recovery.record_supported(amount);
-    } else {
-        cell().static_recovery.record_supported(amount);
-    }
+    current_scan_telemetry()
+        .static_recovery
+        .record_supported(amount);
 }
 
 #[cfg(feature = "decode")]
@@ -1017,24 +920,20 @@ fn record_shape_suppression_in(
 
 /// Count of example/placeholder credentials suppressed during this scan.
 pub fn example_suppression_count() -> usize {
-    cell().example_suppressions.load(Ordering::Relaxed)
+    current_scan_telemetry().example_suppression_count()
 }
 
-/// Zero the suppression counter without disturbing the dogfood
-/// enable-flag or any in-flight events. Used by the daemon between
-/// scan requests so per-request counts don't accumulate across
-/// clients - the count we ship over the wire belongs to one scan.
 #[cfg(test)]
 pub(crate) fn reset_example_suppression_count() {
-    cell().example_suppressions.store(0, Ordering::Relaxed);
+    current_scan_telemetry()
+        .example_suppressions
+        .store(0, Ordering::Relaxed);
 }
 
-/// Add `n` to the suppression counter without recording an event.
-/// Used by the daemon client to merge a daemon-side count into the
-/// CLI's own counter so the reporter's empty-findings summary fires
-/// correctly across the IPC boundary.
 pub fn add_example_suppressions(n: usize) {
-    cell().example_suppressions.fetch_add(n, Ordering::Relaxed);
+    current_scan_telemetry()
+        .example_suppressions
+        .fetch_add(n, Ordering::Relaxed);
     keyhog_profile::add_counter(keyhog_profile::CounterId::ExampleSuppressions, n as u64);
 }
 
@@ -1049,7 +948,8 @@ pub(crate) fn record_structured_parse_failure() {
 
 /// Count of files that matched a structured format but failed to parse this scan.
 pub fn structured_parse_failure_count() -> usize {
-    STRUCTURED_PARSE_FAILURES.load(Ordering::Relaxed)
+    current_scan_telemetry().coverage_gaps[ScannerCoverageGapEvent::StructuredParseFailure.index()]
+        .load(Ordering::Relaxed)
 }
 
 /// Record that a well-formed structured decode-through file (k8s Secret /
@@ -1064,29 +964,19 @@ pub(crate) fn record_structured_oversize_skip() {
 /// Count of decode-through structured files skipped this scan for exceeding the
 /// structured-parse size cap.
 pub fn structured_oversize_skip_count() -> usize {
-    STRUCTURED_OVERSIZE_SKIPS.load(Ordering::Relaxed)
+    current_scan_telemetry().coverage_gaps[ScannerCoverageGapEvent::StructuredOversizeSkip.index()]
+        .load(Ordering::Relaxed)
 }
 
 /// Record that recursive decode-through stopped before exhausting all available
 /// decoder output because a safety budget/cap fired.
 pub(crate) fn record_decode_truncation() {
     let _receipt = record_scanner_coverage_gap(ScannerCoverageGapEvent::DecodeTruncation);
-    #[cfg(test)]
-    THREAD_DECODE_TRUNCATIONS.with(|count| count.set(count.get() + 1));
 }
 
-/// Count of decode roots truncated by safety budgets/caps this scan.
-#[cfg(not(test))]
 pub fn decode_truncation_count() -> usize {
-    DECODE_TRUNCATIONS.load(Ordering::Relaxed)
-}
-
-/// Count of decode roots truncated by safety budgets/caps on the current test
-/// thread. Production still records the global counter; tests read this local
-/// view so parallel decode-budget probes cannot pollute exact assertions.
-#[cfg(test)]
-pub fn decode_truncation_count() -> usize {
-    THREAD_DECODE_TRUNCATIONS.with(|count| count.get())
+    current_scan_telemetry().coverage_gaps[ScannerCoverageGapEvent::DecodeTruncation.index()]
+        .load(Ordering::Relaxed)
 }
 
 /// Record that a chunk carrying decode candidates was denied decode-through
@@ -1103,7 +993,8 @@ pub(crate) fn record_decode_oversize_skip() {
 /// Count of decode-candidate-bearing chunks denied decode-through this scan for
 /// exceeding `max_decode_bytes` (`--decode-size-limit`).
 pub fn decode_oversize_skip_count() -> usize {
-    DECODE_OVERSIZE_SKIPS.load(Ordering::Relaxed)
+    current_scan_telemetry().coverage_gaps[ScannerCoverageGapEvent::DecodeOversizeSkip.index()]
+        .load(Ordering::Relaxed)
 }
 
 /// Record that compiled pattern-index side data referenced an out-of-range
@@ -1115,7 +1006,8 @@ pub(crate) fn record_invalid_pattern_index_skip() {
 /// Count of compiled-pattern expansion/admission edges skipped by invalid
 /// pattern indices this scan.
 pub fn invalid_pattern_index_skip_count() -> usize {
-    INVALID_PATTERN_INDEX_SKIPS.load(Ordering::Relaxed)
+    current_scan_telemetry().coverage_gaps[ScannerCoverageGapEvent::InvalidPatternIndexSkip.index()]
+        .load(Ordering::Relaxed)
 }
 
 /// Record that boundary reassembly was skipped because caller-provided chunk
@@ -1128,7 +1020,9 @@ pub(crate) fn record_boundary_result_cardinality_mismatch() {
 /// Count of boundary-reassembly passes skipped by chunk/result cardinality
 /// mismatch this scan.
 pub fn boundary_result_cardinality_mismatch_count() -> usize {
-    BOUNDARY_RESULT_CARDINALITY_MISMATCHES.load(Ordering::Relaxed)
+    current_scan_telemetry().coverage_gaps
+        [ScannerCoverageGapEvent::BoundaryResultCardinalityMismatch.index()]
+    .load(Ordering::Relaxed)
 }
 
 /// Record that cross-chunk boundary reassembly was truncated by MAX_BOUNDARY_SEAM_BYTES
@@ -1140,7 +1034,8 @@ pub(crate) fn record_boundary_seam_truncation() {
 /// Count of cross-chunk boundary reassembly passes truncated by MAX_BOUNDARY_SEAM_BYTES
 /// this scan.
 pub fn boundary_seam_truncation_count() -> usize {
-    BOUNDARY_SEAM_TRUNCATIONS.load(Ordering::Relaxed)
+    current_scan_telemetry().coverage_gaps[ScannerCoverageGapEvent::BoundarySeamTruncation.index()]
+        .load(Ordering::Relaxed)
 }
 
 /// Record that source line attribution fell back because a synthetic multiline
@@ -1157,7 +1052,8 @@ pub(crate) fn record_chunk_deadline_abort() {
 
 /// Count of chunks that stopped before full coverage because their deadline elapsed.
 pub fn chunk_deadline_abort_count() -> usize {
-    CHUNK_DEADLINE_ABORTS.load(Ordering::Relaxed)
+    current_scan_telemetry().coverage_gaps[ScannerCoverageGapEvent::ChunkDeadlineAbort.index()]
+        .load(Ordering::Relaxed)
 }
 
 /// Record a named-detector match withheld by the binary-strings noise gate.
@@ -1169,13 +1065,15 @@ pub(crate) fn record_binary_strings_named_exclusion() {
 /// Count of named-detector matches withheld from binary-derived chunks this
 /// scan for lack of structural proof.
 pub fn binary_strings_named_exclusion_count() -> usize {
-    BINARY_STRINGS_NAMED_EXCLUSIONS.load(Ordering::Relaxed)
+    current_scan_telemetry().coverage_gaps
+        [ScannerCoverageGapEvent::BinaryStringsNamedExclusion.index()]
+    .load(Ordering::Relaxed)
 }
 
-/// Count of synthetic multiline/structured mapping attribution mismatches this
-/// scan.
 pub fn line_offset_mapping_mismatch_count() -> usize {
-    LINE_OFFSET_MAPPING_MISMATCHES.load(Ordering::Relaxed)
+    current_scan_telemetry().coverage_gaps
+        [ScannerCoverageGapEvent::LineOffsetMappingMismatch.index()]
+    .load(Ordering::Relaxed)
 }
 
 /// Append events into the per-process buffer without going through the
@@ -1199,7 +1097,7 @@ fn append_event_details<I: IntoIterator<Item = DogfoodEvent>>(
     events: I,
     infer_static_recovery_counts: bool,
 ) {
-    let t = cell();
+    let t = current_scan_telemetry();
     for event in events {
         if infer_static_recovery_counts {
             let DogfoodEvent::StaticRecoveryRejected { reason, .. } = &event else {
@@ -1269,7 +1167,7 @@ pub fn merge_daemon_aggregates(
         ));
     }
 
-    let telemetry = cell();
+    let telemetry = current_scan_telemetry();
     telemetry
         .static_recovery
         .record_supported(static_recovery_status.supported);
@@ -1297,25 +1195,21 @@ pub fn merge_daemon_aggregates(
 /// scan. Detail-event deduplication and retention limits never change these
 /// aggregates.
 pub fn static_recovery_rejection_counts() -> BTreeMap<String, u64> {
-    cell().static_recovery.snapshot()
+    current_scan_telemetry().static_recovery.snapshot()
 }
 
-/// Aggregate supported, unsupported, and erroneous static-recovery counts for
-/// the current process scan.
 pub fn static_recovery_status() -> StaticRecoveryStatus {
-    cell().static_recovery.status()
+    current_scan_telemetry().static_recovery.status()
 }
 
-/// Number of dogfood detail events omitted after the bounded trace filled.
 pub fn dogfood_detail_events_dropped() -> usize {
-    cell().detail_events_dropped.load(Ordering::Relaxed)
+    current_scan_telemetry()
+        .detail_events_dropped
+        .load(Ordering::Relaxed)
 }
 
-/// Drain and return all captured dogfood events. Returns empty when
-/// `enable_dogfood()` was never called.
 pub fn drain_events() -> Vec<DogfoodEvent> {
-    let t = cell();
-    drain_event_buffers(&t.events, &t.emitted_suppression_events)
+    current_scan_telemetry().drain_events()
 }
 
 fn drain_event_buffers(
@@ -1331,61 +1225,45 @@ fn drain_event_buffers(
 
 // Telemetry recording helpers (KH-116)
 pub(crate) fn record_file_scanned(bytes: usize) {
-    FILES_SCANNED.fetch_add(1, Ordering::Relaxed);
-    BYTES_SCANNED.fetch_add(bytes, Ordering::Relaxed);
+    let t = current_scan_telemetry();
+    t.files_scanned.fetch_add(1, Ordering::Relaxed);
+    t.bytes_scanned.fetch_add(bytes, Ordering::Relaxed);
     keyhog_profile::add_counter(keyhog_profile::CounterId::FilesScanned, 1);
     keyhog_profile::add_counter(keyhog_profile::CounterId::BytesScanned, bytes as u64);
 }
 
 pub(crate) fn global_scan_counts() -> (usize, usize) {
+    let t = current_scan_telemetry();
     (
-        FILES_SCANNED.load(Ordering::Relaxed),
-        BYTES_SCANNED.load(Ordering::Relaxed),
+        t.files_scanned.load(Ordering::Relaxed),
+        t.bytes_scanned.load(Ordering::Relaxed),
     )
 }
 
 pub(crate) fn record_file_skipped() {
-    SKIPPED_FILES.fetch_add(1, Ordering::Relaxed);
+    current_scan_telemetry()
+        .skipped_files
+        .fetch_add(1, Ordering::Relaxed);
     keyhog_profile::add_counter(keyhog_profile::CounterId::SkippedFiles, 1);
 }
 
 pub(crate) fn record_match_found() {
-    TOTAL_MATCHES.fetch_add(1, Ordering::Relaxed);
+    current_scan_telemetry()
+        .total_matches
+        .fetch_add(1, Ordering::Relaxed);
     keyhog_profile::add_counter(keyhog_profile::CounterId::MatchesFound, 1);
 }
 
 pub(crate) fn record_gpu_dispatch() {
-    GPU_DISPATCHES.fetch_add(1, Ordering::Relaxed);
+    current_scan_telemetry()
+        .gpu_dispatches
+        .fetch_add(1, Ordering::Relaxed);
     keyhog_profile::add_counter(keyhog_profile::CounterId::GpuDispatchCalls, 1);
 }
 
 /// Reset process-global telemetry that is scoped to one scan.
-///
-/// Long-lived callers (CLI library use, daemon-style harnesses, and integration
-/// tests) must not let a previous scan's suppression count, dogfood flag, or
-/// coverage-gap counters change the next scan's report. Scoped daemon telemetry
-/// (`with_scan_telemetry`) remains isolated by its caller-owned handle.
 pub fn reset_for_scan() {
-    let t = cell();
-    DOGFOOD_ENABLED.store(false, Ordering::Relaxed);
-    t.dogfood_enabled.store(false, Ordering::Relaxed);
-    t.example_suppressions.store(0, Ordering::Relaxed);
-    t.detail_events_dropped.store(0, Ordering::Relaxed);
-    t.static_recovery.reset();
-    FILES_SCANNED.store(0, Ordering::Relaxed);
-    BYTES_SCANNED.store(0, Ordering::Relaxed);
-    SKIPPED_FILES.store(0, Ordering::Relaxed);
-    TOTAL_MATCHES.store(0, Ordering::Relaxed);
-    GPU_DISPATCHES.store(0, Ordering::Relaxed);
-    VENDORED_PATH_SUPPRESSIONS.store(0, Ordering::Relaxed);
-    VENDORED_PATH_SUPPRESSION_ENABLED.store(true, Ordering::Relaxed);
-    for gap in ScannerCoverageGapEvent::ALL {
-        gap.counter().store(0, Ordering::Relaxed);
-    }
-    #[cfg(test)]
-    THREAD_DECODE_TRUNCATIONS.with(|count| count.set(0));
-    recover_telemetry_lock(&t.events).clear();
-    recover_telemetry_lock(&t.emitted_suppression_events).clear();
+    current_scan_telemetry().reset();
     CURRENT_SCAN_TELEMETRY.with(|slot| {
         *slot.borrow_mut() = None;
     });

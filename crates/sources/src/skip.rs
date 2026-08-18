@@ -1,92 +1,108 @@
+use std::cell::RefCell;
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::ThreadId;
 
-/// How many files the filesystem walker skipped because they exceeded
-/// the active `--max-file-size` cap. Bumped once per skipped entry
-/// inside `FilesystemSource::process_entry`; the orchestrator reads
-/// it at end-of-scan to emit a single summary line so users see what
-/// the previously-silent walker filter dropped (kimi-1 dogfood #130).
-/// Counter is process-global; reset between scans by the test harness
-/// via `reset_skipped_over_max_size()`.
-static SKIPPED_OVER_MAX_SIZE: AtomicUsize = AtomicUsize::new(0);
+/// Scoped source skip telemetry container.
+///
+/// Replaces process-global atomic counters with a scoped container that can be
+/// installed per unit of work (CLI scan, daemon request, or test scope) via
+/// [`with_source_telemetry`].
+#[derive(Debug)]
+pub struct SourceSkipTelemetry {
+    counters: [AtomicUsize; 11],
+}
 
-/// How many files the filesystem walker skipped because their extension,
-/// content-sniffed magic header, or repeated-NUL binary prefix marked them
-/// binary before any content scan. Previously a silent `return` (Law 10): a
-/// `.bin`/`.dat`/no-ext file that is actually a planted-credential blob vanished
-/// with no trace. Bumped at each binary skip site in `process_entry`; surfaced
-/// at end-of-scan.
-static SKIPPED_BINARY: AtomicUsize = AtomicUsize::new(0);
+impl Default for SourceSkipTelemetry {
+    fn default() -> Self {
+        Self {
+            counters: std::array::from_fn(|_| AtomicUsize::new(0)),
+        }
+    }
+}
 
-/// How many files were skipped by the default-exclusion filter (lock files,
-/// minified/bundled JS, vendored trees). Also previously a silent `return`.
-static SKIPPED_EXCLUDED: AtomicUsize = AtomicUsize::new(0);
+impl SourceSkipTelemetry {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-/// How many files the walker could not read (permission denied / I/O error) and
-/// therefore did NOT scan. This is the most important to surface: an unreadable
-/// file is an UNKNOWN, not a clean file, silently dropping it is a false-clean
-/// (Law 10). Bumped on the walk's error path.
-static SKIPPED_UNREADABLE: AtomicUsize = AtomicUsize::new(0);
+    pub fn reset(&self) {
+        for counter in &self.counters {
+            counter.store(0, Relaxed);
+        }
+    }
 
-/// How many Git history/diff objects were referenced by Git metadata but could
-/// not be read or decoded as the object kind the scan required. These are
-/// source objects, not filesystem files, so report them separately from
-/// `SKIPPED_UNREADABLE` while still treating them as incomplete coverage.
-static GIT_OBJECT_UNREADABLE: AtomicUsize = AtomicUsize::new(0);
+    pub fn snapshot(&self) -> SkipCounts {
+        SkipCounts {
+            over_max_size: self.counters[0].load(Relaxed),
+            binary: self.counters[1].load(Relaxed),
+            excluded: self.counters[2].load(Relaxed),
+            unreadable: self.counters[3].load(Relaxed),
+            git_object_unreadable: self.counters[4].load(Relaxed),
+            archive_truncated: self.counters[5].load(Relaxed),
+            binary_section_name_unresolved: self.counters[6].load(Relaxed),
+            source_truncated: self.counters[7].load(Relaxed),
+            structured_source_parse_failures: self.counters[8].load(Relaxed),
+            archive_duplicate_scan_unavailable: self.counters[9].load(Relaxed),
+            git_lfs_pointer: self.counters[10].load(Relaxed),
+        }
+    }
+}
 
-/// How many archives (zip/apk/jar/tar/.gz/.tgz/...) had their extraction
-/// TRUNCATED by a decompression-bomb guard, the per-archive 4x-of-`--max-file-size`
-/// uncompressed budget was exceeded, so the remaining entries were NOT scanned.
-/// A truncated archive is partial coverage, not a clean archive: silently
-/// dropping the unscanned tail is a false-clean (Law 10). Bumped once per
-/// archive that hit a bomb guard; surfaced at end-of-scan alongside the other
-/// skip categories.
-static SKIPPED_ARCHIVE_TRUNCATED: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    static CURRENT_SOURCE_TELEMETRY: RefCell<Option<Arc<SourceSkipTelemetry>>> = const { RefCell::new(None) };
+    static DEFAULT_THREAD_SOURCE_TELEMETRY: Arc<SourceSkipTelemetry> = Arc::new(SourceSkipTelemetry::new());
+}
 
-/// How many binary (ELF/PE/Mach-O) sections were SKIPPED because their name
-/// could not be resolved from the object's section-name string table, a
-/// corrupt/truncated strtab in a malformed binary. The previous code substituted
-/// an empty name (`unwrap_or("")`) and then silently dropped the section because
-/// `""` is never in the high-value target list: a `.rodata`/`.data` section whose
-/// name lookup failed vanished from the scan with no trace (Law 10 false-clean
-/// embedded secrets in that section were never scanned). Bumped once per section
-/// whose name lookup fails; surfaced so the operator knows the binary parse was
-/// partial. Reset via `reset_skip_counters`.
-static BINARY_SECTION_NAME_UNRESOLVED: AtomicUsize = AtomicUsize::new(0);
+struct SourceTelemetryRestore {
+    previous: Option<Arc<SourceSkipTelemetry>>,
+}
 
-/// How many source scans stopped before exhausting their input because a
-/// source-level aggregate cap fired. This is distinct from per-file
-/// over-max-size skips: e.g. Git history may stop after the aggregate
-/// byte/chunk ceiling even though every individual blob was below its own cap.
-static SOURCE_TRUNCATED: AtomicUsize = AtomicUsize::new(0);
+impl Drop for SourceTelemetryRestore {
+    fn drop(&mut self) {
+        let previous = self.previous.take();
+        CURRENT_SOURCE_TELEMETRY.with(|slot| {
+            *slot.borrow_mut() = previous;
+        });
+    }
+}
 
-/// How many structured source files matched a format-specific source expander
-/// but failed to parse, so only the raw text fallback was scanned. This is
-/// partial coverage, not a whole-file skip: e.g. a malformed HAR still gets
-/// scanned as text, but request/response/body expansion is missing.
-static STRUCTURED_SOURCE_PARSE_FAILURES: AtomicUsize = AtomicUsize::new(0);
+/// Run `f` with `telemetry` installed for source skip counters on this thread.
+pub fn with_source_telemetry<R>(telemetry: &Arc<SourceSkipTelemetry>, f: impl FnOnce() -> R) -> R {
+    let previous = CURRENT_SOURCE_TELEMETRY.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        slot.replace(Arc::clone(telemetry))
+    });
+    let _restore = SourceTelemetryRestore { previous };
+    f()
+}
 
-/// How many archives matched the zip duplicate-entry detector but it could not
-/// run (e.g. a zip64 central directory it does not model, or a malformed/truncated
-/// central directory), so only the standard zip parser was used. That parser
-/// surfaces one entry per name, so a duplicated/shadow central-directory entry an
-/// attacker hid a secret in could be missed. Partial coverage, not a whole-file
-/// skip: the archive's ordinary entries are still scanned. Previously the error
-/// was discarded by an `if let Ok(Some(..))` and the degrade was invisible (Law
-/// 10 false-clean); now surfaced.
-static ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE: AtomicUsize = AtomicUsize::new(0);
+/// Capture the active source telemetry scope before dispatching to thread pools.
+pub fn capture_source_telemetry() -> Option<Arc<SourceSkipTelemetry>> {
+    CURRENT_SOURCE_TELEMETRY.with(|slot| slot.borrow().clone())
+}
 
-/// How many files were recognised as Git-LFS *pointers*, the tiny text
-/// stand-ins Git LFS commits in place of a large blob. keyhog scans the pointer
-/// text (and suppresses its content-hash `oid`), but the real blob it references
-/// lives in LFS storage and is NOT on disk to scan unless `git lfs pull` has
-/// materialised it. Silently reporting an unmaterialised-pointer repo as clean
-/// is a false-clean (Law 10): the blob, which can hold secrets (a keystore, a
-/// `.pem`, an encrypted `.env`), was never scanned. Bumped once per pointer
-/// file; surfaced at end-of-scan as partial coverage. Recognition is the shared
-/// `keyhog_core::git_lfs::is_git_lfs_pointer`.
-static GIT_LFS_POINTER: AtomicUsize = AtomicUsize::new(0);
+/// Run `f` with the captured source telemetry installed.
+pub fn with_captured_source_telemetry<R>(
+    telemetry: Option<&Arc<SourceSkipTelemetry>>,
+    f: impl FnOnce() -> R,
+) -> R {
+    match telemetry {
+        Some(telemetry) => with_source_telemetry(telemetry, f),
+        None => f(),
+    }
+}
+
+/// Return the currently active source telemetry handle for this thread.
+pub fn current_source_telemetry() -> Arc<SourceSkipTelemetry> {
+    CURRENT_SOURCE_TELEMETRY.with(|slot| {
+        if let Some(current) = &*slot.borrow() {
+            Arc::clone(current)
+        } else {
+            DEFAULT_THREAD_SOURCE_TELEMETRY.with(|default| Arc::clone(default))
+        }
+    })
+}
 
 /// Immutable snapshot of the skip counters, read once at end-of-scan so every
 /// reporter (human summary + structured JSON/SARIF) surfaces the same numbers.
@@ -142,7 +158,7 @@ pub(crate) enum SourceSkipEvent {
     Unreadable,
     GitObjectUnreadable,
     ArchiveTruncated,
-    #[cfg(feature = "binary")]
+    #[allow(dead_code)]
     BinarySectionNameUnresolved,
     SourceTruncated,
     StructuredSourceParseFailure,
@@ -151,20 +167,19 @@ pub(crate) enum SourceSkipEvent {
 }
 
 impl SourceSkipEvent {
-    fn counter(self) -> &'static AtomicUsize {
+    pub(crate) const fn index(self) -> usize {
         match self {
-            Self::OverMaxSize => &SKIPPED_OVER_MAX_SIZE,
-            Self::Binary => &SKIPPED_BINARY,
-            Self::Excluded => &SKIPPED_EXCLUDED,
-            Self::Unreadable => &SKIPPED_UNREADABLE,
-            Self::GitObjectUnreadable => &GIT_OBJECT_UNREADABLE,
-            Self::ArchiveTruncated => &SKIPPED_ARCHIVE_TRUNCATED,
-            #[cfg(feature = "binary")]
-            Self::BinarySectionNameUnresolved => &BINARY_SECTION_NAME_UNRESOLVED,
-            Self::SourceTruncated => &SOURCE_TRUNCATED,
-            Self::StructuredSourceParseFailure => &STRUCTURED_SOURCE_PARSE_FAILURES,
-            Self::ArchiveDuplicateScanUnavailable => &ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE,
-            Self::GitLfsPointer => &GIT_LFS_POINTER,
+            Self::OverMaxSize => 0,
+            Self::Binary => 1,
+            Self::Excluded => 2,
+            Self::Unreadable => 3,
+            Self::GitObjectUnreadable => 4,
+            Self::ArchiveTruncated => 5,
+            Self::BinarySectionNameUnresolved => 6,
+            Self::SourceTruncated => 7,
+            Self::StructuredSourceParseFailure => 8,
+            Self::ArchiveDuplicateScanUnavailable => 9,
+            Self::GitLfsPointer => 10,
         }
     }
 
@@ -176,7 +191,6 @@ impl SourceSkipEvent {
             Self::Unreadable => keyhog_profile::CounterId::SkippedUnreadable,
             Self::GitObjectUnreadable => keyhog_profile::CounterId::GitObjectUnreadable,
             Self::ArchiveTruncated => keyhog_profile::CounterId::SkippedArchiveTruncated,
-            #[cfg(feature = "binary")]
             Self::BinarySectionNameUnresolved => {
                 keyhog_profile::CounterId::BinarySectionNameUnresolved
             }
@@ -207,7 +221,8 @@ pub(crate) fn record_skip_event(event: SourceSkipEvent) -> RecordedSkipEvent {
 
 pub(crate) fn record_skip_events(event: SourceSkipEvent, delta: usize) -> RecordedSkipEvent {
     await_recording_admission();
-    let previous = event.counter().fetch_add(delta, Relaxed);
+    let t = current_source_telemetry();
+    let previous = t.counters[event.index()].fetch_add(delta, Relaxed);
     keyhog_profile::add_counter(event.counter_id(), delta as u64);
     RecordedSkipEvent {
         event,
@@ -218,49 +233,29 @@ pub(crate) fn record_skip_events(event: SourceSkipEvent, delta: usize) -> Record
 
 /// Read the current skip counters into a snapshot.
 pub fn skip_counts() -> SkipCounts {
-    SkipCounts {
-        over_max_size: SKIPPED_OVER_MAX_SIZE.load(Relaxed),
-        binary: SKIPPED_BINARY.load(Relaxed),
-        excluded: SKIPPED_EXCLUDED.load(Relaxed),
-        unreadable: SKIPPED_UNREADABLE.load(Relaxed),
-        git_object_unreadable: GIT_OBJECT_UNREADABLE.load(Relaxed),
-        archive_truncated: SKIPPED_ARCHIVE_TRUNCATED.load(Relaxed),
-        binary_section_name_unresolved: BINARY_SECTION_NAME_UNRESOLVED.load(Relaxed),
-        source_truncated: SOURCE_TRUNCATED.load(Relaxed),
-        structured_source_parse_failures: STRUCTURED_SOURCE_PARSE_FAILURES.load(Relaxed),
-        archive_duplicate_scan_unavailable: ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE.load(Relaxed),
-        git_lfs_pointer: GIT_LFS_POINTER.load(Relaxed),
-    }
+    current_source_telemetry().snapshot()
 }
 
 /// Merge remote (daemon) skip deltas into process-local counters so
 /// `CoverageCounts::current()` / SARIF notifications match the wire gaps
 /// (KH-1369). `excluded` is not on the daemon wire and is left unchanged.
 pub fn merge_skip_count_deltas(deltas: &SkipCounts) {
-    let add = |counter: &AtomicUsize, delta: usize| {
+    let t = current_source_telemetry();
+    let add = |index: usize, delta: usize| {
         if delta > 0 {
-            counter.fetch_add(delta, Relaxed);
+            t.counters[index].fetch_add(delta, Relaxed);
         }
     };
-    add(&SKIPPED_OVER_MAX_SIZE, deltas.over_max_size);
-    add(&SKIPPED_BINARY, deltas.binary);
-    add(&SKIPPED_UNREADABLE, deltas.unreadable);
-    add(&GIT_OBJECT_UNREADABLE, deltas.git_object_unreadable);
-    add(&SKIPPED_ARCHIVE_TRUNCATED, deltas.archive_truncated);
-    add(
-        &BINARY_SECTION_NAME_UNRESOLVED,
-        deltas.binary_section_name_unresolved,
-    );
-    add(&SOURCE_TRUNCATED, deltas.source_truncated);
-    add(
-        &STRUCTURED_SOURCE_PARSE_FAILURES,
-        deltas.structured_source_parse_failures,
-    );
-    add(
-        &ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE,
-        deltas.archive_duplicate_scan_unavailable,
-    );
-    add(&GIT_LFS_POINTER, deltas.git_lfs_pointer);
+    add(0, deltas.over_max_size);
+    add(1, deltas.binary);
+    add(3, deltas.unreadable);
+    add(4, deltas.git_object_unreadable);
+    add(5, deltas.archive_truncated);
+    add(6, deltas.binary_section_name_unresolved);
+    add(7, deltas.source_truncated);
+    add(8, deltas.structured_source_parse_failures);
+    add(9, deltas.archive_duplicate_scan_unavailable);
+    add(10, deltas.git_lfs_pointer);
 }
 
 /// Git commit/tree/blob objects that were referenced by Git metadata but not
@@ -269,30 +264,17 @@ pub fn git_object_unreadable() -> usize {
     skip_counts().git_object_unreadable
 }
 
-const ALL_SKIP_COUNTERS: [&AtomicUsize; 11] = [
-    &SKIPPED_OVER_MAX_SIZE,
-    &SKIPPED_BINARY,
-    &SKIPPED_EXCLUDED,
-    &SKIPPED_UNREADABLE,
-    &GIT_OBJECT_UNREADABLE,
-    &SKIPPED_ARCHIVE_TRUNCATED,
-    &BINARY_SECTION_NAME_UNRESOLVED,
-    &SOURCE_TRUNCATED,
-    &STRUCTURED_SOURCE_PARSE_FAILURES,
-    &ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE,
-    &GIT_LFS_POINTER,
-];
-
-/// Reset every skip counter.
+/// Reset every skip counter in the active telemetry scope.
 pub(crate) fn reset_skip_counters() {
-    for counter in ALL_SKIP_COUNTERS {
-        counter.store(0, Relaxed);
-    }
+    current_source_telemetry().reset();
 }
 
 /// Reset all sources runtime counters for a new scan.
 pub fn reset_for_scan() {
     reset_skip_counters();
+    CURRENT_SOURCE_TELEMETRY.with(|slot| {
+        *slot.borrow_mut() = None;
+    });
     #[cfg(feature = "binary")]
     crate::binary::reset_binary_counters();
 }
@@ -427,6 +409,7 @@ impl Drop for ActiveScan {
 #[derive(Clone)]
 pub(crate) struct ScanReadLease {
     _active: Arc<ActiveScan>,
+    telemetry: Arc<SourceSkipTelemetry>,
 }
 
 /// Acquire a scan lease before any recording work (eager walk errors or
@@ -449,6 +432,7 @@ pub(crate) fn acquire_scan_read_lease() -> ScanReadLease {
     state.active_scans += 1;
     ScanReadLease {
         _active: Arc::new(ActiveScan),
+        telemetry: current_source_telemetry(),
     }
 }
 
@@ -464,15 +448,18 @@ thread_local! {
     static SCAN_THREAD_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// Marks the current thread as doing work for an admitted scan. Not `Send`:
-/// the depth it decrements is the depth its constructor incremented.
 pub(crate) struct AttributedScanWork {
     _not_send: std::marker::PhantomData<*const ()>,
+    prev_telemetry: Option<Arc<SourceSkipTelemetry>>,
 }
 
 impl Drop for AttributedScanWork {
     fn drop(&mut self) {
         SCAN_THREAD_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+        let previous = self.prev_telemetry.take();
+        CURRENT_SOURCE_TELEMETRY.with(|slot| {
+            *slot.borrow_mut() = previous;
+        });
     }
 }
 
@@ -482,8 +469,15 @@ impl ScanReadLease {
     /// one, including reader-pool threads.
     pub(crate) fn enter(&self) -> AttributedScanWork {
         SCAN_THREAD_DEPTH.with(|depth| depth.set(depth.get() + 1));
+        let prev_telemetry = CURRENT_SOURCE_TELEMETRY.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            let prev = slot.clone();
+            *slot = Some(Arc::clone(&self.telemetry));
+            prev
+        });
         AttributedScanWork {
             _not_send: std::marker::PhantomData,
+            prev_telemetry,
         }
     }
 }
@@ -562,21 +556,25 @@ pub(crate) fn subtract_excluded(delta: usize) {
     if delta == 0 {
         return;
     }
-    let _ = SKIPPED_EXCLUDED.fetch_update(Relaxed, Relaxed, |current| {
-        Some(current.saturating_sub(delta))
-    });
+    let t = current_source_telemetry();
+    t.counters[2]
+        .fetch_update(Relaxed, Relaxed, |current| {
+            Some(current.saturating_sub(delta))
+        })
+        .expect("unconditional Some is infallible");
 }
 
 pub(crate) fn store_skip_counts(counts: SkipCounts) {
-    SKIPPED_OVER_MAX_SIZE.store(counts.over_max_size, Relaxed);
-    SKIPPED_BINARY.store(counts.binary, Relaxed);
-    SKIPPED_EXCLUDED.store(counts.excluded, Relaxed);
-    SKIPPED_UNREADABLE.store(counts.unreadable, Relaxed);
-    GIT_OBJECT_UNREADABLE.store(counts.git_object_unreadable, Relaxed);
-    SKIPPED_ARCHIVE_TRUNCATED.store(counts.archive_truncated, Relaxed);
-    BINARY_SECTION_NAME_UNRESOLVED.store(counts.binary_section_name_unresolved, Relaxed);
-    SOURCE_TRUNCATED.store(counts.source_truncated, Relaxed);
-    STRUCTURED_SOURCE_PARSE_FAILURES.store(counts.structured_source_parse_failures, Relaxed);
-    ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE.store(counts.archive_duplicate_scan_unavailable, Relaxed);
-    GIT_LFS_POINTER.store(counts.git_lfs_pointer, Relaxed);
+    let t = current_source_telemetry();
+    t.counters[0].store(counts.over_max_size, Relaxed);
+    t.counters[1].store(counts.binary, Relaxed);
+    t.counters[2].store(counts.excluded, Relaxed);
+    t.counters[3].store(counts.unreadable, Relaxed);
+    t.counters[4].store(counts.git_object_unreadable, Relaxed);
+    t.counters[5].store(counts.archive_truncated, Relaxed);
+    t.counters[6].store(counts.binary_section_name_unresolved, Relaxed);
+    t.counters[7].store(counts.source_truncated, Relaxed);
+    t.counters[8].store(counts.structured_source_parse_failures, Relaxed);
+    t.counters[9].store(counts.archive_duplicate_scan_unavailable, Relaxed);
+    t.counters[10].store(counts.git_lfs_pointer, Relaxed);
 }

@@ -116,7 +116,7 @@ async fn all_daemon_request_kinds_isolate_panics_under_shipped_profile() {
             send_raw_frame(&mut stream, &hello_json).await.unwrap();
             let hello_resp = read_raw_frame(&mut stream).await.unwrap();
             assert_eq!(
-                hello_resp.get("op").and_then(|v| v.as_str()),
+                hello_resp.get("kind").and_then(|v| v.as_str()),
                 Some("hello"),
                 "Handshake before '{target_kind}' must succeed"
             );
@@ -132,7 +132,7 @@ async fn all_daemon_request_kinds_isolate_panics_under_shipped_profile() {
         });
 
         assert_eq!(
-            resp.get("op").and_then(|v| v.as_str()),
+            resp.get("kind").and_then(|v| v.as_str()),
             Some("error"),
             "Target request '{target_kind}' must return typed error response on internal panic"
         );
@@ -170,7 +170,7 @@ async fn all_daemon_request_kinds_isolate_panics_under_shipped_profile() {
         let health_resp = read_raw_frame(&mut health_stream).await.unwrap();
 
         assert_eq!(
-            health_resp.get("op").and_then(|v| v.as_str()),
+            health_resp.get("kind").and_then(|v| v.as_str()),
             Some("health"),
             "Health request must succeed after panic in '{target_kind}'"
         );

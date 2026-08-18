@@ -1416,14 +1416,13 @@ pub fn credential_context_too_short_rejection_for_test(
 /// next scan's report.
 pub fn telemetry_reset_zeroes_all_seeded_gap_counters() -> bool {
     use crate::telemetry::ScannerCoverageGapEvent;
-    use std::sync::atomic::Ordering;
     for gap in ScannerCoverageGapEvent::ALL {
-        gap.counter().store(9, Ordering::Relaxed);
+        gap.store(9);
     }
     crate::telemetry::reset_for_scan();
     ScannerCoverageGapEvent::ALL
         .iter()
-        .all(|gap| gap.counter().load(Ordering::Relaxed) == 0)
+        .all(|gap| gap.count() == 0)
 }
 
 /// `(ALL.len(), all_ten_variants_present)` for `ScannerCoverageGapEvent::ALL`: the

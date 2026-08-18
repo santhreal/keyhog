@@ -195,7 +195,6 @@ crates/sources/src/git/source.rs::if let Ok(record) = super::read_capped_line(
 crates/sources/src/git/source.rs::let _ =
 crates/sources/src/git/source.rs::let objectname = fields.next().unwrap_or("");
 crates/sources/src/git/source.rs::let peeled = fields.next().unwrap_or("");
-crates/sources/src/skip.rs::let _ = SKIPPED_EXCLUDED.fetch_update(Relaxed, Relaxed, |current| {
 crates/verifier/src/engine.rs::Err(_) => Err(VerificationResult::Error(TIMEOUT_ERROR.into())),
 crates/verifier/src/engine.rs::let deadline = start.checked_add(timeout).unwrap_or(start);
 crates/verifier/src/engine.rs::let deadline = start.checked_add(total_duration).unwrap_or(start);
