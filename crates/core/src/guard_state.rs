@@ -51,6 +51,11 @@ pub enum GuardRootMode {
 }
 
 impl GuardRootMode {
+    /// All variants in declaration order, for exhaustive test derivation.
+    pub fn all() -> &'static [GuardRootMode] {
+        &[GuardRootMode::Repo, GuardRootMode::Filesystem]
+    }
+
     /// Stable string label for status output and documentation.
     pub fn label(self) -> &'static str {
         match self {
@@ -196,22 +201,46 @@ pub enum TransitionError {
     },
 }
 
+impl GuardTransition {
+    /// All transition variants in declaration order.
+    pub fn all() -> &'static [GuardTransition] {
+        &[
+            GuardTransition::ReconciliationStarted,
+            GuardTransition::ReconciliationClean,
+            GuardTransition::ReconciliationFindings,
+            GuardTransition::ReconciliationDegraded,
+            GuardTransition::EventAccepted,
+            GuardTransition::EventsClean,
+            GuardTransition::EventsFindings,
+            GuardTransition::EventsDegraded,
+            GuardTransition::CoverageLost,
+            GuardTransition::PolicyChanged,
+            GuardTransition::RepairStarted,
+            GuardTransition::Stopped,
+        ]
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            GuardTransition::ReconciliationStarted => "reconciliation-started",
+            GuardTransition::ReconciliationClean => "reconciliation-clean",
+            GuardTransition::ReconciliationFindings => "reconciliation-findings",
+            GuardTransition::ReconciliationDegraded => "reconciliation-degraded",
+            GuardTransition::EventAccepted => "event-accepted",
+            GuardTransition::EventsClean => "events-clean",
+            GuardTransition::EventsFindings => "events-findings",
+            GuardTransition::EventsDegraded => "events-degraded",
+            GuardTransition::CoverageLost => "coverage-lost",
+            GuardTransition::PolicyChanged => "policy-changed",
+            GuardTransition::RepairStarted => "repair-started",
+            GuardTransition::Stopped => "stopped",
+        }
+    }
+}
+
 impl std::fmt::Display for GuardTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GuardTransition::ReconciliationStarted => write!(f, "reconciliation-started"),
-            GuardTransition::ReconciliationClean => write!(f, "reconciliation-clean"),
-            GuardTransition::ReconciliationFindings => write!(f, "reconciliation-findings"),
-            GuardTransition::ReconciliationDegraded => write!(f, "reconciliation-degraded"),
-            GuardTransition::EventAccepted => write!(f, "event-accepted"),
-            GuardTransition::EventsClean => write!(f, "events-clean"),
-            GuardTransition::EventsFindings => write!(f, "events-findings"),
-            GuardTransition::EventsDegraded => write!(f, "events-degraded"),
-            GuardTransition::CoverageLost => write!(f, "coverage-lost"),
-            GuardTransition::PolicyChanged => write!(f, "policy-changed"),
-            GuardTransition::RepairStarted => write!(f, "repair-started"),
-            GuardTransition::Stopped => write!(f, "stopped"),
-        }
+        write!(f, "{}", self.label())
     }
 }
 
