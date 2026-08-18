@@ -31,7 +31,7 @@ on:
       version:
         description: 'Published crates.io version the composite must install exactly.'
         required: true
-        default: '0.5.79'
+        default: '0.5.80'
         type: string
 
 concurrency:
@@ -40,7 +40,7 @@ concurrency:
 
 env:
   CC: ""
-  KEYHOG_ACTION_E2E_VERSION: ${{ inputs.version || '0.5.79' }}
+  KEYHOG_ACTION_E2E_VERSION: ${{ inputs.version || '0.5.80' }}
 jobs:
 
   action-contract:
@@ -272,6 +272,7 @@ jobs:
           RELEASE_ASSET_MODE: ${{ github.event_name == 'workflow_dispatch' }}
           EXPECTED_PLATFORM: ${{ matrix.platform }}
           EXPECTED_VERSION: ${{ env.KEYHOG_ACTION_E2E_VERSION }}
+          ACTION_MODE: ${{ github.event_name == 'workflow_dispatch' && 'published-crate-auto' || 'portable-source-cpu' }}
         run: |
           set -euo pipefail
           expected_category="e2e-${EXPECTED_PLATFORM}-clean"
@@ -310,7 +311,19 @@ jobs:
               ;;
           esac
           version_output="$(keyhog --version)"
-          [[ "$version_output" == *"$EXPECTED_VERSION"* ]]
+          case "$ACTION_MODE" in
+            published-crate-auto) expected_binary_version="$EXPECTED_VERSION" ;;
+            portable-source-cpu)
+              # Source mode builds this checkout, so the pinned published
+              # version is the wrong expectation: assert the workspace version.
+              # awk exits on the match, so no `| head` closes a pipe that
+              # `set -o pipefail` would then read as a failed extraction.
+              expected_binary_version="$(awk -F'"' '/^\[workspace.package\]/{f=1;next} f&&/^version = /{print $2;exit} f&&/^\[/{exit}' Cargo.toml)"
+              [[ -n "$expected_binary_version" ]]
+              ;;
+            *) echo "unexpected Action proof mode: $ACTION_MODE" >&2; exit 1 ;;
+          esac
+          [[ "$version_output" == *"$expected_binary_version"* ]]
           if [[ "$RELEASE_ASSET_MODE" == "true" ]]; then
             compgen -G "$programs_glob" >/dev/null
           fi
