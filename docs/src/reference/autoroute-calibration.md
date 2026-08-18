@@ -213,7 +213,9 @@ keyhog calibrate-autoroute --no-config     # measures the compiled-in defaults
 
 `install.sh` and `install.ps1` pass `--no-config`. An install runs from an
 arbitrary directory, so it primes the host baseline; calibrate again inside a
-repository that overrides scan policy.
+repository that overrides scan policy. The all-policy sweep measures in four
+isolated child processes, and each child inherits the mode: asking for the
+baseline measures the baseline in all four.
 
 
 This drives the core stdin + filesystem workload ladder across every scan

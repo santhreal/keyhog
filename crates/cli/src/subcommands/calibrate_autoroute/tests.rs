@@ -8,6 +8,7 @@
 use super::*;
 use keyhog_core::Source;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsStr;
 
 #[test]
 fn scan_policy_plan_covers_every_digest_changing_preset() {
@@ -25,6 +26,88 @@ fn isolated_policy_children_use_stable_cli_values() {
     assert_eq!(
         policy_cli_value(AutorouteCalibrationPolicy::Precision),
         "precision"
+    );
+}
+
+/// WHY: the all-policy parent measures nothing itself; four child processes do.
+/// A flag that reaches the parent and not the child changes what was measured
+/// against what was asked for. `--no-config` was dropped exactly there, so an
+/// `install.sh` that asked for the compiled-in baseline published 629 decisions
+/// under the `.keyhog.toml` the install directory happened to carry, and the
+/// first ordinary scan after a clean 40-minute install exited 2.
+///
+/// WHAT IT DOES NOT CATCH: a flag the child parses but ignores.
+#[test]
+fn isolated_policy_children_inherit_the_parents_measurement_flags() {
+    let staged = Path::new("/tmp/staged-autoroute.json");
+    let receipts = Path::new("/tmp/receipts.json");
+    for no_config in [true, false] {
+        for quiet in [true, false] {
+            for packs in [None, Some(PathBuf::from("/opt/keyhog/packs"))] {
+                let parent = CalibrateAutorouteArgs {
+                    autoroute_cache: Some("/home/user/.cache/keyhog/autoroute.json".to_string()),
+                    execution_packs: packs.clone(),
+                    measurement_receipts: None,
+                    policy: AutorouteCalibrationPolicy::All,
+                    no_config,
+                    quiet,
+                };
+                let argv = isolated_policy_argv(&parent, "fast", staged, receipts);
+                assert_eq!(
+                    argv.first().map(OsString::as_os_str),
+                    Some(OsStr::new("calibrate-autoroute")),
+                    "the child re-enters this subcommand"
+                );
+                let child = CalibrateAutorouteArgs::try_parse_from(
+                    std::iter::once(OsString::from("keyhog")).chain(argv.into_iter().skip(1)),
+                )
+                .expect("the child argv the parent spawns must parse");
+
+                assert_eq!(
+                    child.no_config, parent.no_config,
+                    "the child measures under the configuration the parent was asked for"
+                );
+                assert_eq!(child.quiet, parent.quiet);
+                assert_eq!(child.execution_packs, parent.execution_packs);
+                // Parent-owned: one policy per child, the parent's staged
+                // transaction rather than the live cache, one receipt sink.
+                assert_eq!(child.policy, AutorouteCalibrationPolicy::Fast);
+                assert_eq!(child.autoroute_cache.as_deref(), staged.to_str());
+                assert_eq!(child.measurement_receipts.as_deref(), Some(receipts));
+            }
+        }
+    }
+}
+
+/// WHY: the forwarding above is a decision per flag, and a flag added later
+/// gets no decision at all unless something demands one. The flag set is read
+/// out of clap at run time, so a new `#[arg]` on `CalibrateAutorouteArgs` turns
+/// this red until it is either forwarded or recorded as parent-owned.
+#[test]
+fn every_calibration_flag_has_a_forwarding_decision() {
+    use clap::CommandFactory;
+
+    // Forwarded to every child: these change what gets measured or printed.
+    let forwarded = ["no-config", "quiet", "execution-packs"];
+    // Owned by the parent: the child gets a different value by construction.
+    let parent_owned = ["policy", "autoroute-cache", "measurement-receipts"];
+
+    let declared: BTreeSet<String> = CalibrateAutorouteArgs::command()
+        .get_arguments()
+        .filter_map(|arg| arg.get_long().map(str::to_string))
+        .filter(|long| long != "help")
+        .collect();
+    let decided: BTreeSet<String> = forwarded
+        .iter()
+        .chain(parent_owned.iter())
+        .map(|flag| (*flag).to_string())
+        .collect();
+    assert_eq!(
+        declared, decided,
+        "every calibrate-autoroute flag must be forwarded to the isolated policy \
+         children or explicitly owned by the parent\n  undecided: {:?}\n  stale: {:?}",
+        declared.difference(&decided).collect::<Vec<_>>(),
+        decided.difference(&declared).collect::<Vec<_>>(),
     );
 }
 

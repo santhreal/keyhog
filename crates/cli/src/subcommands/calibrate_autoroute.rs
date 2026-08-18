@@ -454,6 +454,48 @@ fn read_measurement_receipts(path: &Path) -> Result<BTreeSet<MeasuredRouteClass>
     Ok(receipts)
 }
 
+/// The argv one isolated policy child runs.
+///
+/// Every flag that reaches the parent and changes what a probe MEASURES has to
+/// reach the child, because the child is what measures. `--no-config` did not:
+/// `install.sh` asked for the compiled-in baseline, the parent honored it, and
+/// the four children resolved whatever `.keyhog.toml` the install directory
+/// happened to carry. A 40-minute install then published 629 decisions under
+/// four config digests no ordinary scan requests, and the first `keyhog scan`
+/// after it exited 2 with "none matching config digest".
+///
+/// The three flags the parent owns rather than forwards are `--policy` (the
+/// child calibrates exactly one), `--autoroute-cache` (children write the
+/// parent's staged transaction, not the live cache) and
+/// `--measurement-receipts` (one sink per child).
+fn isolated_policy_argv(
+    args: &CalibrateAutorouteArgs,
+    policy_name: &str,
+    staged_cache_path: &Path,
+    receipt_path: &Path,
+) -> Vec<OsString> {
+    let mut argv = vec![
+        OsString::from("calibrate-autoroute"),
+        OsString::from("--policy"),
+        OsString::from(policy_name),
+        OsString::from("--autoroute-cache"),
+        staged_cache_path.as_os_str().to_owned(),
+        OsString::from("--measurement-receipts"),
+        receipt_path.as_os_str().to_owned(),
+    ];
+    if args.no_config {
+        argv.push(OsString::from("--no-config"));
+    }
+    if args.quiet {
+        argv.push(OsString::from("--quiet"));
+    }
+    if let Some(packs) = args.execution_packs.as_deref() {
+        argv.push(OsString::from("--execution-packs"));
+        argv.push(packs.as_os_str().to_owned());
+    }
+    argv
+}
+
 fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Result<ExitCode> {
     let workload_count = selected_workload_plan()?.len();
     let live_cache_path =
@@ -491,20 +533,12 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
             .path()
             .join(format!("autoroute-{policy_name}-receipts.json"));
         let mut command = Command::new(&executable);
-        command
-            .arg("calibrate-autoroute")
-            .arg("--policy")
-            .arg(policy_name)
-            .arg("--autoroute-cache")
-            .arg(&staged_cache_path)
-            .arg("--measurement-receipts")
-            .arg(&receipt_path);
-        if args.quiet {
-            command.arg("--quiet");
-        }
-        if let Some(packs) = args.execution_packs.as_deref() {
-            command.arg("--execution-packs").arg(packs);
-        }
+        command.args(isolated_policy_argv(
+            args,
+            policy_name,
+            &staged_cache_path,
+            &receipt_path,
+        ));
         let status = command
             .status()
             .with_context(|| format!("starting isolated {policy_name} autoroute calibration"))?;
