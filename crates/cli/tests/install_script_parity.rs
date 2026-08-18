@@ -244,3 +244,64 @@ fn install_scripts_share_common_flags() {
         "install.ps1 must document common flags"
     );
 }
+
+/// WHY: the only automatic execution-pack producer used to live in
+/// `crates/cli/src/installer/execution_packs.rs`, reachable solely from the
+/// self-install path fed by the retired binary-asset release channel. When that
+/// channel was removed the producer went with it, and nothing noticed: with no
+/// installed generation every scan silently re-parses and re-compiles the
+/// embedded detector corpus. Measured on a 16-core AVX-512 host that is 284 ms
+/// wall and 1570 ms CPU of scan setup against 66 ms and 110 ms with packs
+/// installed. Both installers must publish a generation, and must do it BEFORE
+/// calibration, because packs change the detector and config digests that
+/// calibration measures its buckets against.
+///
+/// WHAT IT DOES NOT CATCH: whether the published generation authenticates on
+/// this host. `execution_pack_install.rs` covers that through the real compiler.
+#[test]
+fn install_scripts_publish_execution_packs_before_calibration() {
+    let root = repo_root();
+    for (name, compile, calibrate) in [
+        (
+            "install.sh",
+            "publish_execution_packs",
+            "prime_autoroute_cache",
+        ),
+        (
+            "install.ps1",
+            "Publish-ExecutionPacks",
+            "Invoke-AutorouteCalibration",
+        ),
+    ] {
+        let content = std::fs::read_to_string(root.join(name))
+            .unwrap_or_else(|e| panic!("read {name}: {e}"));
+        assert!(
+            content.contains("compile-execution-packs"),
+            "{name} must invoke `keyhog compile-execution-packs`; without it every scan \
+             recompiles the detector corpus"
+        );
+        assert!(
+            content.contains("signing.key"),
+            "{name} must provision the 32-byte execution-pack signing key"
+        );
+
+        // Every call to the calibration phase must be preceded by a pack
+        // publication call in the same script, so no install mode calibrates
+        // against digests the packs are about to change.
+        let calls: Vec<usize> = content.match_indices(compile).map(|(i, _)| i).collect();
+        assert!(
+            calls.len() >= 2,
+            "{name} must define {compile} and call it from every install mode; found {} \
+             occurrence(s)",
+            calls.len()
+        );
+        let first_publish = calls[0];
+        for (index, _) in content.match_indices(calibrate) {
+            assert!(
+                first_publish < index,
+                "{name} calls {calibrate} at byte {index} with no earlier {compile}; \
+                 packs must be published before calibration"
+            );
+        }
+    }
+}

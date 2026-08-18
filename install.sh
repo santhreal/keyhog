@@ -870,6 +870,9 @@ verify_install() {
             err "Rolling back rather than leaving an install whose health is unknown."
             return 1
         fi
+        if ! publish_execution_packs "$INSTALL_DIR/keyhog"; then
+            return 1
+        fi
         if [ "$SKIP_CALIBRATION" = "1" ]; then
             warn "Skipped autoroute calibration by explicit --no-calibrate."
             warn "Run install.sh --calibrate before relying on automatic routing; explicit --backend routes work immediately."
@@ -945,6 +948,93 @@ cleanup_autoroute_calibration() {
 docker_daemon_ready() {
     docker_cmd="$1"
     "$docker_cmd" info >/dev/null 2>&1
+}
+
+# Resolve the same per-user cache root the binary resolves with `dirs::cache_dir()`.
+# A mismatch here publishes packs the scanner will never look at.
+keyhog_cache_root() {
+    if [ "$OS" = "macos" ]; then
+        printf '%s\n' "$HOME/Library/Caches"
+        return 0
+    fi
+    if [ -n "${XDG_CACHE_HOME:-}" ]; then
+        printf '%s\n' "$XDG_CACHE_HOME"
+        return 0
+    fi
+    printf '%s\n' "$HOME/.cache"
+}
+
+# Compile and publish the host execution-pack generation.
+#
+# Without an installed generation every scan re-parses and re-compiles the
+# embedded detector corpus: measured on a 16-core AVX-512 host, scan setup costs
+# 284 ms wall and 1570 ms CPU with no packs against 132 ms and 170 ms with them.
+# That work belongs to install, once, not to every scan. It must run BEFORE
+# autoroute calibration, because the packs change the resolved detector and
+# config digests calibration measures its buckets against.
+publish_execution_packs() {
+    bin="$1"
+
+    # Capability probe, same contract as the --autoroute-calibrate probe below:
+    # a binary without the subcommand is not broken, it just predates packs.
+    if ! "$bin" compile-execution-packs --help >/dev/null 2>&1; then
+        warn "  Execution packs not supported by this build; scans will compile detectors in-process."
+        return 0
+    fi
+
+    pack_root="$(keyhog_cache_root)/keyhog/execution-packs"
+    key_path="$pack_root/signing.key"
+    generation="$pack_root/current"
+
+    say ""
+    info "Execution packs"
+    dim "  visible install phase; removes detector compilation from every later scan"
+
+    if ! mkdir -p "$pack_root"; then
+        err "Could not create execution-pack root $pack_root."
+        return 1
+    fi
+
+    # The signing key authenticates this host's packs to this host's binary. It
+    # is generated here and never leaves the machine; 32 bytes exactly, 0600, a
+    # regular file. `compile-execution-packs` re-validates all three and refuses
+    # anything else, so a partially-written key fails the build rather than
+    # publishing a generation nothing can authenticate.
+    if [ ! -f "$key_path" ]; then
+        if [ ! -r /dev/urandom ]; then
+            err "No readable /dev/urandom; cannot generate the execution-pack signing key."
+            return 1
+        fi
+        key_tmp="$pack_root/.signing.key.$$"
+        if ! (umask 077 && head -c 32 /dev/urandom > "$key_tmp") 2>/dev/null; then
+            rm -f "$key_tmp" 2>/dev/null || true
+            err "Could not generate the 32-byte execution-pack signing key."
+            return 1
+        fi
+        if ! chmod 600 "$key_tmp" 2>/dev/null || ! mv "$key_tmp" "$key_path" 2>/dev/null; then
+            rm -f "$key_tmp" 2>/dev/null || true
+            err "Could not install the execution-pack signing key at $key_path."
+            return 1
+        fi
+        dim "  Generated a new 32-byte signing key at $key_path"
+    else
+        chmod 600 "$key_path" 2>/dev/null || true
+    fi
+
+    pack_err="$pack_root/.compile.err.$$"
+    if "$bin" compile-execution-packs --output-dir "$generation" --signing-key "$key_path" 2>"$pack_err"; then
+        rm -f "$pack_err" 2>/dev/null || true
+        ok "  Published the host execution-pack generation."
+        return 0
+    fi
+
+    pack_reason="$(head -n 3 "$pack_err" 2>/dev/null)"
+    rm -f "$pack_err" 2>/dev/null || true
+    err "Execution-pack compilation failed; refusing to leave an install that recompiles detectors on every scan."
+    if [ -n "$pack_reason" ]; then
+        err "  reason: $pack_reason"
+    fi
+    return 1
 }
 
 prime_autoroute_cache() {
@@ -2288,6 +2378,11 @@ do_calibrate() {
     bin=$(current_binary || true)
     if [ -z "$bin" ] || [ ! -x "$bin" ]; then
         err "No installed keyhog binary found to calibrate. Run install first."
+        exit 1
+    fi
+    # Packs first: calibration measures buckets against the resolved detector
+    # and config digests, and an installed generation changes both.
+    if ! publish_execution_packs "$bin"; then
         exit 1
     fi
     if ! prime_autoroute_cache "$bin"; then

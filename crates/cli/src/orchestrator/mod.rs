@@ -1417,7 +1417,11 @@ impl ScanOrchestrator {
                     }
                     Err(error) => {
                         return Err(error).context(
-                            "loading authenticated detector execution pack; run a verified install or self-update",
+                            "loading authenticated detector execution pack; the installed generation \
+                             does not authenticate against this binary. Republish it with \
+                             `keyhog compile-execution-packs --output-dir <cache>/keyhog/execution-packs/current \
+                             --signing-key <cache>/keyhog/execution-packs/signing.key`, or rerun \
+                             `install.sh --calibrate`",
                         );
                     }
                 }

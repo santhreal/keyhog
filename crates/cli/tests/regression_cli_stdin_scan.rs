@@ -47,6 +47,17 @@ fn binary() -> PathBuf {
 
 /// Run `keyhog scan --daemon=off --backend <backend> --stdin --format <format>`
 /// with `input` piped over stdin. Returns (exit code, stdout, stderr).
+///
+/// `--evidence-policy paranoid` is deliberate. These cases pipe a BARE token
+/// with no surrounding assignment, and the evidence classifier scores that
+/// context `unsupported-context`, which lands in the `review` tier. The default
+/// policy blocks `likely` and `confirmed` only, so a review finding is visible
+/// but exits 0, and the exit code would stop distinguishing "token found at
+/// offset 1" from "nothing found at all". `paranoid` blocks `review` too, so
+/// exit 1 keeps meaning exactly what each assertion below says it means. The
+/// same bytes inside an assignment reach `likely` and block under either policy;
+/// `stdin_bare_token_is_review_tier_and_exits_zero_under_default_policy` pins
+/// that split so this flag can never quietly paper over a recall regression.
 fn run(input: &[u8], backend: &str, format: &str) -> (Option<i32>, String, String) {
     run_args(
         input,
@@ -56,6 +67,8 @@ fn run(input: &[u8], backend: &str, format: &str) -> (Option<i32>, String, Strin
             "--backend",
             backend,
             "--no-suppress-test-fixtures",
+            "--evidence-policy",
+            "paranoid",
             "--stdin",
             "--format",
             format,
@@ -516,4 +529,82 @@ fn stdin_simd_backend_surfaces_finding_or_fails_closed() {
              (exit 3); got exit {other:?}\nstdout:\n{out}\nstderr:\n{err}"
         ),
     }
+}
+
+/// WHY: every other case here runs `--evidence-policy paranoid` so a bare piped
+/// token blocks and the exit code stays a usable signal. That flag would also
+/// hide a real recall regression, because it blocks `review` findings and a
+/// downgraded finding is still a finding. This case pins the split the flag
+/// papers over, under the DEFAULT policy, so the classifier itself is under
+/// test: a bare token is `review`/`unsupported-context` and exits 0, and the
+/// identical token inside an assignment is `likely`/`vendor-pattern` and exits
+/// 1. If the classifier ever stops recognising assignment context, or starts
+/// dropping bare tokens entirely, exactly one of these halves goes red.
+///
+/// WHAT IT DOES NOT CATCH: whether `review` is the right tier for a bare
+/// vendor-shaped token. That is a precision policy choice, pinned here as the
+/// shipped behavior, not endorsed by this test.
+#[test]
+fn stdin_bare_token_is_review_tier_and_exits_zero_under_default_policy() {
+    let base = [
+        "scan",
+        "--daemon=off",
+        "--backend",
+        "cpu",
+        "--no-suppress-test-fixtures",
+        "--stdin",
+        "--format",
+        "json",
+    ];
+
+    let bare = format!("{TOKEN}\n");
+    let (code, out, err) = run_args(bare.as_bytes(), &base);
+    assert_eq!(
+        code,
+        Some(0),
+        "a bare token is review tier, which the default policy does not block; stderr={err}"
+    );
+    let findings = json_findings(&out);
+    assert_eq!(findings.len(), 1, "the bare token is still reported");
+    assert_eq!(
+        findings[0].pointer("/evidence/tier").and_then(|x| x.as_str()),
+        Some("review"),
+        "a bare token with no surrounding context lands in the review tier"
+    );
+    assert_eq!(
+        findings[0]
+            .pointer("/evidence/reason_code")
+            .and_then(|x| x.as_str()),
+        Some("unsupported-context"),
+        "the review tier is reached through the unsupported-context classification"
+    );
+
+    let assigned = format!("SLACK_BOT_TOKEN = \"{TOKEN}\"\n");
+    let (code, out, err) = run_args(assigned.as_bytes(), &base);
+    assert_eq!(
+        code,
+        Some(1),
+        "the same token inside an assignment blocks under the DEFAULT policy; stderr={err}"
+    );
+    let findings = json_findings(&out);
+    assert_eq!(findings.len(), 1, "the assigned token is reported once");
+    assert_eq!(
+        findings[0].pointer("/evidence/tier").and_then(|x| x.as_str()),
+        Some("likely"),
+        "assignment context lifts the identical token to the likely tier"
+    );
+    assert_eq!(
+        findings[0]
+            .pointer("/evidence/reason_code")
+            .and_then(|x| x.as_str()),
+        Some("vendor-pattern"),
+        "the likely tier is reached through the vendor-pattern classification"
+    );
+    assert_eq!(
+        findings[0]
+            .get("credential_hash")
+            .and_then(|x| x.as_str()),
+        Some(TOKEN_SHA256),
+        "both halves observe the same credential bytes"
+    );
 }

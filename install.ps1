@@ -686,6 +686,83 @@ function Test-DockerDaemonResponsive {
     }
 }
 
+function Get-ExecutionPackRootForInstall {
+    $root = $env:LOCALAPPDATA
+    if (-not $root) {
+        $root = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+    }
+    if (-not $root) { return $null }
+    return (Join-Path (Join-Path $root 'keyhog') 'execution-packs')
+}
+
+# Compile and publish the host execution-pack generation.
+#
+# Without an installed generation every scan re-parses and re-compiles the
+# embedded detector corpus. Measured on a 16-core AVX-512 Linux host, scan setup
+# costs 284 ms wall and 1570 ms CPU with no packs against 66 ms and 110 ms with
+# them. That work belongs to install, once, not to every scan. It runs BEFORE
+# autoroute calibration, because the packs change the resolved detector and
+# config digests calibration measures its buckets against.
+function Publish-ExecutionPacks {
+    param([Parameter(Mandatory = $true)][string]$BinPath)
+
+    # Capability probe: a binary without the subcommand predates packs and is
+    # not broken, exactly as the --autoroute-calibrate probe treats old builds.
+    & $BinPath compile-execution-packs --help *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Warn "  Execution packs not supported by this build; scans will compile detectors in-process."
+        return $true
+    }
+
+    $packRoot = Get-ExecutionPackRootForInstall
+    if (-not $packRoot) {
+        Err "Could not resolve the local application data directory for execution packs."
+        return $false
+    }
+    $keyPath = Join-Path $packRoot 'signing.key'
+    $generation = Join-Path $packRoot 'current'
+
+    Say ""
+    Info "Execution packs"
+    Dim "  visible install phase; removes detector compilation from every later scan"
+
+    try {
+        New-Item -ItemType Directory -Force -Path $packRoot -ErrorAction Stop | Out-Null
+    } catch {
+        Err "Could not create execution-pack root ${packRoot}: $_"
+        return $false
+    }
+
+    # The signing key authenticates this host's packs to this host's binary. It
+    # is generated here and never leaves the machine: exactly 32 bytes, written
+    # atomically under %LOCALAPPDATA%, which inherits a per-user ACL.
+    # `compile-execution-packs` re-validates the length and refuses anything
+    # else, so a partial key fails the build rather than publishing a generation
+    # nothing can authenticate.
+    if (-not (Test-Path -LiteralPath $keyPath -PathType Leaf)) {
+        $tmp = "$keyPath.$PID.tmp"
+        try {
+            $bytes = New-Object byte[] 32
+            [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+            [System.IO.File]::WriteAllBytes($tmp, $bytes)
+            Move-Item -LiteralPath $tmp -Destination $keyPath -Force -ErrorAction Stop
+            Dim "  Generated a new 32-byte signing key at $keyPath"
+        } catch {
+            Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+            Err "Could not generate the execution-pack signing key: $_"
+            return $false
+        }
+    }
+
+    & $BinPath compile-execution-packs --output-dir $generation --signing-key $keyPath
+    if ($LASTEXITCODE -ne 0) {
+        Err "Execution-pack compilation failed (exit $LASTEXITCODE); refusing to leave an install that recompiles detectors on every scan."
+        return $false
+    }
+    Ok "  Published the host execution-pack generation."
+    return $true
+}
+
 function Invoke-AutorouteCalibration {
     param($BinPath)
     $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("keyhog-autoroute-prime-{0}" -f ([System.Guid]::NewGuid()))
@@ -1513,6 +1590,10 @@ function Finalize-Install {
             Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the binary whose health could not be verified; no working keyhog was overwritten."
             return $false
         }
+        if (-not (Publish-ExecutionPacks -BinPath $BinPath)) {
+            Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the binary whose execution packs could not be published; no working keyhog was overwritten."
+            return $false
+        }
         if (-not (Invoke-AutorouteCalibration -BinPath $BinPath)) {
             Err "Autoroute calibration failed; refusing to leave an install whose default auto route is not usable."
             Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the uncalibrated binary; no working keyhog was overwritten."
@@ -1755,6 +1836,11 @@ function Do-Calibrate {
     $bin = Get-CurrentBinary
     if (-not $bin) {
         Err "No installed keyhog binary found to calibrate. Run install first."
+        exit 1
+    }
+    # Packs first: calibration measures buckets against the resolved detector
+    # and config digests, and an installed generation changes both.
+    if (-not (Publish-ExecutionPacks -BinPath $bin)) {
         exit 1
     }
     if (-not (Invoke-AutorouteCalibration -BinPath $bin)) {

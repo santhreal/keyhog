@@ -233,3 +233,65 @@ fn hidden_install_command_rejects_exposed_signing_key() {
         .contains("must not grant group or other permissions"));
     assert!(!output.exists());
 }
+
+/// WHY: `read_signing_key` has three rejection branches and only the permission
+/// one was covered live. The length and non-regular-file branches were covered
+/// by `tests/unit/installer_execution_generation.rs` against the installer-side
+/// `ensure_signing_key`, which no longer exists; that file was also declared in
+/// no manifest, so it never compiled and its loss was silent. Every branch is
+/// enumerated here, through the shipped binary, so a weakened check goes RED.
+#[test]
+fn hidden_install_command_rejects_every_malformed_signing_key() {
+    let directory = tempfile::tempdir().expect("temporary install root");
+
+    // Wrong length: 31 and 33 bytes both bracket the exact-32 requirement.
+    for len in [0usize, 31, 33] {
+        let key_path = directory.path().join(format!("short-{len}.key"));
+        fs::write(&key_path, vec![0x7a; len]).expect("write signing key");
+        fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
+            .expect("protect signing key");
+        let output = directory.path().join(format!("current-{len}"));
+        let result = Command::new(env!("CARGO_BIN_EXE_keyhog"))
+            .arg("compile-execution-packs")
+            .arg("--output-dir")
+            .arg(&output)
+            .arg("--signing-key")
+            .arg(&key_path)
+            .output()
+            .expect("run install pack compiler");
+        assert!(
+            !result.status.success(),
+            "a {len}-byte signing key must be rejected"
+        );
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains("must be an exact 32-byte regular file"),
+            "the {len}-byte rejection must name the exact-32 contract; stderr={}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(!output.exists(), "a rejected key must publish nothing");
+    }
+
+    // Not a regular file: a symlink to a valid key is still refused, so the
+    // permission and length checks cannot be bypassed through an indirection.
+    let real = directory.path().join("real.key");
+    fs::write(&real, [0x3c; 32]).expect("write signing key");
+    fs::set_permissions(&real, fs::Permissions::from_mode(0o600)).expect("protect signing key");
+    let link = directory.path().join("link.key");
+    std::os::unix::fs::symlink(&real, &link).expect("create key symlink");
+    let output = directory.path().join("current-symlink");
+    let result = Command::new(env!("CARGO_BIN_EXE_keyhog"))
+        .arg("compile-execution-packs")
+        .arg("--output-dir")
+        .arg(&output)
+        .arg("--signing-key")
+        .arg(&link)
+        .output()
+        .expect("run install pack compiler");
+    assert!(!result.status.success(), "a symlinked key must be rejected");
+    assert!(
+        String::from_utf8_lossy(&result.stderr).contains("must be an exact 32-byte regular file"),
+        "the symlink rejection must name the regular-file contract; stderr={}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!output.exists(), "a rejected key must publish nothing");
+}
