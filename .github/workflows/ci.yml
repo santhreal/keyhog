@@ -615,6 +615,31 @@ jobs:
       - name: Integration entry-point gate (pre-commit hook + Action)
         run: bash tests/integration/entrypoints_check.sh
 
+  install-from-build-macos:
+    name: Install from build (macOS)
+    # Release lane only. macOS runners cost ten times a Linux minute, and the
+    # class this catches is BSD userland drift in install.sh (shasum vs
+    # sha256sum, BSD mktemp/sed/tar), which is compile-independent and cannot
+    # regress between a pull request and the push that merges it. Pushes to
+    # main and `v*` tags run it, and those are the refs release.yml turns into
+    # a published crate.
+    #
+    # ci-nightly.yml carried this proof on a 06:30 schedule while its own
+    # comment claimed every push, so a broken macOS install shipped for up to
+    # a day. Required CI owns it now.
+    if: github.event_name != 'pull_request'
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      # The macOS release closure: native Metal and WGPU, no Hyperscan, so the
+      # job needs no Homebrew step to build the binary it installs.
+      - run: cargo build --release -p keyhog --no-default-features --features portable,gpu
+      - name: install-from-build proof (macOS)
+        run: bash tests/install/macos/install_from_local_build.sh target/release/keyhog
+
   ci-verdict:
     name: CI verdict
     if: ${{ always() }}
@@ -630,6 +655,7 @@ jobs:
       - security-fast
       - feature-matrix
       - install-scripts
+      - install-from-build-macos
     runs-on: ubuntu-24.04
     permissions: {}
     env:
@@ -638,7 +664,7 @@ jobs:
       # `skipped`; anywhere else each must report `success`. Both directions are
       # asserted, so a release-lane job that silently stops running on main
       # fails the verdict instead of passing it.
-      KEYHOG_RELEASE_LANE_JOBS: '["feature-matrix"]'
+      KEYHOG_RELEASE_LANE_JOBS: '["feature-matrix", "install-from-build-macos"]'
       KEYHOG_RELEASE_LANE: ${{ github.event_name != 'pull_request' }}
     steps:
       - name: Require every blocking CI job
@@ -646,7 +672,7 @@ jobs:
           jq -e \
             --argjson release_lane "$KEYHOG_RELEASE_LANE" \
             --argjson release_lane_jobs "$KEYHOG_RELEASE_LANE_JOBS" '
-            length == 11 and
+            length == 12 and
             all(to_entries[];
               if ($release_lane | not) and (.key | IN($release_lane_jobs[]))
               then .value.result == "skipped"
