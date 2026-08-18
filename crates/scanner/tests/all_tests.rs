@@ -63,6 +63,8 @@ pub mod regression_binary_source_credential_recall;
 pub mod regression_caesar_decoder;
 #[path = "regression_caesar_shift_all.rs"]
 pub mod regression_caesar_shift_all;
+#[path = "regression_catch_unwind_isolation_boundaries.rs"]
+pub mod regression_catch_unwind_isolation_boundaries;
 #[path = "regression_capture_group_participation.rs"]
 pub mod regression_capture_group_participation;
 #[path = "regression_charclass_prefix_expansion_recall.rs"]
