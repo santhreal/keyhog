@@ -1,4 +1,3 @@
-use super::super::workload::workload_key as workload_key_with_plan;
 use super::*;
 
 #[test]
