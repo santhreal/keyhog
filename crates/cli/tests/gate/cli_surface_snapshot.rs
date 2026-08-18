@@ -30,6 +30,10 @@ const BASE_SUBCOMMANDS: &[&str] = &[
     "calibrate",
     "calibrate-autoroute",
     "compile-execution-packs",
+    // Installer-only verb: install.sh and install.ps1 call it to seed the host
+    // GPU literal matchers, so a scan never compiles them. Hidden, like its
+    // compile-execution-packs sibling.
+    "compile-gpu-literals",
     "completion",
     "config",
     "daemon",
