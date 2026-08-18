@@ -273,8 +273,8 @@ fn install_scripts_publish_execution_packs_before_calibration() {
             "Invoke-AutorouteCalibration",
         ),
     ] {
-        let content = std::fs::read_to_string(root.join(name))
-            .unwrap_or_else(|e| panic!("read {name}: {e}"));
+        let content =
+            std::fs::read_to_string(root.join(name)).unwrap_or_else(|e| panic!("read {name}: {e}"));
         assert!(
             content.contains("compile-execution-packs"),
             "{name} must invoke `keyhog compile-execution-packs`; without it every scan \
@@ -304,4 +304,69 @@ fn install_scripts_publish_execution_packs_before_calibration() {
             );
         }
     }
+}
+
+/// Both installers must probe the SAME decode-heavy size bands.
+///
+/// `decode_admitted` is a keyed routing dimension, and an unmeasured band is
+/// served only from at least two measured bands of the same family. One decode
+/// probe therefore leaves every decoding scan on that platform uncalibrated and
+/// exiting 2. `install.sh` grew a three-band ladder while `install.ps1` kept a
+/// single 256 KiB probe, which is exactly that failure on Windows.
+///
+/// Bands are read out of both scripts at run time, so adding one to either side
+/// alone fails here instead of shipping.
+#[test]
+fn install_scripts_probe_the_same_decode_heavy_bands() {
+    let root = repo_root();
+    let sh = std::fs::read_to_string(root.join("install.sh")).expect("read install.sh");
+    let ps1 = std::fs::read_to_string(root.join("install.ps1")).expect("read install.ps1");
+
+    let sh_bands: BTreeSet<u32> = sh
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("decode_heavy_kib_sizes=")
+                .map(|value| value.trim_matches('"').to_string())
+        })
+        .expect("install.sh must declare decode_heavy_kib_sizes")
+        .split_whitespace()
+        .map(|band| band.parse().expect("a decode-heavy band is a KiB integer"))
+        .collect();
+
+    // The band list sits on the `foreach` line above the probe call.
+    let ps1_lines: Vec<&str> = ps1.lines().collect();
+    let ps1_bands: BTreeSet<u32> = ps1_lines
+        .iter()
+        .position(|line| line.contains("New-DecodeHeavyCalibrationProbeKiB -Path"))
+        .and_then(|probe| {
+            ps1_lines[..probe]
+                .iter()
+                .rev()
+                .find(|line| line.contains("foreach ($kib in"))
+                .copied()
+        })
+        .and_then(|line| {
+            let open = line.find("@(")? + 2;
+            let close = line[open..].find(')')? + open;
+            Some(line[open..close].to_string())
+        })
+        .expect("install.ps1 must sweep decode-heavy bands with a foreach list")
+        .split(',')
+        .map(|band| {
+            band.trim()
+                .parse()
+                .expect("a decode-heavy band is a KiB integer")
+        })
+        .collect();
+
+    assert!(
+        sh_bands.len() >= 2,
+        "a decode family needs at least two measured bands to cover an unmeasured one; \
+         install.sh probes {sh_bands:?}"
+    );
+    assert_eq!(
+        sh_bands, ps1_bands,
+        "install.sh and install.ps1 must probe the same decode-heavy bands"
+    );
 }

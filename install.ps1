@@ -1028,15 +1028,21 @@ function Invoke-AutorouteCalibration {
                     Stderr = Join-Path $tmpDir "stderr-${mib}mib.txt"
                 }
             }
-            $decodeHeavy = Join-Path $tmpDir 'probe-decode-heavy-256kib.txt'
-            New-DecodeHeavyCalibrationProbeKiB -Path $decodeHeavy -KiB 256
-            $workloads += [pscustomobject]@{
-                Label = 'decode-heavy 256 KiB workload'
-                Target = $decodeHeavy
-                Mode = 'path'
-                Out = Join-Path $tmpDir 'out-decode-heavy-256kib.json'
-                Stdout = Join-Path $tmpDir 'stdout-decode-heavy-256kib.txt'
-                Stderr = Join-Path $tmpDir 'stderr-decode-heavy-256kib.txt'
+            # Three decode-heavy bands, matching install.sh. `decode_admitted`
+            # is a keyed routing dimension and a family covers an unmeasured
+            # band only from at least two measured ones, so one decode probe
+            # left every decoding scan uncalibrated.
+            foreach ($kib in @(4, 64, 256)) {
+                $decodeHeavy = Join-Path $tmpDir "probe-decode-heavy-${kib}kib.txt"
+                New-DecodeHeavyCalibrationProbeKiB -Path $decodeHeavy -KiB $kib
+                $workloads += [pscustomobject]@{
+                    Label = "decode-heavy ${kib} KiB workload"
+                    Target = $decodeHeavy
+                    Mode = 'path'
+                    Out = Join-Path $tmpDir "out-decode-heavy-${kib}kib.json"
+                    Stdout = Join-Path $tmpDir "stdout-decode-heavy-${kib}kib.txt"
+                    Stderr = Join-Path $tmpDir "stderr-decode-heavy-${kib}kib.txt"
+                }
             }
             foreach ($fileCount in @(2, 4, 8, 16, 32)) {
                 $tree = Join-Path $tmpDir "many-${fileCount}x4k"
