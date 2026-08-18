@@ -56,12 +56,10 @@ pub(crate) mod backend;
 pub(crate) mod batch_topology;
 mod boundary;
 pub(crate) use boundary::derive_pattern_boundary_context;
-#[cfg(feature = "gpu")]
-pub(crate) use boundary::regex_match_byte_upper_bound;
+pub use boundary::regex_match_byte_upper_bound;
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries as scan_chunk_boundaries_for_test;
-#[cfg(test)]
-pub(crate) use boundary::MAX_BOUNDARY_SEAM_BYTES;
+pub use boundary::MAX_BOUNDARY_SEAM_BYTES;
 mod csr;
 pub(crate) use csr::CsrU32;
 mod extract;

@@ -485,6 +485,9 @@ static INVALID_PATTERN_INDEX_SKIPS: AtomicUsize = AtomicUsize::new(0);
 /// Cross-chunk boundary reassembly could not run because the caller supplied a
 /// result vector with different cardinality than the chunk vector.
 static BOUNDARY_RESULT_CARDINALITY_MISMATCHES: AtomicUsize = AtomicUsize::new(0);
+/// Cross-chunk boundary reassembly context was truncated by MAX_BOUNDARY_SEAM_BYTES
+/// for unbounded active generators (an unbounded detector regex or entropy).
+static BOUNDARY_SEAM_TRUNCATIONS: AtomicUsize = AtomicUsize::new(0);
 /// Multiline/structured reassembly produced a synthetic finding mapping whose
 /// source line was not present in the caller-provided line-offset table.
 static LINE_OFFSET_MAPPING_MISMATCHES: AtomicUsize = AtomicUsize::new(0);
@@ -510,6 +513,7 @@ pub(crate) enum ScannerCoverageGapEvent {
     DecodeOversizeSkip,
     InvalidPatternIndexSkip,
     BoundaryResultCardinalityMismatch,
+    BoundarySeamTruncation,
     LineOffsetMappingMismatch,
     ChunkDeadlineAbort,
     BinaryStringsNamedExclusion,
@@ -518,13 +522,14 @@ pub(crate) enum ScannerCoverageGapEvent {
 impl ScannerCoverageGapEvent {
     /// Every variant, so the per-scan reset owner (`reset_for_scan`) can zero the
     /// full coverage-gap counter set without a new gap counter ever being forgotten.
-    pub(crate) const ALL: [Self; 9] = [
+    pub(crate) const ALL: [Self; 10] = [
         Self::StructuredParseFailure,
         Self::StructuredOversizeSkip,
         Self::DecodeTruncation,
         Self::DecodeOversizeSkip,
         Self::InvalidPatternIndexSkip,
         Self::BoundaryResultCardinalityMismatch,
+        Self::BoundarySeamTruncation,
         Self::LineOffsetMappingMismatch,
         Self::ChunkDeadlineAbort,
         Self::BinaryStringsNamedExclusion,
@@ -538,6 +543,7 @@ impl ScannerCoverageGapEvent {
             Self::DecodeOversizeSkip => &DECODE_OVERSIZE_SKIPS,
             Self::InvalidPatternIndexSkip => &INVALID_PATTERN_INDEX_SKIPS,
             Self::BoundaryResultCardinalityMismatch => &BOUNDARY_RESULT_CARDINALITY_MISMATCHES,
+            Self::BoundarySeamTruncation => &BOUNDARY_SEAM_TRUNCATIONS,
             Self::LineOffsetMappingMismatch => &LINE_OFFSET_MAPPING_MISMATCHES,
             Self::ChunkDeadlineAbort => &CHUNK_DEADLINE_ABORTS,
             Self::BinaryStringsNamedExclusion => &BINARY_STRINGS_NAMED_EXCLUSIONS,
@@ -552,6 +558,7 @@ impl ScannerCoverageGapEvent {
             Self::DecodeOversizeSkip => "decode_oversize_skips",
             Self::InvalidPatternIndexSkip => "invalid_pattern_index_skips",
             Self::BoundaryResultCardinalityMismatch => "boundary_result_cardinality_mismatches",
+            Self::BoundarySeamTruncation => "boundary_seam_truncations",
             Self::LineOffsetMappingMismatch => "line_offset_mapping_mismatches",
             Self::ChunkDeadlineAbort => "chunk_deadline_aborts",
             Self::BinaryStringsNamedExclusion => "binary_strings_named_exclusions",
@@ -1100,6 +1107,18 @@ pub(crate) fn record_boundary_result_cardinality_mismatch() {
 /// mismatch this scan.
 pub fn boundary_result_cardinality_mismatch_count() -> usize {
     BOUNDARY_RESULT_CARDINALITY_MISMATCHES.load(Ordering::Relaxed)
+}
+
+/// Record that cross-chunk boundary reassembly was truncated by MAX_BOUNDARY_SEAM_BYTES
+/// for an unbounded detector regex or entropy.
+pub(crate) fn record_boundary_seam_truncation() {
+    let _receipt = record_scanner_coverage_gap(ScannerCoverageGapEvent::BoundarySeamTruncation);
+}
+
+/// Count of cross-chunk boundary reassembly passes truncated by MAX_BOUNDARY_SEAM_BYTES
+/// this scan.
+pub fn boundary_seam_truncation_count() -> usize {
+    BOUNDARY_SEAM_TRUNCATIONS.load(Ordering::Relaxed)
 }
 
 /// Record that source line attribution fell back because a synthetic multiline

@@ -114,7 +114,7 @@ pub(crate) mod detector_plan;
 /// Candidate-bounded documentation, roff, and shell semantic roles.
 pub(crate) mod documentation_semantics;
 /// Core scan execution engine.
-pub(crate) mod engine;
+pub mod engine;
 /// Shannon entropy analysis for secret detection.
 pub mod entropy;
 /// Tier-B per-family generic-detector entropy-floor calibration table.
