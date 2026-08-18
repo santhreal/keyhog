@@ -1024,6 +1024,91 @@ pub(crate) fn request_kind(request: &Request) -> &'static str {
         Request::GuardList => "GuardList",
     }
 }
+
+/// All 18 daemon request kinds.
+pub(crate) const ALL_REQUEST_KINDS: &[&str] = &[
+    "Hello",
+    "ScanText",
+    "ScanPath",
+    "MassBegin",
+    "MassBatch",
+    "MassFilesystemBegin",
+    "MassFilesystemDrain",
+    "MassEnd",
+    "Health",
+    "Shutdown",
+    "GuardCommitBegin",
+    "GuardCommitBlob",
+    "GuardCommitFinish",
+    "GuardAdd",
+    "GuardRemove",
+    "GuardStatus",
+    "GuardReconcile",
+    "GuardList",
+];
+
+/// Sample request instance for every known request kind.
+pub(crate) fn sample_request_for_kind(kind: &str) -> Option<Request> {
+    match kind {
+        "Hello" => Some(Request::Hello),
+        "ScanText" => Some(Request::ScanText {
+            path: None,
+            text: "test sample content".to_string(),
+            dogfood: false,
+            profile: false,
+        }),
+        "ScanPath" => Some(Request::ScanPath {
+            path: "/dev/null".to_string(),
+            working_dir: None,
+            dogfood: false,
+            profile: false,
+        }),
+        "MassBegin" => Some(Request::MassBegin {
+            dogfood: false,
+            profile: false,
+        }),
+        "MassBatch" => Some(Request::MassBatch { chunks: vec![] }),
+        "MassFilesystemBegin" => Some(Request::MassFilesystemBegin {
+            root: "/tmp".to_string(),
+            max_file_size: 1024 * 1024,
+            ignore_paths: vec![],
+            respect_default_excludes: true,
+            reader_threads: None,
+            incremental_cache: None,
+        }),
+        "MassFilesystemDrain" => Some(Request::MassFilesystemDrain),
+        "MassEnd" => Some(Request::MassEnd),
+        "Health" => Some(Request::Health),
+        "Shutdown" => Some(Request::Shutdown),
+        "GuardCommitBegin" => Some(Request::GuardCommitBegin {
+            repo_path: "/tmp".to_string(),
+            index_fingerprint: "0".repeat(64),
+            hash_algorithm: "sha1".to_string(),
+            entries: vec![],
+        }),
+        "GuardCommitBlob" => Some(Request::GuardCommitBlob {
+            tx_id: 1,
+            oid: "0".repeat(40),
+            payload: vec![],
+        }),
+        "GuardCommitFinish" => Some(Request::GuardCommitFinish { tx_id: 1 }),
+        "GuardAdd" => Some(Request::GuardAdd {
+            repo_path: "/tmp".to_string(),
+            mode: "audit".to_string(),
+        }),
+        "GuardRemove" => Some(Request::GuardRemove {
+            repo_path: "/tmp".to_string(),
+        }),
+        "GuardStatus" => Some(Request::GuardStatus {
+            repo_path: "/tmp".to_string(),
+        }),
+        "GuardReconcile" => Some(Request::GuardReconcile {
+            repo_path: "/tmp".to_string(),
+        }),
+        "GuardList" => Some(Request::GuardList),
+        _ => None,
+    }
+}
 /// One-word kind label for a daemon [`Response`]. Use this in user-facing
 /// protocol errors instead of `Debug`: response payloads can contain scanner
 /// results and therefore credential-shaped data.

@@ -11,7 +11,7 @@ use crate::daemon::trust;
 use crate::daemon::warm_identity::WarmBackendReadiness;
 use crate::style;
 use anyhow::{Context, Result};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{FutureExt, SinkExt, StreamExt};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch, Source};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::num::NonZeroUsize;
@@ -25,6 +25,13 @@ use tokio::sync::{mpsc, Mutex, Notify, OwnedMutexGuard, Semaphore};
 
 const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
 static DAEMON_SOURCE_COVERAGE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+static TEST_PANIC_INJECTION_KIND: parking_lot::RwLock<Option<String>> =
+    parking_lot::RwLock::new(None);
+
+pub(crate) fn set_test_panic_injection(kind: Option<&str>) {
+    *TEST_PANIC_INJECTION_KIND.write() = kind.map(str::to_string);
+}
 
 const DEFAULT_REQUEST_READ_TIMEOUT_SECS: u64 = 300;
 /// Ceiling on one response write. Without it a client that sends a request and
@@ -1580,158 +1587,234 @@ async fn handle_connection(
 
         if matches!(request, Request::MassFilesystemDrain) {
             let work_slot = RequestSlot::claim(&state);
-            let streamed =
-                stream_mass_filesystem(&state, mass_session.as_mut(), &mut transport).await;
+            let state_cloned = state.clone();
+            let mass_session_ref = &mut mass_session;
+            let streamed_result = std::panic::AssertUnwindSafe(async {
+                if let Some(target_kind) = TEST_PANIC_INJECTION_KIND.read().as_deref() {
+                    if target_kind == "MassFilesystemDrain" {
+                        panic!("simulated test panic on daemon request kind: MassFilesystemDrain");
+                    }
+                }
+                stream_mass_filesystem(&state_cloned, mass_session_ref.as_mut(), &mut transport)
+                    .await
+            })
+            .catch_unwind()
+            .await;
             drop(work_slot);
-            streamed?;
+            match streamed_result {
+                Ok(streamed) => {
+                    streamed?;
+                }
+                Err(panic_payload) => {
+                    let detail = if let Some(s) = panic_payload.downcast_ref::<&'static str>() {
+                        (*s).to_string()
+                    } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "unknown panic payload".to_string()
+                    };
+                    let recovery = BackendRecoveryStatus {
+                        recovering_backend: "daemon-request-dispatch".to_string(),
+                        fallback_backend: "error-response".to_string(),
+                        recovered_bytes: 0,
+                        reason: format!("daemon: internal panic during filesystem drain: {detail}"),
+                    };
+                    let _ = state.record_backend_recovery(recovery);
+                    let _ = send_response(
+                        &mut transport,
+                        Response::Error {
+                            message: format!(
+                                "daemon: internal panic during filesystem drain: {detail}"
+                            ),
+                        },
+                    )
+                    .await;
+                }
+            }
             continue;
         }
 
         // Claim the slot before dispatch and hold it until the response is
         // written, so a shutdown drain flushes results rather than racing them.
         let work_slot = is_work_request(&request).then(|| RequestSlot::claim(&state));
-        let response = match request {
-            Request::MassBegin { dogfood, profile } => {
-                if !state.mass_service {
-                    Response::Error {
-                        message: "daemon: mass transaction refused because this service was not \
-                                  started with `keyhog daemon start --mass`"
-                            .to_string(),
-                    }
-                } else if mass_session.is_some() {
-                    Response::Error {
-                        message: "daemon: this connection already owns an active mass transaction"
-                            .to_string(),
-                    }
-                } else if let Some(denial) = warm_route_denial.as_ref() {
-                    denial.clone()
-                } else {
-                    let guard = state.fragment_scan_lock.clone().lock_owned().await;
-                    state.scanner.clear_fragment_cache();
-                    state.begin_scan();
-                    mass_session = Some(MassSession {
-                        state: state.clone(),
-                        dogfood,
-                        profile,
-                        stats: MassScanStats::default(),
-                        started_at: Instant::now(),
-                        filesystem_batches: None,
-                        incremental: None,
-                        incremental_requested: None,
-                        finding_paths: std::collections::HashSet::new(),
-                        pathless_findings: 0,
-                        incremental_unpublishable: false,
-                        _fragment_guard: guard,
-                    });
-                    Response::MassReady
+        let state_dispatch = state.clone();
+        let warm_route_denial_dispatch = warm_route_denial.clone();
+        let mass_session_ref = &mut mass_session;
+
+        let dispatch_result = std::panic::AssertUnwindSafe(async {
+            if let Some(target_kind) = TEST_PANIC_INJECTION_KIND.read().as_deref() {
+                if target_kind == crate::daemon::protocol::request_kind(&request) {
+                    panic!("simulated test panic on daemon request kind: {target_kind}");
                 }
             }
-            Request::MassBatch { chunks } => match mass_session.as_mut() {
-                Some(session) if session.filesystem_batches.is_some() => Response::Error {
-                    message: "daemon: MassBatch cannot interleave with active daemon-local filesystem acquisition"
-                        .to_string(),
-                },
-                Some(session) => {
-                    let batch =
-                        scan_mass_batch(&state, chunks, session.dogfood, session.profile).await;
-                    session.record(&batch);
-                    batch.response
-                }
-                None => Response::Error {
-                    message: "daemon: MassBatch requires an active MassBegin transaction"
-                        .to_string(),
-                },
-            },
-            Request::MassFilesystemBegin {
-                root,
-                max_file_size,
-                ignore_paths,
-                respect_default_excludes,
-                reader_threads,
-                incremental_cache,
-            } => match mass_session.as_mut() {
-                Some(session) if session.filesystem_batches.is_some() => Response::Error {
-                    message: "daemon: finish the active daemon-local filesystem source before starting another"
-                        .to_string(),
-                },
-                Some(session) => {
-                    let resolved = resolve_scan_target(&root, None);
-                    let reader_threads = match reader_threads {
-                        Some(0) => Err(
-                            "daemon: MassFilesystemBegin reader_threads must be positive"
+            match request {
+                Request::MassBegin { dogfood, profile } => {
+                    if !state_dispatch.mass_service {
+                        Response::Error {
+                            message: "daemon: mass transaction refused because this service was not \
+                                      started with `keyhog daemon start --mass`"
                                 .to_string(),
-                        ),
-                        Some(value) => Ok(NonZeroUsize::new(value)),
-                        None => Ok(None),
-                    };
-                    let merkle = session.incremental_index(incremental_cache);
-                    match (resolved, reader_threads, merkle) {
-                        (Ok(root), Ok(reader_threads), Ok(merkle)) => {
-                            session.filesystem_batches = Some(spawn_mass_filesystem_source(
-                                root,
-                                max_file_size,
-                                ignore_paths,
-                                respect_default_excludes,
-                                reader_threads,
-                                merkle,
-                            ));
-                            Response::MassFilesystemReady
                         }
-                        (Err(message), _, _)
-                        | (_, Err(message), _)
-                        | (_, _, Err(message)) => Response::Error { message },
+                    } else if mass_session_ref.is_some() {
+                        Response::Error {
+                            message: "daemon: this connection already owns an active mass transaction"
+                                .to_string(),
+                        }
+                    } else if let Some(denial) = warm_route_denial_dispatch.as_ref() {
+                        denial.clone()
+                    } else {
+                        let guard = state_dispatch.fragment_scan_lock.clone().lock_owned().await;
+                        state_dispatch.scanner.clear_fragment_cache();
+                        state_dispatch.begin_scan();
+                        *mass_session_ref = Some(MassSession {
+                            state: state_dispatch.clone(),
+                            dogfood,
+                            profile,
+                            stats: MassScanStats::default(),
+                            started_at: Instant::now(),
+                            filesystem_batches: None,
+                            incremental: None,
+                            incremental_requested: None,
+                            finding_paths: std::collections::HashSet::new(),
+                            pathless_findings: 0,
+                            incremental_unpublishable: false,
+                            _fragment_guard: guard,
+                        });
+                        Response::MassReady
                     }
                 }
-                None => Response::Error {
-                    message:
-                        "daemon: MassFilesystemBegin requires an active MassBegin transaction"
+                Request::MassBatch { chunks } => match mass_session_ref.as_mut() {
+                    Some(session) if session.filesystem_batches.is_some() => Response::Error {
+                        message: "daemon: MassBatch cannot interleave with active daemon-local filesystem acquisition"
                             .to_string(),
+                    },
+                    Some(session) => {
+                        let batch =
+                            scan_mass_batch(&state_dispatch, chunks, session.dogfood, session.profile).await;
+                        session.record(&batch);
+                        batch.response
+                    }
+                    None => Response::Error {
+                        message: "daemon: MassBatch requires an active MassBegin transaction"
+                            .to_string(),
+                    },
                 },
-            },
-            Request::MassFilesystemDrain => Response::Error {
-                message: "daemon: MassFilesystemDrain reached the non-streaming dispatch path"
-                    .to_string(),
-            },
-            Request::MassEnd
-                if mass_session
-                    .as_ref()
-                    .is_some_and(|session| session.filesystem_batches.is_some()) =>
-            {
-                Response::Error {
-                    message: "daemon: MassEnd refused while daemon-local filesystem acquisition is active"
+                Request::MassFilesystemBegin {
+                    root,
+                    max_file_size,
+                    ignore_paths,
+                    respect_default_excludes,
+                    reader_threads,
+                    incremental_cache,
+                } => match mass_session_ref.as_mut() {
+                    Some(session) if session.filesystem_batches.is_some() => Response::Error {
+                        message: "daemon: finish the active daemon-local filesystem source before starting another"
+                            .to_string(),
+                    },
+                    Some(session) => {
+                        let resolved = resolve_scan_target(&root, None);
+                        let reader_threads = match reader_threads {
+                            Some(0) => Err(
+                                "daemon: MassFilesystemBegin reader_threads must be positive"
+                                    .to_string(),
+                            ),
+                            Some(value) => Ok(NonZeroUsize::new(value)),
+                            None => Ok(None),
+                        };
+                        let merkle = session.incremental_index(incremental_cache);
+                        match (resolved, reader_threads, merkle) {
+                            (Ok(root), Ok(reader_threads), Ok(merkle)) => {
+                                session.filesystem_batches = Some(spawn_mass_filesystem_source(
+                                    root,
+                                    max_file_size,
+                                    ignore_paths,
+                                    respect_default_excludes,
+                                    reader_threads,
+                                    merkle,
+                                ));
+                                Response::MassFilesystemReady
+                            }
+                            (Err(message), _, _)
+                            | (_, Err(message), _)
+                            | (_, _, Err(message)) => Response::Error { message },
+                        }
+                    }
+                    None => Response::Error {
+                        message:
+                            "daemon: MassFilesystemBegin requires an active MassBegin transaction"
+                                .to_string(),
+                    },
+                },
+                Request::MassFilesystemDrain => Response::Error {
+                    message: "daemon: MassFilesystemDrain reached the non-streaming dispatch path"
                         .to_string(),
-                }
-            }
-            Request::MassEnd => match mass_session.take() {
-                Some(session) => {
-                    let stats = session.finish_stats();
-                    state.scans_served.fetch_add(1, Ordering::Relaxed);
-                    drop(session);
-                    Response::MassComplete { stats }
-                }
-                None => Response::Error {
-                    message: "daemon: MassEnd requires an active MassBegin transaction".to_string(),
                 },
-            },
-            other if mass_session.is_some() => Response::Error {
-                message: format!(
-                    "daemon: active mass transaction accepts only mass batch, filesystem, or end requests; got {}",
-                    crate::daemon::protocol::request_kind(&other)
-                ),
-            },
-            other @ (Request::ScanText { .. }
-                | Request::ScanPath { .. }
-                | Request::GuardCommitBegin { .. }
-                | Request::GuardCommitBlob { .. }
-                | Request::GuardCommitFinish { .. }
-                | Request::GuardAdd { .. }
-                | Request::GuardReconcile { .. }) => {
-                match warm_route_denial.as_ref() {
-                    Some(denial) => denial.clone(),
-                    None => dispatch(&state, other).await,
+                Request::MassEnd
+                    if mass_session_ref
+                        .as_ref()
+                        .is_some_and(|session| session.filesystem_batches.is_some()) =>
+                {
+                    Response::Error {
+                        message: "daemon: MassEnd refused while daemon-local filesystem acquisition is active"
+                            .to_string(),
+                    }
+                }
+                Request::MassEnd => match mass_session_ref.take() {
+                    Some(session) => {
+                        let stats = session.finish_stats();
+                        state_dispatch.scans_served.fetch_add(1, Ordering::Relaxed);
+                        drop(session);
+                        Response::MassComplete { stats }
+                    }
+                    None => Response::Error {
+                        message: "daemon: MassEnd requires an active MassBegin transaction".to_string(),
+                    },
+                },
+                other if mass_session_ref.is_some() => Response::Error {
+                    message: format!(
+                        "daemon: active mass transaction accepts only mass batch, filesystem, or end requests; got {}",
+                        crate::daemon::protocol::request_kind(&other)
+                    ),
+                },
+                other @ (Request::ScanText { .. }
+                    | Request::ScanPath { .. }
+                    | Request::GuardCommitBegin { .. }
+                    | Request::GuardCommitBlob { .. }
+                    | Request::GuardCommitFinish { .. }
+                    | Request::GuardAdd { .. }
+                    | Request::GuardReconcile { .. }) => {
+                    match warm_route_denial_dispatch.as_ref() {
+                        Some(denial) => denial.clone(),
+                        None => dispatch(&state_dispatch, other).await,
+                    }
+                }
+                other => dispatch(&state_dispatch, other).await,
+            }
+        })
+        .catch_unwind()
+        .await;
+
+        let response = match dispatch_result {
+            Ok(resp) => resp,
+            Err(panic_payload) => {
+                let detail = if let Some(s) = panic_payload.downcast_ref::<&'static str>() {
+                    (*s).to_string()
+                } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "unknown panic payload".to_string()
+                };
+                let recovery = BackendRecoveryStatus {
+                    recovering_backend: "daemon-request-dispatch".to_string(),
+                    fallback_backend: "error-response".to_string(),
+                    recovered_bytes: 0,
+                    reason: format!("daemon: internal panic during request: {detail}"),
+                };
+                let _ = state.record_backend_recovery(recovery);
+                Response::Error {
+                    message: format!("daemon: internal panic during request: {detail}"),
                 }
             }
-            other => dispatch(&state, other).await,
         };
         if let Response::Hello { warm_backend, .. } = &response {
             warm_route_denial = warm_route_error(warm_backend);

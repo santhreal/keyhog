@@ -211,6 +211,10 @@ jobs:
           --test regression_lockdown_custom_incremental_cache
           --test regression_explicit_backend_ignores_autoroute_cache
           --test regression_scan_setup_error_exits_cleanly
+      - name: Shipped release profile panic isolation regressions
+        run: >
+          cargo test -p keyhog --release
+          --test regression_daemon_panic_isolation
 
   gpu-wiring:
     name: GPU wiring (hardware-free)

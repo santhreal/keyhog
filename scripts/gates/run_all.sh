@@ -199,6 +199,12 @@ run "Regression contracts: class-closing WHY comments and runtime variant deriva
   python3 -B scripts/gates/regression_contracts.py
 run "Regression contracts unit tests: static analysis of class-closing regression tests" \
   python3 -B -m unittest scripts.tests.test_regression_contracts -v
+run "Profile divergence self-test: semantic vs cosmetic profile key taxonomy" \
+  python3 -B scripts/gates/profile_divergence.py --self-test
+run "Profile divergence: workspace profile table keys are classified and release unwinds" \
+  python3 -B scripts/gates/profile_divergence.py
+run "Profile divergence unit tests: static analysis of profile tables" \
+  python3 -B -m unittest scripts.tests.test_profile_divergence -v
 run "Mutation gate self-test: AST mutation generator catches surviving mutants" \
   python3 -B scripts/gates/mutation_gate.py --self-test
 run "Mutation gate unit tests: operator inversion and comment preservation" \

@@ -216,6 +216,15 @@ pub trait CliTestApi {
         socket_path: PathBuf,
         fixture: DaemonTerminalFixture,
     ) -> Pin<Box<dyn Future<Output = Result<()>>>>;
+    #[cfg(unix)]
+    fn set_daemon_panic_injection(&self, kind: Option<&str>);
+    #[cfg(unix)]
+    fn all_daemon_request_kinds(&self) -> &'static [&'static str];
+    #[cfg(unix)]
+    fn sample_daemon_request_for_kind(
+        &self,
+        kind: &str,
+    ) -> Option<crate::daemon::protocol::Request>;
     fn cli_error_exit_code(&self, error: &anyhow::Error) -> u8;
 
     fn baseline_version(&self) -> u32;
@@ -745,6 +754,21 @@ impl CliTestApi for TestApi {
         Box::pin(
             crate::daemon::server::testing::finish_daemon_service_for_test(socket_path, fixture),
         )
+    }
+    #[cfg(unix)]
+    fn set_daemon_panic_injection(&self, kind: Option<&str>) {
+        crate::daemon::server::set_test_panic_injection(kind);
+    }
+    #[cfg(unix)]
+    fn all_daemon_request_kinds(&self) -> &'static [&'static str] {
+        crate::daemon::protocol::ALL_REQUEST_KINDS
+    }
+    #[cfg(unix)]
+    fn sample_daemon_request_for_kind(
+        &self,
+        kind: &str,
+    ) -> Option<crate::daemon::protocol::Request> {
+        crate::daemon::protocol::sample_request_for_kind(kind)
     }
     fn cli_error_exit_code(&self, error: &anyhow::Error) -> u8 {
         crate::cli_error_exit_code(error)
