@@ -236,7 +236,11 @@ fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
             .expect("compile scalar WGPU shard reference");
     let scanner = CompiledScanner::compile_for_backend(vec![detector], ScanBackend::GpuWgpu)
         .expect("compile exact WGPU shard scanner");
-    if !crate::hw_probe::probe_hardware().gpu_available {
+    if !crate::capability_ledger::register_capability_test(
+        "production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity",
+        "gpu",
+        crate::hw_probe::probe_hardware().gpu_available,
+    ) {
         eprintln!("GPU parity fixture requires a physical GPU");
         return;
     }

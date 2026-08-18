@@ -86,6 +86,7 @@ pub(crate) mod code_semantics;
 /// Compiled scanner construction and lifecycle implementation.
 mod compiled_scanner;
 /// Detector compilation into high-performance matching structures.
+pub mod capability_ledger;
 pub(crate) mod compiler;
 /// Heuristic and ML-based confidence scoring for candidate matches.
 pub mod confidence;

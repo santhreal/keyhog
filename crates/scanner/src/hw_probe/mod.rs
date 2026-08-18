@@ -19,9 +19,12 @@
 use std::sync::OnceLock;
 
 mod banner;
+pub mod host_class;
 pub(crate) mod platform;
 pub(crate) mod select;
 mod tier;
+
+pub use host_class::HostClass;
 
 pub(crate) mod thresholds;
 
