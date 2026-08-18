@@ -653,12 +653,15 @@ expect_match  "6.4c calibration summary shows exact peer margin" "gpu-cuda-regio
 expect_match  "6.4d GPU literal sidecar is installed" "Installed 1 GPU literal matcher artifact" "$out"
 expect_file   "6.4e GPU literal artifact seeds runtime cache" "$h/.cache/keyhog/programs/lit-mock.bin"
 rm -rf "$h"
-# 6.4f missing GPU literal sidecar refuses before binary overwrite.
+# 6.4f no sidecar, and a binary that publishes no matchers: fail closed before
+# the binary is left on PATH. A sidecar is optional because nothing ships one,
+# so the refusal comes from the empty compile result, not the missing tarball.
 h=$(newhome)
 out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match MOCK_GPU_LITERAL_SIDECAR=404 run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "6.4f missing GPU literal sidecar refuses" "requires a sibling GPU literal sidecar" "$out"
+expect_match  "6.4f missing GPU literal sidecar refuses" "Install failed while seeding shipped GPU literal artifacts" "$out"
 expect_status "6.4g missing GPU literal sidecar exits 1" 1 "$st"
 expect_nofile "6.4h no binary written without GPU literal sidecar" "$h/.local/bin/keyhog"
+expect_nofile "6.4h1 no GPU literal cache survives the failed install" "$h/.cache/keyhog/programs"
 rm -rf "$h"
 # 6.4i link entries in the GPU literal sidecar refuse before binary overwrite.
 h=$(newhome)
@@ -674,7 +677,7 @@ expect_match  "6.4l GPU literal sidecar absolute path refuses" "GPU literal arti
 expect_status "6.4m GPU literal sidecar absolute path exits 1" 1 "$st"
 expect_nofile "6.4n no binary written after GPU literal sidecar absolute path" "$h/.local/bin/keyhog"
 rm -rf "$h"
-# 6.4ai --from-file still requires a local GPU literal sidecar and seeds it before calibration.
+# 6.4ai --from-file seeds a local GPU literal sidecar before calibration when one exists.
 h=$(newhome)
 out=$(run_install "$sb" "$h" -- --from-file="$FIX_DIR/fake_keyhog_healthy" --no-prompt); st=$?
 expect_status "6.4ai from-file with local GPU sidecar installs" 0 "$st"
@@ -694,9 +697,10 @@ reset_mocks
 rm -rf "$h"
 h=$(newhome)
 out=$(run_install "$sb" "$h" -- --from-file="$FIX_DIR/local_keyhog_no_sidecar" --no-prompt); st=$?
-expect_match  "6.4al from-file missing local GPU sidecar refuses" "--from-file requires a sibling GPU literal sidecar" "$out"
+expect_match  "6.4al from-file missing local GPU sidecar refuses" "Install failed while seeding shipped GPU literal artifacts" "$out"
 expect_status "6.4am from-file missing local GPU sidecar exits 1" 1 "$st"
 expect_nofile "6.4an no binary written without from-file GPU sidecar" "$h/.local/bin/keyhog"
+expect_nofile "6.4an1 no GPU literal cache survives the failed from-file install" "$h/.cache/keyhog/programs"
 rm -rf "$h"
 # 6.5 checksum mismatch refuses + no install
 h=$(newhome)
