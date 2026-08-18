@@ -2,6 +2,7 @@
 
 ## 0.5.80 - 2026-08-17
 
+- test(cli): enforce exit code totality through real binary execution across all scan-reachable codes and assert corrective action guidance on error enum variants (`regression_exit_code_matrix`).
 - fix(daemon): wrap daemon request dispatch and filesystem drain in `catch_unwind` isolation boundaries under shipped `panic = "unwind"` release profile, preventing server crash on internal request panics.
 - feat(cache): hook detector plan save operations into `keyhog_scanner::evict_cache_dir_with_policy` using `CacheKind::DetectorPlans`.
 - Include known reason and repair command in daemon warm-route errors and startup banner instead of hiding them behind a generic fallback. Apply the same fix to the daemon status command. Make is_work_request exhaustive so adding a new Request variant causes a compile error. Add regression tests pinning daemon server pure-function behaviors before modularization.

@@ -216,13 +216,13 @@ pub enum GuardStoreError {
         detail: String,
     },
     /// The store path has unsafe ownership or permissions.
-    #[error("guard store path is unsafe: {detail}")]
+    #[error("guard store path is unsafe: {detail}; run `keyhog guard repair <root>` or fix directory permissions")]
     UnsafePath {
         /// Human-readable safety violation detail.
         detail: String,
     },
     /// An I/O error occurred.
-    #[error("guard store I/O error: {0}")]
+    #[error("guard store I/O error: {0}; check disk space and permissions or run `keyhog guard repair <root>`")]
     Io(String),
     /// The store was not started cleanly (previous process may not have
     /// flushed).

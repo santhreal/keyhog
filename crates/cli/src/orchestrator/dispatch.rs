@@ -1286,6 +1286,9 @@ impl ScanOrchestrator {
         let dispatch_starts = Arc::clone(&self.scanner_dispatch_starts);
         let scanner_thread = std::thread::spawn(move || {
             let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
+            if std::env::var_os("KEYHOG_TEST_INJECT_SCANNER_PANIC").is_some() {
+                panic!("test-injected scanner thread panic");
+            }
             with_nonempty_batches(rx.into_iter(), |batches| {
                 #[cfg(test)]
                 let worker = worker_config.start(scanner, dispatch_starts);

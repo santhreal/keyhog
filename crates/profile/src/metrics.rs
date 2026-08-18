@@ -756,6 +756,7 @@ impl From<crate::Stage> for MetricId {
             crate::Stage::Teardown => Self::Teardown,
             crate::Stage::ScanPipeline => Self::ScanPipeline,
             crate::Stage::ScannerCompile => Self::ScannerCompile,
+        }
     }
 }
 

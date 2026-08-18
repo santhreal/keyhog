@@ -187,7 +187,7 @@ pub enum GuardTransition {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum TransitionError {
     /// The transition event is not legal from the current state.
-    #[error("illegal guard transition: {event} from state {from}")]
+    #[error("illegal guard transition: {event} from state {from}. Fix: run `keyhog guard status <root>` or reconcile the root before dispatching events")]
     Illegal {
         /// The event that was rejected.
         event: GuardTransition,
@@ -419,7 +419,7 @@ impl GuardReceipt {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ReceiptError {
     /// Object count does not conserve.
-    #[error("receipt object mismatch: requested {requested}, accounted {accounted}")]
+    #[error("receipt object mismatch: requested {requested}, accounted {accounted}. Fix: ensure all transaction items are accounted for before finalizing the guard receipt")]
     ObjectMismatch {
         /// Objects requested in the transaction.
         requested: u64,
@@ -427,7 +427,7 @@ pub enum ReceiptError {
         accounted: u64,
     },
     /// Byte count does not conserve.
-    #[error("receipt byte mismatch: requested {requested}, accounted {accounted}")]
+    #[error("receipt byte mismatch: requested {requested}, accounted {accounted}. Fix: ensure all byte ranges are accounted for before finalizing the guard receipt")]
     ByteMismatch {
         /// Bytes requested in the transaction.
         requested: u64,
