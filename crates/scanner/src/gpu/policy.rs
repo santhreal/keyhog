@@ -88,10 +88,14 @@ pub(crate) fn gpu_probe() -> GpuRuntimeProbe {
     #[cfg(all(feature = "gpu", target_os = "linux"))]
     if let Ok(cuda) = super::probe_cuda_peer() {
         // LAW10: hardware probe for CUDA peer; absent accelerator is surfaced and recall preserved through CPU/SIMD path
-        let name = format!(
-            "NVIDIA GPU (CUDA cap {}.{})",
-            cuda.compute_capability.0, cuda.compute_capability.1
-        );
+        let name = if cuda.name.is_empty() {
+            format!(
+                "NVIDIA GPU (CUDA cap {}.{})",
+                cuda.compute_capability.0, cuda.compute_capability.1
+            )
+        } else {
+            cuda.name.clone()
+        };
         return GpuRuntimeProbe {
             available: true,
             name: Some(name),

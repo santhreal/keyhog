@@ -903,18 +903,13 @@ impl CompiledScanner {
                 phase2_gpu_row_needed.push(false);
                 continue;
             }
-            // The GPU catalog's proof is ASCII-specific. Raw non-ASCII
-            // rows may normalize before phase 2 and therefore remain under
-            // the canonical CPU admission owner.
+            // GPU catalog proof is ASCII-specific; non-ASCII rows stay under CPU admission.
             if !chunk.data.is_ascii() {
                 phase2_gpu_excluded_non_ascii += 1;
                 phase2_gpu_row_needed.push(false);
                 continue;
             }
-            // Encoded-only rows that CPU admission would route straight to
-            // decode-only recovery do not need the prefixless phase-2 GPU
-            // DFA. The shared phase-2 tail still runs decode-only on those
-            // rows; this just avoids a redundant GPU admission dispatch.
+            // Encoded-only rows route straight to decode recovery; avoid redundant GPU dispatch.
             let decode_only_row = self.chunk_needs_decode_postprocess(chunk)
                 && !self.should_scan_no_hit_chunk(chunk, execution_route);
             phase2_gpu_row_needed.push(row_has_trigger || !decode_only_row);
@@ -926,10 +921,14 @@ impl CompiledScanner {
         } else {
             Phase2GpuAdmissionWorkload::Empty
         };
-        let catalog_opt = self.phase2_gpu_dfa_catalog(Some(backend.id()));
-        let has_shards = catalog_opt.map_or(false, |c| c.has_shards());
-        let phase2_dispatch_profile = (!phase2_gpu_workload.is_empty() && has_shards)
-            .then(|| super::profile::span(keyhog_profile::Stage::BackendDispatch));
+        let catalog_opt = if phase2_gpu_workload.is_empty() {
+            None
+        } else {
+            self.phase2_gpu_dfa_catalog(Some(backend.id()))
+        };
+        let has_shards = catalog_opt.as_ref().map_or(false, |c| c.has_shards());
+        let phase2_dispatch_profile =
+            has_shards.then(|| super::profile::span(keyhog_profile::Stage::BackendDispatch));
         let t_phase2_gpu = kh.then(std::time::Instant::now);
         let mut phase2_gpu_empty_complete = false;
         let mut phase2_gpu_coverage = None;
