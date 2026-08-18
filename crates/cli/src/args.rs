@@ -235,9 +235,86 @@ where
 fn cli_from_matches(matches: &clap::ArgMatches) -> Result<Cli, clap::Error> {
     let mut cli = Cli::from_arg_matches(matches)?;
     mark_cli_value_sources(&mut cli, matches);
+    validate_cli_args(&cli)?;
     Ok(cli)
 }
 
+fn is_gpu_backend_str(backend: &str) -> bool {
+    let b = backend.trim().to_ascii_lowercase();
+    b == "gpu" || b.starts_with("gpu-") || b.starts_with("gpu_")
+}
+
+pub(crate) fn validate_backend_and_gpu_flags(
+    backend: Option<&str>,
+    no_gpu: bool,
+    _require_gpu: bool,
+) -> Result<(), clap::Error> {
+    if let Some(b) = backend {
+        let is_gpu = is_gpu_backend_str(b);
+        if no_gpu && is_gpu {
+            return Err(clap::Error::raw(
+                clap::error::ErrorKind::ArgumentConflict,
+                format!("error: the argument '--no-gpu' cannot be used with '--backend {b}'\n"),
+            ));
+        }
+        let b_lower = b.to_ascii_lowercase();
+        if (b_lower == "gpu-metal" || b_lower == "gpu-metal-region-presence")
+            && !cfg!(target_os = "macos")
+        {
+            return Err(clap::Error::raw(
+                clap::error::ErrorKind::InvalidValue,
+                format!(
+                    "error: backend '{b}' is only supported on macOS (running on {})\n",
+                    std::env::consts::OS
+                ),
+            ));
+        }
+        if (b_lower == "gpu-cuda" || b_lower == "gpu-cuda-region-presence")
+            && cfg!(target_os = "macos")
+        {
+            return Err(clap::Error::raw(
+                clap::error::ErrorKind::InvalidValue,
+                format!("error: backend '{b}' is not supported on macOS\n"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_cli_args(cli: &Cli) -> Result<(), clap::Error> {
+    match &cli.command {
+        Some(Command::Scan(args)) => {
+            validate_backend_and_gpu_flags(
+                args.backend.as_deref(),
+                args.no_gpu,
+                args.require_gpu,
+            )?;
+        }
+        Some(Command::Config(args)) => {
+            validate_backend_and_gpu_flags(
+                args.scan.backend.as_deref(),
+                args.scan.no_gpu,
+                args.scan.require_gpu,
+            )?;
+        }
+        Some(Command::Watch(args)) => {
+            validate_backend_and_gpu_flags(
+                args.backend.as_deref(),
+                false,
+                false,
+            )?;
+        }
+        Some(Command::Backend(args)) => {
+            validate_backend_and_gpu_flags(
+                None,
+                args.no_gpu,
+                args.require_gpu,
+            )?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
 fn mark_cli_value_sources(cli: &mut Cli, matches: &clap::ArgMatches) {
     use clap::parser::ValueSource;
 
