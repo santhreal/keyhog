@@ -30,6 +30,14 @@ pub(super) fn compile_gpu_literal_set(
     let matcher = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         match super::gpu_cache::gpu_matcher_cache_dir() {
             Ok(cache_dir) => {
+                let cache_file = cache_dir.join(&cache_key);
+                let cache_file_bin = cache_dir.join(format!("{cache_key}.bin"));
+                let is_hit = cache_file.exists() || cache_file_bin.exists();
+                if is_hit {
+                    keyhog_profile::record_cache_hit(keyhog_profile::CacheId::GpuProgram);
+                } else {
+                    keyhog_profile::record_cache_miss(keyhog_profile::CacheId::GpuProgram);
+                }
                 let res = vyre::scan::cached_load_or_compile(&cache_dir, &cache_key, || {
                     vyre::scan::GpuLiteralSet::compile_case_insensitive(&literal_refs)
                 });
@@ -37,6 +45,7 @@ pub(super) fn compile_gpu_literal_set(
                 res
             }
             Err(error) => {
+                keyhog_profile::record_cache_miss(keyhog_profile::CacheId::GpuProgram);
                 report_gpu_matcher_cache_unavailable(&error);
                 vyre::scan::GpuLiteralSet::compile_case_insensitive(&literal_refs)
             }

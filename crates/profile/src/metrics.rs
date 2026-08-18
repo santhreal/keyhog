@@ -134,6 +134,7 @@ pub enum MetricId {
     BackendInit,
     Teardown,
     ScanPipeline,
+    ScannerCompile,
 }
 
 /// Stable identifier for a top-level production pipeline stage.
@@ -552,6 +553,12 @@ pub enum CacheId {
     /// Credential verification result reused instead of re-requested. A miss
     /// costs a network round trip, so this rate is also a rate-limit story.
     VerifierResult,
+    /// Hyperscan compiled regex shard database reused from disk cache.
+    HyperscanShard,
+    /// Compiled GPU literal-set binary matcher reused from disk cache.
+    GpuProgram,
+    /// Pre-parsed detector JSON execution plan reused from cache.
+    DetectorPlan,
 }
 
 impl CacheId {
@@ -562,10 +569,13 @@ impl CacheId {
         Self::IncrementalUnchanged,
         Self::MatcherArtifact,
         Self::VerifierResult,
+        Self::HyperscanShard,
+        Self::GpuProgram,
+        Self::DetectorPlan,
     ];
 
     /// Number of variants, and the length of the profiler's counter arrays.
-    pub const COUNT: usize = 5;
+    pub const COUNT: usize = 8;
 
     /// Dense index into the profiler's per-shard counter arrays.
     pub const fn index(self) -> usize {
@@ -580,6 +590,9 @@ impl CacheId {
             Self::IncrementalUnchanged => "incremental-unchanged",
             Self::MatcherArtifact => "matcher-artifact",
             Self::VerifierResult => "verifier-result",
+            Self::HyperscanShard => "hyperscan-shard",
+            Self::GpuProgram => "gpu-program",
+            Self::DetectorPlan => "detector-plan",
         }
     }
 }
@@ -742,7 +755,7 @@ impl From<crate::Stage> for MetricId {
             crate::Stage::BackendInit => Self::BackendInit,
             crate::Stage::Teardown => Self::Teardown,
             crate::Stage::ScanPipeline => Self::ScanPipeline,
-        }
+            crate::Stage::ScannerCompile => Self::ScannerCompile,
     }
 }
 
@@ -1563,11 +1576,16 @@ pub static METRICS: [MetricDescriptor; MetricId::COUNT] = [
         MetricKind::Duration,
         MetricUnit::Nanoseconds,
     ),
+    metric(
+        MetricId::ScannerCompile,
+        "scanner-compile",
+        MetricKind::Duration,
+        MetricUnit::Nanoseconds,
+    ),
 ];
 
 impl MetricId {
-    pub const COUNT: usize = 129;
-
+    pub const COUNT: usize = 130;
     /// Return static metadata with no lookup allocation or hashing.
     #[inline]
     pub const fn descriptor(self) -> &'static MetricDescriptor {

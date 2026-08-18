@@ -246,6 +246,10 @@ pub enum CacheLayerKindV2 {
     Verifier,
     Daemon,
     PageCache,
+    HyperscanShards,
+    MatcherArtifacts,
+    GpuPrograms,
+    LockFiles,
 }
 
 /// State and generation identity for one cache layer.

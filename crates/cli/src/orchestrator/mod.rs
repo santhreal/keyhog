@@ -1209,6 +1209,13 @@ fn execution_pack_policy_for_args(
     }
 }
 
+/// How the scanner runtime was materialized for this scan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ScannerMaterialization {
+    MappedPack { generation: String },
+    Compiled { matcher_outcome: keyhog_scanner::MatcherArtifactCacheOutcome },
+}
+
 pub(crate) struct ScanOrchestrator {
     pub(crate) args: ScanArgs,
     pub(crate) detector_count: usize,
@@ -1219,6 +1226,7 @@ pub(crate) struct ScanOrchestrator {
     pub(crate) detector_corpus_digest: String,
     pub(crate) detector_corpus_provenance: DetectorCorpusProvenance,
     pub(crate) scanner: Arc<CompiledScanner>,
+    pub(crate) scanner_materialization: Option<ScannerMaterialization>,
     pub(crate) signatures: std::collections::HashSet<Arc<str>>,
     pub(crate) test_fixture_suppressions: crate::test_fixture_suppressions::TestFixtureSuppressions,
     /// Detector ids disabled via `.keyhog.toml` `[detector.<id>] enabled = false`.
@@ -1595,11 +1603,15 @@ impl ScanOrchestrator {
         let detectors: Option<Arc<[DetectorSpec]>> =
             (!direct_pack_hydration).then(|| detectors.into());
 
+        let mut scanner_materialization = None;
         let scanner = {
-            let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
             let compiled = if disabled_detectors.is_empty() {
                 match detector_execution_pack.as_ref() {
                     Some(pack) => {
+                        let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
+                        scanner_materialization = Some(ScannerMaterialization::MappedPack {
+                            generation: pack.generation.clone(),
+                        });
                         // Keep Result intact so the shared with_context below
                         // still labels pack-backed scanner materialization.
                         // Do not attribute pack hydration to
@@ -1613,6 +1625,7 @@ impl ScanOrchestrator {
                         )
                     }
                     None => {
+                        let _compile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerCompile);
                         let detectors = detectors.as_ref().context(
                             "embedded/debug scanner construction requires detector schemas",
                         )?;
@@ -1629,13 +1642,17 @@ impl ScanOrchestrator {
                             tracing::debug!(
                                 target: "keyhog::matcher_artifact_cache",
                                 outcome = outcome.as_str(),
-                                "matcher artifact cache outcome"
+                                 "matcher artifact cache outcome"
                             );
+                            scanner_materialization = Some(ScannerMaterialization::Compiled {
+                                matcher_outcome: outcome,
+                            });
                             scanner
                         })
                     }
                 }
             } else {
+                let _compile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerCompile);
                 let detectors = detectors
                     .as_ref()
                     .context("disabled-detector scanner construction requires detector schemas")?;
@@ -1653,6 +1670,9 @@ impl ScanOrchestrator {
                         outcome = outcome.as_str(),
                         "matcher artifact cache outcome"
                     );
+                    scanner_materialization = Some(ScannerMaterialization::Compiled {
+                        matcher_outcome: outcome,
+                    });
                     scanner
                 })
             };
@@ -1725,6 +1745,7 @@ impl ScanOrchestrator {
             detector_corpus_digest,
             detector_corpus_provenance,
             scanner,
+            scanner_materialization,
             signatures,
             test_fixture_suppressions,
             disabled_detectors,

@@ -75,11 +75,13 @@ pub enum Stage {
     Teardown,
     /// Top-level pipeline container wrapping full source scanning.
     ScanPipeline,
+    /// In-process compilation and construction of scanner matchers.
+    ScannerCompile,
 }
 
 impl Stage {
     /// Every stage in stable wire order.
-    pub const ALL: [Self; 35] = [
+    pub const ALL: [Self; 36] = [
         Self::SourceAcquire,
         Self::SourceWalk,
         Self::SourceRead,
@@ -115,6 +117,7 @@ impl Stage {
         Self::BackendInit,
         Self::Teardown,
         Self::ScanPipeline,
+        Self::ScannerCompile,
     ];
 
     #[inline]
@@ -163,6 +166,7 @@ impl Stage {
             Self::BackendInit => MetricId::BackendInit,
             Self::Teardown => MetricId::Teardown,
             Self::ScanPipeline => MetricId::ScanPipeline,
+            Self::ScannerCompile => MetricId::ScannerCompile,
         }
     }
 
@@ -209,8 +213,8 @@ impl Stage {
             | Self::BackendAcquire
             | Self::BackendInit
             | Self::Teardown
-            | Self::ScanPipeline => MacroStageId::Scan,
-            Self::Suppression | Self::ResultMerge => MacroStageId::Resolve,
+            | Self::ScanPipeline
+            | Self::ScannerCompile => MacroStageId::Scan,
             Self::LiveVerification => MacroStageId::Verify,
             Self::Reporting => MacroStageId::Report,
         }
