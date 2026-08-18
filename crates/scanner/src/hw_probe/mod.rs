@@ -189,9 +189,7 @@ pub fn probe_host_hardware() -> HardwareCaps {
 }
 
 fn detect_hardware(include_gpu: bool) -> HardwareCaps {
-    let logical_cores = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1); // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
+    let logical_cores = keyhog_profile::logical_cpu_count();
     let physical_cores = platform::physical_core_count().unwrap_or(logical_cores); // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
 
     #[cfg(target_arch = "x86_64")]

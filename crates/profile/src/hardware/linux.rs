@@ -589,9 +589,7 @@ fn affinity_cpu_count() -> Option<u32> {
 
 pub(super) fn capture_topology() -> TopologyEvidenceV2 {
     let cpus = cpu_indices();
-    let logical_cpus = std::thread::available_parallelism()
-        .map(|count| count.get() as u32)
-        .unwrap_or(cpus.len() as u32);
+    let logical_cpus = crate::host_parallelism::logical_cpus();
     let mut cores = std::collections::BTreeSet::new();
     let mut packages = std::collections::BTreeSet::new();
     let mut topology_readable = false;

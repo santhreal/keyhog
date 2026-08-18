@@ -223,6 +223,10 @@ run "Unified counter ownership: profile metrics ownership and zero stray counter
   python3 -B scripts/gates/unified_counter_ownership.py
 run "Unified counter ownership unit tests: static analysis of process-global counter ownership" \
   python3 -B -m unittest scripts.tests.test_unified_counter_ownership -v
+run "Unified host parallelism self-test: single host width owner and zero stray queries" \
+  python3 -B scripts/gates/unified_host_parallelism.py --self-test
+run "Unified host parallelism: canonical keyhog_profile host width ownership" \
+  python3 -B scripts/gates/unified_host_parallelism.py
 run "Timing log profile identity self-test: diagnostic log lines without profile identity are detected" \
   python3 -B scripts/gates/timing_log_profile_identity.py --self-test
 run "Timing log profile identity: all diagnostic timing figures derive from registered profile metrics" \

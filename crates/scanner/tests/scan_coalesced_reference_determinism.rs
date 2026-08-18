@@ -106,9 +106,7 @@ fn fixed_chunks() -> Vec<Chunk> {
     // dominate the workspace despite adding no additional scheduling pressure.
     chunks.sort_by(|a, b| a.metadata.path.as_deref().cmp(&b.metadata.path.as_deref()));
     chunks.truncate(8);
-    let worker_chunks = std::thread::available_parallelism()
-        .map_or(32, std::num::NonZeroUsize::get)
-        .clamp(8, 64);
+    let worker_chunks = keyhog_profile::logical_cpu_count().clamp(8, 64);
     let seed = chunks.clone();
     while chunks.len() < worker_chunks {
         let remaining = worker_chunks - chunks.len();
@@ -253,7 +251,7 @@ fn scan_coalesced_finding_parity_across_worker_counts() {
     // Derive worker count variant space dynamically at run time:
     // 1 worker, 2 workers, an odd count, and host maximum from pool / available parallelism.
     let host_max = rayon::current_num_threads()
-        .max(std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get));
+        .max(keyhog_profile::logical_cpu_count().max(4));
     let odd_count = if host_max > 3 { (host_max / 2) | 1 } else { 3 };
     let mut worker_counts = std::collections::BTreeSet::new();
     worker_counts.insert(1);

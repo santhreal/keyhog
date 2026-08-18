@@ -3,6 +3,7 @@
 All notable changes to `keyhog-profile` are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
 ## 0.5.80 - 2026-08-17
+- feat(profile): canonical owner of host parallelism width and provenance resolution (Row 110).
 - feat(profile): render tabular Markdown profile and comparison reports with blocked wait time, worker concurrency, and queue depths (Row 108).
 - fix(profile): calculate worker occupancy and stage self-time from exclusive span durations without nested container double-counting (Row 104, Row 109).
 - feat(gpu): add GPU region dispatch phase decomposition metrics (`GpuMatcherNs`, `GpuCoalesceNs`, `GpuDispatchNs`, `GpuDeriveNs`, `GpuRecallFloorNs`, `Phase2GpuAdmissionNs`) and dispatch detail counters to `keyhog_profile`.

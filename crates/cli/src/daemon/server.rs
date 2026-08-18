@@ -290,9 +290,7 @@ impl ServerState {
         guard_store: Option<Arc<keyhog_core::guard_store::DurableGuardStore>>,
         guard_scrub_interval: Option<std::time::Duration>,
     ) -> Self {
-        let cores = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
+        let cores = keyhog_profile::logical_cpu_count();
         let max_conns = (cores * 4).clamp(8, 256);
         Self {
             scanner,

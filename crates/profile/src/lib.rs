@@ -93,6 +93,7 @@ mod comparison;
 mod config;
 mod detail;
 mod hardware;
+mod host_parallelism;
 mod identity;
 pub mod insight;
 mod metrics;
@@ -129,6 +130,11 @@ pub use hardware::{
     ThreadHardwareV2, ThreadUtilizationCollector, ThreadUtilizationSampleV2, ThreadUtilizationV2,
     TopologyCollector, TopologyEvidenceV2, UtilizationEvidenceV2, HARDWARE_EVIDENCE_V2_VERSION,
     MAX_SAMPLE_THREADS, MAX_UTILIZATION_SAMPLES, SPAN_HARDWARE_V2_VERSION,
+};
+pub use host_parallelism::{
+    clear_host_parallelism_override, host_parallelism, logical_cpu_count, logical_cpus,
+    set_forced_probe_failure, set_host_parallelism_override, HostParallelism, ParallelismProvenance,
+    FALLBACK_LOGICAL_CPUS, HOST_PARALLELISM_VERSION,
 };
 pub use identity::{
     BuildIdentityInput, ConfigIdentityInput, DetectorIdentityInput, SourceIdentityInput,

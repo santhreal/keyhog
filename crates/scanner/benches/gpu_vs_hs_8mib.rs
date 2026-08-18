@@ -833,7 +833,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chunks.len(),
             n_det,
             gpu_peer_labels,
-            std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get),
+            keyhog_profile::logical_cpu_count(),
             selection_rounds,
             iters,
         );

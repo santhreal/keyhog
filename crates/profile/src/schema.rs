@@ -318,7 +318,7 @@ impl RunIdentity {
             daemon_state: DaemonState::Off,
             scanner_threads: 0,
             reader_threads: None,
-            logical_cpus: std::thread::available_parallelism().map_or(1, usize::from),
+            logical_cpus: crate::host_parallelism::logical_cpu_count(),
         }
     }
 }
