@@ -79,9 +79,7 @@ fn missing_buckets_are_listed_most_expensive_first() {
 /// A bucket key whose exact field values never matter here: the ledger only
 /// has to hold one entry before the reset clears it.
 fn reset_probe_key() -> WorkloadKey {
-    use super::super::super::workload::{
-        SourceMixtureKey,
-    };
+    use super::super::super::workload::SourceMixtureKey;
     WorkloadKey {
         bytes_bucket: 1,
         chunks_bucket: 1,

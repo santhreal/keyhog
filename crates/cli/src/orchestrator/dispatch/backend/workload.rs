@@ -669,7 +669,6 @@ fn validate_workload_buckets(key: &WorkloadKey) -> Result<(), String> {
     Ok(())
 }
 
-
 fn source_execution_class(chunk: &Chunk) -> Result<&str, WorkloadClassificationError> {
     let source_type = chunk.metadata.source_type.trim();
     if source_type.is_empty() {

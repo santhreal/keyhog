@@ -141,7 +141,7 @@ fn hs_large_prefilter_identical_to_regexset_and_deterministic() {
         Err(e) => panic!(
             "detector corpus failed to load, which is the exact state this \
              guard exists to catch, so it fails instead of skipping: {e}"
-        )
+        ),
     };
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
     let text = build_large_corpus();

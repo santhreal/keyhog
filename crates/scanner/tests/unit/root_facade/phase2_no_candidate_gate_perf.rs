@@ -52,7 +52,7 @@ fn mark_matches_gate_path_is_fast() {
         Err(e) => panic!(
             "detector corpus failed to load, which is the exact state this \
              guard exists to catch, so it fails instead of skipping: {e}"
-        )
+        ),
     };
     let scanner =
         keyhog_scanner::CompiledScanner::compile(detectors).expect("scanner compile failed");

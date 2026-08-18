@@ -567,7 +567,9 @@ fn stdin_bare_token_is_review_tier_and_exits_zero_under_default_policy() {
     let findings = json_findings(&out);
     assert_eq!(findings.len(), 1, "the bare token is still reported");
     assert_eq!(
-        findings[0].pointer("/evidence/tier").and_then(|x| x.as_str()),
+        findings[0]
+            .pointer("/evidence/tier")
+            .and_then(|x| x.as_str()),
         Some("review"),
         "a bare token with no surrounding context lands in the review tier"
     );
@@ -589,7 +591,9 @@ fn stdin_bare_token_is_review_tier_and_exits_zero_under_default_policy() {
     let findings = json_findings(&out);
     assert_eq!(findings.len(), 1, "the assigned token is reported once");
     assert_eq!(
-        findings[0].pointer("/evidence/tier").and_then(|x| x.as_str()),
+        findings[0]
+            .pointer("/evidence/tier")
+            .and_then(|x| x.as_str()),
         Some("likely"),
         "assignment context lifts the identical token to the likely tier"
     );
@@ -601,9 +605,7 @@ fn stdin_bare_token_is_review_tier_and_exits_zero_under_default_policy() {
         "the likely tier is reached through the vendor-pattern classification"
     );
     assert_eq!(
-        findings[0]
-            .get("credential_hash")
-            .and_then(|x| x.as_str()),
+        findings[0].get("credential_hash").and_then(|x| x.as_str()),
         Some(TOKEN_SHA256),
         "both halves observe the same credential bytes"
     );

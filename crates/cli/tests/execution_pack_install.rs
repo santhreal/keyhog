@@ -264,7 +264,8 @@ fn hidden_install_command_rejects_every_malformed_signing_key() {
             "a {len}-byte signing key must be rejected"
         );
         assert!(
-            String::from_utf8_lossy(&result.stderr).contains("must be an exact 32-byte regular file"),
+            String::from_utf8_lossy(&result.stderr)
+                .contains("must be an exact 32-byte regular file"),
             "the {len}-byte rejection must name the exact-32 contract; stderr={}",
             String::from_utf8_lossy(&result.stderr)
         );

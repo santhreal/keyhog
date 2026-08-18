@@ -19,7 +19,7 @@ fn measure_nfa_shard_size() {
         Err(e) => panic!(
             "detector corpus failed to load, which is the exact state this \
              guard exists to catch, so it fails instead of skipping: {e}"
-        )
+        ),
     };
     let regexes: Vec<String> = detectors
         .iter()

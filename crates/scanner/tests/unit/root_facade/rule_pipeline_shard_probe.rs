@@ -29,7 +29,7 @@ fn shard_distribution_under_state_cap() {
         Err(e) => panic!(
             "detector corpus failed to load, which is the exact state this \
              guard exists to catch, so it fails instead of skipping: {e}"
-        )
+        ),
     };
     let pats: Vec<String> = detectors
         .iter()

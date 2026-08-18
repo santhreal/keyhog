@@ -63,7 +63,7 @@ fn hs_prefilter_findings_identical_to_regexset() {
         Err(e) => panic!(
             "detector corpus failed to load, which is the exact state this \
              guard exists to catch, so it fails instead of skipping: {e}"
-        )
+        ),
     };
     let Some(root) = corpus_dir() else {
         eprintln!("SKIP: mirror corpus absent");

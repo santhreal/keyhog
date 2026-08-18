@@ -2,8 +2,7 @@
 
 use super::*;
 use crate::orchestrator::dispatch::backend::workload::{
-    autoroute_stable_bucket, source_class_id,
-    SourceMixtureEntry, SourceMixtureKey,
+    autoroute_stable_bucket, source_class_id, SourceMixtureEntry, SourceMixtureKey,
 };
 use keyhog_scanner::ScanBackend;
 use std::ffi::OsStr;

@@ -75,7 +75,7 @@ fn no_new_duplicate_primary_regex_detectors() {
         Err(e) => panic!(
             "detector corpus failed to load, which is the exact state this \
              guard exists to catch, so it fails instead of skipping: {e}"
-        )
+        ),
     };
 
     // Group detector ids by their PRIMARY (patterns[0]) regex. Detectors with no

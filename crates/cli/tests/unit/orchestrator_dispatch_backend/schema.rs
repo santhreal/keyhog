@@ -241,7 +241,10 @@ fn workload_key_projects_scanner_owned_decoder_families() {
         "token = \"::%41::!@#$^*()_-+[]{};,./?~|\"".into(),
     )];
     let sparse = workload_key(&sparse_batch, 902).expect("sparse URL workload classified");
-    assert_eq!(decode_workload_sketch(&sparse_batch).kind_mask(), Sketch::URL);
+    assert_eq!(
+        decode_workload_sketch(&sparse_batch).kind_mask(),
+        Sketch::URL
+    );
     assert!(sparse.decode_admitted);
 
     let fixtures = [
@@ -695,7 +698,6 @@ fn source_mixture_validation_rejects_noncanonical_persisted_entries() {
     empty_bytes.bytes_bucket = 0;
     assert!(validate_workload_source_mixture(&empty_bytes).is_err());
 
-
     assert!(source_mixture_key(&[]).is_err());
     let source_classes = |count: usize| {
         (0..count)
@@ -767,7 +769,8 @@ fn exact_source_mixtures_survive_cache_replay_and_inspection() {
     );
 
     // A source class nobody calibrated is still an uncalibrated route class.
-    let unmeasured_key = workload_key(&mixture(&["docker"]), 902).expect("docker workload classifies");
+    let unmeasured_key =
+        workload_key(&mixture(&["docker"]), 902).expect("docker workload classifies");
     assert!(
         resolve_persisted_route(
             &loaded,

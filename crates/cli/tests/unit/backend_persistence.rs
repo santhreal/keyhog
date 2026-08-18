@@ -5,8 +5,8 @@ use crate::orchestrator::dispatch::backend::runtime_health::{
 };
 use crate::orchestrator::dispatch::backend::store::inspection::inspect_autoroute_cache;
 use crate::orchestrator::dispatch::backend::workload::{
-    autoroute_stable_bucket, render_workload_key, source_class_id,
-    SourceMixtureEntry, SourceMixtureKey,
+    autoroute_stable_bucket, render_workload_key, source_class_id, SourceMixtureEntry,
+    SourceMixtureKey,
 };
 use keyhog_scanner::ScanBackend;
 
