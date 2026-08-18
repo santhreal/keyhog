@@ -290,3 +290,75 @@ fn eviction_ignores_deeply_nested_subdirectories() {
         "Deeply nested file must remain untouched"
     );
 }
+
+#[test]
+fn package_manager_locks_and_dotfiles_are_never_classified_or_collected() {
+    assert_eq!(CacheKind::classify_path(Path::new("/tmp/Cargo.lock")), None);
+    assert_eq!(CacheKind::classify_path(Path::new("/tmp/yarn.lock")), None);
+    assert_eq!(CacheKind::classify_path(Path::new("/tmp/flake.lock")), None);
+    assert_eq!(
+        CacheKind::classify_path(Path::new("/tmp/.installed_manifest.json")),
+        None
+    );
+
+    let temp = TempDir::new().expect("tempdir");
+    let cache_dir = temp.path();
+    let cargo_lock = cache_dir.join("Cargo.lock");
+    std::fs::write(&cargo_lock, b"[lockfile]").expect("write cargo lock");
+    let past = SystemTime::now() - Duration::from_secs(7200);
+    set_mtime(&cargo_lock, past);
+
+    let removed = collect_stale_lock_files(cache_dir, Duration::from_secs(600));
+    assert_eq!(
+        removed, 0,
+        "Package manager lock files must never be removed"
+    );
+    assert!(cargo_lock.exists());
+}
+
+#[test]
+fn installed_gpu_artifacts_and_manifests_are_never_evicted() {
+    let temp = TempDir::new().expect("tempdir");
+    let cache_dir = temp.path();
+    let prog_dir = cache_dir.join("programs");
+    std::fs::create_dir(&prog_dir).expect("create programs dir");
+
+    let installed_file = prog_dir.join("installed_sidecar.bin");
+    std::fs::write(&installed_file, b"installed binary").expect("write installed file");
+
+    let manifest = serde_json::json!({
+        "version": 1,
+        "artifacts": [
+            {
+                "file_name": "installed_sidecar.bin",
+                "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }
+        ]
+    });
+    std::fs::write(
+        prog_dir.join(".installed_manifest.json"),
+        serde_json::to_vec(&manifest).unwrap(),
+    )
+    .expect("write manifest");
+
+    let ephemeral_file = prog_dir.join("gpu-ephemeral.bin");
+    std::fs::write(&ephemeral_file, b"ephemeral").expect("write ephemeral file");
+
+    let past = SystemTime::now() - Duration::from_secs(7200);
+    set_mtime(&installed_file, past);
+    set_mtime(&ephemeral_file, past);
+
+    let policy = CacheEvictionPolicy::new(0, 0, 600);
+    let report = evict_cache_dir_with_policy(cache_dir, CacheKind::GpuPrograms, policy);
+
+    assert_eq!(
+        report.evicted_count, 1,
+        "Only ephemeral GPU program should be evicted"
+    );
+    assert!(!ephemeral_file.exists());
+    assert!(
+        installed_file.exists(),
+        "Installed GPU sidecar must be protected from eviction"
+    );
+    assert!(prog_dir.join(".installed_manifest.json").exists());
+}

@@ -60,8 +60,25 @@ impl CacheKind {
     #[must_use]
     pub fn classify_path(path: &Path) -> Option<Self> {
         let file_name = path.file_name()?.to_str()?;
+        if file_name.starts_with('.') {
+            return None;
+        }
         if file_name.ends_with(".lock") {
-            return Some(Self::LockFiles);
+            let is_package_lock = matches!(
+                file_name,
+                "Cargo.lock"
+                    | "flake.lock"
+                    | "yarn.lock"
+                    | "pnpm-lock.yaml"
+                    | "composer.lock"
+                    | "Gemfile.lock"
+                    | "poetry.lock"
+                    | "Pipfile.lock"
+            );
+            if !is_package_lock {
+                return Some(Self::LockFiles);
+            }
+            return None;
         }
         if file_name.starts_with(crate::hyperscan_cache::HYPERSCAN_CACHE_PREFIX)
             && file_name.ends_with(crate::hyperscan_cache::HYPERSCAN_CACHE_SUFFIX)

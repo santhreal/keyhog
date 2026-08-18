@@ -136,7 +136,7 @@ fn collect_stale_locks_bounded(cache_dir: &Path, max_age: Duration, top_level: b
             }
             continue;
         }
-        if path.extension().and_then(|ext| ext.to_str()) == Some("lock") {
+        if CacheKind::classify_path(&path) == Some(CacheKind::LockFiles) {
             let Ok(meta) = entry.metadata() else {
                 continue;
             };
@@ -177,6 +177,29 @@ fn collect_matching_entries_bounded(
         return;
     };
 
+    let mut protected_files = std::collections::HashSet::new();
+    if kind == CacheKind::GpuPrograms {
+        let manifest_path = dir.join(".installed_manifest.json");
+        if let Ok(bytes) = std::fs::read(&manifest_path) {
+            // LAW10: missing or unreadable manifest conservatively treats no installed artifacts as present; no effect on scan findings
+            #[derive(serde::Deserialize)]
+            struct Manifest {
+                #[serde(default)]
+                artifacts: Vec<Entry>,
+            }
+            #[derive(serde::Deserialize)]
+            struct Entry {
+                file_name: String,
+            }
+            if let Ok(manifest) = serde_json::from_slice::<Manifest>(&bytes) {
+                // LAW10: malformed manifest skips protected set population; no effect on scan findings
+                for item in manifest.artifacts {
+                    protected_files.insert(item.file_name);
+                }
+            }
+        }
+    }
+
     for entry in read_dir.flatten() {
         let Ok(file_type) = entry.file_type() else {
             continue;
@@ -192,6 +215,12 @@ fn collect_matching_entries_bounded(
                 collect_matching_entries_bounded(&path, kind, out, false);
             }
             continue;
+        }
+
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if name.starts_with('.') || protected_files.contains(name) {
+                continue;
+            }
         }
 
         if kind.matches_path(&path) {
