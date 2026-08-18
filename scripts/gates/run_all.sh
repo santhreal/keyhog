@@ -211,6 +211,12 @@ run "Unsafe guards: workspace unsafe blocks carry written safety preconditions a
   python3 -B scripts/gates/unsafe_guards.py
 run "Unsafe guards unit tests: static analysis of unsafe block invariants" \
   python3 -B -m unittest scripts.tests.test_unsafe_guards -v
+run "Artifact size ceiling self-test: release profile strip and platform ceilings" \
+  python3 -B scripts/gates/artifact_size_ceiling.py --self-test
+run "Artifact size ceiling: release profiles strip symbols and binaries meet ceilings" \
+  python3 -B scripts/gates/artifact_size_ceiling.py
+run "Artifact size ceiling unit tests: platform ceiling thresholds" \
+  python3 -B -m unittest scripts.tests.test_artifact_size_ceiling -v
 run "Mutation gate self-test: AST mutation generator catches surviving mutants" \
   python3 -B scripts/gates/mutation_gate.py --self-test
 run "Mutation gate unit tests: operator inversion and comment preservation" \

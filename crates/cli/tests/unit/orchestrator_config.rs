@@ -722,3 +722,49 @@ fn detector_parse_cache_refuses_oversized_cache_file() {
         "oversized parse cache must be replaced by a normal cache artifact"
     );
 }
+
+#[test]
+fn config_precedence_matrix_across_all_schema_layers() {
+    let _guard = global_config_state_lock();
+
+    // Setting 1: min_confidence (Default: 0.0, TOML: 0.75, CLI: 0.90)
+    // Case A: Default only (empty TOML, no CLI flag)
+    let args_default = args_for_config("");
+    assert_eq!(args_default.min_confidence, None);
+
+    // Case B: TOML value (no CLI flag)
+    let args_toml = args_for_config("[scan]\nmin_confidence = 0.75\n");
+    assert_eq!(args_toml.min_confidence, Some(0.75));
+
+    // Case C: CLI flag overrides TOML value
+    let args_cli = args_for_config_with_extra("[scan]\nmin_confidence = 0.75\n", &["--min-confidence", "0.90"]);
+    assert_eq!(args_cli.min_confidence, Some(0.90));
+
+    // Case D: CLI flag alone without TOML
+    let args_cli_only = args_for_config_with_extra("", &["--min-confidence", "0.90"]);
+    assert_eq!(args_cli_only.min_confidence, Some(0.90));
+
+    // Setting 2: threads (Default: auto/none, TOML: 4, CLI: 8)
+    let args_threads_default = args_for_config("");
+    assert_eq!(args_threads_default.threads, None);
+
+    let args_threads_toml = args_for_config("[scan]\nthreads = 4\n");
+    assert_eq!(args_threads_toml.threads, Some(4));
+
+    let args_threads_cli = args_for_config_with_extra("[scan]\nthreads = 4\n", &["--threads", "8"]);
+    assert_eq!(args_threads_cli.threads, Some(8));
+
+    // Setting 3: max_commits (Default: None, TOML: 50, CLI: 100)
+    let args_commits_toml = args_for_config("max_commits = 50\n");
+    assert_eq!(args_commits_toml.max_commits, Some(50));
+
+    let args_commits_cli = args_for_config_with_extra("max_commits = 50\n", &["--max-commits", "100"]);
+    assert_eq!(args_commits_cli.max_commits, Some(100));
+
+    // Setting 4: format (Default: text, TOML: json, CLI: sarif)
+    let args_fmt_toml = args_for_config("[scan]\nformat = \"json\"\n");
+    assert_eq!(args_fmt_toml.format, OutputFormat::Json);
+
+    let args_fmt_cli = args_for_config_with_extra("[scan]\nformat = \"json\"\n", &["--format", "sarif"]);
+    assert_eq!(args_fmt_cli.format, OutputFormat::Sarif);
+}
