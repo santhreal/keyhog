@@ -104,11 +104,12 @@ fn legacy_attribution_api_maps_onto_work_origin() {
     let _ = session.finish(RunState::Completed);
 }
 
-/// Decoded, derived, and retried origins must all count as attributed work in
-/// the aggregate stage counters, while root work stays unattributed.
+/// Decoded, derived, and retried origins must all be captured on the span records,
+/// while stage attributed_ns carries exclusive self-time (Row 109).
 #[test]
 fn non_root_origins_count_as_attributed_work() {
     let session = session("origin-attribution-totals");
+    let runtime = session.runtime();
     for origin in [
         WorkOrigin::Decoded,
         WorkOrigin::Derived,
@@ -120,6 +121,13 @@ fn non_root_origins_count_as_attributed_work() {
     set_work_origin(WorkOrigin::Root);
     drop(span(Stage::GenericDetection));
 
+    let (spans, _) = runtime.take_session_span_records();
+    assert_eq!(spans.len(), 4);
+    assert_eq!(spans[0].work_origin, WorkOrigin::Decoded);
+    assert_eq!(spans[1].work_origin, WorkOrigin::Derived);
+    assert_eq!(spans[2].work_origin, WorkOrigin::Retried);
+    assert_eq!(spans[3].work_origin, WorkOrigin::Root);
+
     let profile = session.finish(RunState::Completed);
     let stage = profile
         .stages
@@ -128,9 +136,7 @@ fn non_root_origins_count_as_attributed_work() {
         .expect("generic detection measurement");
     assert_eq!(stage.calls, 4);
     assert!(stage.attributed_ns > 0);
-    assert!(stage.attributed_ns < stage.elapsed_ns);
-    let unattributed_ns = stage.elapsed_ns - stage.attributed_ns;
-    assert!(unattributed_ns > 0);
+    assert!(stage.attributed_ns <= stage.elapsed_ns);
 }
 
 /// The work origin must propagate through instrument_future onto a worker

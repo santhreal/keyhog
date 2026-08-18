@@ -744,6 +744,18 @@ impl QueueId {
     pub const fn index(self) -> usize {
         self as usize
     }
+
+    /// Stable text label used by profiles and operator reports.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SourceWork => "source-work",
+            Self::ScannerWork => "scanner-work",
+            Self::DecoderWork => "decoder-work",
+            Self::BackendBatch => "backend-batch",
+            Self::LiveVerification => "live-verification",
+            Self::ResultMerge => "result-merge",
+        }
+    }
 }
 
 /// A reuse cache the profiler reports hit and miss counts for.

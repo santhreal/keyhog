@@ -265,4 +265,63 @@ impl ProfileComparison {
         }
         output
     }
+
+    /// Render a clean tabular Markdown comparison report for terminal and browser inspection (Row 108).
+    pub fn render_markdown(&self) -> String {
+        let mut out = String::with_capacity(2048);
+        out.push_str(&format!(
+            "# KeyHog Profile Comparison\n\n\
+             - **Comparable**: `{}`\n\
+             - **Baseline Run**: `{:?}`\n\
+             - **Candidate Run**: `{:?}`\n\n",
+            self.comparable, self.baseline_run_id, self.candidate_run_id
+        ));
+
+        if !self.incompatibilities.is_empty() {
+            out.push_str("## Incompatibilities\n\n");
+            out.push_str("| Field | Baseline | Candidate |\n");
+            out.push_str("| :--- | :--- | :--- |\n");
+            for diff in &self.incompatibilities {
+                out.push_str(&format!("| {} | {} | {} |\n", diff.field, diff.baseline, diff.candidate));
+            }
+            out.push('\n');
+        }
+
+        let wall_change = match self.wall_time_change_percent {
+            Some(pct) => format!("{pct:+.2}%"),
+            None => "undefined".to_string(),
+        };
+        out.push_str("## Wall Time\n\n");
+        out.push_str(&format!(
+            "- **Baseline**: {:.3} ms\n\
+             - **Candidate**: {:.3} ms\n\
+             - **Delta**: {:+.3} ms ({})\n\n",
+            self.baseline_wall_time_ns as f64 / 1_000_000.0,
+            self.candidate_wall_time_ns as f64 / 1_000_000.0,
+            self.wall_time_delta_ns as f64 / 1_000_000.0,
+            wall_change,
+        ));
+
+        out.push_str("## Stages\n\n");
+        out.push_str("| Stage | Baseline (ms) | Candidate (ms) | Delta (ms) | Change (%) | Calls (Base -> Cand) |\n");
+        out.push_str("| :--- | ---: | ---: | ---: | ---: | :--- |\n");
+        for stage in &self.stages {
+            let change_str = match stage.elapsed_change_percent {
+                Some(pct) => format!("{pct:+.2}%"),
+                None => "undefined".to_string(),
+            };
+            out.push_str(&format!(
+                "| {} | {:.3} | {:.3} | {:+.3} | {} | {} -> {} |\n",
+                stage.stage.as_str(),
+                stage.baseline_elapsed_ns as f64 / 1_000_000.0,
+                stage.candidate_elapsed_ns as f64 / 1_000_000.0,
+                stage.elapsed_delta_ns as f64 / 1_000_000.0,
+                change_str,
+                stage.baseline_calls,
+                stage.candidate_calls,
+            ));
+        }
+        out.push('\n');
+        out
+    }
 }

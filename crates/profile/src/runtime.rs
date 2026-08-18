@@ -139,6 +139,7 @@ struct SpanOutcome {
     self_ns: u64,
     blocked: bool,
     serial: bool,
+    outermost: bool,
 }
 
 struct RawSpanRecord {
@@ -962,7 +963,7 @@ impl Runtime {
         stage: Stage,
         started: Instant,
         parent_span_id: u64,
-        stack_slot: Option<usize>,
+        _stack_slot: Option<usize>,
         worker_id: u64,
     ) -> Option<SpanTrace> {
         let reservation = self
@@ -1234,7 +1235,9 @@ impl Runtime {
             }
             // Worker occupancy is computed from self-time: a worker is credited once
             // for each nanosecond it actually spends executing or waiting in blocked state.
-            shard.top_level_calls.fetch_add(1, Ordering::Relaxed);
+            if outcome.outermost {
+                shard.top_level_calls.fetch_add(1, Ordering::Relaxed);
+            }
             if outcome.blocked {
                 shard
                     .top_level_blocked_ns
@@ -2255,7 +2258,6 @@ struct AsyncSpan {
     stage: Stage,
     started: Option<Instant>,
     trace: Option<SpanTrace>,
-    attributed: bool,
 }
 
 impl Drop for AsyncSpan {
@@ -2273,6 +2275,7 @@ impl Drop for AsyncSpan {
                 self_ns: elapsed_ns,
                 blocked: false,
                 serial: false,
+                outermost: true,
             },
         );
         if let Some(trace) = self.trace {
@@ -2310,7 +2313,6 @@ where
     let span_id = trace.map(|trace| trace.span_id);
     let origin = current_work_origin();
     let task_id = current_task_id();
-    let attributed = runtime.is_some() && origin.is_attributed_work();
     let poll_runtime = runtime.clone();
 
     async move {
@@ -2320,7 +2322,6 @@ where
             stage,
             started,
             trace,
-            attributed,
         };
         let mut future = std::pin::pin!(future);
         poll_fn(|context| {
@@ -2383,7 +2384,6 @@ pub struct Span {
     stack_slot: Option<usize>,
     blocked: bool,
     serial: bool,
-    outermost: bool,
 }
 
 impl Span {
@@ -2409,15 +2409,15 @@ fn span_impl(
             stack_slot: None,
             blocked: false,
             serial: false,
-            outermost: false,
         };
     }
     let runtime = current_runtime();
     let shard = runtime.as_ref().and_then(Runtime::worker_shard);
     let worker_id = shard.as_ref().map_or(0, |shard| shard.sequence);
     let started = runtime.as_ref().map(|_| Instant::now());
-    let outermost =
-        started.is_some() && SPAN_DEPTH.with(|depth| depth.replace(depth.get() + 1) == 0);
+    if started.is_some() {
+        SPAN_DEPTH.with(|depth| depth.set(depth.get() + 1));
+    }
     let (trace, stack_slot) = match (runtime.as_ref(), started) {
         (Some(runtime), Some(started)) => {
             let (parent_slot, current_parent_id) = runtime.current_parent();
@@ -2441,7 +2441,6 @@ fn span_impl(
         stack_slot,
         blocked,
         serial,
-        outermost,
     }
 }
 
@@ -2525,6 +2524,7 @@ impl DecisionTimer {
                         self_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
                         blocked: false,
                         serial: false,
+                        outermost: true,
                     },
                 );
             }
@@ -2539,7 +2539,11 @@ impl Drop for Span {
         let (Some(runtime), Some(started)) = (&self.runtime, self.started) else {
             return;
         };
-        SPAN_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+        let outermost = SPAN_DEPTH.with(|depth| {
+            let next = depth.get().saturating_sub(1);
+            depth.set(next);
+            next == 0
+        });
         let elapsed_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
         let self_ns = runtime.pop_active_span(self.stack_slot, elapsed_ns);
         runtime.record(
@@ -2551,6 +2555,7 @@ impl Drop for Span {
                 self_ns,
                 blocked: self.blocked,
                 serial: self.serial,
+                outermost,
             },
         );
         if let Some(trace) = self.trace {

@@ -610,6 +610,11 @@ impl RunProfile {
         }
         output
     }
+
+    /// Render a clean tabular Markdown report for terminal and browser inspection (Row 108).
+    pub fn render_markdown(&self) -> String {
+        crate::CausalProfileV2::from_v1(self.clone()).render_markdown()
+    }
 }
 
 fn state_name(state: RunState) -> &'static str {
