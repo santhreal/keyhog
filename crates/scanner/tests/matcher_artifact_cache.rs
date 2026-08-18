@@ -215,3 +215,97 @@ fn matcher_artifact_cache_evicts_oldest_when_capacity_exceeded() {
         entries.len()
     );
 }
+
+/// WHY: cache directory creation must end at mode 0700 regardless of the active
+/// process umask (such as 0o002 or 0o022) and regardless of race conditions among
+/// concurrent writers creating the cache directory simultaneously.
+///
+/// What it does not catch: filesystems that do not support POSIX permission bits
+/// or Windows ACL permission models.
+#[test]
+#[cfg(unix)]
+fn matcher_artifact_cache_dir_creation_ends_at_mode_0700_regardless_of_umask_and_concurrency() {
+    use std::os::unix::fs::MetadataExt;
+
+    let detectors = sample_detectors();
+    let ir = CanonicalDetectorExecutionIr::compile(&detectors).expect("ir");
+    let sections =
+        CompiledRouteMatcherSections::compile(&ir, ExecutionPackBackend::Cpu).expect("sections");
+
+    // Dynamically sweep standard umasks: 0o002 (group-writable) and 0o022 (standard).
+    for test_umask in [0o002u32, 0o022u32] {
+        let old_umask = unsafe { libc::umask(test_umask as libc::mode_t) };
+        let temp_parent = allowlisted_tempdir();
+        let cache_dir = temp_parent.path().join("concurrent-cache-test");
+
+        // Spawn concurrent threads attempting to store artifacts simultaneously into a fresh cache dir.
+        let thread_count = 8;
+        let mut handles = Vec::new();
+        for i in 0..thread_count {
+            let dir = cache_dir.clone();
+            let identity = MatcherArtifactIdentity::new(
+                ir.digest(),
+                [i as u8; 32],
+                None,
+                ExecutionPackBackend::Cpu,
+                None,
+            )
+            .expect("identity");
+            let sec = sections.clone();
+            handles.push(std::thread::spawn(move || {
+                store_matcher_artifact(&dir, &identity, &sec)
+            }));
+        }
+
+        for handle in handles {
+            handle.join().expect("thread join").expect("store");
+        }
+
+        // Restore umask before assertions
+        unsafe { libc::umask(old_umask) };
+
+        let meta = std::fs::symlink_metadata(&cache_dir).expect("stat cache dir");
+        let mode = meta.mode() & 0o777;
+        assert_eq!(
+            mode, 0o700,
+            "cache directory created under umask {test_umask:#o} must end at mode 0700, got {mode:#o}"
+        );
+    }
+}
+
+/// WHY: a cache directory with loose permissions must be auto-tightened to mode 0700
+/// when validated on default paths, and must report an operator-visible repair command
+/// `chmod 700` when validation fails.
+///
+/// What it does not catch: non-POSIX permission errors on foreign mounts.
+#[test]
+#[cfg(unix)]
+fn validate_and_tighten_repairs_existing_loose_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp_parent = allowlisted_tempdir();
+    let cache_dir = temp_parent.path().join("loose-cache-dir");
+    std::fs::create_dir(&cache_dir).expect("create dir");
+    std::fs::set_permissions(&cache_dir, std::fs::Permissions::from_mode(0o775))
+        .expect("set loose mode");
+
+    // Strict validation without auto-tighten refuses the directory and includes the chmod repair command.
+    let err = keyhog_scanner::validate_matcher_artifact_cache_dir(&cache_dir)
+        .expect_err("strict validate must fail on 0775");
+    assert!(
+        err.contains("chmod 700"),
+        "validation error must include repair command `chmod 700`, got: {err}"
+    );
+
+    // Auto-tighten repairs the mode in place.
+    keyhog_scanner::validate_and_tighten_matcher_artifact_cache_dir(&cache_dir, true)
+        .expect("auto-tighten must succeed");
+
+    let meta = std::fs::symlink_metadata(&cache_dir).expect("stat repaired cache dir");
+    use std::os::unix::fs::MetadataExt;
+    let mode = meta.mode() & 0o777;
+    assert_eq!(
+        mode, 0o700,
+        "cache directory must be tightened to 0700, got {mode:#o}"
+    );
+}

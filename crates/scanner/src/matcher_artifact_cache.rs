@@ -98,7 +98,7 @@ pub fn validate_and_tighten_matcher_artifact_cache_dir(
     let tmp_user_dir = temp_root.join(format!("keyhog-cache-{uid}"));
     if !(path.starts_with(&home) || path.starts_with(&tmp_user_dir)) {
         return Err(format!(
-            "matcher-artifact cache dir must be under {} or {}",
+            "matcher-artifact cache dir must be under {} or {}; configure with --matcher-cache <DIR>",
             home.display(),
             tmp_user_dir.display()
         ));
@@ -108,31 +108,36 @@ pub fn validate_and_tighten_matcher_artifact_cache_dir(
             format!("could not read matcher-artifact cache dir metadata: {error}")
         })?;
         if meta.file_type().is_symlink() {
-            return Err("matcher-artifact cache dir cannot be a symlink".to_owned());
+            return Err(format!(
+                "matcher-artifact cache dir cannot be a symlink; repair with `rm {}`",
+                path.display()
+            ));
         }
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
             if meta.uid() != uid {
-                return Err(
-                    "matcher-artifact cache directory is not owned by the current user".to_owned(),
-                );
+                return Err(format!(
+                    "matcher-artifact cache directory is not owned by the current user (uid {uid}); repair with `chown -R {uid} {}`",
+                    path.display()
+                ));
             }
-            if meta.mode() & 0o022 != 0 {
+            if meta.mode() & 0o077 != 0 {
                 if auto_tighten {
                     use std::os::unix::fs::PermissionsExt;
                     if let Err(error) =
                         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
                     {
                         return Err(format!(
-                            "matcher-artifact cache directory is group- or world-writable and tightening permissions failed: {error}"
+                            "matcher-artifact cache directory is group- or world-accessible and tightening permissions failed: {error}; repair with `chmod 700 {}`",
+                            path.display()
                         ));
                     }
-                } else {
-                    return Err(
-                        "matcher-artifact cache directory must not be group- or world-writable; tighten with chmod 700"
-                            .to_owned(),
-                    );
+                } else if meta.mode() & 0o022 != 0 {
+                    return Err(format!(
+                        "matcher-artifact cache directory must not be group- or world-writable; repair with `chmod 700 {}`",
+                        path.display()
+                    ));
                 }
             }
         }
@@ -695,10 +700,7 @@ pub fn store_matcher_artifact(
     if sections.backend != expected_backend {
         return Err("matcher artifact backend does not match identity".to_owned());
     }
-    validate_matcher_artifact_cache_dir(cache_dir)?;
-    // Only tighten mode on directories we create. Do not chmod a pre-existing
-    // operator-supplied path (for example $HOME or $HOME/.cache).
-    let created_cache_dir = !cache_dir.exists();
+    validate_and_tighten_matcher_artifact_cache_dir(cache_dir, true)?;
     std::fs::create_dir_all(cache_dir).map_err(|error| {
         format!(
             "cannot create matcher-artifact cache dir {}: {error}",
@@ -706,23 +708,20 @@ pub fn store_matcher_artifact(
         )
     })?;
     #[cfg(unix)]
-    if created_cache_dir {
+    {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(cache_dir)
-            .map_err(|error| {
-                format!(
-                    "cannot stat matcher-artifact cache dir {}: {error}",
-                    cache_dir.display()
-                )
-            })?
-            .permissions();
-        perms.set_mode(0o700);
-        std::fs::set_permissions(cache_dir, perms).map_err(|error| {
-            format!(
-                "cannot tighten matcher-artifact cache dir {}: {error}",
-                cache_dir.display()
-            )
-        })?;
+        if let Ok(meta) = std::fs::symlink_metadata(cache_dir) {
+            if !meta.file_type().is_symlink() && (meta.permissions().mode() & 0o077 != 0) {
+                std::fs::set_permissions(cache_dir, std::fs::Permissions::from_mode(0o700))
+                    .map_err(|error| {
+                        format!(
+                            "cannot tighten matcher-artifact cache dir {}: {error}; repair with `chmod 700 {}`",
+                            cache_dir.display(),
+                            cache_dir.display()
+                        )
+                    })?;
+            }
+        }
     }
     let path = cache_dir.join(identity.cache_filename());
     let identity_json = serde_json::to_vec(identity)

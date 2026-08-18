@@ -45,23 +45,22 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
             match keyhog_scanner::validate_and_tighten_matcher_artifact_cache_dir(&path, true) {
                 Ok(()) => Ok(Some(path)),
                 Err(error) => {
-                    // Default-on soft-fail must not spam ordinary/CI stderr when
-                    // XDG_CACHE_HOME sits outside $HOME. Explicit --matcher-cache
-                    // paths still hard-error above.
-                    tracing::debug!(
+                    tracing::warn!(
                         error = %error,
                         path = %path.display(),
-                        "matcher-artifact cache disabled: default cache location is unusable"
+                        "matcher-artifact cache unusable: default cache location is unusable"
                     );
+                    eprintln!("warning: matcher-artifact cache unusable at {}: {error}", path.display());
                     Ok(None)
                 }
             }
         }
         Err(error) => {
-            tracing::debug!(
+            tracing::warn!(
                 error = %error,
-                "matcher-artifact cache disabled: no default cache location"
+                "matcher-artifact cache unusable: no default cache location"
             );
+            eprintln!("warning: matcher-artifact cache unusable: {error}; configure with --matcher-cache <DIR>");
             Ok(None)
         }
     }
