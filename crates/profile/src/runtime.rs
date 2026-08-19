@@ -963,6 +963,9 @@ impl Runtime {
         _stack_slot: Option<usize>,
         worker_id: u64,
     ) -> Option<SpanTrace> {
+        if !self.inner.session_recording {
+            return None;
+        }
         let reservation = self
             .inner
             .session_span_reservations

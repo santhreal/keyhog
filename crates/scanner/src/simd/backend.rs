@@ -332,6 +332,7 @@ pub(crate) struct HsCompileOpts<'a> {
     /// compilation disables this because it begins while a scan worker owns
     /// thread-local phase-2 scratch; nested work stealing could re-enter that
     /// non-reentrant scratch borrow.
+    #[allow(dead_code)]
     pub(crate) parallel_prepare: bool,
 }
 

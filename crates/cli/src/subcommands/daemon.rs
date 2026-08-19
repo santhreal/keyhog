@@ -522,10 +522,29 @@ fn load_guard_config() -> (
             .subtree_max_depth
             .unwrap_or(defaults.subtree_max_depth),
     };
-    let scanner_idle_timeout_secs = guard
-        .scanner_idle_timeout
-        .as_deref()
-        .and_then(parse_duration_secs);
+    if let Some(residency) = guard.scanner_residency.as_deref() {
+        if residency != "warm" && residency != "idle-unload" {
+            tracing::warn!("daemon: invalid guard scanner_residency '{residency}'; expected 'warm' or 'idle-unload'");
+        }
+    }
+    let scanner_idle_timeout_secs = match guard.scanner_residency.as_deref() {
+        Some("warm") => guard
+            .scanner_idle_timeout
+            .as_deref()
+            .and_then(parse_duration_secs)
+            .or(Some(u64::MAX)),
+        Some("idle-unload") => Some(
+            guard
+                .scanner_idle_timeout
+                .as_deref()
+                .and_then(parse_duration_secs)
+                .unwrap_or(300), // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
+        ),
+        _ => guard
+            .scanner_idle_timeout
+            .as_deref()
+            .and_then(parse_duration_secs),
+    };
     let state_path = guard.state_path.as_deref().and_then(expand_state_path);
     // Lockdown mode forbids on-disk persistence. If [lockdown] require = true
     // is set alongside [guard].state_path, reject the durable store and

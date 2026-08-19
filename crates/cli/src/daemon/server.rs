@@ -300,7 +300,7 @@ impl ServerState {
         });
         let watcher_instance = crate::daemon::guard_watcher::GuardWatcher::new(guard_recon_config)
             .unwrap_or_else(|e| {
-                // LAW10: OS notify init failure falls back to unmonitored disabled watcher; logged loudly
+                // LAW10: OS notify init failure falls back to unmonitored disabled watcher; loud warning emitted and surfaced in status
                 tracing::warn!(
                     "daemon: guard watcher disabled: unmonitored (not watching): {}",
                     e
@@ -885,7 +885,7 @@ fn scrub_guard_roots(state: &ServerState) {
 /// Reconciliation* transition illegal. Events on Dirty, Degraded,
 /// StalePolicy, and Stopped roots are no-ops: those states already
 /// account for unscanned changes.
-pub(crate) fn process_guard_events(
+fn process_guard_events(
     state: &ServerState,
     root: &Path,
     events: Vec<keyhog_sources::guard::GuardEvent>,
@@ -1205,6 +1205,7 @@ enum MassFilesystemMessage {
         source_coverage_gaps: SourceCoverageGaps,
         skipped_unchanged: usize,
     },
+    #[allow(dead_code)]
     Error(String),
 }
 
