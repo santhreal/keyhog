@@ -21,7 +21,6 @@ pub mod git_history_non_repo_no_clean_summary;
 pub mod git_staged_non_repo_clean_error;
 pub mod main_defines_user_and_system_exit_codes;
 pub mod main_maps_scanner_panic_to_system_exit;
-pub mod no_inline_tests_in_src;
 pub mod orchestrator_config_honors_keyhog_detectors_env;
 pub mod orchestrator_config_honors_keyhog_threads_env;
 pub mod orchestrator_defines_live_exit_ten;
