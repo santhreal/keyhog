@@ -699,13 +699,7 @@ impl ScanOrchestrator {
             };
             out
         };
-        let findings: Vec<RawMatch> = if matches!(
-            explicit_backend,
-            Some(
-                keyhog_scanner::hw_probe::ScanBackend::CpuFallback
-                    | keyhog_scanner::hw_probe::ScanBackend::SimdCpu
-            )
-        ) {
+        let findings: Vec<RawMatch> = {
             let lane_width =
                 crate::orchestrator_config::fused_cpu_wave_width(rayon::current_num_threads());
             let mut batches = batches;
@@ -789,8 +783,6 @@ impl ScanOrchestrator {
                 findings.extend(wave_findings.into_iter().flatten().flatten());
             }
             findings
-        } else {
-            batches.flat_map(scan_batch).collect()
         };
 
         // Drain thread owns source iteration for the fused path. A panic here

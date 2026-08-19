@@ -933,6 +933,16 @@ impl CompiledScanner {
             false,
         )
     }
+    /// Scan a single chunk with concurrent pipeline partitioning across `worker_count` workers.
+    /// Preserves seam safety and finding determinism across chunk partition boundaries.
+    pub fn scan_chunk_partitioned(
+        &self,
+        chunk: &Chunk,
+        backend: crate::hw_probe::ScanBackend,
+        worker_count: usize,
+    ) -> crate::error::Result<Vec<RawMatch>> {
+        crate::pipeline::scan_chunk_partitioned(self, chunk, backend, worker_count)
+    }
 
     /// Scan multiple chunks using exactly the caller-selected backend.
     ///

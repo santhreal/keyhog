@@ -193,7 +193,7 @@ pub(crate) mod homoglyph;
 /// JWT structural validation and anomaly detection.
 pub mod jwt;
 /// Internal scan pipeline orchestration.
-pub(crate) mod pipeline;
+pub mod pipeline;
 /// Prefix trie for efficient keyword propagation.
 pub(crate) mod prefix_trie;
 pub(crate) mod probabilistic_gate;

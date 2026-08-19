@@ -10,6 +10,7 @@
 - feat(entropy): refine BPE entropy evaluations and token boundary chunking to support backtick quotes, preserve internal ampersands and punctuation in quoted secret keys, expand character class filters with tildes and trigger bytes, admit mixed-case alphanumeric tokens via detector-owned special length under credential context, and add generic-high-entropy-string detector and contract specification (Row 154).
 - fix(backend): GPU route explanation parity reporting compiled-in feature state when GPU hardware is physically present rather than false probe misses (Row 156).
 - feat(execution-pack): lazy canonical IR compilation and embedded IR digest for fast zero-compile scanner hydration (Row 158).
+- feat(pipeline): single large file chunk partitioning, worker-proportional subdivision, and deterministic match deduplication across chunk boundaries (Row 160).
 - feat(scanner): instrument compile surface invocations and prepared artifact loads across 13 compile entrypoints (Row 125).
 - feat(parallelism): unify scanner execution width with keyhog_profile host parallelism (Row 110/137).
 - refactor(scanner): move rayon to dev-dependencies and replace internal usages with standard iterators (Row 119).
