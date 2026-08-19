@@ -5,6 +5,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ## [0.5.80] - 2026-08-17
 ### Added
 
+- feat(guard): offline guard status and list inspectability reading durable store from disk with optional root summary (Row 140).
 - feat(cli): optimize startup execution path for informational commands with fast zero-allocation dispatch, deferred runtime initialization, and zero detector corpus parsing (Row 138).
 - feat(installer): multi-dimensional artifact invalidation and regeneration across detector corpus changes, configuration updates, and calibration changes (Row 135).
 - feat(installer): update recommendation parity and complete artifact generation on binary replacement (Row 134).
