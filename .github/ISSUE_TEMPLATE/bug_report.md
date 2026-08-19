@@ -36,7 +36,7 @@ labels: ["bug", "needs-triage"]
 - OS + version:
 - CPU (`uname -m` / Win arch):
 - GPU (if relevant):
-- Install method: install.sh / install.ps1 / cargo install / source / pre-built tarball
+- Install method: cargo install / source / install.sh --from-file / install.ps1 -FromFile
 
 ## Logs
 

@@ -465,6 +465,9 @@ pub async fn cli_main() -> ExitCode {
         Some(args::Command::CompileExecutionPacks(args)) => {
             subcommands::compile_execution_packs::run(args).map(|()| ExitCode::SUCCESS)
         }
+        Some(args::Command::CompileGpuLiterals(args)) => {
+            subcommands::compile_gpu_literals::run(args).map(|()| ExitCode::SUCCESS)
+        }
         Some(args::Command::ActionReport(args)) => match args.command {
             args::ActionReportCommand::Verify(args) => action_report::verify(args),
         },
@@ -491,8 +494,6 @@ pub async fn cli_main() -> ExitCode {
         Some(args::Command::Backend(args)) => subcommands::backend::run(args),
         Some(args::Command::Doctor(args)) => subcommands::doctor::run(args),
         Some(args::Command::BloomDiagnostic(args)) => bloom_diagnostic::run(args),
-        Some(args::Command::Update(args)) => subcommands::update::run(args).await,
-        Some(args::Command::Repair(args)) => subcommands::repair::run(args).await,
         Some(args::Command::Uninstall(args)) => subcommands::uninstall::run(args),
         Some(args::Command::ScanSystem(args)) => subcommands::scan_system::run(args),
         #[cfg(unix)]

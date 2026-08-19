@@ -5,8 +5,8 @@ use crate::orchestrator::dispatch::backend::runtime_health::{
 };
 use crate::orchestrator::dispatch::backend::store::inspection::inspect_autoroute_cache;
 use crate::orchestrator::dispatch::backend::workload::{
-    autoroute_stable_bucket, render_workload_key, source_class_id, Phase1AdmissionKey,
-    Phase2KeywordTriggerKey, SourceMixtureEntry, SourceMixtureKey,
+    autoroute_stable_bucket, render_workload_key, source_class_id, SourceMixtureEntry,
+    SourceMixtureKey,
 };
 use keyhog_scanner::ScanBackend;
 
@@ -60,30 +60,11 @@ fn workload(bytes: u64) -> WorkloadKey {
         chunks_bucket: autoroute_stable_bucket(1),
         max_file_bucket: bytes_bucket,
         pattern_bucket: autoroute_stable_bucket(1),
-        phase1: Phase1AdmissionKey {
-            alphabet_rejected_chunks_bucket: 0,
-            alphabet_rejected_bytes_bucket: 0,
-            bigram_rejected_chunks_bucket: 0,
-            bigram_rejected_bytes_bucket: 0,
-            admitted_chunks_bucket: autoroute_stable_bucket(1),
-            admitted_bytes_bucket: bytes_bucket,
-        },
-        phase2_keyword_triggers: Phase2KeywordTriggerKey {
-            chunks_bucket: 0,
-            bytes_bucket: 0,
-            count_bucket: 0,
-        },
-        decode_kind_mask: 0,
-        decode_candidate_count_bucket: 0,
-        decode_candidate_bytes_bucket: 0,
-        decode_unknown: false,
+        decode_admitted: false,
         source_mixture: SourceMixtureKey {
             entries: vec![SourceMixtureEntry {
                 source_class_digest: source_class_id("filesystem"),
                 has_full_size: true,
-                chunk_ratio: 1,
-                payload_ratio: 1,
-                max_span_bucket: bytes_bucket,
             }],
         },
     }

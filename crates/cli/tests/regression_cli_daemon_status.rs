@@ -158,8 +158,6 @@ fn help_lists_every_real_subcommand_and_usage() {
         "completion",
         "backend",
         "doctor",
-        "update",
-        "repair",
         "uninstall",
         "scan-system",
         "daemon",

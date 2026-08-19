@@ -11,7 +11,7 @@ fn scan_format_sarif_has_schema() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            crate::support::DIAGNOSTIC_BACKEND,
             "--format",
             "sarif",
         ])

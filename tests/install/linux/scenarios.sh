@@ -7,11 +7,9 @@
 # Linux, NVIDIA-but-no-libcuda, etc., from any host without hitting
 # the network or rewriting the script.
 #
-# Network: --diagnose does call the GitHub releases API to resolve
-# the latest tag. We use KEYHOG_VERSION=v0.5.29 throughout so that
-# call is skipped. The download step is never exercised by these
-# tests (they only run --diagnose); a separate live-install test
-# covers the download path against a real release.
+# Network: none. install.sh installs a bundle supplied with --from-file and
+# never fetches anything, so the sandbox stubs curl to fail loudly as a
+# tripwire. These tests only run --diagnose.
 
 set -u
 
@@ -114,8 +112,8 @@ EOF
         chmod +x "$sb/bin/nvcc"
     fi
 
-    # curl: stub so resolve_tag short-circuits via KEYHOG_VERSION.
-    # If the script does hit network we want to know.
+    # curl: a tripwire. install.sh must never fetch anything; if it does,
+    # this fails the test loudly instead of reaching the network.
     cat > "$sb/bin/curl" <<'EOF'
 #!/bin/sh
 echo "TEST_FAIL: install.sh hit network in a unit test" >&2
@@ -137,7 +135,6 @@ run_diagnose() {
     sb=$1
     ch=$(clean_home)
     env -i PATH="$sb/bin" HOME="$ch" \
-            KEYHOG_VERSION=v0.5.29 \
             sh "$INSTALL_SH" --diagnose --no-color 2>&1
     rm -rf "$ch"
 }
@@ -148,7 +145,7 @@ run_diagnose() {
 printf '\n[A] Linux x86_64, NVIDIA + libcuda + toolkit (the desktop case)\n'
 sb=$(build_sandbox "A" "Linux" "x86_64" "yes" "yes" "yes")
 out=$(run_diagnose "$sb")
-expect "A.1 unified Linux asset picked" "Would install: keyhog-linux-x86_64$" "$out"
+expect "A.1 detects linux x86_64"       "Arch:  x86_64"                      "$out"
 expect "A.2 runtime backend selection"  "runtime CUDA/WGPU probe"             "$out"
 rm -rf "$sb"
 
@@ -158,7 +155,7 @@ rm -rf "$sb"
 printf '\n[B] Linux x86_64, NVIDIA GPU but libcuda.so missing\n'
 sb=$(build_sandbox "B" "Linux" "x86_64" "yes" "no")
 out=$(run_diagnose "$sb")
-expect "B.1 unified Linux asset picked" "Would install: keyhog-linux-x86_64$" "$out"
+expect "B.1 detects linux x86_64"       "Arch:  x86_64"                      "$out"
 rm -rf "$sb"
 
 # ============================================================
@@ -167,7 +164,7 @@ rm -rf "$sb"
 printf '\n[C] Linux x86_64, no GPU\n'
 sb=$(build_sandbox "C" "Linux" "x86_64" "no" "no")
 out=$(run_diagnose "$sb")
-expect "C.1 unified Linux asset picked" "Would install: keyhog-linux-x86_64$" "$out"
+expect "C.1 detects linux x86_64"       "Arch:  x86_64"                      "$out"
 rm -rf "$sb"
 
 # ============================================================
@@ -176,7 +173,7 @@ rm -rf "$sb"
 printf '\n[D] macOS arm64 (Apple Silicon)\n'
 sb=$(build_sandbox "D" "Darwin" "arm64" "no" "no")
 out=$(run_diagnose "$sb")
-expect "D.1 mac-aarch64 picked"         "Would install: keyhog-macos-aarch64"     "$out"
+expect "D.1 detects darwin arm64"       "Arch:  arm64"                            "$out"
 rm -rf "$sb"
 
 # ============================================================
@@ -185,7 +182,7 @@ rm -rf "$sb"
 printf '\n[E] macOS x86_64 (Intel Mac)\n'
 sb=$(build_sandbox "E" "Darwin" "x86_64" "no" "no")
 out=$(run_diagnose "$sb")
-expect "E.1 mac-x86_64 picked"          "Would install: keyhog-macos-x86_64"      "$out"
+expect "E.1 detects darwin x86_64"      "OS:    darwin"                           "$out"
 rm -rf "$sb"
 
 # ============================================================
@@ -194,10 +191,10 @@ rm -rf "$sb"
 printf '\n[H] Unsupported platform exits cleanly\n'
 sb=$(build_sandbox "H" "FreeBSD" "x86_64" "no" "no")
 hh=$(clean_home)
-out=$(env -i PATH="$sb/bin" HOME="$hh" KEYHOG_VERSION=v0.5.29 \
+out=$(env -i PATH="$sb/bin" HOME="$hh" \
       sh "$INSTALL_SH" --diagnose --no-color 2>&1) || true
 rm -rf "$hh"
-expect "H.1 reports unsupported"        "Unsupported platform"                    "$out"
+expect "H.1 reports the host it found"  "OS:    freebsd"                          "$out"
 rm -rf "$sb"
 
 # ============================================================
@@ -205,9 +202,9 @@ rm -rf "$sb"
 # ============================================================
 printf '\n[I] --help mode\n'
 out=$(sh "$INSTALL_SH" --help 2>&1)
-expect "I.1 help downloads tagged files" "curl -fSLO.*install.sh.*install.sh.minisig" "$out"
-expect "I.2 help verifies the signature" "minisign -Vm install.sh -P"                "$out"
-expect "I.3 help shows --repair"         "--repair"                                  "$out"
+expect "I.1 help points at cargo install" "cargo install keyhog --locked"           "$out"
+expect "I.2 help shows --from-file"      "--from-file"                             "$out"
+expect "I.3 help shows --uninstall"      "--uninstall"                             "$out"
 expect "I.4 help shows --diagnose"       "--diagnose"                                "$out"
 
 # ============================================================
@@ -216,7 +213,7 @@ expect "I.4 help shows --diagnose"       "--diagnose"                           
 printf '\n[J] --uninstall is a safe no-op when nothing is installed\n'
 sb=$(build_sandbox "J" "Linux" "x86_64" "no" "no")
 nodir=$(mktemp -d -t kh-noinstall-XXXXXX)
-out=$(env -i PATH="$sb/bin" HOME="$nodir" KEYHOG_VERSION=v0.5.29 \
+out=$(env -i PATH="$sb/bin" HOME="$nodir" \
       sh "$INSTALL_SH" --install-dir="$nodir/bin" --uninstall --no-color 2>&1) || true
 expect "J.1 says nothing to remove"     "Nothing to remove"                       "$out"
 rm -rf "$sb" "$nodir"

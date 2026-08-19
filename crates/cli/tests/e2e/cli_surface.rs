@@ -365,7 +365,7 @@ fn completion_unknown_shell_is_usage_error() {
     assert_eq!(code, Some(2), "an invalid shell name is a clap value error");
 }
 
-// ── uninstall dry-run / update --check (offline-safe paths) ───────────────────
+// ── uninstall dry-run (offline-safe paths) ───────────────────────────────────
 
 #[test]
 fn uninstall_without_yes_is_dry_run() {

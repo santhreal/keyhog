@@ -11,7 +11,7 @@ fn scan_format_csv_header_fields() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            crate::support::DIAGNOSTIC_BACKEND,
             "--format",
             "csv",
         ])

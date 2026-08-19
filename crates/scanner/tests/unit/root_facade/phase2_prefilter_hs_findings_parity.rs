@@ -60,10 +60,10 @@ fn hs_prefilter_findings_identical_to_regexset() {
     // built, so no env setup is needed.
     let detectors = match keyhog_core::load_detectors(&detector_dir()) {
         Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors unavailable: {e}");
-            return;
-        }
+        Err(e) => panic!(
+            "detector corpus failed to load, which is the exact state this \
+             guard exists to catch, so it fails instead of skipping: {e}"
+        ),
     };
     let Some(root) = corpus_dir() else {
         eprintln!("SKIP: mirror corpus absent");

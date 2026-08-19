@@ -11,7 +11,7 @@ fn scan_format_html_valid_doctype() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            crate::support::DIAGNOSTIC_BACKEND,
             "--format",
             "html",
         ])

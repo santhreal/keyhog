@@ -24,10 +24,13 @@ fn automatic_gpu_failure_replays_the_stable_batch_without_losing_bytes() {
     assert_eq!(snapshot.backend_recovered_bytes, body.len() as u64);
     assert_eq!(snapshot.gpu_scanned_chunks, 0);
     assert_eq!(recovery.len(), 1);
-    assert_eq!(
-        recovery[0].recovery_backend,
-        keyhog_scanner::ScanBackend::SimdCpu.label()
-    );
+    // `portable,gpu` is a shipped configuration, so the peer a failed
+    // accelerator hands off to is whichever CPU backend this build carries.
+    #[cfg(feature = "simd")]
+    let expected_peer = keyhog_scanner::ScanBackend::SimdCpu;
+    #[cfg(not(feature = "simd"))]
+    let expected_peer = keyhog_scanner::ScanBackend::CpuFallback;
+    assert_eq!(recovery[0].recovery_backend, expected_peer.label());
     assert_eq!(snapshot.source_errors, 0);
     assert_eq!(snapshot.failed_sources, 0);
 }
