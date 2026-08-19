@@ -102,14 +102,9 @@ jobs:
       # Lock the exact invocation used by the macOS release matrix. Native
       # Metal and WGPU are enabled without pulling in Hyperscan.
       - run: cargo build --release -p keyhog --no-default-features --features portable,gpu
-      # Prove the freshly-built macOS binary actually INSTALLS and RUNS via
-      # install.sh's --from-file path: doctor self-test (exit 0), seeded scan
-      # (exit 1 + findings), SARIF, and the local-checksum gate. The mocked
-      # detection scenarios never touch a real binary, and integration-smoke is
-      # manual + installs a published release; this is the only gate that proves
-      # current-source -> install -> working binary on macOS, every push.
-      - name: install-from-build proof (macOS)
-        run: bash tests/install/macos/install_from_local_build.sh target/release/keyhog
+      # The install-from-build proof moved to ci.yml (Install from build
+      # (macOS)). This job ran on a 06:30 schedule while claiming it covered
+      # every push, so a broken macOS install could ship for a day.
 
   windows-build:
     name: Windows portable release build

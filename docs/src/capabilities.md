@@ -239,8 +239,7 @@ that does it.
 | `backend` | inspect hardware, routing heuristics, and autoroute evidence |
 | `bloom-diagnostic` | measure the production Bloom rejection gate and prove enabled-versus-bypassed finding parity |
 | `doctor` | health-check the install: host, PATH, corpus, scan and GPU self-test |
-| `update` | maintain an older GitHub binary-asset install; crates.io installs update with `cargo install --locked --force keyhog` followed by `keyhog doctor` |
-| `repair` | maintain an older GitHub binary-asset install; crates.io installs repair with `cargo install --locked --force keyhog` followed by `keyhog doctor` |
+
 | `uninstall` | remove the binary (dry run unless `--yes`) |
 | `completion` | emit shell completions (bash, zsh, fish, powershell, elvish) |
 

@@ -30,28 +30,25 @@ build them when KeyHog's dependencies support the target, but a successful local
 build is the evidence for that host. In particular, Linux arm64 and Windows
 arm64 do not have hosted release jobs.
 
-### Historical binary-asset channel
+### Installing a bundle you already hold
 
-Current automatic releases do not publish GitHub binary assets. Older releases
-published four platform assets:
+There is no binary download channel. No workflow builds, signs, or uploads
+release binaries, and KeyHog has no self-update command.
 
-| OS | Architecture | Asset | Hyperscan | GPU |
-|---|---|---|---|---|
-| Linux | x86_64 | `keyhog-linux-x86_64` | yes, dynamic `libhs.so.5` | yes |
-| macOS | aarch64 | `keyhog-macos-aarch64` | no | yes |
-| macOS | x86_64 | `keyhog-macos-x86_64` | no | yes |
-| Windows | x86_64 | `keyhog-windows-x86_64.exe` | no | yes |
+`install.sh` and `install.ps1` install a binary you already have, with
+`--from-file`. Use them for an air-gapped host or to place a locally built
+binary on `PATH` with the same layout, permission, and PATH handling that a
+packaged install would use. Neither script contacts the network. Both refuse
+to install without `--from-file` and print the Cargo command instead.
 
-Only the historical Linux asset links Hyperscan, and it links it dynamically,
-so that host needs the Hyperscan runtime package before the binary will start.
-The other three do not link a native CPU accelerator: they retain the pure-Rust
-CPU route and load their GPU peers through the host's runtime drivers.
+Both scripts run `keyhog doctor`, publish an execution-pack generation,
+calibrate autoroute, and then scan a throwaway two-file directory with no
+backend override. That last scan is the install's pass criterion for routing: a
+calibrated cache that cannot serve an ordinary scan fails the install and the
+previous binary is restored.
 
-`install.sh`, `install.ps1`, `keyhog update`, and `keyhog repair` operate only on
-that historical binary-asset channel. They select a release with a complete
-signed asset bundle; they do not update a Cargo installation to the current
-crates.io release. Use `cargo install --locked --force keyhog` followed by `keyhog doctor` for
-current updates and repairs.
+Update with `cargo install --locked --force keyhog`. That is also the repair
+path: it rebuilds and replaces the installed binary.
 
 ## Install Rust
 

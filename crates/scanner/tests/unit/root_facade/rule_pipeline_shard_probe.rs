@@ -26,10 +26,10 @@ use vyre_libs::scan::{compile_regex_set, RegexCompileError};
 fn shard_distribution_under_state_cap() {
     let detectors = match keyhog_core::load_detectors(&detector_dir()) {
         Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors unavailable: {e}");
-            return;
-        }
+        Err(e) => panic!(
+            "detector corpus failed to load, which is the exact state this \
+             guard exists to catch, so it fails instead of skipping: {e}"
+        ),
     };
     let pats: Vec<String> = detectors
         .iter()

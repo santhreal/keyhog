@@ -359,7 +359,7 @@ is a parity failure, which KeyHog treats as a defect rather than a result.
 | Change scan-wide policy, a per-detector floor, or the disabled-ID set | Intended, according to the setting | Configuration identity changes |
 | Change detector TOML, corpus schema, or replacement/overlay membership | Candidates, suppressions, confidence, or final findings may change | Active corpus and rules identity change; recalibration is required |
 | Apply a matching `[detector.<id>] enabled = false` | That detector stops reporting | Corpus digest changes. An unknown disabled ID warns and leaves the digest unchanged |
-| Change the input | The input can change findings | A different exact workload key is selected |
+| Change the input | The input can change findings | The route class changes only when the shape of the work changes: byte, chunk, maximum-file, or pattern band, decoder kinds, or the set of source classes |
 
 ### Execution changes: findings must not change
 

@@ -11,7 +11,7 @@ fn scan_format_jsonl_valid_objects() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            crate::support::DIAGNOSTIC_BACKEND,
             "--format",
             "jsonl",
             "--no-suppress-test-fixtures",
