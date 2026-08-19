@@ -510,10 +510,13 @@ pub(crate) enum Response {
         /// Scanner residency label.
         scanner_residency: String,
         /// Watcher backend identifier label (Row 123).
+        #[serde(default)]
         watcher_backend: String,
         /// Watcher backend latency tier classification (Row 123).
+        #[serde(default)]
         watcher_latency_tier: String,
         /// Watcher polling interval in milliseconds, if polling (Row 123).
+        #[serde(default)]
         watcher_poll_interval_ms: Option<u64>,
         /// Backend route label used for the last scan.
         backend_route_label: String,
@@ -1142,5 +1145,46 @@ pub(crate) fn response_kind(response: &Response) -> &'static str {
         Response::GuardStatusResult { .. } => "GuardStatusResult",
         Response::GuardReconcileStarted { .. } => "GuardReconcileStarted",
         Response::GuardListResult { .. } => "GuardListResult",
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_row_123_guard_status_result_backward_compatibility() {
+        let legacy_json = serde_json::json!({
+            "kind": "guard_status_result",
+            "active_roots": 2,
+            "quarantined_files": 0,
+            "pending_events": 0,
+            "last_reconciliation_duration_ms": 15,
+            "total_reconciliations": 4,
+            "coverage_gaps": 0,
+            "initial_reconciliation_time": 1700000000u64,
+            "last_reconciliation_time": 1700000010u64,
+            "scanner_residency": "resident",
+            "backend_route_label": "simd",
+            "build_identity_short": "abc12345",
+            "detector_digest_short": "1234567890ab",
+            "suppression_digest_short": "1234567890ab",
+            "config_digest_short": "1234567890ab",
+            "autoroute_evidence_status": "present"
+        });
+
+        let parsed: Result<Response, _> = serde_json::from_value(legacy_json);
+        assert!(parsed.is_ok(), "legacy payload without watcher fields must parse: {:?}", parsed);
+        if let Ok(Response::GuardStatusResult {
+            watcher_backend,
+            watcher_latency_tier,
+            watcher_poll_interval_ms,
+            ..
+        }) = parsed {
+            assert_eq!(watcher_backend, "");
+            assert_eq!(watcher_latency_tier, "");
+            assert_eq!(watcher_poll_interval_ms, None);
+        } else {
+            panic!("expected GuardStatusResult response");
+        }
     }
 }

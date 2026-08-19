@@ -241,7 +241,7 @@ impl GuardWatcher {
             rx,
             roots: HashMap::new(),
             config,
-            disabled: false,
+            disabled: true,
             disconnection_reason: parking_lot::Mutex::new(None),
         })
     }
@@ -413,6 +413,13 @@ impl GuardWatcher {
                                     let mut buf = buffer.buffer.lock();
                                     buf.push(guard_event);
                                 }
+                            }
+                        }
+                        let total_pending: usize =
+                            self.roots.values().map(|r| r.buffer.lock().len()).sum();
+                        if total_pending > self.config.max_pending_events_total {
+                            for watched in self.roots.values() {
+                                watched.buffer.lock().mark_overflow();
                             }
                         }
                     }
