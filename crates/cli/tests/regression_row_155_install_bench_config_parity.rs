@@ -243,4 +243,13 @@ fn missing_simd_feature_fails_closed_on_explicit_simd_request() {
             Some("this scanner build has no Hyperscan/SIMD backend".to_string())
         );
     }
+    #[cfg(feature = "simd")]
+    {
+        use keyhog_scanner::CompiledScanner;
+        let scanner = CompiledScanner::compile(Vec::new()).expect("compile empty scanner");
+        assert!(
+            scanner.simd_backend_available(),
+            "Scanner with simd feature must report simd backend available"
+        );
+    }
 }
