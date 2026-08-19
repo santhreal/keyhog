@@ -2,6 +2,7 @@
 
 ## 0.5.80 - 2026-08-17
 
+- feat(cli): fail closed on in-process detector compilation during scan; execution packs must be prepared via keyhog install or update, with --developer-compile-embedded-detectors available as a hidden developer escape hatch (Row 124).
 - feat(gates): validate allowlists across reality and enforce meta-gate audit against unvalidated bypasses (Row 137).
 - feat(profile): directional queue attribution distinguishing producer backpressure from consumer starvation (Row 133).
 - feat(daemon): filesystem authority probe and default periodic scrub for unauthoritative filesystems (Row 132).

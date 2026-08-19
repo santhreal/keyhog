@@ -88,6 +88,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "deep",
     "detectors",
     "detectors-mode",
+    "developer-compile-embedded-detectors",
     "dogfood",
     "entropy-bpe-max-bytes-per-token",
     "entropy-source-files",
