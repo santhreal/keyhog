@@ -1035,6 +1035,9 @@ fn process_guard_events(
     root: &Path,
     events: Vec<keyhog_sources::guard::GuardEvent>,
 ) {
+    if events.is_empty() {
+        return;
+    }
     use keyhog_sources::guard::GuardEvent;
 
     let root_bytes = std::os::unix::ffi::OsStrExt::as_bytes(root.as_os_str());
