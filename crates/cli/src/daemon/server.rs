@@ -292,6 +292,20 @@ impl ServerState {
     ) -> Self {
         let cores = keyhog_profile::logical_cpu_count();
         let max_conns = (cores * 4).clamp(8, 256);
+        let guard = Arc::new(match guard_hot_index_budget {
+            Some(budget) => {
+                crate::daemon::guard_runtime::GuardRuntime::with_hot_index_budget(budget)
+            }
+            None => crate::daemon::guard_runtime::GuardRuntime::new(),
+        });
+        let watcher_instance = crate::daemon::guard_watcher::GuardWatcher::new(guard_recon_config).unwrap_or_else(
+            |e| {
+                tracing::warn!("daemon: guard watcher disabled: unmonitored (not watching): {}", e);
+                crate::daemon::guard_watcher::GuardWatcher::new_disabled()
+            },
+        );
+        guard.set_watcher_status(watcher_instance.watcher_status());
+        let guard_watcher = Arc::new(parking_lot::Mutex::new(watcher_instance));
         Self {
             scanner,
             router: Arc::new(router),
@@ -316,21 +330,9 @@ impl ServerState {
             draining: AtomicBool::new(false),
             scans_drained: Notify::new(),
             active_requests: AtomicU32::new(0),
-            guard: Arc::new(match guard_hot_index_budget {
-                Some(budget) => {
-                    crate::daemon::guard_runtime::GuardRuntime::with_hot_index_budget(budget)
-                }
-                None => crate::daemon::guard_runtime::GuardRuntime::new(),
-            }),
+            guard,
             guard_filter: Arc::new(guard_filter),
-            guard_watcher: Arc::new(parking_lot::Mutex::new(
-                crate::daemon::guard_watcher::GuardWatcher::new(guard_recon_config).unwrap_or_else(
-                    |e| {
-                        tracing::warn!("daemon: guard watcher disabled: {}", e);
-                        crate::daemon::guard_watcher::GuardWatcher::new_disabled()
-                    },
-                ),
-            )),
+            guard_watcher,
             guard_store,
             guard_scrub_interval,
         }
@@ -803,6 +805,15 @@ fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<
                 _ = state.shutdown.notified() => return,
                 _ = tokio::time::sleep(coalesce_window) => {
                     let events = state.guard_watcher.lock().poll_events();
+                    if let Some(reason) = state.guard_watcher.lock().disconnection_reason() {
+                        if !state.guard.is_watcher_disconnected() {
+                            state.guard.record_watcher_disconnection(&reason);
+                            tracing::warn!(
+                                "daemon: guard watcher backend disconnected ({}); failing closed and transitioning roots out of Current",
+                                reason
+                            );
+                        }
+                    }
                     for (root, evts) in events {
                         process_guard_events(&state, &root, evts);
                     }
@@ -873,7 +884,7 @@ fn scrub_guard_roots(state: &ServerState) {
 /// Reconciliation* transition illegal. Events on Dirty, Degraded,
 /// StalePolicy, and Stopped roots are no-ops: those states already
 /// account for unscanned changes.
-fn process_guard_events(
+pub(crate) fn process_guard_events(
     state: &ServerState,
     root: &Path,
     events: Vec<keyhog_sources::guard::GuardEvent>,
@@ -910,13 +921,13 @@ fn process_guard_events(
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum GuardEventAction {
+pub enum GuardEventAction {
     Ignore,
     MarkDuringIndexing { coverage_lost: bool },
     Transition(keyhog_core::guard_state::GuardTransition),
 }
 
-fn guard_event_action(
+pub fn guard_event_action(
     current_state: Option<keyhog_core::guard_state::GuardRootState>,
     has_overflow: bool,
 ) -> GuardEventAction {
@@ -927,6 +938,7 @@ fn guard_event_action(
             Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
                 coverage_lost: true,
             },
+            Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
             _ => GuardEventAction::Transition(GuardTransition::CoverageLost),
         }
     } else {

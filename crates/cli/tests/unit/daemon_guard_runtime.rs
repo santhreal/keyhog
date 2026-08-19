@@ -551,3 +551,24 @@ fn remove_root_clears_indexing_event_flags() {
     assert!(!rt.take_dirty_during_indexing(b"/clear/flags"));
     assert!(!rt.take_coverage_lost_during_indexing(b"/clear/flags"));
 }
+
+#[test]
+fn watcher_disconnection_records_reason_and_status() {
+    let rt = GuardRuntime::new();
+    assert!(!rt.is_watcher_disconnected());
+    assert!(rt.watcher_disconnection_reason().is_none());
+
+    rt.set_watcher_status("watching");
+    assert_eq!(rt.watcher_status().as_deref(), Some("watching"));
+
+    rt.record_watcher_disconnection("notify event channel closed");
+    assert!(rt.is_watcher_disconnected());
+    assert_eq!(
+        rt.watcher_disconnection_reason().as_deref(),
+        Some("notify event channel closed")
+    );
+    assert_eq!(
+        rt.watcher_status().as_deref(),
+        Some("disconnected: notify event channel closed")
+    );
+}
