@@ -74,6 +74,11 @@ proptest = { workspace = true }
 quick-xml = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing-subscriber = { workspace = true, features = ["fmt"] }
+criterion = { workspace = true }
+
+[[bench]]
+name = "core_evaluation"
+harness = false
 
 [build-dependencies]
 serde = { workspace = true }

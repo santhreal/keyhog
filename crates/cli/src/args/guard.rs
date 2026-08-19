@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-/// Subcommand args for `keyhog guard {add, remove, up, down, list, status, reconcile, rebuild}`.
+/// Subcommand args for `keyhog guard {add, remove, up, down, list, status, reconcile, rebuild, feed}`.
 #[derive(Parser)]
 pub struct GuardArgs {
     #[command(subcommand)]
@@ -69,9 +69,10 @@ pub enum GuardAction {
         socket: Option<PathBuf>,
     },
     /// Print the exact state and current policy identity of a guarded root.
+    /// When no root is specified, summarizes all registered roots.
     Status {
-        /// Root path to inspect.
-        root: PathBuf,
+        /// Root path to inspect (summarizes all registered roots when omitted).
+        root: Option<PathBuf>,
         /// Output format: `human` or `json`.
         #[arg(long, value_name = "FORMAT", default_value = "human")]
         format: String,
@@ -97,6 +98,22 @@ pub enum GuardAction {
         /// Guard mode: `repo` or `filesystem`. Defaults to `repo`.
         #[arg(long, value_name = "MODE", default_value = "repo")]
         mode: String,
+        /// Override the socket path.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
+    },
+    /// Expose continuous transition feed and event log with causes across guarded roots.
+    #[command(alias = "events", alias = "log", alias = "transitions")]
+    Feed {
+        /// Filter feed to a specific root path.
+        #[arg(long, value_name = "ROOT")]
+        root: Option<PathBuf>,
+        /// Maximum number of recent transitions to display (default 50).
+        #[arg(long, value_name = "LIMIT", default_value = "50")]
+        limit: usize,
+        /// Output format: `human` or `json`.
+        #[arg(long, value_name = "FORMAT", default_value = "human")]
+        format: String,
         /// Override the socket path.
         #[arg(long, value_name = "PATH")]
         socket: Option<PathBuf>,

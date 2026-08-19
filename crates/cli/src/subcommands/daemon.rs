@@ -526,7 +526,10 @@ fn load_guard_config() -> (
         .scanner_idle_timeout
         .as_deref()
         .and_then(parse_duration_secs);
-    let state_path = guard.state_path.as_deref().and_then(expand_state_path);
+    let state_path = guard
+        .state_path
+        .as_deref()
+        .and_then(crate::config::expand_state_path);
     // Lockdown mode forbids on-disk persistence. If [lockdown] require = true
     // is set alongside [guard].state_path, reject the durable store and
     // operate in ephemeral mode.
@@ -557,22 +560,6 @@ fn load_guard_config() -> (
         state_path,
         scrub_interval_secs,
     )
-}
-
-/// Expand a state path string, resolving `~` to the home directory.
-/// Returns `None` if expansion fails.
-fn expand_state_path(s: &str) -> Option<PathBuf> {
-    let s = s.trim();
-    if s.is_empty() {
-        return None;
-    }
-    if s.starts_with('~') {
-        let home = std::env::var_os("HOME")?;
-        let expanded = s.replacen("~", std::path::Path::new(&home).to_str()?, 1);
-        Some(PathBuf::from(expanded))
-    } else {
-        Some(PathBuf::from(s))
-    }
 }
 
 /// Parse a human-readable duration string (e.g. "100ms", "5s", "1m").
