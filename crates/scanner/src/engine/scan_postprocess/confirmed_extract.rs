@@ -144,6 +144,13 @@ impl CompiledScanner {
                 .and_then(super::scan_postprocess_suffix_gate::LazyConfirmedSuffixGate::get)
             {
                 Some(ac) => {
+                    keyhog_profile::add_counter(
+                        keyhog_profile::CounterId::ConfirmedSuffixGateCalls,
+                        1,
+                    );
+                    let _sg_span = keyhog_profile::counter_span(
+                        keyhog_profile::CounterId::ConfirmedSuffixGateNs,
+                    );
                     let t0 = prof.then(std::time::Instant::now);
                     scratch_owned.clear_suffix(ac.patterns_len());
                     for mat in ac.find_overlapping_iter(&*preprocessed.text) {
@@ -180,12 +187,27 @@ impl CompiledScanner {
                         .map(|entry| (pat_idx, entry.regex.as_str()))
                 })
                 .collect();
-            super::scan_postprocess_companion_gate::companions_deny_absent(
-                self.detector_digest,
-                &companion_patterns,
-                &preprocessed.text,
-                |pat_idx| scratch_owned.deny_companion(pat_idx),
-            );
+            if !companion_patterns.is_empty() {
+                keyhog_profile::add_counter(
+                    keyhog_profile::CounterId::ConfirmedCompanionGateCalls,
+                    1,
+                );
+                let _cg_span = keyhog_profile::counter_span(
+                    keyhog_profile::CounterId::ConfirmedCompanionGateNs,
+                );
+                super::scan_postprocess_companion_gate::companions_deny_absent(
+                    self.detector_digest,
+                    &companion_patterns,
+                    &preprocessed.text,
+                    |pat_idx| {
+                        keyhog_profile::add_counter(
+                            keyhog_profile::CounterId::ConfirmedCompanionGateDenials,
+                            1,
+                        );
+                        scratch_owned.deny_companion(pat_idx);
+                    },
+                );
+            }
         }
         if let Some(companion_t0) = companion_t0 {
             scan_postprocess_profile::confirmed_prof_record(
@@ -205,7 +227,14 @@ impl CompiledScanner {
             }
             match self.ac_suffix_gate.get(pat_idx) {
                 Some(gate) if !gate.is_empty() => {
-                    gate.iter().any(|id| scratch.contains_suffix(*id as usize))
+                    let allowed = gate.iter().any(|id| scratch.contains_suffix(*id as usize));
+                    if !allowed {
+                        keyhog_profile::add_counter(
+                            keyhog_profile::CounterId::ConfirmedSuffixGateSkips,
+                            1,
+                        );
+                    }
+                    allowed
                 }
                 _ => true,
             }
@@ -229,22 +258,39 @@ impl CompiledScanner {
                     let is_active = |pat_idx: usize| {
                         scratch.contains_active(pat_idx) && pattern_allows(pat_idx)
                     };
-                    if let Some(literal_matches) = confirmed_anchor_literal_matches {
-                        anchor_index.collect_candidates_from_literal_matches(
-                            literal_matches,
-                            is_active,
-                            candidates,
+                    keyhog_profile::add_counter(
+                        keyhog_profile::CounterId::ConfirmedAnchorCollectCalls,
+                        1,
+                    );
+                    {
+                        let _ac_span = keyhog_profile::counter_span(
+                            keyhog_profile::CounterId::ConfirmedAnchorCollectNs,
                         );
-                    } else {
-                        anchor_index.collect_candidates(
-                            &preprocessed.text,
-                            confirmed_patterns,
-                            is_active,
-                            candidates,
-                            active_eligible,
-                            literal_ids,
-                        );
+                        if let Some(literal_matches) = confirmed_anchor_literal_matches {
+                            anchor_index.collect_candidates_from_literal_matches(
+                                literal_matches,
+                                is_active,
+                                candidates,
+                            );
+                        } else {
+                            anchor_index.collect_candidates(
+                                &preprocessed.text,
+                                confirmed_patterns,
+                                is_active,
+                                candidates,
+                                active_eligible,
+                                literal_ids,
+                            );
+                        }
                     }
+                    keyhog_profile::add_counter(
+                        keyhog_profile::CounterId::ConfirmedAnchorCandidateCount,
+                        candidates.len() as u64,
+                    );
+                    keyhog_profile::add_counter(
+                        keyhog_profile::CounterId::ConfirmedAnchorCandidateRows,
+                        candidates.len() as u64,
+                    );
                     if let Some(collect_t0) = collect_t0 {
                         scan_postprocess_profile::confirmed_prof_record(
                             scan_postprocess_profile::ConfirmedStage::AnchorCollect,
@@ -275,6 +321,7 @@ impl CompiledScanner {
                                     let offsets = &scratch_owned.hot_direct_offsets;
                                     let detector_index = entry.detector_index;
                                     filtered_group.reserve(group.len());
+                                    let initial_filtered = filtered_group.len();
                                     filtered_group.extend(group.iter().copied().filter(
                                         |&(_, pos)| {
                                             // Overflow (impossible on real input) can't collide
@@ -288,6 +335,15 @@ impl CompiledScanner {
                                             })
                                         },
                                     ));
+                                    let skipped = group.len().saturating_sub(
+                                        filtered_group.len().saturating_sub(initial_filtered),
+                                    );
+                                    if skipped > 0 {
+                                        keyhog_profile::add_counter(
+                                            keyhog_profile::CounterId::ConfirmedHotDirectFilterSkips,
+                                            skipped as u64,
+                                        );
+                                    }
                                     if filtered_group.is_empty() {
                                         i = j;
                                         continue;
@@ -304,26 +360,54 @@ impl CompiledScanner {
                             } else {
                                 None
                             };
+                            keyhog_profile::add_counter(
+                                keyhog_profile::CounterId::ConfirmedExtractCalls,
+                                1,
+                            );
+                            let _ex_span = keyhog_profile::counter_span(
+                                keyhog_profile::CounterId::ConfirmedExtractNs,
+                            );
+                            let m_before = scan_state.matches.len();
                             match anchor_index.anchored_regex(pat_idx) {
-                                Some(re) => self.extract_anchored(
-                                    entry,
-                                    re,
-                                    group,
-                                    preprocessed,
-                                    line_index,
-                                    chunk,
-                                    scan_state,
-                                    deadline,
-                                ),
-                                None => self.extract_matches_inner(
-                                    entry,
-                                    preprocessed,
-                                    line_index,
-                                    chunk,
-                                    scan_state,
-                                    None,
-                                    deadline,
-                                ),
+                                Some(re) => {
+                                    self.extract_anchored(
+                                        entry,
+                                        re,
+                                        group,
+                                        preprocessed,
+                                        line_index,
+                                        chunk,
+                                        scan_state,
+                                        deadline,
+                                    );
+                                    let produced =
+                                        scan_state.matches.len().saturating_sub(m_before);
+                                    if produced > 0 {
+                                        keyhog_profile::add_counter(
+                                            keyhog_profile::CounterId::ConfirmedAnchoredMatches,
+                                            produced as u64,
+                                        );
+                                    }
+                                }
+                                None => {
+                                    self.extract_matches_inner(
+                                        entry,
+                                        preprocessed,
+                                        line_index,
+                                        chunk,
+                                        scan_state,
+                                        None,
+                                        deadline,
+                                    );
+                                    let produced =
+                                        scan_state.matches.len().saturating_sub(m_before);
+                                    if produced > 0 {
+                                        keyhog_profile::add_counter(
+                                            keyhog_profile::CounterId::ConfirmedWholeChunkMatches,
+                                            produced as u64,
+                                        );
+                                    }
+                                }
                             }
                             if let Some(t0) = t0 {
                                 let elapsed = t0.elapsed();
@@ -382,6 +466,10 @@ impl CompiledScanner {
             } else {
                 None
             };
+            keyhog_profile::add_counter(keyhog_profile::CounterId::ConfirmedExtractCalls, 1);
+            let _ex_span =
+                keyhog_profile::counter_span(keyhog_profile::CounterId::ConfirmedExtractNs);
+            let m_before = scan_state.matches.len();
             self.extract_matches_inner(
                 entry,
                 preprocessed,
@@ -391,6 +479,13 @@ impl CompiledScanner {
                 None,
                 deadline,
             );
+            let produced = scan_state.matches.len().saturating_sub(m_before);
+            if produced > 0 {
+                keyhog_profile::add_counter(
+                    keyhog_profile::CounterId::ConfirmedWholeChunkMatches,
+                    produced as u64,
+                );
+            }
             if let Some(t0) = t0 {
                 let elapsed = t0.elapsed();
                 scan_postprocess_profile::confirmed_prof_record(
