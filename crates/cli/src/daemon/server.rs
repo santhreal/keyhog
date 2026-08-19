@@ -30,6 +30,7 @@ static TEST_PANIC_INJECTION_KIND: parking_lot::RwLock<Option<String>> =
 #[cfg(test)]
 pub(crate) fn set_test_panic_injection(kind: Option<&str>) {
     *TEST_PANIC_INJECTION_KIND.write() = kind.map(str::to_string);
+    HAS_TEST_PANIC_INJECTION.store(kind.is_some(), std::sync::atomic::Ordering::Release);
 }
 
 const DEFAULT_REQUEST_READ_TIMEOUT_SECS: u64 = 300;

@@ -827,6 +827,12 @@ impl FilesystemSource {
         self.respect_default_excludes = respect;
         self
     }
+    /// Configure streaming window overlap size.
+    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
+        assert!(self.window_size > overlap, "window must exceed overlap");
+        self.window_overlap = overlap;
+        self
+    }
 
     /// Override the windowed-scan parameters. Production callers stick
     /// with the defaults (1 MiB / 128 KiB); tests use this to exercise

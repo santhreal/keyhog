@@ -313,6 +313,7 @@ fn validate_cli_args(cli: &Cli) -> Result<(), clap::Error> {
     }
     Ok(())
 }
+
 fn mark_cli_value_sources(cli: &mut Cli, matches: &clap::ArgMatches) {
     use clap::parser::ValueSource;
 
