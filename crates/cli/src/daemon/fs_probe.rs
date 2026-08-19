@@ -20,6 +20,7 @@ static TEST_FS_AUTHORITY_OVERRIDE: parking_lot::RwLock<Option<FilesystemAuthorit
     parking_lot::RwLock::new(None);
 
 /// Set or clear in-memory filesystem authority override for tests.
+#[doc(hidden)]
 pub fn set_test_fs_authority_override(auth: Option<FilesystemAuthority>) {
     *TEST_FS_AUTHORITY_OVERRIDE.write() = auth;
 }

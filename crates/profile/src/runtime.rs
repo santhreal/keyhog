@@ -2188,6 +2188,16 @@ impl Runtime {
                 self.inner.distribution_buckets[index][bucket].store(0, Ordering::Relaxed);
             }
         }
+        self.inner
+            .active_compile_phase
+            .store(crate::CompilePhase::Scan as u8, Ordering::Relaxed);
+        for surface in 0..crate::CompileSurfaceId::COUNT {
+            self.inner.legacy_compile_surface_loads[surface].store(0, Ordering::Relaxed);
+            for phase in 0..crate::CompilePhase::COUNT {
+                self.inner.legacy_compile_surface_invocations[surface][phase]
+                    .store(0, Ordering::Relaxed);
+            }
+        }
         for shard in self.inner.sorted_shards() {
             shard.input_bytes.store(0, Ordering::Relaxed);
             shard.input_units.store(0, Ordering::Relaxed);
@@ -2205,6 +2215,12 @@ impl Runtime {
                 shard.stage_last_end_ns[index].store(0, Ordering::Relaxed);
                 for bucket in 0..LATENCY_BUCKET_COUNT {
                     shard.latency_buckets[index][bucket].store(0, Ordering::Relaxed);
+                }
+            }
+            for surface in 0..crate::CompileSurfaceId::COUNT {
+                shard.compile_surface_loads[surface].store(0, Ordering::Relaxed);
+                for phase in 0..crate::CompilePhase::COUNT {
+                    shard.compile_surface_invocations[surface][phase].store(0, Ordering::Relaxed);
                 }
             }
         }
