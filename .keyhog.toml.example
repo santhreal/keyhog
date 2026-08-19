@@ -273,6 +273,45 @@ gpu_recall_floor = false
 # either watch or daemon mode.
 
 # ============================================================================
+# PERPETUAL GUARD (DAEMON & PRE-COMMIT)
+# ============================================================================
+
+# The perpetual repository and filesystem guard maintains an in-memory clean Git
+# object attestation index and filesystem event tracking for sub-second
+# pre-commit scanning. See docs/src/workflows/guard.md for operational details.
+# When [lockdown] require = true is enabled, on-disk persistence (state_path)
+# is disabled and the guard operates strictly in ephemeral memory.
+[guard]
+# Periodic scrub interval to re-scan `current` roots and catch changes missed
+# by filesystem events (e.g. NFS mounts, external edits). Default: disabled.
+# scrub_interval = "5m"
+
+# Durable guard state path. Persists registered roots and clean attestations
+# across daemon restarts in a private redb database. Default: disabled.
+# state_path = "~/.local/state/keyhog/guard.redb"
+
+# Memory budget ceiling for hot clean attestation index in daemon memory.
+# hot_index_memory = "64MB"
+
+# Maximum queued filesystem events per root before degraded status (default: 8192).
+# max_pending_events_per_root = 8192
+
+# Maximum total queued filesystem events across all roots (default: 65536).
+# max_pending_events_total = 65536
+
+# Event coalescing window before applying state transitions (default: "100ms").
+# coalesce_window = "100ms"
+
+# Scanner idle timeout before reporting `idle-unload` residency (default: "5m").
+# scanner_idle_timeout = "5m"
+
+# Maximum files scanned during a single subtree reconciliation (default: 10000).
+# subtree_max_files = 10000
+
+# Maximum directory depth during subtree reconciliation (default: 64).
+# subtree_max_depth = 64
+
+# ============================================================================
 # ADDITIONAL POLICY TABLES
 # ============================================================================
 

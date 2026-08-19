@@ -50,6 +50,7 @@ pub mod regression_scan_system_mount_filters_tier_b;
 pub mod regression_value_parser_fix_guidance;
 pub mod regression_row_112_byte_size_parser_canonicalization;
 pub mod regression_row_113_operational_constants_governance;
+pub mod regression_row_131_config_example_guard_section;
 pub mod release_floating_tag_predicate_single_owner;
 // NOTE: `target_spec_org_contracts` is deliberately NOT aggregated yet. Running
 // it (it was a CI-orphan) surfaces 9 REAL organizational-contract violations
