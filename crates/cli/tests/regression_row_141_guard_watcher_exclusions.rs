@@ -209,14 +209,8 @@ fn default_excluded_files_and_suffixes_filtered() {
         root.join("dist/bundle.js.map"),
         // TSConfig prefix-suffix
         root.join("tsconfig.build.json"),
-        // Skip extensions
-        root.join("assets/logo.png"),
-        root.join("assets/banner.jpg"),
-        root.join("media/sound.mp3"),
-        root.join("bin/app.exe"),
-        root.join("lib/libfoo.so"),
-        root.join("data/store.sqlite3"),
-        root.join("cache/module.pyc"),
+        root.join("cache.json"),
+        root.join("angular.json"),
     ];
 
     for path in &excluded_files {
@@ -233,7 +227,40 @@ fn default_excluded_files_and_suffixes_filtered() {
     let polled = watcher.poll_events();
     assert!(
         polled.is_empty(),
-        "watcher must emit zero events for default excluded files, lockfiles, and media extensions"
+        "watcher must emit zero events for default excluded files, lockfiles, and minified bundles"
+    );
+}
+
+#[test]
+fn image_and_cargo_credentials_files_are_not_excluded() {
+    let config = GuardReconciliationConfig::default();
+    let (mut watcher, tx) = GuardWatcher::new_with_channel(config);
+
+    let root = PathBuf::from("/srv/repo");
+    watcher.add_root(root.clone()).expect("add root");
+
+    let scannable_paths = vec![
+        root.join(".cargo/credentials.toml"),
+        root.join("assets/logo.png"),
+        root.join("assets/banner.jpg"),
+    ];
+
+    for path in &scannable_paths {
+        assert!(
+            !watcher.is_path_excluded(&root, path),
+            "scannable path {} must NOT be excluded by watcher",
+            path.display()
+        );
+        let mut event = notify::Event::new(EventKind::Modify(ModifyKind::Any));
+        event.paths.push(path.clone());
+        tx.send(Ok(event)).expect("send event");
+    }
+
+    let polled = watcher.poll_events();
+    assert_eq!(
+        polled.len(),
+        1,
+        "watcher must emit events for scannable cargo and image files"
     );
 }
 
@@ -444,7 +471,7 @@ fn acceptance_excluded_events_do_not_generate_reconcile_transactions() {
         root_pathbuf.join("target/debug/incremental/123"),
         root_pathbuf.join("node_modules/pkg/lib.js"),
         root_pathbuf.join("package-lock.json"),
-        root_pathbuf.join("assets/image.png"),
+        root_pathbuf.join("dist/bundle.js.map"),
     ];
 
     for path in excluded_events {
@@ -530,8 +557,10 @@ fn mutation_gate_detects_unfiltered_exclusion_regressions() {
     assert!(watcher.is_path_excluded(&root, &root.join("package-lock.json")));
     assert!(watcher.is_path_excluded(&root, &root.join("app.min.js")));
     assert!(watcher.is_path_excluded(&root, &root.join("file.bak")));
-    assert!(watcher.is_path_excluded(&root, &root.join("logo.png")));
+    assert!(watcher.is_path_excluded(&root, &root.join("bundle.js.map")));
 
+    // Negative exclusions (must NOT be excluded)
+    assert!(!watcher.is_path_excluded(&root, &root.join("logo.png")));
     // Negative exclusions (must NOT be excluded)
     assert!(!watcher.is_path_excluded(&root, &root.join("src/main.rs")));
     assert!(!watcher.is_path_excluded(&root, &root.join("src/git_helper.rs")));

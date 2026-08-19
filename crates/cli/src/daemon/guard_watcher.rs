@@ -159,7 +159,7 @@ struct WatchedRoot {
     /// Explicit ignore paths / globs configured for this root.
     ignore_paths: Vec<String>,
     /// Gitignore matcher combining root .keyhogignore, .gitignore, and explicit ignore_paths.
-    ignore_matcher: Option<ignore::gitignore::Gitignore>,
+    ignore_matcher: parking_lot::RwLock<Option<ignore::gitignore::Gitignore>>,
     /// Whether default excludes (.git, target, node_modules, lockfiles, minified files, binary extensions) are respected.
     respect_default_excludes: bool,
 }
@@ -172,7 +172,8 @@ impl WatchedRoot {
         respect_default_excludes: bool,
     ) -> Self {
         let buffer = Arc::new(Mutex::new(EventBuffer::new(max_pending_events)));
-        let ignore_matcher = build_root_ignore_matcher(root_path, &ignore_paths);
+        let ignore_matcher =
+            parking_lot::RwLock::new(build_root_ignore_matcher(root_path, &ignore_paths));
         Self {
             buffer,
             ignore_paths,
@@ -186,24 +187,23 @@ impl WatchedRoot {
         &self,
         root: &std::path::Path,
         path: &std::path::Path,
-        skip_dirs: &crate::skip_dirs::SkipDirPolicy,
+        _skip_dirs: &crate::skip_dirs::SkipDirPolicy,
     ) -> bool {
-        let rel_path = path.strip_prefix(root).unwrap_or(path);
+        let Ok(rel_path) = path.strip_prefix(root) else {
+            return false;
+        };
 
-        // 1. Directory / path component exclusions (matching scan and watch semantics).
-        // Checks .git, target, node_modules, .cache, __pycache__, .venv, dist, build, etc.
-        for component in rel_path.components() {
-            if let std::path::Component::Normal(os) = component {
-                if let Some(s) = os.to_str() {
-                    if self.respect_default_excludes && skip_dirs.is_watch_component(s) {
+        // 1. Directory / path component exclusions matching source scan semantics.
+        if self.respect_default_excludes {
+            for component in rel_path.components() {
+                if let std::path::Component::Normal(os) = component {
+                    if keyhog_sources::is_default_excluded_dir_name(os) {
                         return true;
                     }
                 }
             }
-        }
 
-        // 2. Default excluded files, suffixes, infixes, filenames, and extensions.
-        if self.respect_default_excludes {
+            // 2. Default excluded files, suffixes, infixes, filenames.
             #[cfg(unix)]
             {
                 use std::os::unix::ffi::OsStrExt;
@@ -217,31 +217,32 @@ impl WatchedRoot {
                     return true;
                 }
             }
-
-            // Check non-scannable default skip extensions (images, audio, video, compiled binaries, etc.).
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if keyhog_sources::is_default_skip_extension(ext) {
-                    return true;
-                }
-            }
         }
 
-        // 3. Custom ignore rules (.keyhogignore, .gitignore, and explicit ignore_paths).
-        if let Some(matcher) = &self.ignore_matcher {
+        // 3. Custom ignore rules (.keyhogignore, .keyhogignore.toml, .gitignore, and explicit ignore_paths).
+        if let Some(matcher) = &*self.ignore_matcher.read() {
             let is_dir = path.is_dir();
             if matcher
                 .matched_path_or_any_parents(rel_path, is_dir)
                 .is_ignore()
-                || (!is_dir
-                    && matcher
-                        .matched_path_or_any_parents(rel_path, true)
-                        .is_ignore())
             {
                 return true;
             }
         }
 
         false
+    }
+
+    fn maybe_reload_ignore_matcher(&self, root: &std::path::Path, path: &std::path::Path) {
+        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+            if file_name == ".keyhogignore"
+                || file_name == ".keyhogignore.toml"
+                || file_name == ".gitignore"
+                || file_name == ".keyhog.toml"
+            {
+                *self.ignore_matcher.write() = build_root_ignore_matcher(root, &self.ignore_paths);
+            }
+        }
     }
 }
 
@@ -254,6 +255,10 @@ fn build_root_ignore_matcher(
     if keyhogignore.is_file() {
         let _ = builder.add(&keyhogignore);
     }
+    let keyhogignore_toml = root.join(".keyhogignore.toml");
+    if keyhogignore_toml.is_file() {
+        let _ = builder.add(&keyhogignore_toml);
+    }
     let gitignore = root.join(".gitignore");
     if gitignore.is_file() {
         let _ = builder.add(&gitignore);
@@ -262,6 +267,33 @@ fn build_root_ignore_matcher(
         let _ = builder.add_line(None, pattern);
     }
     builder.build().ok()
+}
+
+fn resolve_root_exclusions(root: &std::path::Path) -> (Vec<String>, bool) {
+    let dot_config = root.join(".keyhog.toml");
+    if let Ok(bytes) = std::fs::read(&dot_config) {
+        if let Ok(text) = std::str::from_utf8(&bytes) {
+            if let Ok(value) = toml::from_str::<toml::Value>(text) {
+                let ignore_paths = value
+                    .get("scan")
+                    .and_then(|s| s.get("ignore_paths"))
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let respect_default_excludes = value
+                    .get("scan")
+                    .and_then(|s| s.get("respect_default_excludes"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                return (ignore_paths, respect_default_excludes);
+            }
+        }
+    }
+    (Vec::new(), true)
 }
 
 /// Manages filesystem watchers for all guard roots.
@@ -446,7 +478,8 @@ impl GuardWatcher {
     /// Register a new root for watching. The watcher is started before
     /// the baseline walk so events during the walk are captured.
     pub fn add_root(&mut self, path: PathBuf) -> Result<(), String> {
-        self.add_root_with_exclusions(path, Vec::new(), true)
+        let (ignore_paths, respect_default_excludes) = resolve_root_exclusions(&path);
+        self.add_root_with_exclusions(path, ignore_paths, respect_default_excludes)
     }
 
     /// Register a new root for watching with explicit ignore paths and default exclusion policy.

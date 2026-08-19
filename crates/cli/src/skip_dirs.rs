@@ -132,9 +132,12 @@ impl SkipDirPolicy {
 
 impl Default for SkipDirPolicy {
     fn default() -> Self {
-        Self::load().unwrap_or_else(|_| {
-            Self::from_bundled().expect("bundled path_skip_dirs.toml must be valid")
-        })
+        Self::load()
+            .or_else(|_| Self::from_bundled())
+            .unwrap_or_else(|_| Self {
+                watch: Vec::new(),
+                git_discovery: Vec::new(),
+            })
     }
 }
 
