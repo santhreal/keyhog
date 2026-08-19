@@ -22,15 +22,7 @@ use std::sync::LazyLock;
 
 static PREPARED_INSTALLATION: LazyLock<(tempfile::TempDir, PathBuf, PathBuf)> =
     LazyLock::new(|| {
-        let base_tmp = PathBuf::from("/mnt/FlareTraining/santh-archive/tmp");
-        let directory = if base_tmp.exists() {
-            tempfile::Builder::new()
-                .prefix("keyhog-row127-prepared-")
-                .tempdir_in(&base_tmp)
-                .expect("tempdir in base_tmp")
-        } else {
-            tempfile::tempdir().expect("temporary install root")
-        };
+        let directory = tempfile::tempdir().expect("temporary install root");
 
         let cache_home = directory.path().join("cache");
         let pack_root = cache_home.join("keyhog/execution-packs");
@@ -124,28 +116,28 @@ fn warm_scan_performs_only_loads_and_zero_compiles() {
     let profile_json: serde_json::Value =
         serde_json::from_str(&profile_content).expect("parse profile json");
 
-    if let Some(compile_records) = profile_json
+    let compile_records = profile_json
         .get("compile_surfaces")
         .and_then(|v| v.as_array())
-    {
-        for record in compile_records {
-            let phase = record
-                .get("phase")
-                .and_then(|p| p.as_str())
-                .unwrap_or_default();
-            let surface = record
-                .get("surface")
-                .and_then(|s| s.as_str())
-                .unwrap_or_default();
-            let count = record
-                .get("invocation_count")
-                .and_then(|c| c.as_u64())
-                .unwrap_or(0);
-            assert_ne!(
-                phase, "Scan",
-                "Scan phase must perform ZERO runtime compilations for surface {surface}; found {count}"
-            );
-        }
+        .expect("compile_surfaces array must exist in profile JSON");
+    assert!(
+        !compile_records.is_empty(),
+        "compile_surfaces must not be empty"
+    );
+    for record in compile_records {
+        let surface = record
+            .get("name")
+            .or_else(|| record.get("surface"))
+            .and_then(|s| s.as_str())
+            .unwrap_or_default();
+        let runtime_compiles = record
+            .get("runtime_compiles")
+            .and_then(|c| c.as_u64())
+            .unwrap_or(0);
+        assert_eq!(
+            runtime_compiles, 0,
+            "Scan phase must perform ZERO runtime compilations for surface {surface}; found runtime_compiles={runtime_compiles}"
+        );
     }
 }
 
@@ -153,15 +145,7 @@ fn warm_scan_performs_only_loads_and_zero_compiles() {
 fn disabling_matcher_cache_cannot_change_normal_scan_behavior() {
     // Contract: disabling the matcher artifact cache (--matcher-cache off) produces zero behavioral
     // difference on a normal scan with prepared execution-pack artifacts.
-    let base_tmp = PathBuf::from("/mnt/FlareTraining/santh-archive/tmp");
-    let temp_dir = if base_tmp.exists() {
-        tempfile::Builder::new()
-            .prefix("keyhog-row127-mcache-")
-            .tempdir_in(&base_tmp)
-            .expect("tempdir in base_tmp")
-    } else {
-        tempfile::tempdir().expect("tempdir")
-    };
+    let temp_dir = tempfile::tempdir().expect("tempdir");
 
     let cache_home = temp_dir.path().join("cache");
     let (_pack_root, _output_dir) = clone_prepared_installation(&cache_home);

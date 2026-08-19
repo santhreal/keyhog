@@ -258,27 +258,27 @@ fn fresh_installation_yields_scan_with_zero_runtime_compilations() {
         serde_json::from_str(&profile_content).expect("parse profile json");
 
     // Check compile surface records in profile json
-    if let Some(compile_records) = profile_json
+    let compile_records = profile_json
         .get("compile_surfaces")
         .and_then(|v| v.as_array())
-    {
-        for record in compile_records {
-            let phase = record
-                .get("phase")
-                .and_then(|p| p.as_str())
-                .unwrap_or_default();
-            let surface = record
-                .get("surface")
-                .and_then(|s| s.as_str())
-                .unwrap_or_default();
-            let count = record
-                .get("invocation_count")
-                .and_then(|c| c.as_u64())
-                .unwrap_or(0);
-            assert_ne!(
-                phase, "Scan",
-                "Scan phase must have ZERO compile surface invocations for surface {surface}; found count {count}"
-            );
-        }
+        .expect("compile_surfaces array must be present in profile JSON");
+    assert!(
+        !compile_records.is_empty(),
+        "compile_surfaces array must not be empty"
+    );
+    for record in compile_records {
+        let surface = record
+            .get("name")
+            .or_else(|| record.get("surface"))
+            .and_then(|s| s.as_str())
+            .unwrap_or_default();
+        let runtime_compiles = record
+            .get("runtime_compiles")
+            .and_then(|c| c.as_u64())
+            .unwrap_or(0);
+        assert_eq!(
+            runtime_compiles, 0,
+            "Scan phase must have ZERO compile surface invocations for surface {surface}; found runtime_compiles={runtime_compiles}"
+        );
     }
 }
