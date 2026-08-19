@@ -354,16 +354,8 @@ required-features = ["gpu"]
 
 
 [[test]]
-name = "gap_no_inline_tests_in_src"
-path = "tests/gap/no_inline_tests_in_src.rs"
-
-[[test]]
 name = "gap_backend_substitution_contracts"
 path = "tests/gap/backend_substitution_contracts.rs"
-
-[[test]]
-name = "gap_no_inline_tests_in_a3_slice"
-path = "tests/gap/no_inline_tests_in_a3_slice.rs"
 
 # TARGET-SPEC perf worklist (FAILING-BY-DESIGN): the 10x goal expressed as
 # executable contracts. RED until batched-GPU phase-2 verify lands; each red

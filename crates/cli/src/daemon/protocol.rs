@@ -83,7 +83,10 @@ use std::collections::BTreeMap;
 ///   receipts carry exact protected findings and the default-policy blocking
 ///   count so daemon, staged-guard, and one-shot scans preserve finding output
 ///   and evidence-policy exits.
-pub(crate) const WIRE_VERSION: u32 = 15;
+/// * v16 - continuous guard transition feed and event log wire frames
+///   (`GuardFeed`, `GuardFeedResult`) expose recent state transitions with
+///   causal attribution across registered roots.
+pub(crate) const WIRE_VERSION: u32 = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -288,6 +291,14 @@ pub enum Request {
     },
     /// List all registered guard roots.
     GuardList,
+    // ── Guard transition feed ──────────────────────────────────────────
+    /// Query the continuous transition feed / event log across roots.
+    GuardFeed {
+        /// Optional root filter (canonical path).
+        root: Option<String>,
+        /// Maximum transitions to return (bounded, default 50).
+        limit: Option<usize>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -541,6 +552,14 @@ pub enum Response {
         store_path: String,
         /// Exact repair command.
         repair_command: String,
+        /// Recent state transitions with causes for this root.
+        #[serde(default)]
+        recent_transitions: Vec<GuardTransitionWireEntry>,
+    },
+    /// Continuous transition feed result with causal attribution.
+    GuardFeedResult {
+        /// Recent state transitions in chronological order.
+        transitions: Vec<GuardTransitionWireEntry>,
     },
     /// Reconciliation started for a guarded root.
     GuardReconcileStarted {
@@ -654,6 +673,25 @@ pub struct GuardWireManifestEntry {
     pub raw_mode: u32,
 }
 
+/// One state transition entry in a guard transition feed or status result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GuardTransitionWireEntry {
+    /// Canonical root path.
+    pub root: String,
+    /// Global transition sequence.
+    pub sequence: u64,
+    /// Unix timestamp (seconds) when the transition occurred.
+    pub timestamp: u64,
+    /// State before transition.
+    pub from_state: String,
+    /// State after transition.
+    pub to_state: String,
+    /// Transition event label.
+    pub event: String,
+    /// Causal attribution / reason for the transition.
+    pub cause: String,
+}
 /// One root entry in a `GuardListResult`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1036,6 +1074,7 @@ pub(crate) fn request_kind(request: &Request) -> &'static str {
         Request::GuardStatus { .. } => "GuardStatus",
         Request::GuardReconcile { .. } => "GuardReconcile",
         Request::GuardList => "GuardList",
+        Request::GuardFeed { .. } => "GuardFeed",
     }
 }
 
@@ -1059,6 +1098,7 @@ pub(crate) const ALL_REQUEST_KINDS: &[&str] = &[
     "GuardStatus",
     "GuardReconcile",
     "GuardList",
+    "GuardFeed",
 ];
 
 /// Sample request instance for every known request kind.
@@ -1125,6 +1165,10 @@ pub(crate) fn sample_request_for_kind(kind: &str) -> Option<Request> {
             root: "/tmp".to_string(),
         }),
         "GuardList" => Some(Request::GuardList),
+        "GuardFeed" => Some(Request::GuardFeed {
+            root: None,
+            limit: Some(50),
+        }),
         _ => None,
     }
 }
@@ -1151,5 +1195,6 @@ pub fn response_kind(response: &Response) -> &'static str {
         Response::GuardStatusResult { .. } => "GuardStatusResult",
         Response::GuardReconcileStarted { .. } => "GuardReconcileStarted",
         Response::GuardListResult { .. } => "GuardListResult",
+        Response::GuardFeedResult { .. } => "GuardFeedResult",
     }
 }

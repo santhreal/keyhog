@@ -1,12 +1,22 @@
 # Changelog
 
 ## 0.5.80 - 2026-08-17
+- feat(guard): derive effective root GuardPolicyIdentity digests across .keyhogignore, .keyhogignore.toml, .keyhog.toml, and suppression files, transitioning active roots to StalePolicy and invalidating attestations upon policy modifications (Row 142).
 
 - bench(cli): add criterion benchmarks for CLI startup latency, git hook execution lifecycle, and guard status protocol roundtrips (Row 147).
+- feat(guard): implement continuous guard transition feed / event log surface with causal attribution across registered roots (`keyhog guard feed`, `GuardFeed` protocol frame) (Row 146).
+- feat(cli): enhance pass-gate terminal output craft with structured volume, blob counts, bytes scanned, and execution timing (Row 143).
+- fix(daemon): filter out ignored and excluded paths (.git, target, node_modules, ignore_paths, default excludes) in guard filesystem watcher matching scan path semantics (Row 141).
+- feat(guard): offline guard status and list inspectability reading durable store from disk with optional root summary (Row 140).
+- feat(cli): optimize startup execution path for informational commands with fast zero-allocation dispatch, deferred runtime initialization, and zero detector corpus parsing (Row 138).
+- feat(installer): multi-dimensional artifact invalidation and regeneration across detector corpus changes, configuration updates, and calibration changes (Row 135).
+- feat(installer): update recommendation parity and complete artifact generation on binary replacement (Row 134).
+- feat(build): audit and enforce release binary symbol stripping and zero DWARF debuginfo bloat via Cargo.toml [profile.release] and profile divergence gates (Row 139).
 - feat(compiler): install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata (Row 128).
 - feat(cache): load-only scan execution and zero compilation fallback on prepared artifact caches (Row 127).
 - feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).
 - feat(profile): compile surface runtime counters across all 13 compiler surfaces (Row 125).
+- fix(cli): eliminate noisy internal execution-pack fallback warning on clean scan passes and enforce unpolluted structured output (Row 144).
 - feat(gates): validate allowlists across reality and enforce meta-gate audit against unvalidated bypasses (Row 137).
 - feat(profile): directional queue attribution distinguishing producer backpressure from consumer starvation (Row 133).
 - feat(daemon): filesystem authority probe and default periodic scrub for unauthoritative filesystems (Row 132).
