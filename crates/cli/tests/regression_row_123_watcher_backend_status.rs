@@ -117,13 +117,33 @@ fn row_123_forced_polling_watcher_reports_interval_and_polling_tier() {
 #[test]
 fn row_123_null_watcher_reports_null_unmonitored() {
     let config = GuardReconciliationConfig::default();
-    let watcher = GuardWatcher::new_null(config).expect("create null watcher");
+    let mut watcher = GuardWatcher::new_null(config).expect("create null watcher");
 
     assert_eq!(watcher.backend_kind(), GuardWatcherBackendKind::NullWatcher);
     assert_eq!(watcher.backend_label(), "null");
     assert_eq!(watcher.latency_tier(), "unmonitored");
     assert_eq!(watcher.poll_interval_ms(), None);
+    assert_eq!(watcher.watcher_status(), "unmonitored");
+    assert!(!watcher.is_disconnected());
+    assert!(!watcher.is_watching());
+
+    // Polling events should not trigger disconnected state
+    let events = watcher.poll_events();
+    assert!(events.is_empty());
+    assert!(!watcher.is_disconnected());
+    assert_eq!(watcher.watcher_status(), "unmonitored");
+
+    // Adding a root should succeed and not fail due to disconnection
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
+    let add_res = watcher.add_root(temp_dir.path().to_path_buf());
+    assert!(
+        add_res.is_ok(),
+        "adding root to null watcher must succeed: {:?}",
+        add_res
+    );
+    assert!(!watcher.is_disconnected());
 }
+
 
 #[test]
 fn row_123_disabled_watcher_reports_disabled_unmonitored() {
