@@ -226,13 +226,14 @@ def check_baseline_growth(
     current: set[str],
     baseline: set[str],
 ) -> tuple[bool, list[str]]:
-    """Check whether candidate set would expand the baseline count.
+    """Check whether candidate set would expand the baseline.
 
     Returns (is_growth, added_entries).
-    Growth occurs when candidate count strictly exceeds the baseline count.
+    Growth occurs when candidate count strictly exceeds the baseline count OR
+    the candidate set contains any entry not already in the baseline.
     """
-    if len(current) > len(baseline):
-        added = sorted(current - baseline)
+    added = sorted(current - baseline)
+    if added or len(current) > len(baseline):
         return True, added
     return False, []
 

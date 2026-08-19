@@ -65,6 +65,22 @@ class NoSilentFallbacksRatchetTests(unittest.TestCase):
             loaded = nsf.load_baseline(baseline_path)
             self.assertEqual(loaded, seed)
 
+    def test_candidate_swap_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            baseline_path = pathlib.Path(td) / "silent_fallback_baseline.txt"
+            seed = {"crates/core/src/a.rs::code_a", "crates/core/src/b.rs::code_b"}
+            nsf.write_baseline(seed, baseline_path)
+
+            # Swap b for c: equal total length (2), but introduces c not in baseline
+            candidate_swap = {"crates/core/src/a.rs::code_a", "crates/scanner/src/c.rs::code_c"}
+            code, added = nsf.update_baseline_ratchet(candidate_swap, baseline_path)
+            self.assertEqual(code, 1)
+            self.assertEqual(added, ["crates/scanner/src/c.rs::code_c"])
+
+            # Baseline on disk must be untouched
+            loaded = nsf.load_baseline(baseline_path)
+            self.assertEqual(loaded, seed)
+
     def test_docstring_count_matches_actual_baseline(self) -> None:
         doc = nsf.__doc__ or ""
         m = re.search(r"(\d+)\s+audited violations", doc)
