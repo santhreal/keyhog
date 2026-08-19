@@ -196,15 +196,7 @@ fn disabling_matcher_cache_cannot_change_normal_scan_behavior() {
 fn load_failure_is_fail_closed_error_rather_than_compilation_fallback() {
     // Contract: corruption or deletion of execution pack fails closed with EXIT_USER_ERROR = 2
     // and actionable repair guidance, rather than falling back to compiling in process.
-    let base_tmp = PathBuf::from("/mnt/FlareTraining/santh-archive/tmp");
-    let temp_dir = if base_tmp.exists() {
-        tempfile::Builder::new()
-            .prefix("keyhog-row127-failclose-")
-            .tempdir_in(&base_tmp)
-            .expect("tempdir in base_tmp")
-    } else {
-        tempfile::tempdir().expect("tempdir")
-    };
+    let temp_dir = tempfile::tempdir().expect("tempdir");
 
     let cache_home = temp_dir.path().join("cache");
     let (_pack_root, output_dir) = clone_prepared_installation(&cache_home);
