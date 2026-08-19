@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use super::*;
 use std::io::Write;
 
