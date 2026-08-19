@@ -1389,9 +1389,6 @@ impl ScanOrchestrator {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorLoad);
             if !detectors_path.exists() && requested_detector_mode.is_none() {
                 let policy = execution_pack_policy_for_args(&args);
-                let execution_pack_directory =
-                    crate::execution_pack_install::installed_execution_pack_directory()
-                        .context("resolving the installed execution-pack directory")?;
                 let installed = match effective_config.backend_override {
                     Some(backend) => {
                         let pack_backend =
@@ -1415,40 +1412,55 @@ impl ScanOrchestrator {
                         keyhog_profile::record_cache_hit(keyhog_profile::CacheId::DetectorPlan);
                         (None, Some(pack))
                     }
-                    Err(error) if !execution_pack_directory.exists() => {
-                        keyhog_profile::record_cache_miss(keyhog_profile::CacheId::DetectorPlan);
-                        tracing::warn!(
-                            error = %error,
-                            "no installed execution-pack generation; parsing embedded detectors"
-                        );
-                        let embedded = || -> anyhow::Result<LoadedDetectorCorpus> {
-                            load_effective_detector_corpus(
-                                &detectors_path,
-                                requested_detector_mode,
-                                !args.lockdown,
-                            )
-                            .context("loading effective detector corpus")
-                        };
-                        (Some(embedded()?), None)
-                    }
                     Err(error) => {
-                        return Err(error).context(
-                            "loading authenticated detector execution pack; run a verified install or self-update",
-                        );
+                        if args.developer_compile_embedded_detectors {
+                            keyhog_profile::record_cache_miss(keyhog_profile::CacheId::DetectorPlan);
+                            eprintln!(
+                                "keyhog: developer mode active: in-process detector compilation (--developer-compile-embedded-detectors)"
+                            );
+                            tracing::warn!(
+                                error = %error,
+                                "developer escape hatch active: in-process detector compilation (--developer-compile-embedded-detectors)"
+                            );
+                            let embedded = || -> anyhow::Result<LoadedDetectorCorpus> {
+                                load_effective_detector_corpus(
+                                    &detectors_path,
+                                    requested_detector_mode,
+                                    !args.lockdown,
+                                )
+                                .context("loading effective detector corpus")
+                            };
+                            let mut corpus = embedded()?;
+                            corpus.provenance.mode = "developer-embedded";
+                            corpus.provenance.source = "developer escape hatch (--developer-compile-embedded-detectors)".to_string();
+                            (Some(corpus), None)
+                        } else {
+                            return Err(error).context(
+                                "no usable detector execution pack available for scan; in-process compilation is forbidden. \
+                                 Fix: run `keyhog install` or `keyhog update` to prepare execution packs, \
+                                 or pass `--developer-compile-embedded-detectors` for developer/debug builds."
+                            );
+                        }
                     }
                 }
-            } else {
-                (
-                    Some(
-                        load_effective_detector_corpus(
-                            &detectors_path,
-                            requested_detector_mode,
-                            !args.lockdown,
-                        )
-                        .context("loading effective detector corpus")?,
-                    ),
-                    None,
+            } else if args.developer_compile_embedded_detectors {
+                eprintln!(
+                    "keyhog: developer mode active: in-process detector compilation (--developer-compile-embedded-detectors)"
+                );
+                let mut corpus = load_effective_detector_corpus(
+                    &detectors_path,
+                    requested_detector_mode,
+                    !args.lockdown,
                 )
+                .context("loading effective detector corpus")?;
+                corpus.provenance.mode = "developer-custom";
+                corpus.provenance.source = format!("developer custom corpus ({})", detectors_path.display());
+                (Some(corpus), None)
+            } else {
+                anyhow::bail!(
+                    "custom or embedded detector compilation on the scan path is disabled without `--developer-compile-embedded-detectors`. \
+                     Fix: run `keyhog install` or `keyhog update` to prepare execution packs or pass `--developer-compile-embedded-detectors`."
+                );
             }
         };
         #[cfg(feature = "verify")]
@@ -1613,78 +1625,52 @@ impl ScanOrchestrator {
 
         let mut scanner_materialization = None;
         let scanner = {
-            let compiled = if disabled_detectors.is_empty() {
-                match detector_execution_pack.as_ref() {
-                    Some(pack) => {
-                        let _pack_span =
-                            keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
-                        scanner_materialization = Some(ScannerMaterialization::MappedPack {
-                            generation: pack.path().display().to_string(),
-                        });
-                        // Keep Result intact so the shared with_context below
-                        // still labels pack-backed scanner materialization.
-                        // Do not attribute pack hydration to
-                        // CacheId::MatcherArtifact. That counter is reserved for
-                        // the on-disk MatcherArtifact cache so --profile can
-                        // prove a real .khm hit/miss.
-                        CompiledScanner::compile_from_execution_pack_with_gpu_policy_and_tuning(
-                            pack,
-                            gpu_init_policy,
-                            &effective_config.scanner_tuning,
-                        )
-                    }
-                    None => {
-                        let _compile_span =
-                            keyhog_profile::span(keyhog_profile::Stage::ScannerCompile);
-                        let detectors = detectors.as_ref().context(
-                            "embedded/debug scanner construction requires detector schemas",
-                        )?;
-                        // No installed pack on this path; pack generation is "none".
-                        keyhog_scanner::compile_shared_with_matcher_artifact_cache(
-                            Arc::clone(detectors),
-                            gpu_init_policy,
-                            &effective_config.scanner_tuning,
-                            resolved_config_digest,
-                            None,
-                            runtime_identity.as_deref(),
-                        )
-                        .map(|(scanner, outcome)| {
-                            tracing::debug!(
-                                target: "keyhog::matcher_artifact_cache",
-                                outcome = outcome.as_str(),
-                                 "matcher artifact cache outcome"
-                            );
-                            scanner_materialization = Some(ScannerMaterialization::Compiled {
-                                matcher_outcome: outcome,
-                            });
-                            scanner
-                        })
-                    }
-                }
-            } else {
-                let _compile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerCompile);
-                let detectors = detectors
-                    .as_ref()
-                    .context("disabled-detector scanner construction requires detector schemas")?;
-                keyhog_scanner::compile_shared_with_matcher_artifact_cache(
-                    Arc::clone(detectors),
-                    gpu_init_policy,
-                    &effective_config.scanner_tuning,
-                    resolved_config_digest,
-                    None,
-                    runtime_identity.as_deref(),
-                )
-                .map(|(scanner, outcome)| {
-                    tracing::debug!(
-                        target: "keyhog::matcher_artifact_cache",
-                        outcome = outcome.as_str(),
-                        "matcher artifact cache outcome"
-                    );
-                    scanner_materialization = Some(ScannerMaterialization::Compiled {
-                        matcher_outcome: outcome,
+            let compiled = match detector_execution_pack.as_ref() {
+                Some(pack) => {
+                    let _pack_span =
+                        keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
+                    scanner_materialization = Some(ScannerMaterialization::MappedPack {
+                        generation: pack.path().display().to_string(),
                     });
-                    scanner
-                })
+                    CompiledScanner::compile_from_execution_pack_with_gpu_policy_and_tuning(
+                        pack,
+                        gpu_init_policy,
+                        &effective_config.scanner_tuning,
+                    )
+                }
+                None => {
+                    if !args.developer_compile_embedded_detectors {
+                        anyhow::bail!(
+                            "no installed execution pack available for scan; in-process compilation is forbidden. \
+                             Fix: run `keyhog install` or `keyhog update` to prepare execution packs, \
+                             or pass `--developer-compile-embedded-detectors` for developer/debug builds."
+                        );
+                    }
+                    let _compile_span =
+                        keyhog_profile::span(keyhog_profile::Stage::ScannerCompile);
+                    let detectors = detectors.as_ref().context(
+                        "embedded/debug scanner construction requires detector schemas",
+                    )?;
+                    keyhog_scanner::compile_shared_with_matcher_artifact_cache(
+                        Arc::clone(detectors),
+                        gpu_init_policy,
+                        &effective_config.scanner_tuning,
+                        resolved_config_digest,
+                        None,
+                        runtime_identity.as_deref(),
+                    )
+                    .map(|(scanner, outcome)| {
+                        tracing::debug!(
+                            target: "keyhog::matcher_artifact_cache",
+                            outcome = outcome.as_str(),
+                            "matcher artifact cache outcome"
+                        );
+                        scanner_materialization = Some(ScannerMaterialization::Compiled {
+                            matcher_outcome: outcome,
+                        });
+                        scanner
+                    })
+                }
             };
             Arc::new(
                 compiled

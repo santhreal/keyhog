@@ -179,6 +179,9 @@ pub struct ScanArgs {
     /// corpus. Omitted preserves the established replace behavior.
     #[arg(long, value_name = "MODE")]
     pub detectors_mode: Option<DetectorMode>,
+    /// Developer-only escape hatch: allow in-process compilation of embedded or custom detectors.
+    #[arg(long = "developer-compile-embedded-detectors", hide = true)]
+    pub developer_compile_embedded_detectors: bool,
 
     /// Path(s) to scan. Pass several to scan multiple roots in one run
     /// (`keyhog scan a/ b/ c/`); nested or duplicate roots fold into their

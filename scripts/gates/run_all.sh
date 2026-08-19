@@ -253,6 +253,12 @@ run "Timing log profile identity: all diagnostic timing figures derive from regi
   python3 -B scripts/gates/timing_log_profile_identity.py
 run "Timing log profile identity unit tests: static analysis of diagnostic timing logging" \
   python3 -B -m unittest scripts.tests.test_timing_log_profile_identity -v
+run "No scan compile self-test: in-process compilation reachability and declaration checks" \
+  python3 -B scripts/gates/no_scan_compile.py --self-test
+run "No scan compile: fail-closed scan execution path and permitted entrypoints (Row 124)" \
+  python3 -B scripts/gates/no_scan_compile.py
+run "No scan compile unit tests: static analysis of scan compile guards and declarations" \
+  python3 -B -m unittest scripts.tests.test_no_scan_compile -v
 run "Mutation gate self-test: AST mutation generator catches surviving mutants" \
   python3 -B scripts/gates/mutation_gate.py --self-test
 run "Mutation gate unit tests: operator inversion and comment preservation" \

@@ -427,7 +427,7 @@ pub(crate) fn report_scanner_materialization_summary(
         }
         Some(crate::orchestrator::ScannerMaterialization::Compiled { matcher_outcome }) => {
             format!(
-                "scanner: compiled in process (matcher-artifact: {})",
+                "scanner: compiled in process (developer escape hatch active; matcher-artifact: {})",
                 matcher_outcome.as_str()
             )
         }

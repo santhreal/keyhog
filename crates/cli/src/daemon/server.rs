@@ -916,7 +916,7 @@ fn scrub_guard_roots(
 /// Reconciliation* transition illegal. Events on Dirty, Degraded,
 /// StalePolicy, and Stopped roots are no-ops: those states already
 /// account for unscanned changes.
-pub(crate) fn process_guard_events(
+fn process_guard_events(
     state: &ServerState,
     root: &Path,
     events: Vec<keyhog_sources::guard::GuardEvent>,

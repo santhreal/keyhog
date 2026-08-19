@@ -670,7 +670,7 @@ pub(crate) mod baseline;
 pub(crate) mod benchmark;
 pub(crate) mod bloom_diagnostic;
 pub(crate) mod config;
-mod execution_pack_install;
+pub mod execution_pack_install;
 pub mod exit_codes;
 pub(crate) mod format;
 pub(crate) mod installer;

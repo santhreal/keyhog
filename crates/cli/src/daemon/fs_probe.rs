@@ -126,20 +126,6 @@ pub fn probe_filesystem_authority(path: &Path) -> FilesystemAuthority {
     )
 }
 
-fn parse_test_force_fs_authority(val: &str) -> Option<FilesystemAuthority> {
-    let parts: Vec<&str> = val.split(':').collect();
-    match parts.as_slice() {
-        [fs_type, "authoritative"] => Some(FilesystemAuthority::authoritative(*fs_type)),
-        [fs_type, "unauthoritative", reason] => {
-            Some(FilesystemAuthority::unauthoritative(*fs_type, *reason))
-        }
-        [fs_type, "unauthoritative"] => Some(FilesystemAuthority::unauthoritative(
-            *fs_type,
-            "forced unauthoritative via test environment",
-        )),
-        _ => None,
-    }
-}
 
 #[cfg(target_os = "linux")]
 fn probe_linux(path: &Path) -> Option<FilesystemAuthority> {
