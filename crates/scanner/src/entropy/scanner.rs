@@ -658,11 +658,12 @@ pub(super) const BYTE_CLASS: [u8; 256] = {
     t[b'\r' as usize] |= 1;
     t[0x0b] |= 1; // vertical tab
     t[0x0c] |= 1; // form feed
-                  // Trigger bytes: =, :, ", ', <
+                  // Trigger bytes: =, :, ", ', `, <
     t[b'=' as usize] |= 4;
     t[b':' as usize] |= 4;
     t[b'"' as usize] |= 4;
     t[b'\'' as usize] |= 4;
+    t[b'`' as usize] |= 4;
     t[b'<' as usize] |= 4;
     // Entropy candidate bytes: alphanumeric + -_+/=.:!@#$%^&*
     // Digits 0-9
@@ -699,9 +700,9 @@ pub(super) const BYTE_CLASS: [u8; 256] = {
     t[b'^' as usize] |= 2;
     t[b'&' as usize] |= 2;
     t[b'*' as usize] |= 2;
+    t[b'~' as usize] |= 2;
     t
 };
-
 fn scan_keyword_free_candidates(
     lines: &impl EntropyLines,
     keyword_line_ids: &[usize],

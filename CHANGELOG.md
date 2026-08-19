@@ -23,6 +23,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).
 - feat(profile): instrument runtime compile surface counters across all 13 compiler surfaces and 4 phases (Row 125).
 - fix(cli): eliminate noisy internal execution-pack fallback warning on clean scan passes and enforce unpolluted structured output (Row 144).
+- feat(entropy): refine BPE entropy evaluations and token boundary chunking to support backtick quotes, preserve internal ampersands and punctuation in complex secret keys, expand character class filters with tildes and trigger bytes, permit 16-character mixed-case alphanumeric tokens with digits under credential context, and add generic-high-entropy-string detector and contract specification (Row 154).
 - feat(gates): single authoritative structural gate architecture consolidating `no_inline_tests_in_src` and `no_cwd_relative_source_reads` workspace-wide and eliminating redundant per-crate gap tests (Row 149).
 - feat(scanner): instrument dynamic anchored regex compilation paths with `LAZY_REGEX_COMPILE_EVENTS` runtime counters to prevent invisible un-cached compilations (Row 150).
 - feat(benchmarks): publish honest multi-corpus benchmark data across mirror and competitor corpora with transparent F1, precision, recall, runtime metrics, and drift-prevention gate coverage (Row 151).

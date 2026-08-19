@@ -105,6 +105,7 @@ pub(crate) struct PlausibilityContext {
     min_alnum_ratio: f64,
     leading_slash_base64_entropy_floor: f64,
     leading_slash_base64_min_len: usize,
+    isolated_mixed_entropy_floor: f64,
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
 }
 
@@ -136,6 +137,7 @@ impl PlausibilityContext {
             min_alnum_ratio: policy.min_alnum_ratio,
             leading_slash_base64_entropy_floor: policy.leading_slash_base64_entropy_floor,
             leading_slash_base64_min_len: policy.leading_slash_base64_min_len,
+            isolated_mixed_entropy_floor: policy.isolated_mixed_entropy_floor,
             entropy_shape: policy.entropy_shape,
         }
     }
@@ -247,16 +249,17 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
         return true;
     }
     if context.is_credential_context {
-        // Single pass over the bytes (was three independent `.any()` scans), the
-        // three character-class flags are folded from one iteration.
-        let mut has_alpha = false;
+        let mut has_upper = false;
+        let mut has_lower = false;
         let mut has_digit = false;
         let mut has_symbol = false;
         for b in value.bytes() {
-            has_alpha |= b.is_ascii_alphabetic();
+            has_upper |= b.is_ascii_uppercase();
+            has_lower |= b.is_ascii_lowercase();
             has_digit |= b.is_ascii_digit();
             has_symbol |= !b.is_ascii_alphanumeric();
         }
+        let has_alpha = has_upper || has_lower;
         let symbolic_entropy_floor = context.symbolic_entropy_floor;
         if has_symbol && entropy >= symbolic_entropy_floor {
             return true;
@@ -275,6 +278,15 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
             && has_digit
             && value.len() >= mixed_alnum_min_len
             && entropy >= mixed_alnum_floor
+        {
+            return true;
+        }
+        if !has_symbol
+            && has_upper
+            && has_lower
+            && has_digit
+            && value.len() >= 16
+            && entropy >= context.isolated_mixed_entropy_floor
         {
             return true;
         }
