@@ -420,6 +420,7 @@ pub trait CliTestApi {
     fn watch_resolve_roots(&self, requested: &[PathBuf]) -> Result<Vec<PathBuf>>;
     fn watch_roots_hint(&self, roots: &[PathBuf]) -> String;
 
+    fn install_execution_generation(&self, candidate: &Path) -> Result<bool>;
     fn max_resident_findings(&self) -> usize;
     fn parse_macos_mount_table_for_test(
         &self,
@@ -606,6 +607,15 @@ pub trait CliTestApi {
         color: bool,
     ) -> String;
     fn fmt_secs(&self, secs: f64) -> String;
+    fn format_pass_gate_summary(
+        &self,
+        prefix: &str,
+        cache_hits: u64,
+        blobs_scanned: u64,
+        bytes_scanned: u64,
+        duration: Option<std::time::Duration>,
+        color: bool,
+    ) -> String;
     fn ticker_guard_spawns_and_joins(&self) -> bool;
     fn redact_url_target(&self, raw: &str) -> String;
 
@@ -1148,6 +1158,10 @@ impl CliTestApi for TestApi {
         F: FnOnce(&Path) -> Result<()>,
     {
         crate::installer::install_with_rollback_checked(exe, bytes, verify)
+    }
+    fn install_execution_generation(&self, candidate: &Path) -> Result<bool> {
+        let tx = crate::installer::install_execution_generation(candidate)?;
+        Ok(tx.is_committed())
     }
 
     fn rewrite_detector_braces(&self, s: &str) -> (String, usize) {
@@ -1706,6 +1720,25 @@ impl CliTestApi for TestApi {
     }
     fn fmt_secs(&self, secs: f64) -> String {
         crate::orchestrator::fmt_secs(secs)
+    }
+    fn format_pass_gate_summary(
+        &self,
+        prefix: &str,
+        cache_hits: u64,
+        blobs_scanned: u64,
+        bytes_scanned: u64,
+        duration: Option<std::time::Duration>,
+        color: bool,
+    ) -> String {
+        let palette = crate::style::terminal_palette(color, false);
+        crate::style::format_pass_gate_summary(
+            prefix,
+            cache_hits,
+            blobs_scanned,
+            bytes_scanned,
+            duration,
+            &palette,
+        )
     }
     fn ticker_guard_spawns_and_joins(&self) -> bool {
         use std::sync::atomic::Ordering;

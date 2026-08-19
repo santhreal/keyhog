@@ -4,16 +4,28 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [0.5.80] - 2026-08-17
 ### Added
+- feat(guard): populate GuardPolicyIdentity digests for ignore file, suppressions, configuration, and source policy, triggering state transition to StalePolicy and attestation invalidation on policy file modifications (Row 142).
 
 - feat(guard): continuous guard transition feed and event log surface with causal attribution across registered roots (Row 146).
+- feat(cli): enhance pass-gate terminal output craft with structured volume, blob counts, bytes scanned, and execution timing (Row 143).
+- feat(guard): offline guard status and list inspectability reading durable store from disk with optional root summary (Row 140).
+- feat(cli): optimize startup execution path for informational commands with fast zero-allocation dispatch, deferred runtime initialization, and zero detector corpus parsing (Row 138).
+- feat(installer): multi-dimensional artifact invalidation and regeneration across detector corpus changes, configuration updates, and calibration changes (Row 135).
+- feat(installer): update recommendation parity and complete artifact generation on binary replacement (Row 134).
+- feat(build): audit and enforce release binary symbol stripping and zero DWARF debuginfo bloat via Cargo.toml [profile.release] and profile divergence gates (Row 139).
+- feat(artifacts): fail closed with EXIT_USER_ERROR and actionable repair instructions on stale or mismatched execution-pack artifact identity inputs (Row 129).
 - feat(compiler): install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata (Row 128).
 - feat(cache): load-only scan execution and zero compilation fallback on prepared artifact caches (Row 127).
 - feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).
 - feat(profile): instrument runtime compile surface counters across all 13 compiler surfaces and 4 phases (Row 125).
+- fix(cli): eliminate noisy internal execution-pack fallback warning on clean scan passes and enforce unpolluted structured output (Row 144).
+- feat(gates): single authoritative structural gate architecture consolidating `no_inline_tests_in_src` and `no_cwd_relative_source_reads` workspace-wide and eliminating redundant per-crate gap tests (Row 149).
+- feat(benchmarks): publish honest multi-corpus benchmark data across mirror and competitor corpora with transparent F1, precision, recall, runtime metrics, and drift-prevention gate coverage (Row 151).
 
 
 ### Changed
 
+- fix(daemon): filter out ignored and excluded paths (.git, target, node_modules, ignore_paths, default excludes) in guard filesystem watcher to prevent unnecessary reconcile transactions (Row 141).
 - fix(scanner): clamp decode-through window overlap to enforce strictly advancing window progress across UTF-8 scalar boundaries in release builds.
 - fix(cli): add `parse_decode_size_limit` rejecting empty and sub-4B `--decode-size-limit` inputs with actionable error diagnostic.
 - style: format guard massive diff test and git sources modules.

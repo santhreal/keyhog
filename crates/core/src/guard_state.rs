@@ -28,6 +28,9 @@ pub const GUARD_SCHEMA_VERSION: u32 = 1;
 /// Version 2 adds canonical evidence verdicts and path-conditioned staged roles.
 pub const GUARD_REPORT_SEMANTICS_VERSION: u32 = 2;
 
+/// Current decode and preprocessing policy version.
+pub const GUARD_DECODE_POLICY_VERSION: u32 = 1;
+
 /// Git object hash algorithm supported by the guard.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -338,6 +341,53 @@ pub struct GuardPolicyIdentity {
 }
 
 impl GuardPolicyIdentity {
+    /// Compute a BLAKE3 hex digest for arbitrary input bytes with a domain tag.
+    pub fn compute_digest(domain: &str, content: &[u8]) -> String {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(domain.as_bytes());
+        hasher.update(b":");
+        hasher.update(content);
+        hex::encode(hasher.finalize().as_bytes())
+    }
+
+    /// Compute default suppression digest from bundled suppressions.
+    pub fn default_suppression_digest() -> String {
+        Self::compute_digest("keyhog-suppressions-v1", b"default")
+    }
+
+    /// Compute default ignore file digest when no ignore file is present.
+    pub fn default_keyhogignore_digest() -> String {
+        Self::compute_digest("keyhog-ignore-v1", b"none")
+    }
+
+    /// Compute default config digest when no configuration file is present.
+    pub fn default_config_digest() -> String {
+        Self::compute_digest("keyhog-config-v1", b"default")
+    }
+
+    /// Compute default source policy digest when default limits apply.
+    pub fn default_source_policy_digest() -> String {
+        Self::compute_digest("keyhog-source-policy-v1", b"default")
+    }
+
+    /// Create a policy identity for a given build and detector digest with standard default policy digests.
+    pub fn from_build_and_detectors(
+        build_identity: impl Into<String>,
+        detector_digest: impl Into<String>,
+    ) -> Self {
+        Self {
+            build_identity: build_identity.into(),
+            detector_digest: detector_digest.into(),
+            suppression_digest: Self::default_suppression_digest(),
+            keyhogignore_digest: Self::default_keyhogignore_digest(),
+            config_digest: Self::default_config_digest(),
+            decode_policy_version: GUARD_DECODE_POLICY_VERSION,
+            source_policy_digest: Self::default_source_policy_digest(),
+            guard_schema_version: GUARD_SCHEMA_VERSION,
+            report_semantics_version: GUARD_REPORT_SEMANTICS_VERSION,
+        }
+    }
+
     /// Short hex digest of the full identity for status display (first 12
     /// hex chars of a BLAKE3 hash over the canonical serialization).
     pub fn short_digest(&self) -> Result<String, serde_json::Error> {
@@ -349,6 +399,15 @@ impl GuardPolicyIdentity {
     /// Whether two identities are compatible for attestation reuse.
     pub fn is_compatible_with(&self, other: &GuardPolicyIdentity) -> bool {
         self == other
+    }
+}
+
+impl Default for GuardPolicyIdentity {
+    fn default() -> Self {
+        Self::from_build_and_detectors(
+            "unknown",
+            Self::compute_digest("keyhog-detectors-v1", b"default"),
+        )
     }
 }
 

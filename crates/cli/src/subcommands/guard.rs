@@ -347,24 +347,20 @@ async fn run_remove(
 
 async fn run_list(socket: Option<std::path::PathBuf>) -> anyhow::Result<ExitCode> {
     let socket = socket.unwrap_or_else(default_socket_path);
-    let mut conn = match client::connect(&socket).await {
-        Ok(c) => c,
-        Err(e) => {
-            anyhow::bail!(
-                "guard list: no compatible daemon at {} (start one with `keyhog guard up`): {e}",
-                socket.display()
-            );
-        }
-    };
+    match client::connect(&socket).await {
+        Ok(conn) => run_list_online(conn).await,
+        Err(_) => run_list_offline(),
+    }
+}
 
+async fn run_list_online(mut conn: client::Client) -> anyhow::Result<ExitCode> {
     let request = Request::GuardList;
     match conn.round_trip(&request).await? {
         Response::GuardListResult { roots } => {
+            let palette = style::for_stderr();
             if roots.is_empty() {
-                let palette = style::for_stderr();
                 eprintln!("{} no guard roots registered", style::pass("OK", &palette));
             } else {
-                let palette = style::for_stderr();
                 eprintln!(
                     "{} {} guard root{} registered",
                     style::pass("OK", &palette),
@@ -397,183 +393,647 @@ async fn run_list(socket: Option<std::path::PathBuf>) -> anyhow::Result<ExitCode
     }
 }
 
-async fn run_status(
-    root: std::path::PathBuf,
-    format: String,
-    socket: Option<std::path::PathBuf>,
-) -> anyhow::Result<ExitCode> {
-    let socket = socket.unwrap_or_else(default_socket_path);
-    let mut conn = match client::connect(&socket).await {
-        Ok(conn) => conn,
-        Err(error) => {
-            anyhow::bail!(
-                "guard status: no compatible daemon at {} (start one with `keyhog guard up`): {error}",
-                socket.display()
-            );
+fn run_list_offline() -> anyhow::Result<ExitCode> {
+    let palette = style::for_stderr();
+    let state_path = crate::config::load_guard_state_path(None);
+    let roots = match state_path.as_deref() {
+        Some(path) if path.exists() => {
+            let store =
+                keyhog_core::guard_store::DurableGuardStore::open_read_only(path).map_err(|e| {
+                    anyhow::anyhow!(
+                        "guard list: failed to open durable store at {}: {e}",
+                        path.display()
+                    )
+                })?;
+            let registry = store.load_roots().map_err(|e| {
+                anyhow::anyhow!(
+                    "guard list: failed to read durable store at {}: {e}",
+                    path.display()
+                )
+            })?;
+            let mut list: Vec<_> = registry.list().into_iter().cloned().collect();
+            list.sort_by(|a, b| a.canonical_path.cmp(&b.canonical_path));
+            list
         }
+        _ => Vec::new(),
     };
 
-    let canonical = resolve_root_for_control(&root)?;
-    let request = Request::GuardStatus { root: canonical };
-    match conn.round_trip(&request).await? {
-        Response::GuardStatusResult {
-            root: daemon_root,
-            mode,
-            state,
-            filesystem_type,
-            filesystem_authoritative,
-            filesystem_unauthoritative_reason,
-            scrub_interval_secs,
-            terminal_sequence,
-            accepted_event_sequence,
-            completed_event_sequence,
-            pending_events,
+    if roots.is_empty() {
+        eprintln!(
+            "{} no guard roots registered (no daemon active)",
+            style::pass("OK", &palette)
+        );
+    } else {
+        eprintln!(
+            "{} {} guard root{} registered (no daemon active)",
+            style::pass("OK", &palette),
+            roots.len(),
+            if roots.len() == 1 { "" } else { "s" }
+        );
+        for entry in &roots {
+            println!(
+                "  {}  {}  seq={}",
+                String::from_utf8_lossy(&entry.canonical_path),
+                entry.state,
+                entry.terminal_sequence
+            );
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+struct GuardStatusView {
+    root: String,
+    mode: String,
+    state: String,
+    filesystem_type: String,
+    filesystem_authoritative: bool,
+    filesystem_unauthoritative_reason: Option<String>,
+    scrub_interval_secs: u64,
+    terminal_sequence: u64,
+    accepted_event_sequence: u64,
+    completed_event_sequence: u64,
+    pending_events: u64,
+    files_scanned: u64,
+    bytes_scanned: u64,
+    attestation_hits: u64,
+    attestation_misses: u64,
+    findings_count: u64,
+    coverage_gaps: u64,
+    initial_reconciliation_time: Option<u64>,
+    last_reconciliation_time: Option<u64>,
+    scanner_residency: String,
+    watcher_backend: String,
+    watcher_latency_tier: String,
+    watcher_poll_interval_ms: Option<u64>,
+    backend_route_label: String,
+    build_identity_short: String,
+    detector_digest_short: String,
+    suppression_digest_short: String,
+    config_digest_short: String,
+    autoroute_evidence_status: String,
+    store_schema_version: u32,
+    store_path: String,
+    repair_command: String,
+}
+
+impl GuardStatusView {
+    fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "root": self.root,
+            "mode": self.mode,
+            "state": self.state,
+            "filesystem_type": self.filesystem_type,
+            "filesystem_authoritative": self.filesystem_authoritative,
+            "filesystem_unauthoritative_reason": self.filesystem_unauthoritative_reason,
+            "scrub_interval_secs": self.scrub_interval_secs,
+            "terminal_sequence": self.terminal_sequence,
+            "accepted_event_sequence": self.accepted_event_sequence,
+            "completed_event_sequence": self.completed_event_sequence,
+            "pending_events": self.pending_events,
+            "files_scanned": self.files_scanned,
+            "bytes_scanned": self.bytes_scanned,
+            "attestation_hits": self.attestation_hits,
+            "attestation_misses": self.attestation_misses,
+            "findings_count": self.findings_count,
+            "coverage_gaps": self.coverage_gaps,
+            "initial_reconciliation_time": self.initial_reconciliation_time,
+            "last_reconciliation_time": self.last_reconciliation_time,
+            "scanner_residency": self.scanner_residency,
+            "watcher_backend": self.watcher_backend,
+            "watcher_latency_tier": self.watcher_latency_tier,
+            "watcher_poll_interval_ms": self.watcher_poll_interval_ms,
+            "backend_route_label": self.backend_route_label,
+            "build_identity_short": self.build_identity_short,
+            "detector_digest_short": self.detector_digest_short,
+            "suppression_digest_short": self.suppression_digest_short,
+            "config_digest_short": self.config_digest_short,
+            "autoroute_evidence_status": self.autoroute_evidence_status,
+            "store_schema_version": self.store_schema_version,
+            "store_path": self.store_path,
+            "repair_command": self.repair_command,
+        })
+    }
+
+    fn print_human(&self) {
+        let palette = style::for_stderr();
+        println!("root:           {}", self.root);
+        println!("mode:           {}", self.mode);
+        println!("state:          {}", self.state);
+        let fs_auth_label = if self.filesystem_authoritative {
+            "authoritative".to_string()
+        } else if let Some(reason) = &self.filesystem_unauthoritative_reason {
+            format!("unauthoritative: {reason}")
+        } else {
+            "unauthoritative".to_string()
+        };
+        println!("filesystem:     {} ({fs_auth_label})", self.filesystem_type);
+        if self.scrub_interval_secs > 0 {
+            println!("scrub interval: {}s", self.scrub_interval_secs);
+        }
+        println!("sequence:       {}", self.terminal_sequence);
+        println!("accepted seq:   {}", self.accepted_event_sequence);
+        println!("completed seq:  {}", self.completed_event_sequence);
+        println!("pending events: {}", self.pending_events);
+        println!("files scanned:  {}", self.files_scanned);
+        println!("bytes scanned:  {}", self.bytes_scanned);
+        println!("cache hits:     {}", self.attestation_hits);
+        println!("cache misses:   {}", self.attestation_misses);
+        println!("findings:       {}", self.findings_count);
+        println!("coverage gaps:  {}", self.coverage_gaps);
+        if let Some(t) = self.initial_reconciliation_time {
+            println!("initial recon:  {t}");
+        }
+        if let Some(t) = self.last_reconciliation_time {
+            println!("last recon:     {t}");
+        }
+        println!("residency:      {}", self.scanner_residency);
+        println!(
+            "watcher:        {} ({})",
+            self.watcher_backend, self.watcher_latency_tier
+        );
+        if let Some(poll_ms) = self.watcher_poll_interval_ms {
+            println!("poll interval:  {poll_ms}ms");
+        }
+        println!("backend route:  {}", self.backend_route_label);
+        if !self.build_identity_short.is_empty() {
+            println!("build digest:   {}", self.build_identity_short);
+        }
+        if !self.detector_digest_short.is_empty() {
+            println!("detector:       {}", self.detector_digest_short);
+        }
+        if !self.suppression_digest_short.is_empty() {
+            println!("suppression:    {}", self.suppression_digest_short);
+        }
+        if !self.config_digest_short.is_empty() {
+            println!("config:         {}", self.config_digest_short);
+        }
+        println!("autoroute:      {}", self.autoroute_evidence_status);
+        println!("store schema:   {}", self.store_schema_version);
+        if !self.store_path.is_empty() {
+            println!("store path:     {}", self.store_path);
+        }
+        if self.state == "degraded" || self.state == "stale-policy" {
+            eprintln!(
+                "{} repair: {}",
+                style::warn("WARN", &palette),
+                self.repair_command
+            );
+        }
+    }
+
+    fn from_record(record: &keyhog_core::guard_state::GuardRootRecord, store_path: &str) -> Self {
+        let (
             files_scanned,
             bytes_scanned,
             attestation_hits,
             attestation_misses,
             findings_count,
             coverage_gaps,
-            initial_reconciliation_time,
-            last_reconciliation_time,
-            scanner_residency,
-            watcher_backend,
-            watcher_latency_tier,
-            watcher_poll_interval_ms,
-            backend_route_label,
-            build_identity_short,
-            detector_digest_short,
-            suppression_digest_short,
-            config_digest_short,
-            autoroute_evidence_status,
-            store_schema_version,
-            store_path,
-            repair_command,
-            recent_transitions,
-        } => {
-            if format != "human" && format != "json" {
+        ) = if let Some(receipt) = &record.last_receipt {
+            (
+                receipt.objects_scanned,
+                receipt.bytes_scanned,
+                receipt.objects_hit,
+                receipt
+                    .objects_requested
+                    .saturating_sub(receipt.objects_hit + receipt.objects_skipped),
+                receipt.findings_count,
+                receipt.coverage_gaps,
+            )
+        } else {
+            (0, 0, 0, 0, 0, 0)
+        };
+        let canonical_str = String::from_utf8_lossy(&record.canonical_path).into_owned();
+        Self {
+            root: canonical_str.clone(),
+            mode: record.mode.label().to_string(),
+            state: record.state.label().to_string(),
+            filesystem_type: record.filesystem_authority.filesystem_type.clone(),
+            filesystem_authoritative: record.filesystem_authority.authoritative,
+            filesystem_unauthoritative_reason: record
+                .filesystem_authority
+                .unauthoritative_reason
+                .clone(),
+            scrub_interval_secs: 0,
+            terminal_sequence: record.terminal_sequence,
+            accepted_event_sequence: record.accepted_event_sequence,
+            completed_event_sequence: record.completed_event_sequence,
+            pending_events: 0,
+            files_scanned,
+            bytes_scanned,
+            attestation_hits,
+            attestation_misses,
+            findings_count,
+            coverage_gaps,
+            initial_reconciliation_time: record.initial_reconciliation_time,
+            last_reconciliation_time: record.last_reconciliation_time,
+            scanner_residency: "offline".to_string(),
+            watcher_backend: "none (daemon offline)".to_string(),
+            watcher_latency_tier: "offline".to_string(),
+            watcher_poll_interval_ms: None,
+            backend_route_label: record.backend_route_label.clone(),
+            build_identity_short: String::new(),
+            detector_digest_short: String::new(),
+            suppression_digest_short: String::new(),
+            config_digest_short: String::new(),
+            autoroute_evidence_status: "unproven (daemon offline)".to_string(),
+            store_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
+            store_path: store_path.to_string(),
+            repair_command: format!("keyhog guard reconcile {canonical_str}"),
+            recent_transitions: Vec::new(),
+        }
+    }
+}
+
+async fn run_status(
+    root: Option<std::path::PathBuf>,
+    format: String,
+    socket: Option<std::path::PathBuf>,
+) -> anyhow::Result<ExitCode> {
+    if format != "human" && format != "json" {
+        anyhow::bail!(
+            "guard status: invalid format '{}': expected 'human' or 'json'",
+            format
+        );
+    }
+    let socket = socket.unwrap_or_else(default_socket_path);
+    match client::connect(&socket).await {
+        Ok(conn) => run_status_online(conn, root, &format).await,
+        Err(_) => run_status_offline(root, &format),
+    }
+}
+
+async fn run_status_online(
+    mut conn: client::Client,
+    root: Option<std::path::PathBuf>,
+    format: &str,
+) -> anyhow::Result<ExitCode> {
+    if let Some(root_path) = root {
+        let canonical = resolve_root_for_control(&root_path)?;
+        let request = Request::GuardStatus { root: canonical };
+        match conn.round_trip(&request).await? {
+            Response::GuardStatusResult {
+                root: daemon_root,
+                mode,
+                state,
+                filesystem_type,
+                filesystem_authoritative,
+                filesystem_unauthoritative_reason,
+                scrub_interval_secs,
+                terminal_sequence,
+                accepted_event_sequence,
+                completed_event_sequence,
+                pending_events,
+                files_scanned,
+                bytes_scanned,
+                attestation_hits,
+                attestation_misses,
+                findings_count,
+                coverage_gaps,
+                initial_reconciliation_time,
+                last_reconciliation_time,
+                scanner_residency,
+                watcher_backend,
+                watcher_latency_tier,
+                watcher_poll_interval_ms,
+                backend_route_label,
+                build_identity_short,
+                detector_digest_short,
+                suppression_digest_short,
+                config_digest_short,
+                autoroute_evidence_status,
+                store_schema_version,
+                store_path,
+                repair_command,
+                recent_transitions,
+            } => {
+                let view = GuardStatusView {
+                    root: daemon_root,
+                    mode,
+                    state,
+                    filesystem_type,
+                    filesystem_authoritative,
+                    filesystem_unauthoritative_reason,
+                    scrub_interval_secs,
+                    terminal_sequence,
+                    accepted_event_sequence,
+                    completed_event_sequence,
+                    pending_events,
+                    files_scanned,
+                    bytes_scanned,
+                    attestation_hits,
+                    attestation_misses,
+                    findings_count,
+                    coverage_gaps,
+                    initial_reconciliation_time,
+                    last_reconciliation_time,
+                    scanner_residency,
+                    watcher_backend,
+                    watcher_latency_tier,
+                    watcher_poll_interval_ms,
+                    backend_route_label,
+                    build_identity_short,
+                    detector_digest_short,
+                    suppression_digest_short,
+                    config_digest_short,
+                    autoroute_evidence_status,
+                    store_schema_version,
+                    store_path,
+                    repair_command,
+                    recent_transitions,
+                };
+                if format == "json" {
+                    println!("{}", view.to_json());
+                } else {
+                    view.print_human();
+                }
+                Ok(exit_code_for_guard_state(&view.state, view.findings_count))
+            }
+            Response::Error { message } => {
+                anyhow::bail!("{message}");
+            }
+            other => {
                 anyhow::bail!(
-                    "guard status: invalid format '{}': expected 'human' or 'json'",
-                    format
+                    "guard status: protocol mismatch (got {})",
+                    response_kind(&other)
                 );
             }
-            if format == "json" {
-                let json = serde_json::json!({
-                    "root": daemon_root,
-                    "mode": mode,
-                    "state": state,
-                    "filesystem_type": filesystem_type,
-                    "filesystem_authoritative": filesystem_authoritative,
-                    "filesystem_unauthoritative_reason": filesystem_unauthoritative_reason,
-                    "scrub_interval_secs": scrub_interval_secs,
-                    "terminal_sequence": terminal_sequence,
-                    "accepted_event_sequence": accepted_event_sequence,
-                    "completed_event_sequence": completed_event_sequence,
-                    "pending_events": pending_events,
-                    "files_scanned": files_scanned,
-                    "bytes_scanned": bytes_scanned,
-                    "attestation_hits": attestation_hits,
-                    "attestation_misses": attestation_misses,
-                    "findings_count": findings_count,
-                    "coverage_gaps": coverage_gaps,
-                    "initial_reconciliation_time": initial_reconciliation_time,
-                    "last_reconciliation_time": last_reconciliation_time,
-                    "scanner_residency": scanner_residency,
-                    "watcher_backend": watcher_backend,
-                    "watcher_latency_tier": watcher_latency_tier,
-                    "watcher_poll_interval_ms": watcher_poll_interval_ms,
-                    "backend_route_label": backend_route_label,
-                    "build_identity_short": build_identity_short,
-                    "detector_digest_short": detector_digest_short,
-                    "suppression_digest_short": suppression_digest_short,
-                    "config_digest_short": config_digest_short,
-                    "autoroute_evidence_status": autoroute_evidence_status,
-                    "store_schema_version": store_schema_version,
-                    "store_path": store_path,
-                    "repair_command": repair_command,
-                    "recent_transitions": recent_transitions,
-                });
-                println!("{json}");
-            } else {
+        }
+    } else {
+        let request = Request::GuardList;
+        match conn.round_trip(&request).await? {
+            Response::GuardListResult { roots } => {
                 let palette = style::for_stderr();
-                println!("root:           {}", daemon_root);
-                println!("mode:           {mode}");
-                println!("state:          {state}");
-                let fs_auth_label = if filesystem_authoritative {
-                    "authoritative".to_string()
-                } else if let Some(reason) = &filesystem_unauthoritative_reason {
-                    format!("unauthoritative: {reason}")
-                } else {
-                    "unauthoritative".to_string()
-                };
-                println!("filesystem:     {filesystem_type} ({fs_auth_label})");
-                if scrub_interval_secs > 0 {
-                    println!("scrub interval: {scrub_interval_secs}s");
-                }
-                println!("sequence:       {terminal_sequence}");
-                println!("accepted seq:   {accepted_event_sequence}");
-                println!("completed seq:  {completed_event_sequence}");
-                println!("pending events: {pending_events}");
-                println!("files scanned:  {files_scanned}");
-                println!("bytes scanned:  {bytes_scanned}");
-                println!("cache hits:     {attestation_hits}");
-                println!("cache misses:   {attestation_misses}");
-                println!("findings:       {findings_count}");
-                println!("coverage gaps:  {coverage_gaps}");
-                if let Some(t) = initial_reconciliation_time {
-                    println!("initial recon:  {t}");
-                }
-                if let Some(t) = last_reconciliation_time {
-                    println!("last recon:     {t}");
-                }
-                println!("residency:      {scanner_residency}");
-                println!("watcher:        {watcher_backend} ({watcher_latency_tier})");
-                if let Some(poll_ms) = watcher_poll_interval_ms {
-                    println!("poll interval:  {poll_ms}ms");
-                }
-                println!("backend route:  {backend_route_label}");
-                if !build_identity_short.is_empty() {
-                    println!("build digest:   {build_identity_short}");
-                }
-                if !detector_digest_short.is_empty() {
-                    println!("detector:       {detector_digest_short}");
-                }
-                if !suppression_digest_short.is_empty() {
-                    println!("suppression:    {suppression_digest_short}");
-                }
-                if !config_digest_short.is_empty() {
-                    println!("config:         {config_digest_short}");
-                }
-                println!("autoroute:      {autoroute_evidence_status}");
-                println!("store schema:   {store_schema_version}");
-                if !store_path.is_empty() {
-                    println!("store path:     {store_path}");
-                }
-                if state == "degraded" || state == "stale-policy" {
-                    eprintln!("{} repair: {repair_command}", style::warn("WARN", &palette));
-                }
-                if !recent_transitions.is_empty() {
-                    println!("recent transitions:");
-                    for t in &recent_transitions {
+                if roots.is_empty() {
+                    if format == "json" {
                         println!(
-                            "  seq={}  {} -> {}  [{}]  cause: {}",
-                            t.sequence, t.from_state, t.to_state, t.event, t.cause
+                            "{}",
+                            serde_json::json!({
+                                "daemon": "active",
+                                "total": 0,
+                                "roots": [],
+                            })
                         );
+                    } else {
+                        eprintln!("{} no guard roots registered", style::pass("OK", &palette));
+                    }
+                    return Ok(ExitCode::SUCCESS);
+                }
+
+                let mut views = Vec::with_capacity(roots.len());
+                for entry in &roots {
+                    let req = Request::GuardStatus {
+                        root: entry.root.clone(),
+                    };
+                    if let Ok(Response::GuardStatusResult {
+                        root,
+                        mode,
+                        state,
+                        filesystem_type,
+                        filesystem_authoritative,
+                        filesystem_unauthoritative_reason,
+                        scrub_interval_secs,
+                        terminal_sequence,
+                        accepted_event_sequence,
+                        completed_event_sequence,
+                        pending_events,
+                        files_scanned,
+                        bytes_scanned,
+                        attestation_hits,
+                        attestation_misses,
+                        findings_count,
+                        coverage_gaps,
+                        initial_reconciliation_time,
+                        last_reconciliation_time,
+                        scanner_residency,
+                        watcher_backend,
+                        watcher_latency_tier,
+                        watcher_poll_interval_ms,
+                        backend_route_label,
+                        build_identity_short,
+                        detector_digest_short,
+                        suppression_digest_short,
+                        config_digest_short,
+                        autoroute_evidence_status,
+                        store_schema_version,
+                        store_path,
+                        repair_command,
+                    }) = conn.round_trip(&req).await
+                    {
+                        views.push(GuardStatusView {
+                            root,
+                            mode,
+                            state,
+                            filesystem_type,
+                            filesystem_authoritative,
+                            filesystem_unauthoritative_reason,
+                            scrub_interval_secs,
+                            terminal_sequence,
+                            accepted_event_sequence,
+                            completed_event_sequence,
+                            pending_events,
+                            files_scanned,
+                            bytes_scanned,
+                            attestation_hits,
+                            attestation_misses,
+                            findings_count,
+                            coverage_gaps,
+                            initial_reconciliation_time,
+                            last_reconciliation_time,
+                            scanner_residency,
+                            watcher_backend,
+                            watcher_latency_tier,
+                            watcher_poll_interval_ms,
+                            backend_route_label,
+                            build_identity_short,
+                            detector_digest_short,
+                            suppression_digest_short,
+                            config_digest_short,
+                            autoroute_evidence_status,
+                            store_schema_version,
+                            store_path,
+                            repair_command,
+                        });
                     }
                 }
+
+                let mut overall_exit = exit_codes::EXIT_SUCCESS;
+                for view in &views {
+                    let code = exit_code_for_guard_state(&view.state, view.findings_count);
+                    if code == exit_codes::EXIT_FINDINGS {
+                        overall_exit = exit_codes::EXIT_FINDINGS;
+                    } else if code == exit_codes::EXIT_SOURCE_FAILED
+                        && overall_exit != exit_codes::EXIT_FINDINGS
+                    {
+                        overall_exit = exit_codes::EXIT_SOURCE_FAILED;
+                    }
+                }
+
+                if format == "json" {
+                    let root_jsons: Vec<_> = views.iter().map(|v| v.to_json()).collect();
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "daemon": "active",
+                            "total": views.len(),
+                            "roots": root_jsons,
+                        })
+                    );
+                } else {
+                    eprintln!(
+                        "{} {} guard root{} registered",
+                        style::pass("OK", &palette),
+                        views.len(),
+                        if views.len() == 1 { "" } else { "s" }
+                    );
+                    for (i, view) in views.iter().enumerate() {
+                        if i > 0 {
+                            println!();
+                        }
+                        view.print_human();
+                    }
+                }
+
+                Ok(ExitCode::from(overall_exit))
             }
-            // Exit 13 for any state that is not a proven-clean Current root.
-            Ok(exit_for_guard_state(&state, findings_count))
+            Response::Error { message } => {
+                anyhow::bail!("{message}");
+            }
+            other => {
+                anyhow::bail!(
+                    "guard status: protocol mismatch (got {})",
+                    response_kind(&other)
+                );
+            }
         }
-        Response::Error { message } => {
-            anyhow::bail!("{message}");
+    }
+}
+
+fn run_status_offline(root: Option<std::path::PathBuf>, format: &str) -> anyhow::Result<ExitCode> {
+    let palette = style::for_stderr();
+    if let Some(root_path) = root {
+        let canonical = resolve_root_for_control(&root_path)?;
+        let state_path = crate::config::load_guard_state_path(Some(&root_path))
+            .or_else(|| crate::config::load_guard_state_path(None));
+        let path = match state_path {
+            Some(p) if p.exists() => p,
+            _ => {
+                anyhow::bail!(
+                    "guard status: root not registered in durable store: {} (no daemon active)",
+                    canonical
+                );
+            }
+        };
+        let store =
+            keyhog_core::guard_store::DurableGuardStore::open_read_only(&path).map_err(|e| {
+                anyhow::anyhow!(
+                    "guard status: failed to read durable store at {}: {e}",
+                    path.display()
+                )
+            })?;
+        let record = match store.get_root(canonical.as_bytes())? {
+            Some(r) => r,
+            None => {
+                anyhow::bail!(
+                    "guard status: root not registered in durable store: {} (no daemon active)",
+                    canonical
+                );
+            }
+        };
+        let view = GuardStatusView::from_record(&record, &path.display().to_string());
+        if format == "json" {
+            println!("{}", view.to_json());
+        } else {
+            view.print_human();
         }
-        other => {
-            anyhow::bail!(
-                "guard status: protocol mismatch (got {})",
-                response_kind(&other)
+        Ok(exit_for_guard_state(&view.state, view.findings_count))
+    } else {
+        let state_path = crate::config::load_guard_state_path(None);
+        let (roots, store_path_str) = match state_path.as_deref() {
+            Some(path) if path.exists() => {
+                let store = keyhog_core::guard_store::DurableGuardStore::open_read_only(path)
+                    .map_err(|e| {
+                        anyhow::anyhow!(
+                            "guard status: failed to read durable store at {}: {e}",
+                            path.display()
+                        )
+                    })?;
+                let registry = store.load_roots().map_err(|e| {
+                    anyhow::anyhow!(
+                        "guard status: failed to read durable store at {}: {e}",
+                        path.display()
+                    )
+                })?;
+                let mut list: Vec<_> = registry.list().into_iter().cloned().collect();
+                list.sort_by(|a, b| a.canonical_path.cmp(&b.canonical_path));
+                (list, path.display().to_string())
+            }
+            _ => (Vec::new(), String::new()),
+        };
+
+        if roots.is_empty() {
+            if format == "json" {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "daemon": "offline",
+                        "total": 0,
+                        "roots": [],
+                    })
+                );
+            } else {
+                eprintln!(
+                    "{} no guard roots registered (no daemon active)",
+                    style::pass("OK", &palette)
+                );
+            }
+            return Ok(ExitCode::SUCCESS);
+        }
+
+        let views: Vec<_> = roots
+            .iter()
+            .map(|r| GuardStatusView::from_record(r, &store_path_str))
+            .collect();
+
+        let mut overall_exit = exit_codes::EXIT_SUCCESS;
+        for view in &views {
+            let code = exit_code_for_guard_state(&view.state, view.findings_count);
+            if code == exit_codes::EXIT_FINDINGS {
+                overall_exit = exit_codes::EXIT_FINDINGS;
+            } else if code == exit_codes::EXIT_SOURCE_FAILED
+                && overall_exit != exit_codes::EXIT_FINDINGS
+            {
+                overall_exit = exit_codes::EXIT_SOURCE_FAILED;
+            }
+        }
+
+        if format == "json" {
+            let root_jsons: Vec<_> = views.iter().map(|v| v.to_json()).collect();
+            println!(
+                "{}",
+                serde_json::json!({
+                    "daemon": "offline",
+                    "total": views.len(),
+                    "roots": root_jsons,
+                })
             );
+        } else {
+            eprintln!(
+                "{} {} guard root{} registered (no daemon active)",
+                style::pass("OK", &palette),
+                views.len(),
+                if views.len() == 1 { "" } else { "s" }
+            );
+            for (i, view) in views.iter().enumerate() {
+                if i > 0 {
+                    println!();
+                }
+                view.print_human();
+            }
         }
+
+        Ok(ExitCode::from(overall_exit))
     }
 }
 

@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{mpsc, Mutex, Notify, OwnedMutexGuard, Semaphore};
 
-const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
 static TEST_PANIC_INJECTION_KIND: parking_lot::RwLock<Option<String>> =
     parking_lot::RwLock::new(None);
 
@@ -563,23 +563,21 @@ pub(crate) async fn run_with_backend_override(
         guard_scrub_interval.map(std::time::Duration::from_secs),
     ));
 
-    // Set the guard policy identity from the daemon's scanner and build
-    // identity. This binds clean attestations to the exact detector corpus,
-    // suppression, and configuration the daemon was started with.
+    // Set the initial default guard policy identity from the daemon's build and detector digest.
     state
         .guard
         .set_policy_identity(keyhog_core::guard_state::GuardPolicyIdentity {
             build_identity: KEYHOG_VERSION.to_string(),
             detector_digest: detector_rules_digest.clone(),
             suppression_digest: String::new(),
-            keyhogignore_digest: String::new(),
-            config_digest: String::new(),
-            decode_policy_version: 1,
+            keyhogignore_digest:
+                keyhog_core::guard_state::GuardPolicyIdentity::default_keyhogignore_digest(),
+            config_digest: crate::orchestrator::autoroute_default_config_identity(),
+            decode_policy_version: keyhog_core::guard_state::GUARD_DECODE_POLICY_VERSION,
             source_policy_digest: String::new(),
             guard_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
             report_semantics_version: keyhog_core::guard_state::GUARD_REPORT_SEMANTICS_VERSION,
         });
-
     // Apply configured scanner idle timeout to the guard runtime.
     if let Some(secs) = guard_scanner_idle_timeout {
         state.guard.set_scanner_idle_timeout(secs);
@@ -917,20 +915,155 @@ fn scrub_guard_roots(
 /// Reconciliation* transition illegal. Events on Dirty, Degraded,
 /// StalePolicy, and Stopped roots are no-ops: those states already
 /// account for unscanned changes.
+/// Check if a given file path is a guard policy file (.keyhogignore, .keyhog.toml, suppressions).
+pub fn is_policy_path(path: &Path) -> bool {
+    let file_name = match path.file_name().and_then(|n| n.to_str()) {
+        Some(name) => name,
+        None => return false,
+    };
+    if file_name == ".keyhogignore"
+        || file_name == ".keyhogignore.toml"
+        || file_name == ".keyhog.toml"
+        || file_name == "test-fixtures.toml"
+        || file_name.ends_with(".suppressions.toml")
+        || file_name.ends_with("_suppressions.toml")
+        || file_name == "suppressions.toml"
+    {
+        return true;
+    }
+    for component in path.components() {
+        if let std::path::Component::Normal(c) = component {
+            let s = c.to_string_lossy();
+            if s == "suppressions" || s == ".keyhog" {
+                if let Some(ext) = path.extension() {
+                    if ext == "toml" || ext == "json" {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Compute `.keyhogignore` / `.keyhogignore.toml` digest for a guard root.
+pub fn compute_keyhogignore_digest(root: &Path) -> String {
+    let legacy = root.join(".keyhogignore");
+    let toml = root.join(".keyhogignore.toml");
+    let legacy_bytes = std::fs::read(&legacy).ok();
+    let toml_bytes = std::fs::read(&toml).ok();
+    if legacy_bytes.is_none() && toml_bytes.is_none() {
+        return keyhog_core::guard_state::GuardPolicyIdentity::default_keyhogignore_digest();
+    }
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"keyhog-ignore-v1:");
+    if let Some(bytes) = legacy_bytes {
+        hasher.update(b"legacy:");
+        hasher.update(&(bytes.len() as u64).to_le_bytes());
+        hasher.update(&bytes);
+    }
+    if let Some(bytes) = toml_bytes {
+        hasher.update(b"toml:");
+        hasher.update(&(bytes.len() as u64).to_le_bytes());
+        hasher.update(&bytes);
+    }
+    hex::encode(hasher.finalize().as_bytes())
+}
+
+/// Compute `.keyhog.toml` scan configuration digest for a guard root.
+pub fn compute_config_digest(root: &Path) -> String {
+    let resolved_config = crate::config::find_config_file(Some(root));
+    match resolved_config.and_then(|p| std::fs::read(&p).ok()) {
+        Some(bytes) => {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(b"keyhog-config-v1:");
+            hasher.update(&bytes);
+            hex::encode(hasher.finalize().as_bytes())
+        }
+        None => crate::orchestrator::autoroute_default_config_identity(),
+    }
+}
+
+/// Compute suppression digest for a guard root, combining bundled test fixtures and root-local suppression files.
+pub fn compute_suppression_digest(root: &Path) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"keyhog-suppressions-v1:bundled:");
+    hasher.update(
+        crate::test_fixture_suppressions::TestFixtureSuppressions::bundled_raw().as_bytes(),
+    );
+    for candidate in [
+        ".keyhog/suppressions.toml",
+        "suppressions.toml",
+        "test-fixtures.toml",
+    ] {
+        let p = root.join(candidate);
+        if let Ok(bytes) = std::fs::read(&p) {
+            hasher.update(b":local:");
+            hasher.update(candidate.as_bytes());
+            hasher.update(&(bytes.len() as u64).to_le_bytes());
+            hasher.update(&bytes);
+        }
+    }
+    hex::encode(hasher.finalize().as_bytes())
+}
+
+/// Compute source policy digest for a guard root.
+pub fn compute_source_policy_digest(_root: &Path) -> String {
+    keyhog_core::guard_state::GuardPolicyIdentity::default_source_policy_digest()
+}
+
+/// Compute the complete effective `GuardPolicyIdentity` for a guard root.
+pub fn compute_root_policy_identity(
+    root: &Path,
+    build_identity: &str,
+    detector_digest: &str,
+) -> keyhog_core::guard_state::GuardPolicyIdentity {
+    keyhog_core::guard_state::GuardPolicyIdentity {
+        build_identity: build_identity.to_string(),
+        detector_digest: detector_digest.to_string(),
+        suppression_digest: compute_suppression_digest(root),
+        keyhogignore_digest: compute_keyhogignore_digest(root),
+        config_digest: compute_config_digest(root),
+        decode_policy_version: keyhog_core::guard_state::GUARD_DECODE_POLICY_VERSION,
+        source_policy_digest: compute_source_policy_digest(root),
+        guard_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
+        report_semantics_version: keyhog_core::guard_state::GUARD_REPORT_SEMANTICS_VERSION,
+    }
+}
+
 fn process_guard_events(
     state: &ServerState,
     root: &Path,
     events: Vec<keyhog_sources::guard::GuardEvent>,
 ) {
+    if events.is_empty() {
+        return;
+    }
     use keyhog_sources::guard::GuardEvent;
 
     let root_bytes = std::os::unix::ffi::OsStrExt::as_bytes(root.as_os_str());
     let has_overflow = events
         .iter()
         .any(|e| matches!(e, GuardEvent::ReconcileSubtree(_)));
+    let has_policy_change = events.iter().any(|e| match e {
+        GuardEvent::Create(p)
+        | GuardEvent::Modify(p)
+        | GuardEvent::Remove(p)
+        | GuardEvent::ReconcileSubtree(p) => is_policy_path(p),
+        GuardEvent::Rename { from, to } => is_policy_path(from) || is_policy_path(to),
+        GuardEvent::Barrier(_) => false,
+    });
     let current_state = state.guard.root_state(root_bytes);
 
-    match guard_event_action(current_state, has_overflow) {
+    if has_policy_change {
+        let new_identity =
+            compute_root_policy_identity(root, KEYHOG_VERSION, &state.detector_rules_digest);
+        state
+            .guard
+            .set_root_policy_identity(root_bytes, new_identity);
+    }
+
+    match guard_event_action_with_policy(current_state, has_overflow, has_policy_change) {
         GuardEventAction::Ignore => {}
         GuardEventAction::MarkDuringIndexing { coverage_lost } => {
             state.guard.mark_dirty_during_indexing(root_bytes);
@@ -964,7 +1097,7 @@ fn process_guard_events(
     }
 }
 
-/// Action to take on a guard event depending on root state and overflow condition.
+/// Action to take on a guard event depending on root state, overflow, and policy change condition.
 #[derive(Debug, PartialEq, Eq)]
 pub enum GuardEventAction {
     /// Ignore event for stopped or unmonitored root.
@@ -975,13 +1108,24 @@ pub enum GuardEventAction {
     Transition(keyhog_core::guard_state::GuardTransition),
 }
 
-/// Determine the appropriate action for a guard event given the current root state.
-pub fn guard_event_action(
+/// Determine the appropriate action for a guard event given the current root state, overflow, and policy change conditions.
+pub fn guard_event_action_with_policy(
     current_state: Option<keyhog_core::guard_state::GuardRootState>,
     has_overflow: bool,
+    has_policy_change: bool,
 ) -> GuardEventAction {
     use keyhog_core::guard_state::{GuardRootState, GuardTransition};
-    if has_overflow {
+    if has_policy_change {
+        match current_state {
+            Some(GuardRootState::Stopped) | None => GuardEventAction::Ignore,
+            Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
+                coverage_lost: has_overflow,
+            },
+            Some(GuardRootState::Degraded) => GuardEventAction::Ignore,
+            Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
+            _ => GuardEventAction::Transition(GuardTransition::PolicyChanged),
+        }
+    } else if has_overflow {
         match current_state {
             Some(GuardRootState::Stopped) | None => GuardEventAction::Ignore,
             Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
@@ -1003,6 +1147,13 @@ pub fn guard_event_action(
     }
 }
 
+/// Determine the appropriate action for a guard event given the current root state.
+pub fn guard_event_action(
+    current_state: Option<keyhog_core::guard_state::GuardRootState>,
+    has_overflow: bool,
+) -> GuardEventAction {
+    guard_event_action_with_policy(current_state, has_overflow, false)
+}
 fn guard_attestation_identity(
     base: &keyhog_core::guard_state::GuardPolicyIdentity,
     source_paths: &[String],
@@ -2574,6 +2725,17 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             let terminal_state =
                 guard_commit_terminal_state(txn.blocking_findings_count, txn.coverage_gaps);
             let identity = state.guard.policy_identity();
+            let commit_root = match std::fs::canonicalize(&txn.repo_path) {
+                Ok(p) => p,
+                Err(_) => std::path::PathBuf::from(&txn.repo_path),
+            };
+            let policy_identity = identity.clone().unwrap_or_else(|| {
+                compute_root_policy_identity(
+                    &commit_root,
+                    KEYHOG_VERSION,
+                    &state.detector_rules_digest,
+                )
+            });
             let receipt = keyhog_core::guard_state::GuardReceipt {
                 objects_requested: total_objects,
                 objects_hit,
@@ -2585,29 +2747,9 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 findings_count: txn.findings_count,
                 coverage_gaps: txn.coverage_gaps,
                 terminal_state,
-                policy_identity: identity.clone().unwrap_or_else(|| {
-                    keyhog_core::guard_state::GuardPolicyIdentity {
-                        build_identity: String::new(),
-                        detector_digest: String::new(),
-                        suppression_digest: String::new(),
-                        keyhogignore_digest: String::new(),
-                        config_digest: String::new(),
-                        decode_policy_version: 0,
-                        source_policy_digest: String::new(),
-                        guard_schema_version: 0,
-                        report_semantics_version: 0,
-                    }
-                }),
+                policy_identity,
                 // Placeholder; replaced with the root's post-update sequence.
                 terminal_sequence: 0,
-            };
-            // Update the root record with the receipt. The root was
-            // registered under the daemon-canonicalized path, so
-            // canonicalize the transaction's repo_path to match.
-            // Log errors so a failed update is visible to the operator.
-            let commit_root = match std::fs::canonicalize(&txn.repo_path) {
-                Ok(p) => p,
-                Err(_) => std::path::PathBuf::from(&txn.repo_path),
             };
             let commit_root_bytes = std::os::unix::ffi::OsStrExt::as_bytes(commit_root.as_os_str());
             if let Err(e) = state
@@ -2719,6 +2861,14 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 guard_mode,
             ) {
                 Ok(record) => {
+                    let root_policy = compute_root_policy_identity(
+                        &canonical_path,
+                        KEYHOG_VERSION,
+                        &state.detector_rules_digest,
+                    );
+                    state
+                        .guard
+                        .set_root_policy_identity(canonical.as_bytes(), root_policy);
                     // Register the root with the filesystem watcher.
                     // Subscribe-first: the watcher starts before any
                     // baseline walk so events during the walk are
@@ -2936,6 +3086,15 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     };
                 }
             };
+            let root_path_obj = std::path::PathBuf::from(&root);
+            let root_policy = compute_root_policy_identity(
+                &root_path_obj,
+                KEYHOG_VERSION,
+                &state.detector_rules_digest,
+            );
+            state
+                .guard
+                .set_root_policy_identity(root.as_bytes(), root_policy);
             // Choose the correct transition based on current state.
             // Stopped -> ReconciliationStarted -> Indexing.
             // Degraded/StalePolicy -> RepairStarted -> Indexing.

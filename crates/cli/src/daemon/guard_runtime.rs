@@ -89,7 +89,7 @@ pub struct GuardRuntime {
     /// Current policy identity (updated when the daemon's scanner/config
     /// identity changes).
     current_identity: RwLock<Option<GuardPolicyIdentity>>,
-    /// Transaction ID counter for guard commit transactions.
+    root_identities: RwLock<HashMap<Vec<u8>, GuardPolicyIdentity>>,
     next_transaction_id: Mutex<u64>,
     /// In-flight transactions: transaction_id -> transaction state.
     transactions: Mutex<HashMap<u64, GuardTransaction>>,
@@ -131,6 +131,7 @@ impl GuardRuntime {
             roots: RwLock::new(RootRegistry::new()),
             attestations: HotAttestationIndex::new(),
             current_identity: RwLock::new(None),
+            root_identities: RwLock::new(HashMap::new()),
             next_transaction_id: Mutex::new(1),
             transactions: Mutex::new(HashMap::new()),
             last_activity: Mutex::new(Instant::now()),
@@ -150,6 +151,7 @@ impl GuardRuntime {
             roots: RwLock::new(RootRegistry::new()),
             attestations: HotAttestationIndex::with_budget(budget),
             current_identity: RwLock::new(None),
+            root_identities: RwLock::new(HashMap::new()),
             next_transaction_id: Mutex::new(1),
             transactions: Mutex::new(HashMap::new()),
             last_activity: Mutex::new(Instant::now()),
@@ -169,22 +171,40 @@ impl GuardRuntime {
         *self.scanner_idle_timeout_secs.lock() = secs;
     }
 
-    /// Set the current policy identity. When it changes, all existing
-    /// attestations are invalidated and roots transition to stale-policy.
+    /// Set the policy identity for a specific root.
+    pub fn set_root_policy_identity(&self, root_path: &[u8], identity: GuardPolicyIdentity) {
+        let mut root_map = self.root_identities.write();
+        let existing = root_map.get(root_path);
+        if let Some(existing) = existing {
+            if !existing.is_compatible_with(&identity) {
+                self.attestations.invalidate_for_policy(&identity);
+                let mut roots = self.roots.write();
+                if let Some(r) = roots.get_mut(root_path) {
+                    if r.state != GuardRootState::Stopped && r.state != GuardRootState::Indexing {
+                        if let Ok(new_state) = r.state.transition(&GuardTransition::PolicyChanged) {
+                            r.state = new_state;
+                            r.terminal_sequence = r.terminal_sequence.saturating_add(1);
+                        }
+                    }
+                }
+            }
+        }
+        root_map.insert(root_path.to_vec(), identity.clone());
+        *self.current_identity.write() = Some(identity);
+    }
+    /// Set the default policy identity. When it changes, invalidates attestations and transitions active roots.
     pub fn set_policy_identity(&self, identity: GuardPolicyIdentity) {
         let mut current = self.current_identity.write();
         if let Some(ref existing) = *current {
             if !existing.is_compatible_with(&identity) {
-                // Invalidate all stale attestations.
                 self.attestations.invalidate_for_policy(&identity);
-                // Transition active roots to stale-policy through the
-                // state machine. Degraded roots stay degraded: their
-                // coverage loss must not be masked by a lesser label.
                 let mut roots = self.roots.write();
                 let paths: Vec<Vec<u8>> = roots
                     .list()
                     .iter()
-                    .filter(|r| r.state != GuardRootState::Stopped)
+                    .filter(|r| {
+                        r.state != GuardRootState::Stopped && r.state != GuardRootState::Indexing
+                    })
                     .map(|r| r.canonical_path.clone())
                     .collect();
                 for path in paths {
@@ -213,7 +233,6 @@ impl GuardRuntime {
         }
         *current = Some(identity);
     }
-
     /// Register a new root. Returns the initial record in Stopped state.
     pub fn add_root(
         &self,
@@ -264,6 +283,7 @@ impl GuardRuntime {
             self.coverage_lost_during_indexing
                 .lock()
                 .remove(canonical_path);
+            self.root_identities.write().remove(canonical_path);
             self.touch_activity();
         }
         removed

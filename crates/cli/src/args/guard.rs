@@ -69,9 +69,10 @@ pub enum GuardAction {
         socket: Option<PathBuf>,
     },
     /// Print the exact state and current policy identity of a guarded root.
+    /// When no root is specified, summarizes all registered roots.
     Status {
-        /// Root path to inspect.
-        root: PathBuf,
+        /// Root path to inspect (summarizes all registered roots when omitted).
+        root: Option<PathBuf>,
         /// Output format: `human` or `json`.
         #[arg(long, value_name = "FORMAT", default_value = "human")]
         format: String,
