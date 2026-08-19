@@ -3119,11 +3119,6 @@ impl ScanState {
         self.0.into_matches(detector_digest)
     }
 }
-
-/// Snapshot of dynamic lazy regex compilation events process-wide.
-pub fn lazy_regex_compile_events() -> u64 {
-    crate::types::lazy_regex_compile_events()
-}
 pub fn generic_keyword_lines_from_positions(text: &str, positions: &[u32]) -> Vec<u32> {
     let index = crate::context::LineContextIndex::try_new(text)
         .expect("scanner test chunks must fit the checked u32 line-index boundary");
