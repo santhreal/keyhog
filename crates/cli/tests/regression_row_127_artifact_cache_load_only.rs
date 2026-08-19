@@ -76,15 +76,7 @@ fn clone_prepared_installation(cache_home: &Path) -> (PathBuf, PathBuf) {
 
 #[test]
 fn warm_scan_performs_only_loads_and_zero_compiles() {
-    let base_tmp = PathBuf::from("/mnt/FlareTraining/santh-archive/tmp");
-    let temp_dir = if base_tmp.exists() {
-        tempfile::Builder::new()
-            .prefix("keyhog-row127-warm-")
-            .tempdir_in(&base_tmp)
-            .expect("tempdir in base_tmp")
-    } else {
-        tempfile::tempdir().expect("tempdir")
-    };
+    let temp_dir = tempfile::tempdir().expect("tempdir");
 
     let cache_home = temp_dir.path().join("cache");
     let (_pack_root, _output_dir) = clone_prepared_installation(&cache_home);
