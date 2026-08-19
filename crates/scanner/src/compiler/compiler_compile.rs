@@ -520,20 +520,6 @@ const REGEX_CACHE_CAPACITY: usize = 8192;
 
 type RegexCacheShard = parking_lot::Mutex<lru::LruCache<String, std::sync::Weak<Regex>>>;
 
-fn grow_for_workload(
-    shard: &mut lru::LruCache<String, std::sync::Weak<Regex>>,
-    max_cap: usize,
-) {
-    let current = shard.cap().get();
-    if shard.len() < current || current >= max_cap {
-        return;
-    }
-    let next = current.saturating_mul(2).min(max_cap);
-    if let Some(next) = std::num::NonZeroUsize::new(next) {
-        shard.resize(next);
-    }
-}
-
 static REGEX_CACHE: std::sync::LazyLock<Box<[RegexCacheShard]>> = std::sync::LazyLock::new(|| {
     (0..REGEX_CACHE_SHARDS)
         .map(|_| parking_lot::Mutex::new(lru::LruCache::new(std::num::NonZeroUsize::MIN)))
@@ -590,7 +576,7 @@ pub(crate) fn shared_regex(
         return Ok(hit);
     }
     let per_shard = (REGEX_CACHE_CAPACITY / REGEX_CACHE_SHARDS).max(1);
-    grow_for_workload(&mut lock, per_shard);
+    crate::fragment_cache::grow_lru_for_workload(&mut lock, per_shard);
     lock.put(pattern.to_string(), std::sync::Arc::downgrade(&arc));
     Ok(arc)
 }

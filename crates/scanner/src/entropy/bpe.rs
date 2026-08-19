@@ -222,17 +222,6 @@ fn byte_pair_count(piece: &[u8]) -> usize {
 const TOKEN_CACHE_ENTRIES: usize = 256;
 const TOKEN_CACHE_MAX_VALUE_BYTES: usize = 256;
 
-fn grow_for_workload(cache: &mut LruCache<u64, TokenCountCacheEntry>, max_cap: usize) {
-    let current = cache.cap().get();
-    if cache.len() < current || current >= max_cap {
-        return;
-    }
-    let next = current.saturating_mul(2).min(max_cap);
-    if let Some(next) = NonZeroUsize::new(next) {
-        cache.resize(next);
-    }
-}
-
 struct TokenCountCacheEntry {
     /// Exact bytes make an FNV collision a miss rather than a recall-affecting
     /// cached verdict. `Zeroizing` scrubs candidate material on replacement,
@@ -280,7 +269,7 @@ fn token_count_with_key(s: &str, key: u64) -> usize {
     let tokens = token_count_uncached(s);
     TOKEN_COUNT_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        grow_for_workload(&mut cache, TOKEN_CACHE_ENTRIES);
+        crate::fragment_cache::grow_lru_for_workload(&mut cache, TOKEN_CACHE_ENTRIES);
         cache.put(
             key,
             TokenCountCacheEntry {

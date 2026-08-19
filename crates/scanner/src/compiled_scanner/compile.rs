@@ -1388,7 +1388,9 @@ impl CompiledScanner {
             vocab_stage_absence_cache: dashmap::DashMap::with_capacity_and_hasher_and_shard_amount(
                 0,
                 ahash::RandomState::new(),
-                16,
+                std::thread::available_parallelism()
+                    .map(|p| p.get().saturating_mul(4).next_power_of_two().clamp(16, 128))
+                    .unwrap_or(16),
             ),
             entropy_config_digest_cache: parking_lot::Mutex::new(None),
             compiled_plan_digest,

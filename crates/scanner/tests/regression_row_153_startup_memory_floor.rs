@@ -11,18 +11,37 @@ use keyhog_scanner::CompiledScanner;
 fn row_153_compiled_scanner_baseline_scan_memory_bounds() {
     let detectors = keyhog_core::load_embedded_detectors_or_fail()
         .expect("embedded detectors should load successfully");
-    let scanner = CompiledScanner::compile(detectors)
-        .expect("scanner should compile successfully");
+    let scanner = CompiledScanner::compile(detectors).expect("scanner should compile successfully");
+
+    // Assert that empty and inert chunk scans do not trigger compilation of corpus detector regexes,
+    // preserving the lazy-compilation startup memory floor.
+    let compile_before = keyhog_scanner::testing::lazy_regex_compile_events();
 
     // Scan an empty chunk
     let empty_chunk = Chunk::from("");
-    let empty_findings = scanner.scan(&empty_chunk).expect("scan empty chunk succeeds");
-    assert!(empty_findings.is_empty(), "empty chunk should yield no findings");
+    let empty_findings = scanner
+        .scan(&empty_chunk)
+        .expect("scan empty chunk succeeds");
+    assert!(
+        empty_findings.is_empty(),
+        "empty chunk should yield no findings"
+    );
 
     // Scan a small inert chunk
     let small_chunk = Chunk::from("fn main() { println!(\"hello world\"); }\n");
-    let small_findings = scanner.scan(&small_chunk).expect("scan small inert chunk succeeds");
-    assert!(small_findings.is_empty(), "small inert chunk should yield no findings");
+    let small_findings = scanner
+        .scan(&small_chunk)
+        .expect("scan small inert chunk succeeds");
+    assert!(
+        small_findings.is_empty(),
+        "small inert chunk should yield no findings"
+    );
+
+    let compile_after = keyhog_scanner::testing::lazy_regex_compile_events();
+    assert_eq!(
+        compile_after, compile_before,
+        "inert chunk scans must not trigger dynamic regex compilations"
+    );
 }
 
 #[test]
@@ -48,7 +67,10 @@ fn row_153_scanner_structure_layout_and_type_bounds() {
 #[test]
 fn row_153_lazy_regex_state_compact_flags() {
     let rx = keyhog_scanner::testing::LazyRegexProbe::detector("sk_live_[0-9a-zA-Z]{24}");
-    assert!(rx.has_literal_prefix(), "literal prefix should be detected and cached");
+    assert!(
+        rx.has_literal_prefix(),
+        "literal prefix should be detected and cached"
+    );
     assert_eq!(rx.as_str(), "sk_live_[0-9a-zA-Z]{24}");
     assert!(rx.get().is_match("sk_live_123456789012345678901234"));
 }

@@ -28,7 +28,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
-- perf(scanner): optimize startup memory floor and scanner structure layouts (Row 153). Pack LazyRegexState flags into a single atomic byte, shrink CsrU32 to exact boxed slices, flatten GenericKeywordStemSet byte buckets, dynamically scale LRU thread-local caches, bound DashMap absence cache shards to 16, and box immutable compiled pattern slices.
+- perf(scanner): optimize startup memory floor and scanner structure layouts (Row 153). Pack LazyRegexState flags into a single atomic byte, shrink CsrU32 to exact boxed slices, flatten GenericKeywordStemSet byte buckets, dynamically scale LRU thread-local caches, scale DashMap absence cache shards dynamically with host parallelism, and box immutable compiled pattern slices.
 - refactor(core): unify atomic durable writes across state artifacts and scanner caches into keyhog_core::state_file (Row 148).
 - fix(daemon): filter out ignored and excluded paths (.git, target, node_modules, ignore_paths, default excludes) in guard filesystem watcher to prevent unnecessary reconcile transactions (Row 141).
 - fix(scanner): clamp decode-through window overlap to enforce strictly advancing window progress across UTF-8 scalar boundaries in release builds.

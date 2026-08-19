@@ -292,6 +292,27 @@ pub(crate) type ScannerPreprocessedText<'a> = crate::multiline::PreprocessedText
 #[cfg(not(feature = "multiline"))]
 pub(crate) type ScannerPreprocessedText<'a> = PreprocessedText<'a>;
 
+// Bit-packed flags and tri-state memo bits stored in LazyRegexState.flags (AtomicU8).
+const LAZY_REGEX_FLAG_CASE_INSENSITIVE: u8 = 1 << 0;
+const LAZY_REGEX_FLAG_CRLF: u8 = 1 << 1;
+const LAZY_REGEX_PREFIX_STATE_MASK: u8 = 0b11 << 2;
+const LAZY_REGEX_PREFIX_STATE_FALSE: u8 = 1 << 2;
+const LAZY_REGEX_PREFIX_STATE_TRUE: u8 = 2 << 2;
+const LAZY_REGEX_INFIX_STATE_MASK: u8 = 0b11 << 4;
+const LAZY_REGEX_INFIX_STATE_FALSE: u8 = 1 << 4;
+const LAZY_REGEX_INFIX_STATE_TRUE: u8 = 2 << 4;
+
+/// Internal shared state for [`LazyRegex`].
+///
+/// Clones share one allocation containing the compiled matcher, regex source,
+/// and bit-packed atomic flags / memoized source facts.
+#[derive(Debug)]
+struct LazyRegexState {
+    src: Arc<str>,
+    cell: std::sync::OnceLock<Arc<Regex>>,
+    flags: std::sync::atomic::AtomicU8,
+}
+
 /// A regex wrapper that holds a detector regex source and compiles it at most
 /// once, on the first chunk that actually reaches the pattern.
 ///
@@ -314,22 +335,6 @@ pub(crate) type ScannerPreprocessedText<'a> = PreprocessedText<'a>;
 /// Clones share one allocation containing the compiled matcher and memoized
 /// source facts. Keeping each `OnceLock` in a separate `Arc` multiplied
 /// allocation metadata and widened every retained `CompiledPattern`.
-const LAZY_REGEX_FLAG_CASE_INSENSITIVE: u8 = 1 << 0;
-const LAZY_REGEX_FLAG_CRLF: u8 = 1 << 1;
-const LAZY_REGEX_PREFIX_STATE_MASK: u8 = 0b11 << 2;
-const LAZY_REGEX_PREFIX_STATE_FALSE: u8 = 1 << 2;
-const LAZY_REGEX_PREFIX_STATE_TRUE: u8 = 2 << 2;
-const LAZY_REGEX_INFIX_STATE_MASK: u8 = 0b11 << 4;
-const LAZY_REGEX_INFIX_STATE_FALSE: u8 = 1 << 4;
-const LAZY_REGEX_INFIX_STATE_TRUE: u8 = 2 << 4;
-
-#[derive(Debug)]
-struct LazyRegexState {
-    src: Arc<str>,
-    cell: std::sync::OnceLock<Arc<Regex>>,
-    flags: std::sync::atomic::AtomicU8,
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct LazyRegex {
     state: Arc<LazyRegexState>,

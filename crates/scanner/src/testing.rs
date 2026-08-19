@@ -3081,18 +3081,22 @@ pub fn csr_from_rows_roundtrip_for_test(rows: Vec<Vec<usize>>) -> Vec<Vec<u32>> 
         .map(|row| csr.get(row).expect("row in range").to_vec())
         .collect()
 }
+/// Test wrapper exposing the CSR table layout for integration verification.
 #[derive(Clone, Debug, Default)]
 pub struct CsrU32(pub(crate) crate::engine::CsrU32);
 
 impl CsrU32 {
+    /// Construct a test CSR instance from `(row, col)` coordinate pairs.
     pub fn from_pairs(row_count: usize, pairs: impl IntoIterator<Item = (usize, usize)>) -> Self {
         Self(crate::engine::CsrU32::from_pairs(row_count, pairs))
     }
 
+    /// Retrieve column indices for `row`.
     pub fn get(&self, i: usize) -> Option<&[u32]> {
         self.0.get(i)
     }
 
+    /// Return `(data_len, offsets_len)` of the underlying CSR storage.
     pub fn storage_lengths(&self) -> (usize, usize) {
         self.0.storage_lengths()
     }
@@ -3100,17 +3104,25 @@ impl CsrU32 {
 
 pub use crate::pipeline::compute_line_offsets;
 
+/// Test wrapper exposing scan state allocation and match accumulation properties.
 #[derive(Default)]
 pub struct ScanState(pub(crate) crate::scan_state::ScanState);
 
 impl ScanState {
+    /// Return the count of accepted match events.
     pub fn accepted_match_events(&self) -> u64 {
         self.0.accepted_match_events
     }
 
+    /// Drain accumulated matches into raw match outputs.
     pub fn into_matches(self, detector_digest: u64) -> Vec<keyhog_core::RawMatch> {
         self.0.into_matches(detector_digest)
     }
+}
+
+/// Snapshot of dynamic lazy regex compilation events process-wide.
+pub fn lazy_regex_compile_events() -> u64 {
+    crate::types::lazy_regex_compile_events()
 }
 pub fn generic_keyword_lines_from_positions(text: &str, positions: &[u32]) -> Vec<u32> {
     let index = crate::context::LineContextIndex::try_new(text)
@@ -3876,14 +3888,17 @@ pub(crate) fn scan_state_drain_with_static_intern(
     state.into_matches(0)
 }
 
+/// Test probe exposing internal lazy regex compilation and memoization behavior.
 #[derive(Clone)]
 pub struct LazyRegexProbe(crate::types::LazyRegex);
 
 impl LazyRegexProbe {
+    /// Create a detector pattern probe.
     pub fn detector(src: impl Into<std::sync::Arc<str>>) -> Self {
         Self(crate::types::LazyRegex::detector(src))
     }
 
+    /// Create a detector pattern probe with pre-compiled regex seeded.
     pub fn detector_compiled(
         src: impl Into<std::sync::Arc<str>>,
         compiled: std::sync::Arc<regex::Regex>,
@@ -3891,18 +3906,22 @@ impl LazyRegexProbe {
         Self(crate::types::LazyRegex::detector_compiled(src, compiled))
     }
 
+    /// Create a plain pattern probe.
     pub fn plain(src: impl Into<std::sync::Arc<str>>) -> Self {
         Self(crate::types::LazyRegex::plain(src))
     }
 
+    /// Return the raw regex source text without triggering compilation.
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
 
+    /// Return the compiled regex, compiling it on first use if not yet compiled.
     pub fn get(&self) -> &regex::Regex {
         self.0.get()
     }
 
+    /// Return whether this pattern has a literal prefix memoized or extracted.
     pub fn has_literal_prefix(&self) -> bool {
         self.0.has_literal_prefix()
     }

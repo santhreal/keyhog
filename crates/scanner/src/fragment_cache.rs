@@ -128,14 +128,7 @@ impl FragmentCache {
     }
 
     fn grow_for_workload(shard: &mut LruCache<String, Vec<SecretFragment>>, max_per_shard: usize) {
-        let current = shard.cap().get();
-        if shard.len() < current || current >= max_per_shard {
-            return;
-        }
-        let next = current.saturating_mul(2).min(max_per_shard);
-        if let Some(next) = NonZeroUsize::new(next) {
-            shard.resize(next);
-        }
+        grow_lru_for_workload(shard, max_per_shard);
     }
 
     /// Shared core of both reassembly entry points: record `fragment` into its
@@ -287,6 +280,23 @@ impl FragmentCache {
             (len + shard.len(), capacity + shard.cap().get())
         });
         (len, capacity, self.max_per_shard * SHARD_COUNT)
+    }
+}
+
+/// Dynamically doubles LRU cache capacity when full up to `max_cap`.
+/// Keeps initial startup allocation minimal (capacity 1) while scaling to
+/// the configured capacity ceiling only as live workload demand requires.
+pub(crate) fn grow_lru_for_workload<K: std::cmp::Eq + std::hash::Hash, V>(
+    cache: &mut LruCache<K, V>,
+    max_cap: usize,
+) {
+    let current = cache.cap().get();
+    if cache.len() < current || current >= max_cap {
+        return;
+    }
+    let next = current.saturating_mul(2).min(max_cap);
+    if let Some(next) = NonZeroUsize::new(next) {
+        cache.resize(next);
     }
 }
 

@@ -21,37 +21,44 @@ impl GenericKeywordStemSet {
                 stems.push(stem.into());
             }
         }
-        let mut counts = [0u16; 256];
+        assert!(
+            stems.len() <= u16::MAX as usize,
+            "generic keyword stem count exceeds u16::MAX"
+        );
+        let mut counts = [0usize; 256];
         for stem in &stems {
             if let Some(&first) = stem.as_bytes().first() {
                 let lower = first.to_ascii_lowercase();
                 let upper = first.to_ascii_uppercase();
-                counts[lower as usize] = counts[lower as usize].saturating_add(1);
+                counts[lower as usize] += 1;
                 if upper != lower {
-                    counts[upper as usize] = counts[upper as usize].saturating_add(1);
+                    counts[upper as usize] += 1;
                 }
             }
         }
         let mut by_first_offsets = [0u16; 257];
-        let mut total = 0u16;
+        let mut total = 0usize;
         for i in 0..256 {
-            by_first_offsets[i] = total;
-            total = total.saturating_add(counts[i]);
+            by_first_offsets[i] =
+                u16::try_from(total).expect("generic keyword stem entry offset exceeds u16::MAX");
+            total += counts[i];
         }
-        by_first_offsets[256] = total;
+        by_first_offsets[256] =
+            u16::try_from(total).expect("generic keyword stem entry total exceeds u16::MAX");
 
-        let mut by_first_data = vec![0u16; total as usize];
+        let mut by_first_data = vec![0u16; total];
         let mut cursors = by_first_offsets;
         for (idx, stem) in stems.iter().enumerate() {
+            let stem_idx = u16::try_from(idx).expect("generic keyword stem index exceeds u16::MAX");
             if let Some(&first) = stem.as_bytes().first() {
                 let lower = first.to_ascii_lowercase();
                 let upper = first.to_ascii_uppercase();
                 let pos = cursors[lower as usize] as usize;
-                by_first_data[pos] = idx as u16;
+                by_first_data[pos] = stem_idx;
                 cursors[lower as usize] += 1;
                 if upper != lower {
                     let pos = cursors[upper as usize] as usize;
-                    by_first_data[pos] = idx as u16;
+                    by_first_data[pos] = stem_idx;
                     cursors[upper as usize] += 1;
                 }
             }
