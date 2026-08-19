@@ -247,8 +247,14 @@ fn is_gpu_backend_str(backend: &str) -> bool {
 pub(crate) fn validate_backend_and_gpu_flags(
     backend: Option<&str>,
     no_gpu: bool,
-    _require_gpu: bool,
+    require_gpu: bool,
 ) -> Result<(), clap::Error> {
+    if no_gpu && require_gpu {
+        return Err(clap::Error::raw(
+            clap::error::ErrorKind::ArgumentConflict,
+            "error: the argument '--no-gpu' cannot be used with '--require-gpu'\n",
+        ));
+    }
     if let Some(b) = backend {
         let is_gpu = is_gpu_backend_str(b);
         if no_gpu && is_gpu {

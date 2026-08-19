@@ -12,7 +12,13 @@ from __future__ import annotations
 import os
 import pathlib
 import sys
-import tomllib
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    try:
+        import tomli as tomllib  # type: ignore
+    except ImportError:
+        import toml as tomllib  # type: ignore
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 CARGO_TOML = REPO_ROOT / "Cargo.toml"

@@ -55,7 +55,8 @@ pub(crate) enum RegionPresenceBatchMode {
 }
 
 impl RegionPresenceBatchMode {
-    #[allow(dead_code)] pub(super) fn label(self) -> &'static str {
+    #[allow(dead_code)]
+    pub(super) fn label(self) -> &'static str {
         match self {
             Self::BorrowedSingleChunk => "borrowed-single-chunk",
             Self::RawScratch => "raw-scratch",
@@ -103,11 +104,13 @@ impl<'a> ZeroRegionPresenceScratch<'a> {
 
 impl Drop for ZeroRegionPresenceScratch<'_> {
     fn drop(&mut self) {
+        let cap = self.scratch.haystack.capacity();
         #[cfg(feature = "gpu")]
         crate::gpu::evidence::record_host_byte_scrub(
             crate::gpu::evidence::GpuHostDataMovementSite::RegionPresenceScratchScrub,
-            self.scratch.haystack.len(),
+            cap,
         );
+        self.scratch.haystack.resize(cap, 0);
         self.scratch.haystack.fill(0);
         self.scratch.haystack.clear();
         self.scratch.region_starts.clear();
