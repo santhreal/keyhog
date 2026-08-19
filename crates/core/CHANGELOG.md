@@ -2,6 +2,7 @@
 
 ## 0.5.80 - 2026-08-17
 
+- feat(guard): add GuardTransitionRecord and continuous transition history tracking with causal attribution (Row 146).
 - feat(core): export canonical DEFAULT_WINDOW_OVERLAP_BYTES and DEFAULT_WINDOW_SIZE_BYTES (Row 111).
 - feat(allowlist): implement match attribution tracking and unused suppression entry reporting across detector, path, and hash rules (`AllowlistRule`, `UnusedAllowlistEntry`).
 - feat(cache): add `cache_layout` module with canonical `CacheKind` enumeration, path classification, and `CacheEvictionPolicy` contracts.

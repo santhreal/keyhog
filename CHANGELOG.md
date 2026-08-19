@@ -5,6 +5,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ## [0.5.80] - 2026-08-17
 ### Added
 
+- feat(guard): continuous guard transition feed and event log surface with causal attribution across registered roots (Row 146).
 - feat(compiler): install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata (Row 128).
 - feat(cache): load-only scan execution and zero compilation fallback on prepared artifact caches (Row 127).
 - feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).

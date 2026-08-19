@@ -281,6 +281,7 @@ impl RootRegistry {
             last_reconciliation_time: None,
             backend_route_label: String::new(),
             last_receipt: None,
+            recent_transitions: Vec::new(),
         };
         self.roots.insert(canonical_path, record.clone());
         record

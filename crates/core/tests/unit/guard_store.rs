@@ -51,6 +51,7 @@ fn sample_root_record(path: &str) -> GuardRootRecord {
         last_reconciliation_time: None,
         backend_route_label: "scalar-cpu".to_string(),
         last_receipt: None,
+        recent_transitions: Vec::new(),
     }
 }
 
@@ -408,6 +409,7 @@ fn durable_store_save_and_load_root() {
         last_reconciliation_time: Some(2000),
         backend_route_label: "simd".to_string(),
         last_receipt: None,
+        recent_transitions: Vec::new(),
     };
     store.save_root(&record).expect("save root");
 
@@ -440,6 +442,7 @@ fn durable_store_remove_root() {
         last_reconciliation_time: None,
         backend_route_label: String::new(),
         last_receipt: None,
+        recent_transitions: Vec::new(),
     };
     store.save_root(&record).expect("save root");
     assert_eq!(store.load_roots().expect("load").len(), 1);
