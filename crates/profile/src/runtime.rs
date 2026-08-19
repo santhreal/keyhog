@@ -1044,7 +1044,11 @@ impl Runtime {
                 .fetch_add(1, Ordering::Relaxed);
             return (None, None);
         };
-        let trace = self.reserve_span(stage, started, parent_span_id, Some(stack_slot), worker_id);
+        let trace = if self.inner.session_recording {
+            self.reserve_span(stage, started, parent_span_id, Some(stack_slot), worker_id)
+        } else {
+            None
+        };
         let runtime_key = Arc::as_ptr(&self.inner) as usize;
         let span_id = trace.as_ref().map_or(0, |t| t.span_id);
         ACTIVE_SPANS.with(|stack| {

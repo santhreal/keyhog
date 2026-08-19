@@ -681,7 +681,7 @@ def render_perf(results: list[RunResult], corpus: str | None = None) -> str:
     rows.sort(key=lambda r: r.speed.wall_ms)
     if not rows:
         return "_No timed runs yet._"
-    corpora_in_rows = sorted({r.corpus.name for r in rows if r.corpus.name and not r.corpus.name.startswith("daemon")})
+    corpora_in_rows = sorted({r.corpus.name for r in rows if r.corpus.name})
     if len(corpora_in_rows) > 1 and corpus is None:
         lines = []
         for c in corpora_in_rows:
@@ -1193,7 +1193,7 @@ def build_sections(results: list[RunResult], corpus: str) -> dict[str, str]:
     """Build all Markdown sections for README markers."""
     return {
         "leaderboard": render_leaderboard(results, corpus),
-        "perf": render_perf(results, corpus),
+        "perf": render_perf(results, None if len({r.corpus.name for r in results if r.corpus.name and not r.corpus.name.startswith("daemon")}) > 1 else corpus),
         "gaps": render_gaps(results, corpus),
         "recovery": render_static_recovery(results, corpus),
         "bloom": render_bloom_evidence(results, corpus),
