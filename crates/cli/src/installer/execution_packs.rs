@@ -104,7 +104,21 @@ pub(crate) fn install_execution_generation(
     let staged_packs = stage.path().join("packs");
     let staged_cache = stage.path().join("autoroute.json");
     let staged_key = stage.path().join("signing.key");
-    fs::copy(&signing_key, &staged_key)
+    let key_bytes = fs::read(&signing_key)
+        .with_context(|| format!("reading signing key {}", signing_key.display()))?;
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(&staged_key)
+        .with_context(|| format!("creating staged signing key {}", staged_key.display()))?;
+    use std::io::Write;
+    file.write_all(&key_bytes)
+        .and_then(|()| file.sync_all())
         .with_context(|| format!("staging signing key in {}", staged_key.display()))?;
     run_candidate(
         candidate,

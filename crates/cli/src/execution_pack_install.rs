@@ -278,6 +278,24 @@ impl InstalledArtifactRegistry {
                     autoroute_path.display()
                 );
             }
+            let inspection = crate::orchestrator::inspect_autoroute_cache(Some(&autoroute_path));
+            if let Some(error) = inspection.error.as_deref() {
+                bail!(
+                    "invalid autoroute calibration at {}: {error}. Fix: run `keyhog install`",
+                    autoroute_path.display()
+                );
+            }
+            match inspection.readiness() {
+                crate::orchestrator::AutorouteReadiness::Ready
+                | crate::orchestrator::AutorouteReadiness::Direct => {}
+                readiness => {
+                    bail!(
+                        "autoroute calibration at {} is not ready (status: {}). Fix: run `keyhog install`",
+                        autoroute_path.display(),
+                        readiness.as_str()
+                    );
+                }
+            }
         }
         Ok(())
     }
