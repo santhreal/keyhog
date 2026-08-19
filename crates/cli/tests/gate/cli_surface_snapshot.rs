@@ -43,6 +43,7 @@ const BASE_SUBCOMMANDS: &[&str] = &[
     "explain",
     "guard",
     "hook",
+    "install",
     "scan",
     "scan-system",
     "triage",

@@ -519,8 +519,7 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
         )
     })?;
     let staged_cache_path = transaction.staged_path().to_path_buf();
-    let executable =
-        std::env::current_exe().context("resolving keyhog for isolated autoroute calibration")?;
+    let executable = keyhog_core::current_executable_path().map_err(anyhow::Error::msg)?;
     let mut measured_routes = BTreeSet::new();
     for policy in [
         AutorouteCalibrationPolicy::Default,

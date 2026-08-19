@@ -50,6 +50,7 @@ crate::kh_matrix!(
     backend => "backend",
     doctor => "doctor",
     bloom_diagnostic => "bloom-diagnostic",
+    install => "install",
     uninstall => "uninstall",
     scan_system => "scan-system",
     daemon => "daemon",

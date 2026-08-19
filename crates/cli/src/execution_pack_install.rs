@@ -246,6 +246,44 @@ impl InstalledArtifactRegistry {
         }
         Ok(loaded)
     }
+
+    /// Verify that all required artifact classes are present, readable, authenticated,
+    /// and structurally valid in the given cache root.
+    pub fn verify_installed_cache_root(cache_root: &Path) -> Result<()> {
+        let pack_root = cache_root.join("execution-packs");
+        let key_path = pack_root.join("signing.key");
+        if !key_path.is_file() {
+            bail!(
+                "missing execution-pack verification key at {}. Fix: run `keyhog install`",
+                key_path.display()
+            );
+        }
+        let current_packs = pack_root.join("current");
+        let manifest_path = current_packs.join("manifest.json");
+        if !manifest_path.is_file() {
+            bail!(
+                "missing execution-pack manifest at {}. Fix: run `keyhog install`",
+                manifest_path.display()
+            );
+        }
+        let (_bytes, manifest, key) = load_manifest(&current_packs)?;
+        if manifest.packs.is_empty() {
+            bail!("execution-pack manifest contains no packs");
+        }
+        for row in &manifest.packs {
+            authenticate_manifest_pack(&current_packs, &manifest, row, &key)?;
+        }
+        if keyhog_scanner::hw_probe::multiple_backends_compiled() {
+            let autoroute_path = cache_root.join("autoroute.json");
+            if !autoroute_path.is_file() {
+                bail!(
+                    "missing autoroute calibration at {}. Fix: run `keyhog install`",
+                    autoroute_path.display()
+                );
+            }
+        }
+        Ok(())
+    }
 }
 
 pub(crate) const MANIFEST_VERSION: u16 = 1;
@@ -704,6 +742,13 @@ fn load_manifest(
     let key_path = directory
         .parent()
         .map(|parent| parent.join("signing.key"))
+        .filter(|path| path.is_file())
+        .or_else(|| {
+            dirs::cache_dir()
+                .map(|cache| cache.join("keyhog").join("execution-packs").join("signing.key"))
+                .filter(|path| path.is_file())
+        })
+        .or_else(|| directory.parent().map(|parent| parent.join("signing.key")))
         .context("execution-pack generation has no installation root. Fix: run `keyhog install` or `keyhog update`")?;
     let key_bytes = fs::read(&key_path).with_context(|| {
         format!(

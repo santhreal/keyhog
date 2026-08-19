@@ -1,4 +1,5 @@
-//! Local install primitives for `keyhog doctor` and `keyhog uninstall`.
+//! Local install primitives for `keyhog install`, `keyhog doctor`, and
+//! `keyhog uninstall`.
 //!
 //! There is no self-update path. KeyHog ships through crates.io, and the
 //! signed binary-asset release channel it used to update from is retired: no
@@ -13,13 +14,16 @@
 //! `scripts/gates/release_channel_coherence.py` keeps it that way: it fails if
 //! any install/update path consumes release assets that no workflow produces.
 //!
-//! What remains is the local half that other subcommands still need:
-//! resolving the running binary, testing PID liveness, and the doctor
-//! scan-engine self test in [`self_test`].
+//! What remains is local: `keyhog install` compiles, authenticates, calibrates,
+//! and publishes this binary's exact execution generation from the binary
+//! itself, plus resolving the running binary, testing PID liveness, and the
+//! doctor scan-engine self test in [`self_test`].
 
 use anyhow::{Context, Result};
 
+mod execution_packs;
 mod self_test;
+pub(crate) use execution_packs::*;
 pub(crate) use self_test::*;
 
 /// Resolve the running binary, following symlinks so callers act on the real

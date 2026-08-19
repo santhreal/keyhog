@@ -1,5 +1,13 @@
 use clap::Parser;
 use std::path::PathBuf;
+/// Arguments for `keyhog install` (compile and publish execution packs for the local host).
+#[derive(Parser, Debug, Clone, Default)]
+pub struct InstallArgs {
+    /// Reinstall even if execution packs are already present and valid.
+    #[arg(long)]
+    pub force: bool,
+}
+
 #[derive(Parser)]
 pub struct CompileExecutionPacksArgs {
     /// Publish the complete immutable execution-pack generation here.

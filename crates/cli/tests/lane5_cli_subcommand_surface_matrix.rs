@@ -60,6 +60,7 @@ fn advertised_subcommand_set_is_exactly_the_shipped_menu() {
         "scan",
         "config",
         "hook",
+        "install",
         "detectors",
         "explain",
         "diff",

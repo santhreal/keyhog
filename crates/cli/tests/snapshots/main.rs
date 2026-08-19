@@ -65,11 +65,12 @@
 //! `NO_COLOR=1` in the spawned env so colour escapes never enter the file.
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::LazyLock;
 
 use tempfile::TempDir;
-
 // -----------------------------------------------------------------------------
 // Fixtures
 // -----------------------------------------------------------------------------
@@ -93,8 +94,20 @@ const AWS_SECRET_BODY: &str = "/K7MDENG/bPxRfiCYEXAMPLEKEY";
 ///   tree/clean.txt     - prose, no secret
 ///   tree/sub/also.cfg  - second planted AWS key under a subdir, exercises
 ///                         the directory walker
+fn new_tempdir() -> TempDir {
+    let base_tmp = PathBuf::from("/mnt/FlareTraining/santh-archive/tmp");
+    if base_tmp.exists() {
+        tempfile::Builder::new()
+            .prefix("keyhog-snap-")
+            .tempdir_in(&base_tmp)
+            .expect("tempdir in base_tmp")
+    } else {
+        tempfile::tempdir().expect("tempdir")
+    }
+}
+
 fn write_tree() -> TempDir {
-    let dir = TempDir::new().expect("tempdir");
+    let dir = new_tempdir();
     let tree = dir.path().join("tree");
     std::fs::create_dir(&tree).expect("mkdir tree");
     std::fs::create_dir(tree.join("sub")).expect("mkdir tree/sub");
@@ -123,7 +136,7 @@ fn write_tree() -> TempDir {
 }
 
 fn write_single_file() -> (TempDir, PathBuf) {
-    let dir = TempDir::new().expect("tempdir");
+    let dir = new_tempdir();
     let path = dir.path().join("planted.txt");
     let key = format!("{AWS_KEY_PREFIX}{AWS_KEY_BODY}");
     std::fs::write(&path, format!("AWS_ACCESS_KEY_ID=\"{key}\"\n")).expect("write planted.txt");
@@ -142,7 +155,7 @@ fn write_single_file() -> (TempDir, PathBuf) {
 /// depth and same file names, just prose contents, so the only behavioural
 /// difference from the finding-bearing cases is the absence of secrets.
 fn write_clean_tree() -> TempDir {
-    let dir = TempDir::new().expect("tempdir");
+    let dir = new_tempdir();
     let tree = dir.path().join("tree");
     std::fs::create_dir(&tree).expect("mkdir tree");
     std::fs::create_dir(tree.join("sub")).expect("mkdir tree/sub");
@@ -172,8 +185,58 @@ fn write_clean_tree() -> TempDir {
 // Run + capture
 // -----------------------------------------------------------------------------
 
-fn binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
+static PREPARED_INSTALLATION: LazyLock<(tempfile::TempDir, PathBuf, PathBuf)> =
+    LazyLock::new(|| {
+        let directory = new_tempdir();
+        let isolated_exe = directory.path().join("keyhog");
+        let staging_exe = directory.path().join("keyhog.stage");
+        fs::copy(env!("CARGO_BIN_EXE_keyhog"), &staging_exe).expect("copy keyhog binary");
+        fs::rename(&staging_exe, &isolated_exe).expect("commit isolated executable");
+
+        let cache_home = directory.path().join("cache");
+        let pack_root = cache_home.join("keyhog/execution-packs");
+        fs::create_dir_all(&pack_root).expect("execution-pack root");
+        let key_path = pack_root.join("signing.key");
+        let key_bytes = [0x5cu8; 32];
+        fs::write(&key_path, key_bytes).expect("write signing key");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
+                .expect("protect signing key");
+        }
+        let output = pack_root.join("current");
+
+        let result = Command::new(&isolated_exe)
+            .arg("compile-execution-packs")
+            .arg("--output-dir")
+            .arg(&output)
+            .arg("--signing-key")
+            .arg(&key_path)
+            .env("XDG_CACHE_HOME", &cache_home)
+            .env("HOME", directory.path())
+            .output()
+            .expect("run install pack compiler");
+        assert!(
+            result.status.success(),
+            "install pack compiler failed: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        (directory, pack_root, isolated_exe)
+    });
+
+fn copy_dir_all(src: &Path, dst: &Path) {
+    fs::create_dir_all(dst).expect("create dst dir");
+    for entry in fs::read_dir(src).expect("read src dir") {
+        let entry = entry.expect("valid entry");
+        let path = entry.path();
+        let dest_path = dst.join(entry.file_name());
+        if path.is_dir() {
+            copy_dir_all(&path, &dest_path);
+        } else {
+            fs::copy(&path, &dest_path).expect("copy file");
+        }
+    }
 }
 
 fn data_dir() -> PathBuf {
@@ -204,9 +267,13 @@ fn run_keyhog(args: &[&str], tempdir_root: &Path) -> Captured {
     }
 
     let cache_home = tempdir_root.join(".cache");
+    let target_pack_root = cache_home.join("keyhog/execution-packs");
+    let (_temp, source_pack_root, isolated_exe) = &*PREPARED_INSTALLATION;
+    copy_dir_all(source_pack_root, &target_pack_root);
+
     let config_home = tempdir_root.join(".config");
     let data_home = tempdir_root.join(".local").join("share");
-    let output = Command::new(binary())
+    let output = Command::new(isolated_exe)
         // Keep the in-process path: snapshots cannot depend on whether
         // `keyhog daemon` happens to be running on the host.
         .args(&argv)
@@ -346,6 +413,7 @@ fn normalize(raw: &str, tempdir_root: &Path) -> String {
     out = rewrite_quoted_after(&out, "\"fingerprint\":");
     out = rewrite_quoted_after(&out, "\"finding_id\":");
     out = rewrite_quoted_after(&out, "\"id\":");
+    out = rewrite_quoted_after(&out, "\"scan_id\":");
 
     // 10. Drop host-state diagnostics for GPU probes and absent installed
     //     execution packs, then trim trailing whitespace. Snapshots exercise
@@ -453,6 +521,8 @@ fn is_gpu_backend_diagnostic(line: &str) -> bool {
 /// this host-state warning is unrelated to the output contract under test.
 fn is_execution_pack_diagnostic(line: &str) -> bool {
     line.contains("WARN no installed execution-pack generation; parsing embedded detectors")
+        || line.starts_with("INFO scanner: mapped from execution pack")
+        || line.starts_with("INFO cache ")
 }
 
 fn next_char_boundary(s: &str, mut i: usize) -> usize {
