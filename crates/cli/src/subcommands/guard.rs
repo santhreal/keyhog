@@ -8,6 +8,7 @@ use crate::daemon::client;
 use crate::daemon::protocol::{response_kind, Request, Response};
 use crate::exit_codes;
 use crate::style;
+use anyhow::Context;
 use std::process::ExitCode;
 
 use crate::daemon::server::default_socket_path;
