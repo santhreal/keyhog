@@ -269,10 +269,8 @@ fn validate_offline_validators(spec: &DetectorSpec, issues: &mut Vec<QualityIssu
         if prefixes.is_empty() {
             match validator {
                 crate::DetectorValidatorSpec::Uuid { .. }
-                | crate::DetectorValidatorSpec::PatternShape { .. }
                 | crate::DetectorValidatorSpec::HexHash { .. }
-                | crate::DetectorValidatorSpec::LuhnChecksum { .. }
-                | crate::DetectorValidatorSpec::Jwt { .. } => {}
+                | crate::DetectorValidatorSpec::LuhnChecksum { .. } => {}
                 _ => {
                     issues.push(QualityIssue::Error(format!(
                         "validators[{index}].prefixes must not be empty"

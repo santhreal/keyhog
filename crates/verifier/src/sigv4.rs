@@ -52,6 +52,7 @@ pub fn sign_request_authorization(
     Ok((authorization, amz_date, signed_headers))
 }
 
+/// Build a SigV4 canonical query string from a key-value slice.
 pub fn canonical_query_string(pairs: &[(String, String)]) -> String {
     let mut encoded = pairs
         .iter()
@@ -65,6 +66,7 @@ pub fn canonical_query_string(pairs: &[(String, String)]) -> String {
         .join("&")
 }
 
+/// SigV4 URI encode an input string according to RFC 3986 unreserved character rules.
 pub fn aws_uri_encode(input: &str) -> String {
     // AWS SigV4 canonical-URI encoding: unreserved chars pass through, every
     // other byte becomes `%XX` with UPPERCASE hex. The escaped arm previously

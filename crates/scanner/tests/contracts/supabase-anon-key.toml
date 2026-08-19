@@ -4,13 +4,13 @@ service = "supabase"
 severity = "medium"
 
 [[positive]]
-text = "SUPABASE_ANON_KEY=eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"
-credential = "eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"
+text = "SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"
+credential = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"
 reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
 
 [[positive]]
-text = "SUPABASE_ANON_KEY=\"eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ\""
-credential = "eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"
+text = "SUPABASE_ANON_KEY=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU\""
+credential = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"
 reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
@@ -22,8 +22,8 @@ text = "SUPABASE_ANON_KEY=eyJhLEXAMPLEEXAMPLEoYuwJ"
 reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
-text = "{\"secret\":\"eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ\"}"
-credential = "eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"
+text = "{\"anon key\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU\"}"
+credential = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"
 reason = "Adversarial envelope (credential must still surface under this detector)."
 
 [perf]

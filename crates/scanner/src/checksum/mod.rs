@@ -45,6 +45,7 @@ pub fn validate_checksum(credential: &str) -> ChecksumResult {
     VALIDATOR_CATALOG.validate_any(credential).result()
 }
 
+/// Validate a credential against the offline validators configured for a specific detector.
 #[inline]
 pub fn validate_for_detector(detector_id: &str, credential: &str) -> ChecksumConfidenceDecision {
     VALIDATOR_CATALOG.validate_for_detector(detector_id, credential)
@@ -105,6 +106,7 @@ pub(crate) fn base62_encode_u32(mut value: u32, width: usize) -> String {
 /// TOML's explicit `confidence_floor` instead.
 pub const CHECKSUM_VALID_FLOOR: f64 = 0.9;
 
+/// Outcome of an offline checksum or structural validation check with associated confidence floor.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ChecksumConfidenceDecision {
     result: ChecksumResult,
@@ -141,11 +143,13 @@ impl ChecksumConfidenceDecision {
         matches!(self.result, ChecksumResult::Invalid)
     }
 
+    /// Return the underlying checksum validation verdict.
     #[inline]
     pub fn result(self) -> ChecksumResult {
         self.result
     }
 
+    /// Return the optional confidence floor configured for valid verdicts on this detector.
     #[inline]
     pub fn valid_confidence_floor(self) -> Option<f64> {
         self.valid_confidence_floor

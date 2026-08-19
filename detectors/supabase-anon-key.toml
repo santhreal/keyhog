@@ -19,5 +19,5 @@ description = "Supabase anon key with context anchor"
 group = 1
 
 [[detector.tests]]
-test_positive = "SUPABASE_ANON_KEY=eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"
+test_positive = "SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"
 test_negative = "SUPABASE_ANON_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
