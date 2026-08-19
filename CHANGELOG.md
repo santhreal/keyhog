@@ -5,6 +5,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ## [0.5.80] - 2026-08-17
 ### Added
 
+- feat(installer): multi-dimensional artifact invalidation and regeneration across detector corpus changes, configuration updates, and calibration changes (Row 135).
 - feat(installer): update recommendation parity and complete artifact generation on binary replacement (Row 134).
 - feat(build): audit and enforce release binary symbol stripping and zero DWARF debuginfo bloat via Cargo.toml [profile.release] and profile divergence gates (Row 139).
 - feat(artifacts): fail closed with EXIT_USER_ERROR and actionable repair instructions on stale or mismatched execution-pack artifact identity inputs (Row 129).
