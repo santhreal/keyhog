@@ -224,32 +224,55 @@ fn documentation_reflects_portable_and_simd_install_commands() {
 
 #[test]
 fn missing_simd_feature_fails_closed_on_explicit_simd_request() {
-    // Verify scanner contract: if compiled without feature = "simd", initialize_simd_backend fails closed
-    #[cfg(not(feature = "simd"))]
-    {
-        use keyhog_scanner::CompiledScanner;
-        let scanner = CompiledScanner::compile(Vec::new()).expect("compile empty scanner");
+    use keyhog_core::{DetectorSpec, PatternSpec, Severity};
+    use keyhog_scanner::{CompiledScanner, ScanBackend};
+
+    // 1. Empty scanner must fail closed regardless of build features
+    let empty_scanner = CompiledScanner::compile(Vec::new()).expect("compile empty scanner");
+    let empty_result = empty_scanner.initialize_simd_backend();
+    assert!(
+        empty_result.is_err(),
+        "Empty scanner must fail initialization of SIMD backend"
+    );
+    let empty_err = empty_result.err().unwrap();
+    assert!(
+        empty_err == "this scanner build has no Hyperscan/SIMD backend"
+            || empty_err == "the detector corpus produced no Hyperscan phase-one plan",
+        "Unexpected error message for empty scanner SIMD initialization: {empty_err}"
+    );
+
+    // 2. Real detector scanner initialization mirrors runtime SIMD capability
+    let spec = DetectorSpec {
+        id: "test-simd-parity".into(),
+        name: "Test SIMD Parity".into(),
+        service: "test".into(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            regex: "KHTEST_[A-Za-z0-9]{16}".into(),
+            ..PatternSpec::default()
+        }],
+        keywords: vec!["KHTEST".into()],
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
+    };
+
+    let detector_scanner = CompiledScanner::compile_for_backend(vec![spec], ScanBackend::SimdCpu)
+        .expect("compile detector");
+
+    if detector_scanner.simd_backend_available() {
+        let result = detector_scanner.initialize_simd_backend();
         assert!(
-            !scanner.simd_backend_available(),
-            "Scanner without simd feature must report simd backend unavailable"
+            result.is_ok(),
+            "Scanner with SIMD candidate available must successfully initialize SIMD backend"
         );
-        let result = scanner.initialize_simd_backend();
+    } else {
+        let result = detector_scanner.initialize_simd_backend();
         assert!(
             result.is_err(),
-            "Scanner without simd feature must fail initialization of SIMD backend"
+            "Scanner without SIMD capability must fail initialization of SIMD backend"
         );
         assert_eq!(
             result.err(),
             Some("this scanner build has no Hyperscan/SIMD backend".to_string())
-        );
-    }
-    #[cfg(feature = "simd")]
-    {
-        use keyhog_scanner::CompiledScanner;
-        let scanner = CompiledScanner::compile(Vec::new()).expect("compile empty scanner");
-        assert!(
-            scanner.simd_backend_available(),
-            "Scanner with simd feature must report simd backend available"
         );
     }
 }

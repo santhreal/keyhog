@@ -31,7 +31,7 @@ SEED="${SEED:-0}"
 REMOTE_TMP="${REMOTE_TMP:-/tmp/keyhog-bench}"
 # cargo-install feature set. Empty = the device picks per-OS: macOS/Darwin gets
 # `--no-default-features --features portable` (keyhog's documented system-lib-free
-# build: no Hyperscan/pkg-config/CUDA), Linux gets the default (Hyperscan SIMD).
+# build: no Hyperscan/pkg-config/CUDA), Linux gets `--features simd` (Hyperscan SIMD).
 KEYHOG_INSTALL_FEATURES="${KEYHOG_INSTALL_FEATURES:-}"
 # We rsync THIS host's current tree to a device-local scratch copy and build
 # there, so a device's stale/absent clone never benches old code. (The repo's

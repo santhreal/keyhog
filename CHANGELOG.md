@@ -27,6 +27,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - feat(gates): single authoritative structural gate architecture consolidating `no_inline_tests_in_src` and `no_cwd_relative_source_reads` workspace-wide and eliminating redundant per-crate gap tests (Row 149).
 - feat(scanner): instrument dynamic anchored regex compilation paths with `LAZY_REGEX_COMPILE_EVENTS` runtime counters to prevent invisible un-cached compilations (Row 150).
 - feat(benchmarks): publish honest multi-corpus benchmark data across mirror and competitor corpora with transparent F1, precision, recall, runtime metrics, and drift-prevention gate coverage (Row 151).
+- feat(benchmarks): establish harness default config and install parity between CLI pure-Rust portable default and benchmark SIMD requirements with fail-closed non-SIMD handling and regression testing (Row 155).
 
 
 ### Added
