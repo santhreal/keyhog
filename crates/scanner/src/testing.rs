@@ -5259,6 +5259,11 @@ pub fn region_presence_batch_capture(
     crate::engine::gpu_region_batch::region_presence_batch_capture(chunks)
 }
 
+#[cfg(feature = "gpu")]
+pub fn region_presence_scratch_retention_limit() -> usize {
+    crate::engine::gpu_region_batch::region_presence_scratch_retention_limit()
+}
+
 pub mod unicode_hardening {
     use std::borrow::Cow;
 

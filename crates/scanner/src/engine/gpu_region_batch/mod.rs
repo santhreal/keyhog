@@ -19,10 +19,11 @@ impl RegionPresenceScratch {
 
     #[cfg(test)]
     pub(super) fn reserve_outlier_for_test(&mut self) {
+        let ceiling = region_presence_scratch_retention_limit();
         self.haystack
-            .reserve_exact(WGPU_BYTE_SCAN_DISPATCH_LIMIT + 1);
+            .reserve_exact(ceiling + 1);
         self.region_starts
-            .reserve_exact(WGPU_BYTE_SCAN_DISPATCH_LIMIT / std::mem::size_of::<u32>() + 1);
+            .reserve_exact(ceiling / std::mem::size_of::<u32>() + 1);
     }
 
     #[cfg(test)]
@@ -111,7 +112,8 @@ impl Drop for ZeroRegionPresenceScratch<'_> {
         self.scratch.haystack.fill(0);
         self.scratch.haystack.clear();
         self.scratch.region_starts.clear();
-        if self.scratch.haystack.capacity() > WGPU_BYTE_SCAN_DISPATCH_LIMIT {
+        let retention_limit = region_presence_scratch_retention_limit();
+        if self.scratch.haystack.capacity() > retention_limit {
             self.scratch.haystack = Vec::new();
         }
         if self
@@ -119,7 +121,7 @@ impl Drop for ZeroRegionPresenceScratch<'_> {
             .region_starts
             .capacity()
             .saturating_mul(std::mem::size_of::<u32>())
-            > WGPU_BYTE_SCAN_DISPATCH_LIMIT
+            > retention_limit
         {
             self.scratch.region_starts = Vec::new();
         }
@@ -145,6 +147,16 @@ pub(super) fn region_presence_batch_byte_limit_for_backend(backend_id: &str) -> 
         "metal" => METAL_BYTE_SCAN_DISPATCH_LIMIT,
         _ => WGPU_BYTE_SCAN_DISPATCH_LIMIT,
     }
+}
+
+/// Memory retention budget for GPU region-presence scratch buffers.
+///
+/// Thread-local scratch buffers retain capacity up to the configured GPU batch input
+/// memory budget (or VYRE's 64 MiB scan ceiling, whichever is larger), preventing
+/// steady-state allocate-fault-copy-scrub-free cycles across batches.
+/// Buffers exceeding this ceiling are returned to the allocator on drop.
+pub(crate) fn region_presence_scratch_retention_limit() -> usize {
+    super::gpu_input_budget::gpu_batch_input_limit().max(REGION_PRESENCE_BATCH_BYTE_LIMIT)
 }
 
 /// Bound overlap amplification from pathological custom detector literals.
