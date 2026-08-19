@@ -25,21 +25,52 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
     println!("{bold}keyhog repair{reset}");
 
     // 1. Diagnose. The in-process self-test exercises the running binary's
-    //    scan pipeline; if it works and the user didn't force, there's nothing
-    //    to repair.
+    //    scan pipeline, and artifact freshness verifies that execution packs
+    //    match current binary, target hardware, features, and detector corpus.
     let self_test = installer::scan_engine_self_test();
-    let healthy = matches!(self_test, Ok(true));
-    if healthy && !args.force {
+    let self_test_healthy = matches!(self_test, Ok(true));
+    let freshness = crate::execution_pack_install::check_installed_artifacts_freshness();
+    let packs_fresh = matches!(
+        freshness,
+        Ok(crate::execution_pack_install::ArtifactFreshnessStatus::Fresh)
+    );
+
+    let exe = installer::current_binary()?;
+    installer::reap_stale_binaries(&exe);
+
+    if self_test_healthy && packs_fresh && !args.force && args.version.is_none() {
         println!(
-            "  {} scan engine healthy - nothing to repair.",
+            "  {} scan engine and execution packs healthy - nothing to repair.",
             style::pass("PASS", &palette)
         );
         println!("  {dim}use --force to reinstall the newest binary release asset anyway.{reset}");
         return Ok(ExitCode::SUCCESS);
     }
-    if healthy {
+
+    if self_test_healthy && !packs_fresh && !args.force && args.version.is_none() {
+        println!(
+            "  {yellow}installed execution packs missing or stale{reset} - regenerating generation."
+        );
+        match installer::install_execution_generation(&exe) {
+            Ok(transaction) => {
+                transaction.commit();
+                println!(
+                    "\n{} repaired: regenerated execution packs and autoroute calibration.",
+                    style::pass("PASS", &palette)
+                );
+                return Ok(ExitCode::SUCCESS);
+            }
+            Err(error) => {
+                println!(
+                    "  {yellow}local execution pack generation failed{reset} ({error}) - downloading fresh release."
+                );
+            }
+        }
+    }
+
+    if self_test_healthy && args.force {
         println!("  {dim}--force: reinstalling a fresh binary.{reset}");
-    } else {
+    } else if !self_test_healthy {
         match &self_test {
             Ok(false) => {
                 println!(
@@ -73,9 +104,7 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
             .await?;
     let gpu_literal_files =
         installer::parse_gpu_literal_sidecar(&gpu_literal_bytes, &expected_tag)?;
-    let exe = installer::current_binary()?;
-    installer::reap_stale_binaries(&exe);
-
+    // Stale binaries already reaped during diagnosis.
     // 3. Install with the recoverability invariant: back up the current binary,
     //    swap in the fresh one, then exec the NEW binary's `doctor` (inherits
     //    stdio so the user sees the report). If the reinstalled binary still
@@ -86,12 +115,14 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
     println!("\n{dim}reinstalling and verifying the new binary...{reset}\n");
     match installer::install_with_rollback_checked(&exe, &bytes, |candidate| {
         let gpu_transaction = installer::install_gpu_literal_files(&gpu_literal_files)?;
+        let execution_transaction = installer::install_execution_generation(candidate)?;
         installer::verify_candidate_release(
             candidate,
             &expected_tag,
             env!("CARGO_PKG_VERSION"),
             allow_explicit_downgrade,
         )?;
+        execution_transaction.commit();
         gpu_transaction.commit();
         Ok(())
     }) {
