@@ -12,6 +12,14 @@ pub struct CompileExecutionPacksArgs {
 }
 
 #[derive(Parser)]
+pub struct CompileGpuLiteralsArgs {
+    /// Publish the compiled GPU literal matcher artifacts here. Defaults to the
+    /// host runtime program cache the scanner loads them from.
+    #[arg(long, value_name = "DIR")]
+    pub output_dir: Option<PathBuf>,
+}
+
+#[derive(Parser)]
 pub struct CompletionArgs {
     /// Shell to generate completions for.
     #[arg(value_enum)]
@@ -97,45 +105,6 @@ pub struct DoctorArgs {
     /// not the file a project-configured scan uses.
     #[arg(long, value_name = "PATH|off")]
     pub autoroute_cache: Option<String>,
-}
-
-/// Arguments for `keyhog update` (self-update from GitHub releases).
-#[derive(Parser)]
-pub struct UpdateArgs {
-    /// Only check whether the GitHub binary-asset channel offers a newer
-    /// release; do not install. Exits 10 when a newer asset exists, 0 otherwise.
-    #[arg(long)]
-    pub check: bool,
-
-    /// Install an exact release version (e.g. `1.2.3` or `v1.2.3`).
-    /// Canonical SemVer is required; a leading `v` is normalized. Valid
-    /// prereleases are accepted. Use this to pin a version or downgrade.
-    #[arg(
-        long,
-        id = "release_version",
-        value_name = "SEMVER",
-        value_parser = crate::installer::normalize_requested_version
-    )]
-    pub version: Option<String>,
-}
-
-/// Arguments for `keyhog repair` (reinstall a known-good binary from releases).
-#[derive(Parser)]
-pub struct RepairArgs {
-    /// Reinstall even if the scan-engine self-test currently passes.
-    #[arg(long)]
-    pub force: bool,
-
-    /// Reinstall an exact release version (e.g. `1.2.3` or `v1.2.3`).
-    /// Canonical SemVer is required; a leading `v` is normalized. Valid
-    /// prereleases are accepted. Use this to pin a version or downgrade.
-    #[arg(
-        long,
-        id = "release_version",
-        value_name = "SEMVER",
-        value_parser = crate::installer::normalize_requested_version
-    )]
-    pub version: Option<String>,
 }
 
 /// Arguments for `keyhog uninstall`.

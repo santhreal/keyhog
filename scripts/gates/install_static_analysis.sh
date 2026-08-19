@@ -41,15 +41,27 @@ shell_dialect() {
     esac
 }
 
-installer_release_api_gate() {
-    if grep -nE 'releases_json=.*2>/dev/null[[:space:]]*\|\|[[:space:]]*true' install.sh; then
-        echo "install.sh must surface release API lookup failures; do not hide them with 2>/dev/null || true." >&2
-        return 1
+# The installers take a bundle the operator already holds (--from-file) and
+# never fetch one. The retired binary-asset channel failed silently: each
+# consumer searched BACKWARD for a release that still carried a complete
+# bundle, so a dead channel installed a 33-version-stale binary instead of
+# erroring. Reintroducing a fetch here recreates that. The workflow-side half
+# is scripts/gates/release_channel_coherence.py.
+installer_offline_only_gate() {
+    local rc=0 hits
+    hits=$(grep -nE 'curl |wget |api\.github\.com|releases/download' install.sh || true)
+    if [ -n "$hits" ]; then
+        echo "install.sh must not fetch anything; installs take a local --from-file bundle:" >&2
+        echo "$hits" >&2
+        rc=1
     fi
-    if ! grep -q 'GitHub API error:' install.sh; then
-        echo "install.sh must print the first release API error line for operator triage." >&2
-        return 1
+    hits=$(grep -nE 'Invoke-WebRequest|Invoke-RestMethod|api\.github\.com|releases/download' install.ps1 || true)
+    if [ -n "$hits" ]; then
+        echo "install.ps1 must not fetch anything; installs take a local -FromFile bundle:" >&2
+        echo "$hits" >&2
+        rc=1
     fi
+    return "$rc"
 }
 
 # Pure-grep guard (NO pwsh needed) for the one PowerShell parse-error class that
@@ -118,7 +130,7 @@ for file in "${shellcheck_targets[@]}"; do
     esac
 done
 
-run "Installer release API error surfacing" installer_release_api_gate
+run "Installers are offline-only (no release fetch path)" installer_offline_only_gate
 run "PowerShell drive-ref parse guard: install.ps1" powershell_drive_ref_gate
 run "Autoroute calibration optional on portable builds" autoroute_calibration_optional_gate
 

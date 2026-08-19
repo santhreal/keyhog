@@ -32,8 +32,6 @@ pub const EXIT_INTERRUPTED: u8 = 130;
 pub const EXIT_BACKEND_SELF_TEST_FAILED: u8 = EXIT_HEALTH_FAILURE;
 pub const EXIT_DETECTOR_AUDIT_FAILED: u8 = EXIT_SYSTEM_ERROR;
 pub const EXIT_DOCTOR_UNHEALTHY: u8 = EXIT_HEALTH_FAILURE;
-pub const EXIT_REPAIR_FAILED: u8 = EXIT_HEALTH_FAILURE;
-pub const EXIT_UPDATE_AVAILABLE: u8 = EXIT_LIVE_CREDENTIALS;
 pub const EXIT_CREDENTIALS_FOUND: u8 = EXIT_FINDINGS;
 
 pub const DEFINITIONS: &[ExitCodeDefinition] = &[
@@ -64,13 +62,13 @@ pub const DEFINITIONS: &[ExitCodeDefinition] = &[
     ExitCodeDefinition {
         code: EXIT_HEALTH_FAILURE,
         label: "Health/self-test failure",
-        help: "Health/self-test failure (doctor unhealthy / repair could not restore a working binary / backend --self-test failed)",
+        help: "Health/self-test failure (doctor unhealthy / backend --self-test failed)",
         scan_reachable: false,
     },
     ExitCodeDefinition {
         code: EXIT_LIVE_CREDENTIALS,
-        label: "Live credentials found or update available",
-        help: "Live credentials found under scan --verify, or update available under update --check",
+        label: "Live credentials found",
+        help: "Live credentials found under scan --verify",
         scan_reachable: true,
     },
     ExitCodeDefinition {

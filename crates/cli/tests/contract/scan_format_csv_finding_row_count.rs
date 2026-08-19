@@ -39,7 +39,7 @@ fn scan_format_csv_finding_row_count() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            crate::support::DIAGNOSTIC_BACKEND,
             "--format",
             "csv",
             "--no-suppress-test-fixtures",

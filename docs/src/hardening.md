@@ -22,8 +22,6 @@ operation that needs it.
 |---|---|
 | `scan --url`, `--github-org`, `--github-collaboration`, `--gitlab-group`, `--bitbucket-workspace`, `--s3-bucket`, `--gcs-bucket`, or `--azure-container-url` | Reads the remote source you named. |
 | `scan --verify` | Sends credential-derived requests for detectors that have a live verification plan. Out-of-band verification can also wait for callbacks. |
-| Legacy `update` and `repair` commands | Reads metadata and authenticated assets from an older GitHub binary release. |
-| Legacy `install.sh` and `install.ps1` scripts | Downloads an older binary release unless you use a local-file mode. |
 
 The detector corpus and detector-owned validators are local. Offline validators
 such as checksum or payload-shape checks do not contact the service.
@@ -87,15 +85,15 @@ Reports redact credentials by default. `--show-secrets` explicitly requests
 plaintext output and is rejected by lockdown. Treat any plaintext terminal,
 pipe, or report file as secret-bearing data.
 
-## Legacy binary replacement
+## Binary replacement
 
-Older GitHub binary releases remain compatible with `keyhog update`,
-`keyhog repair`, `install.sh`, and `install.ps1`. Those paths verify the
-release checksum and minisign signature before replacing an executable.
+KeyHog has no self-update path. There is no signed binary-asset release
+channel: automatic releases publish crates.io packages only, and no workflow
+builds, signs, or uploads release binaries.
 
-Automatic releases publish crates.io packages only. They do not produce the
-assets consumed by these legacy commands. Update a current Cargo installation
-with `cargo install --locked --force keyhog`; see [Install](./install.md).
+Update with `cargo install --locked --force keyhog`; see
+[Install](./install.md). `install.sh` and `install.ps1` install a bundle you
+already hold, with `--from-file`, and never fetch one.
 
 ## Related operator references
 

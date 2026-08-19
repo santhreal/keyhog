@@ -11,7 +11,7 @@ fn scan_format_json_valid_array() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            crate::support::DIAGNOSTIC_BACKEND,
             "--format",
             "json-envelope",
         ])

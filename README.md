@@ -121,8 +121,8 @@ The complete process contract is:
 | `1` blocking findings | At least one finding blocks the active evidence policy, but none were confirmed live. |
 | `2` operator error | Fix the arguments, configuration, detector corpus, or operator-correctable input. |
 | `3` system error | Repair or retry the runner. This includes low-level I/O, fatal daemon service, incremental-cache, and explicitly selected SIMD failures. |
-| `4` `backend --self-test` or maintenance failure | The requested installation, repair, backend, or autoroute health check was unhealthy. |
-| `10` live credentials | At least one credential was confirmed live. `update --check` also uses this code when a newer release exists. |
+| `4` health/self-test failure | A `doctor` or `backend --self-test` health check was unhealthy. |
+| `10` live credentials | At least one credential was confirmed live. |
 | `11` scanner panic | Discard the scan result because scanner state is not trustworthy. |
 | `12` required GPU failure | An explicitly selected or required GPU path could not execute. |
 | `13` incomplete coverage | A requested source failed or input coverage was incomplete, and no finding outcome took precedence. |
@@ -309,10 +309,10 @@ archives, URLs, GitHub collaboration content, and cloud sources.
 
 ### Speed and concurrency without guesswork
 
-Start with the defaults. The historical verified binary-asset installer runs
-calibration itself. Cargo cannot execute KeyHog after `cargo install`, so run
-the commands below once after installing a multi-backend Cargo build and again
-after the host, binary, detector corpus, driver, or workload classes change:
+Start with the defaults. Cargo cannot execute KeyHog after `cargo install`, so
+run the commands below once after installing a multi-backend Cargo build and
+again after the host, binary, detector corpus, driver, or workload classes
+change:
 
 ```sh
 keyhog calibrate-autoroute --policy all

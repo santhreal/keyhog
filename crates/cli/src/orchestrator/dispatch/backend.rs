@@ -207,7 +207,13 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
 // rejected on the version gate and recalibrated.
 // v56: authenticated ordered-device routes include adapter name and PCI
 // vendor/device identity. v55 routes lack those live-census bindings.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 57;
+// v58: the workload key drops the content-derived dimensions (phase-1
+// admission counts, phase-2 keyword trigger counts, decode candidate counts,
+// per-source chunk/payload ratios and span buckets). Those are measurements of
+// the scanned bytes, not properties of the workload class, so lookup, which is
+// exact-match, missed on every real scan and failed closed with exit 2. v57
+// keys carry them and cannot be compared against v58 keys.
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 58;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_ACCELERATOR_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -453,13 +459,7 @@ impl CachedBackendRouter {
             return Ok(selection);
         }
         let phase1_plan = scanner.phase1_admission_plan(batch);
-        let key = match workload_key(
-            batch,
-            self.pattern_count,
-            phase1_plan.summary(),
-            phase1_plan.phase2_keyword_triggers(),
-            self.decode_workload_plan.clone(),
-        ) {
+        let key = match workload_key(batch, self.pattern_count, self.decode_workload_plan.clone()) {
             Ok(key) => key,
             Err(error) => {
                 record_miss(AutorouteCacheMiss::WorkloadUnclassified);
@@ -484,14 +484,14 @@ impl CachedBackendRouter {
                 &fault,
             ));
         }
-        let route = match resolve_persisted_route(
+        let resolved = match resolve_persisted_route(
             &self.decisions,
             key.clone(),
             self.runtime_class,
             &self.cache_path,
             &self.cache_load_error,
         ) {
-            Ok(route) => route,
+            Ok(resolved) => resolved,
             Err(error) => {
                 record_bucket_miss(
                     lookup_miss_cause(
@@ -504,14 +504,16 @@ impl CachedBackendRouter {
                 return Err(error);
             }
         };
+        let route = resolved.route;
+        // For an exact hit this is the workload's own row; for a reused route
+        // it is the family member every measured sibling reproduced. A reused
+        // route is never a GPU route, so it names no ordered device set.
         #[cfg(feature = "gpu")]
-        let ordered_gpu = match self
-            .decisions
-            .get(&key)
-            .ok_or_else(|| "persisted autoroute decision disappeared".to_string())
-            .and_then(|decision| {
-                materialize_ordered_gpu_selection(&self.ordered_device_sets, decision, route)
-            }) {
+        let ordered_gpu = match materialize_ordered_gpu_selection(
+            &self.ordered_device_sets,
+            resolved.decision,
+            route,
+        ) {
             Ok(selection) => selection,
             Err(reason) => {
                 record_bucket_miss(AutorouteCacheMiss::PeerIdentityChanged, &key);
@@ -523,9 +525,9 @@ impl CachedBackendRouter {
             let identity_check = if ordered_gpu.is_some() {
                 Ok(())
             } else {
-                self.decisions
-                    .get(&key)
-                    .and_then(|decision| decision.peer_identity_for_route(route))
+                resolved
+                    .decision
+                    .peer_identity_for_route(route)
                     .ok_or_else(|| {
                         format!(
                             "persisted {} route has no single acquired GPU peer identity",
@@ -554,10 +556,9 @@ impl CachedBackendRouter {
             #[cfg(not(feature = "gpu"))]
             let identity_check: Result<(), String> =
                 Err("persisted GPU route cannot run without the CLI GPU feature".to_string());
-            let pipeline_check: Result<(), String> = self
-                .decisions
-                .get(&key)
-                .and_then(|decision| decision.gpu_pipeline_identity_for_route(route))
+            let pipeline_check: Result<(), String> = resolved
+                .decision
+                .gpu_pipeline_identity_for_route(route)
                 .ok_or_else(|| {
                     format!(
                         "persisted {} route has no complete pipeline depth/capability evidence",
@@ -625,7 +626,7 @@ impl CachedBackendRouter {
             )),
             execution_route: route.execution_route(),
             recovery_plan: automatic_recovery_plan(
-                self.decisions.get(&key),
+                Some(resolved.decision),
                 route.backend,
                 self.runtime_class,
             )?,
@@ -785,13 +786,7 @@ impl MeasuredBackendRouter {
             return Ok(selection);
         }
         let phase1_plan = scanner.phase1_admission_plan(batch);
-        let key = match workload_key(
-            batch,
-            self.pattern_count,
-            phase1_plan.summary(),
-            phase1_plan.phase2_keyword_triggers(),
-            self.decode_workload_plan.clone(),
-        ) {
+        let key = match workload_key(batch, self.pattern_count, self.decode_workload_plan.clone()) {
             Ok(key) => key,
 
             Err(error) => {
@@ -861,16 +856,16 @@ impl MeasuredBackendRouter {
         }
 
         if !self.calibration_mode {
-            // A miss is invalid autoroute state. Neighbouring evidence and
-            // scalar execution are not substitutes for the missing decision.
-            let route = match resolve_persisted_route(
+            // A miss is invalid autoroute state. Scalar execution is not a
+            // substitute for a decision no measurement authorizes.
+            let resolved = match resolve_persisted_route(
                 &self.decisions,
                 key.clone(),
                 AutorouteRuntimeClass::OneShot,
                 &self.cache_path,
                 &self.cache_load_error,
             ) {
-                Ok(route) => route,
+                Ok(resolved) => resolved,
                 Err(error) => {
                     record_bucket_miss(
                         lookup_miss_cause(
@@ -883,14 +878,11 @@ impl MeasuredBackendRouter {
                     return Err(error);
                 }
             };
+            let route = resolved.route;
             #[cfg(feature = "gpu")]
             let ordered_gpu = materialize_ordered_gpu_selection(
                 &self.ordered_device_sets,
-                self.decisions.get(&key).ok_or_else(|| {
-                    AutorouteRoutingError::calibration_not_persisted(
-                        "persisted autoroute decision disappeared",
-                    )
-                })?,
+                resolved.decision,
                 route,
             )
             .map_err(AutorouteRoutingError::calibration_not_persisted)?;
@@ -905,7 +897,7 @@ impl MeasuredBackendRouter {
                 )),
                 execution_route: route.execution_route(),
                 recovery_plan: automatic_recovery_plan(
-                    self.decisions.get(&key),
+                    Some(resolved.decision),
                     route.backend,
                     AutorouteRuntimeClass::OneShot,
                 )?,
