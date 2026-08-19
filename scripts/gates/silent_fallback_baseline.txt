@@ -19,7 +19,6 @@ crates/cli/src/daemon/server.rs::chunk.metadata.mtime_ns.unwrap_or(0),
 crates/cli/src/daemon/server.rs::chunk.metadata.size_bytes.unwrap_or(0),
 crates/cli/src/daemon/server.rs::if let Ok(home) = std::env::var("HOME") {
 crates/cli/src/daemon/server.rs::let _ = sender.blocking_send(MassFilesystemMessage::Complete {
-crates/cli/src/daemon/server.rs::let _ = state.guard.remove_root(canonical.as_bytes());
 crates/cli/src/daemon/server.rs::policy_identity: identity.clone().unwrap_or_else(|| {
 crates/cli/src/daemon/transport.rs::.unwrap_or_else(|| "keyhog.sock".to_string());
 crates/cli/src/orchestrator/dispatch.rs::.unwrap_or_else(|| Ok(Vec::new()))

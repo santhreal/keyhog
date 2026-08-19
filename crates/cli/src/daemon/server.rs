@@ -869,7 +869,7 @@ fn scrub_guard_roots(
 
                 if should_scrub {
                     let path_str = String::from_utf8_lossy(&record.canonical_path);
-                    let _ = state
+                    let _ = state // LAW10: best-effort transition to Stopped before ReconciliationStarted
                         .guard
                         .transition_root(&record.canonical_path, &GuardTransition::Stopped);
                     match state.guard.transition_root(
@@ -2716,7 +2716,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                             canonical,
                             e
                         );
-                        let _ = state.guard.remove_root(canonical.as_bytes());
+                        let _ = state.guard.remove_root(canonical.as_bytes()); // LAW10: cleanup root state on registration failure; fail-closed
                         return Response::Error {
                             message: format!(
                                 "daemon: guard add: watcher cannot observe {}: {}",
