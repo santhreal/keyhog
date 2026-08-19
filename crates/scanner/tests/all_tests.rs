@@ -367,6 +367,8 @@ pub mod regression_row_118_gpu_dispatch_concurrency_pool;
 pub mod regression_row_119_scanner_rayon_manifest;
 #[path = "regression_row_125_compile_surface_counters.rs"]
 pub mod regression_row_125_compile_surface_counters;
+#[path = "regression_row_160_single_file_concurrency.rs"]
+pub mod regression_row_160_single_file_concurrency;
 #[path = "regression_row_76_backend_finding_parity.rs"]
 pub mod regression_row_76_backend_finding_parity;
 #[path = "regression_row_77_decode_window_overlap_derived.rs"]

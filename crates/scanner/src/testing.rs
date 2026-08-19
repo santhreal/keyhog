@@ -3081,7 +3081,10 @@ pub fn csr_from_rows_roundtrip_for_test(rows: Vec<Vec<usize>>) -> Vec<Vec<u32>> 
         .map(|row| csr.get(row).expect("row in range").to_vec())
         .collect()
 }
-pub use crate::pipeline::compute_line_offsets;
+pub use crate::pipeline::{
+    compute_line_offsets, deduplicate_partition_matches, partition_chunk,
+    partition_chunk_for_workers, scan_chunk_partitioned,
+};
 pub fn generic_keyword_lines_from_positions(text: &str, positions: &[u32]) -> Vec<u32> {
     let index = crate::context::LineContextIndex::try_new(text)
         .expect("scanner test chunks must fit the checked u32 line-index boundary");

@@ -76,11 +76,10 @@ pub(crate) fn fused_depth_default(_worker_threads: usize) -> usize {
     0
 }
 
-/// Bound explicit CPU/SIMD batch waves independently of the Rayon pool width.
-/// A filesystem batch retains at most 1 MiB of payload, so four live scan
-/// batches cap the consumer wave at 4 MiB while preserving parallel routing.
+/// Parallel CPU/SIMD wave width for the fused consumer.
+/// Scales with the worker pool width up to the maximum thread cap.
 pub(crate) fn fused_cpu_wave_width(worker_threads: usize) -> usize {
-    worker_threads.clamp(1, 4)
+    worker_threads.clamp(1, MAX_THREADS_CAP)
 }
 
 pub(crate) fn parse_backend_override(
