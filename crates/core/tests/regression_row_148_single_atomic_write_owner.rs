@@ -83,10 +83,7 @@ fn write_atomically_creates_missing_parent_directories() {
     let payload = b"merkle-index-v4-content";
 
     write_atomically(&deeply_nested, payload).expect("must create parents");
-    assert_eq!(
-        std::fs::read(&deeply_nested).expect("read nested"),
-        payload
-    );
+    assert_eq!(std::fs::read(&deeply_nested).expect("read nested"), payload);
 }
 
 #[test]
@@ -126,13 +123,15 @@ fn write_atomically_with_writer_fails_closed_on_error() {
     // Attempt streaming write that fails halfway through
     let result = write_atomically_with_writer(&target, |tmp| {
         tmp.write_all(b"corrupted partial write...")?;
-        Err(std::io::Error::new(
-            ErrorKind::Other,
+        Err(std::io::Error::other(
             "simulated unexpected I/O failure during serialization",
         ))
     });
 
-    assert!(result.is_err(), "write must fail when closure returns error");
+    assert!(
+        result.is_err(),
+        "write must fail when closure returns error"
+    );
 
     // Original target must remain completely unmodified
     assert_eq!(

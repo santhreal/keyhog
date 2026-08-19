@@ -2,6 +2,7 @@
 
 
 ## 0.5.80 - 2026-08-17
+- refactor(scanner): route matcher artifact storage through keyhog_core::state_file atomic durable write (Row 148).
 - feat(scanner): instrument compile surface invocations and prepared artifact loads across 13 compile entrypoints (Row 125).
 - feat(parallelism): unify scanner execution width with keyhog_profile host parallelism (Row 110/137).
 - refactor(scanner): move rayon to dev-dependencies and replace internal usages with standard iterators (Row 119).
