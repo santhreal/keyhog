@@ -6,6 +6,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Added
 - feat(detectors): audit and expand checksum and structured offline validators (`Jwt`, `Uuid`, `HexHash`, `LuhnChecksum`, `PatternShape`, `Base62Crc32`) across detector corpus to eliminate false positives without false negatives (Row 152).
 - feat(guard): populate GuardPolicyIdentity digests for ignore file, suppressions, configuration, and source policy, triggering state transition to StalePolicy and attestation invalidation on policy file modifications (Row 142).
+- feat(hook): utilize prepared execution pack in pre-commit hook run for zero runtime compilations and sub-second execution (Row 145).
 
 - bench(product): add product-level criterion benchmarks for CLI startup, hook execution, guard status, core evaluation, and verifier evaluation (Row 147).
 - feat(guard): continuous guard transition feed and event log surface with causal attribution across registered roots (Row 146).

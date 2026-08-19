@@ -156,6 +156,13 @@ impl InstalledArtifactClass {
             Self::AutorouteCalibration => true,
         }
     }
+
+    pub const fn is_consumed_by_hook(self) -> bool {
+        match self {
+            Self::Manifest | Self::VerificationKey | Self::ExecutionPack | Self::Signature => true,
+            Self::GpuLiteralArtifact | Self::AutorouteCalibration => false,
+        }
+    }
 }
 
 /// Unified registry connecting artifact production, update regeneration, and scan loading.
@@ -183,6 +190,15 @@ impl InstalledArtifactRegistry {
             .iter()
             .copied()
             .filter(|class| class.is_consumed_by_scan())
+            .collect()
+    }
+
+    /// Return the set of all artifact classes consumed by the pre-commit hook path.
+    pub fn hook_consumed_classes() -> BTreeSet<InstalledArtifactClass> {
+        InstalledArtifactClass::ALL
+            .iter()
+            .copied()
+            .filter(|class| class.is_consumed_by_hook())
             .collect()
     }
 

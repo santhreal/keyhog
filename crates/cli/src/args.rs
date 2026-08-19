@@ -370,6 +370,16 @@ fn mark_cli_value_sources(cli: &mut Cli, matches: &clap::ArgMatches) {
                     start_matches.value_source("detectors") == Some(ValueSource::CommandLine);
             }
         }
+        (
+            Some(Command::Hook {
+                command: HookCommand::Run(args),
+            }),
+            Some(("hook", hook_matches)),
+        ) => {
+            if let Some(("run", run_matches)) = hook_matches.subcommand() {
+                args.mark_cli_value_sources(run_matches);
+            }
+        }
         _ => {}
     }
 }
