@@ -786,31 +786,6 @@ impl CompiledScanner {
     /// production scanning uses. Decode work is intentionally separate and is
     /// represented by the scanner's decode workload plan.
     pub fn phase1_admission_summary(&self, chunks: &[Chunk]) -> Phase1AdmissionSummary {
-        // Fused batches otherwise serialize the exact admission probes on one
-        // thread immediately before the production Rayon scan. Keep tiny
-        // batches allocation-free, but fold larger batches in parallel so
-        // route selection does not become a serial pre-scan bottleneck.
-        if chunks.len() >= 4
-            && chunks.iter().map(|chunk| chunk.data.len()).sum::<usize>() >= 64 * 1024
-        {
-            use rayon::prelude::*;
-
-            return chunks
-                .par_iter()
-                .map(|chunk| {
-                    let mut summary = Phase1AdmissionSummary::default();
-                    summary.record(
-                        self.phase1_admission(chunk.data.as_bytes()),
-                        chunk.data.len() as u64,
-                    );
-                    summary
-                })
-                .reduce(
-                    Phase1AdmissionSummary::default,
-                    Phase1AdmissionSummary::merge,
-                );
-        }
-
         let mut summary = Phase1AdmissionSummary::default();
         for chunk in chunks {
             summary.record(
@@ -1314,45 +1289,21 @@ impl CompiledScanner {
             }
         }
 
-        let representative_bytes = representatives
+        let classified = representatives
             .iter()
-            .map(|(_, index)| chunks[*index].data.len())
-            .sum::<usize>();
-        let classified = if representatives.len() >= 4 && representative_bytes >= 64 * 1024 {
-            use rayon::prelude::*;
-
-            representatives
-                .par_iter()
-                .enumerate()
-                .map(|(position, (fingerprint, index))| {
-                    self.classify_phase1_payload(
-                        &chunks[*index],
-                        *fingerprint,
-                        bypass_bigram,
-                        representative_counts[position] > 1,
-                        collect_cpu_trigger_hints,
-                        entropy_config_digest,
-                        representative_decoder_contexts[position],
-                    )
-                })
-                .collect::<Vec<_>>()
-        } else {
-            representatives
-                .iter()
-                .enumerate()
-                .map(|(position, (fingerprint, index))| {
-                    self.classify_phase1_payload(
-                        &chunks[*index],
-                        *fingerprint,
-                        bypass_bigram,
-                        representative_counts[position] > 1,
-                        collect_cpu_trigger_hints,
-                        entropy_config_digest,
-                        representative_decoder_contexts[position],
-                    )
-                })
-                .collect::<Vec<_>>()
-        };
+            .enumerate()
+            .map(|(position, (fingerprint, index))| {
+                self.classify_phase1_payload(
+                    &chunks[*index],
+                    *fingerprint,
+                    bypass_bigram,
+                    representative_counts[position] > 1,
+                    collect_cpu_trigger_hints,
+                    entropy_config_digest,
+                    representative_decoder_contexts[position],
+                )
+            })
+            .collect::<Vec<_>>();
 
         let mut summary = Phase1AdmissionSummary::default();
         let mut phase2_keyword_triggers = Phase2KeywordTriggerSummary::default();
