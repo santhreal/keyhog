@@ -213,14 +213,12 @@ fn row_132_unauthoritative_root_scrub_triggers_reconciliation_from_current() {
         .expect("clean");
     assert_eq!(rt.root_state(&root_path), Some(GuardRootState::Current));
 
-    // When scrub triggers, the root transitions Stopped then ReconciliationStarted into Indexing
-    rt.transition_root(&root_path, &GuardTransition::Stopped)
-        .expect("scrub stop");
-    rt.transition_root(&root_path, &GuardTransition::ReconciliationStarted)
-        .expect("scrub reconcile start");
-    assert_eq!(rt.root_state(&root_path), Some(GuardRootState::Indexing));
-    // And finishes clean
-    rt.transition_root(&root_path, &GuardTransition::ReconciliationClean)
-        .expect("scrub reconcile clean");
+    // When scrub triggers, the root transitions via EventAccepted into Dirty
+    rt.transition_root(&root_path, &GuardTransition::EventAccepted)
+        .expect("scrub dirty");
+    assert_eq!(rt.root_state(&root_path), Some(GuardRootState::Dirty));
+    // And finishes clean after event scan
+    rt.transition_root(&root_path, &GuardTransition::EventsClean)
+        .expect("scrub events clean");
     assert_eq!(rt.root_state(&root_path), Some(GuardRootState::Current));
 }

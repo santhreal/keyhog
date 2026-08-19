@@ -851,6 +851,9 @@ fn scrub_guard_roots(
 
     let mut scrubbed = 0;
     let now = std::time::Instant::now();
+    let current_root_paths: std::collections::HashSet<_> =
+        roots.iter().map(|r| r.canonical_path.clone()).collect();
+    last_scrub_times.retain(|k, _| current_root_paths.contains(k));
     for record in roots {
         if record.state == GuardRootState::Current {
             let interval = if let Some(configured) = state.guard_scrub_interval {
@@ -1400,6 +1403,7 @@ pub(crate) fn is_transient_accept_error(e: &std::io::Error) -> bool {
     false
 }
 
+#[allow(dead_code)]
 enum MassFilesystemMessage {
     Batch(Vec<Chunk>),
     Complete {

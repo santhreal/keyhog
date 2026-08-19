@@ -148,7 +148,8 @@ fn find_mount_fs_type(mounts: &str, target_path: &Path) -> Option<String> {
     for line in mounts.lines() {
         let fields: Vec<&str> = line.split_whitespace().collect();
         if fields.len() >= 3 {
-            let mount_point = Path::new(fields[1]);
+            let decoded_mount_point = decode_mount_path(fields[1]);
+            let mount_point = Path::new(&decoded_mount_point);
             let fs_type = fields[2];
             if canonical.starts_with(mount_point) {
                 let len = mount_point.as_os_str().len();
@@ -163,6 +164,37 @@ fn find_mount_fs_type(mounts: &str, target_path: &Path) -> Option<String> {
     }
 
     best_match.map(|(_, fs_type)| fs_type)
+}
+
+#[cfg(target_os = "linux")]
+fn decode_mount_path(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            let mut octal = String::new();
+            for _ in 0..3 {
+                if let Some(&next_c) = chars.peek() {
+                    if ('0'..='7').contains(&next_c) {
+                        octal.push(chars.next().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+            }
+            if octal.len() == 3 {
+                if let Ok(byte) = u8::from_str_radix(&octal, 8) {
+                    out.push(byte as char);
+                    continue;
+                }
+            }
+            out.push('\\');
+            out.push_str(&octal);
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 #[cfg(target_os = "linux")]
