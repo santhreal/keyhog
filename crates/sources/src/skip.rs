@@ -559,11 +559,10 @@ pub(crate) fn subtract_excluded(delta: usize) {
         return;
     }
     let t = current_source_telemetry();
-    t.counters[2]
-        .fetch_update(Relaxed, Relaxed, |current| {
-            Some(current.saturating_sub(delta))
-        })
-        .expect("unconditional Some is infallible");
+    // LAW10: unused-binding marker; the closure always returns Some so this cannot fail.
+    let _ = t.counters[2].fetch_update(Relaxed, Relaxed, |current| {
+        Some(current.saturating_sub(delta))
+    });
 }
 
 pub(crate) fn store_skip_counts(counts: SkipCounts) {
