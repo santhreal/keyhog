@@ -475,6 +475,9 @@ pub struct RunProfile {
     /// Memory, IO, and system evidence; absent in profiles before version 3.
     #[serde(default = "legacy_system_gap")]
     pub system: crate::Evidence<crate::system::SystemRunEvidenceV2>,
+    /// Compile surface invocations and loads across all 13 compiler surfaces.
+    #[serde(default)]
+    pub compile_surfaces: Vec<crate::schema_v2::CompileSurfaceRecordV2>,
 }
 
 fn legacy_system_gap() -> crate::Evidence<crate::system::SystemRunEvidenceV2> {

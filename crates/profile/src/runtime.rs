@@ -398,6 +398,7 @@ pub(crate) struct RawStageCounters {
 static ACTIVE_CONTEXTS: AtomicUsize = AtomicUsize::new(0);
 static NEXT_THREAD_ID: AtomicU64 = AtomicU64::new(1);
 static NEXT_CONTEXT_ID: AtomicU64 = AtomicU64::new(1);
+static PROCESS_ACTIVE_COMPILE_PHASE: AtomicU8 = AtomicU8::new(crate::CompilePhase::Scan as u8);
 
 struct RuntimeInner {
     context_id: u64,
@@ -506,7 +507,9 @@ impl RuntimeInner {
             distribution_buckets: zero_distribution_buckets(),
             distribution_min: zero_distribution_mins(),
             distribution_max: zero_distribution_maxes(),
-            active_compile_phase: AtomicU8::new(crate::CompilePhase::Scan as u8),
+            active_compile_phase: AtomicU8::new(
+                PROCESS_ACTIVE_COMPILE_PHASE.load(Ordering::Relaxed),
+            ),
             legacy_compile_surface_invocations: zero_compile_surface_invocations(),
             legacy_compile_surface_loads: zero_compile_surface_loads(),
         }
@@ -2784,6 +2787,7 @@ pub fn record_cache_miss(cache: crate::CacheId) {
 /// Set the current compile phase (Install, Update, Scan, Developer) on the active runtime.
 #[inline]
 pub fn set_compile_phase(phase: crate::CompilePhase) {
+    PROCESS_ACTIVE_COMPILE_PHASE.store(phase as u8, Ordering::Relaxed);
     if let Some(runtime) = current_runtime() {
         runtime.set_compile_phase(phase);
     }
@@ -2795,7 +2799,13 @@ pub fn active_compile_phase() -> crate::CompilePhase {
     if let Some(runtime) = current_runtime() {
         runtime.active_compile_phase()
     } else {
-        crate::CompilePhase::Scan
+        match PROCESS_ACTIVE_COMPILE_PHASE.load(Ordering::Relaxed) {
+            0 => crate::CompilePhase::Install,
+            1 => crate::CompilePhase::Update,
+            2 => crate::CompilePhase::Scan,
+            3 => crate::CompilePhase::Developer,
+            _ => crate::CompilePhase::Scan,
+        }
     }
 }
 

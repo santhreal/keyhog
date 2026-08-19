@@ -821,6 +821,7 @@ impl CausalProfileV2 {
             resources,
             hardware,
             system,
+            compile_surfaces,
             ..
         } = profile;
         let selected_backend = identity
@@ -944,7 +945,11 @@ impl CausalProfileV2 {
             caches: Vec::new(),
             indexed_counters: Vec::new(),
             retries: Vec::new(),
-            compile_surfaces: crate::compile_surface_reports(),
+            compile_surfaces: if compile_surfaces.is_empty() {
+                crate::compile_surface_reports()
+            } else {
+                compile_surfaces
+            },
             insight: None,
             observer_effect,
             events: EventStreamV2 {

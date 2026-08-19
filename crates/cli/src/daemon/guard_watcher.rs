@@ -180,6 +180,8 @@ pub struct GuardWatcher {
     disabled: bool,
     /// Named reason why the watcher disconnected, if disconnection occurred.
     disconnection_reason: parking_lot::Mutex<Option<String>>,
+    /// Retained sender to prevent premature channel disconnection in null/disabled modes.
+    _hold_tx: Option<mpsc::Sender<notify::Result<notify::Event>>>,
 }
 
 impl GuardWatcher {
@@ -201,6 +203,7 @@ impl GuardWatcher {
             config,
             disabled: false,
             disconnection_reason: parking_lot::Mutex::new(None),
+            _hold_tx: None,
         })
     }
 
@@ -227,11 +230,12 @@ impl GuardWatcher {
             config,
             disabled: false,
             disconnection_reason: parking_lot::Mutex::new(None),
+            _hold_tx: None,
         })
     }
 
     pub fn new_null(config: GuardReconciliationConfig) -> Result<Self, String> {
-        let (_tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+        let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
         let watcher = notify::NullWatcher;
         Ok(Self {
             watcher: Some(ActiveWatcherHandle::Null(watcher)),
@@ -242,6 +246,7 @@ impl GuardWatcher {
             config,
             disabled: false,
             disconnection_reason: parking_lot::Mutex::new(None),
+            _hold_tx: Some(tx),
         })
     }
 
@@ -249,7 +254,7 @@ impl GuardWatcher {
     /// still works via commit transactions; it just loses advisory
     /// filesystem events.
     pub fn new_disabled() -> Self {
-        let (_tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+        let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
         Self {
             watcher: None,
             backend_kind: GuardWatcherBackendKind::Disabled,
@@ -259,6 +264,7 @@ impl GuardWatcher {
             config: GuardReconciliationConfig::default(),
             disabled: true,
             disconnection_reason: parking_lot::Mutex::new(None),
+            _hold_tx: Some(tx),
         }
     }
 
@@ -277,6 +283,7 @@ impl GuardWatcher {
             config,
             disabled: false,
             disconnection_reason: parking_lot::Mutex::new(None),
+            _hold_tx: None,
         }
     }
     /// Create a guard watcher connected to a custom event channel.
@@ -295,6 +302,7 @@ impl GuardWatcher {
                 config,
                 disabled: false,
                 disconnection_reason: parking_lot::Mutex::new(None),
+                _hold_tx: None,
             },
             tx,
         )

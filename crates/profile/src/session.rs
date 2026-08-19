@@ -148,6 +148,7 @@ impl Session {
                 finish_ms.saturating_sub(start_ms),
             );
         }
+        let compile_surfaces = self.runtime.compile_surface_reports();
         self.context.take();
         let (input_bytes, input_units) = self.runtime.take_session_input_totals();
         let (derived_decoder_bytes, backend_dispatched_bytes) =
@@ -200,6 +201,7 @@ impl Session {
             resources,
             hardware,
             system,
+            compile_surfaces,
         };
         self.finished = true;
         profile
