@@ -46,6 +46,7 @@ const REAL_SUBCOMMANDS: &[&str] = &[
     "detectors",
     "explain",
     "diff",
+    "triage",
     "calibrate",
     "calibrate-autoroute",
     "watch",
@@ -58,6 +59,7 @@ const REAL_SUBCOMMANDS: &[&str] = &[
     "uninstall",
     "scan-system",
     "daemon",
+    "guard",
 ];
 
 /// Extract the first token of every entry line inside the `Commands:` block of a

@@ -134,13 +134,13 @@ fn is_regex_meta(c: char) -> bool {
 
 impl RuleSuppressor {
     /// Build an empty suppressor that matches no findings.
-    pub(crate) fn empty() -> Self {
+    pub fn empty() -> Self {
         Self::default()
     }
 
     /// Load from a TOML path. Returns `Ok(empty())` when the file
     /// is missing so callers do not need to gate on existence.
-    pub(crate) fn load(path: &Path) -> Result<Self, RuleSuppressorError> {
+    pub fn load(path: &Path) -> Result<Self, RuleSuppressorError> {
         if !path.exists() {
             return Ok(Self::empty());
         }
@@ -157,7 +157,7 @@ impl RuleSuppressor {
     }
 
     /// Parse a TOML string.
-    pub(crate) fn parse(toml_text: &str) -> Result<Self, RuleSuppressorError> {
+    pub fn parse(toml_text: &str) -> Result<Self, RuleSuppressorError> {
         #[derive(Deserialize)]
         struct Doc {
             #[serde(default)]

@@ -43,6 +43,7 @@ fn request_timeout(request: &Request) -> Duration {
         | Request::GuardAdd { .. }
         | Request::GuardRemove { .. }
         | Request::GuardStatus { .. }
+        | Request::GuardFeed { .. }
         | Request::GuardList => DAEMON_HEALTH_TIMEOUT,
         Request::Shutdown => DAEMON_SHUTDOWN_TIMEOUT,
         Request::ScanText { .. } => DAEMON_SCAN_TEXT_TIMEOUT,
