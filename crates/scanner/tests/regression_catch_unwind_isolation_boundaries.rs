@@ -8,8 +8,8 @@
 #[test]
 fn catch_unwind_sites_are_classified_and_profile_release_unwinds() {
     // 1. Check Cargo.toml release profile
-    let cargo_toml = std::fs::read_to_string("../../Cargo.toml")
-        .or_else(|_| std::fs::read_to_string("Cargo.toml"))
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cargo_toml = std::fs::read_to_string(manifest_dir.join("../../Cargo.toml"))
         .expect("Cargo.toml readable");
 
     let release_section = cargo_toml
@@ -24,19 +24,19 @@ fn catch_unwind_sites_are_classified_and_profile_release_unwinds() {
     );
 
     // 2. Discover all catch_unwind sites in crates/scanner/src
-    let src_dir = std::path::Path::new("src");
+    let src_dir = manifest_dir.join("src");
     let mut sites = Vec::new();
-    fn walk_src(dir: &std::path::Path, sites: &mut Vec<String>) {
+    fn walk_src(dir: &std::path::Path, manifest_dir: &std::path::Path, sites: &mut Vec<String>) {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    walk_src(&path, sites);
+                    walk_src(&path, manifest_dir, sites);
                 } else if path.extension().is_some_and(|ext| ext == "rs") {
                     if let Ok(content) = std::fs::read_to_string(&path) {
                         for (idx, line) in content.lines().enumerate() {
                             if line.contains("catch_unwind(") {
-                                let relative = path.to_string_lossy().replace('\\', "/");
+                                let relative = path.strip_prefix(manifest_dir).unwrap_or(&path).to_string_lossy().replace('\\', "/");
                                 sites.push(format!("{}:{}", relative, idx + 1));
                             }
                         }
@@ -45,7 +45,7 @@ fn catch_unwind_sites_are_classified_and_profile_release_unwinds() {
             }
         }
     }
-    walk_src(src_dir, &mut sites);
+    walk_src(&src_dir, manifest_dir, &mut sites);
     sites.sort();
 
     // 3. Known classifications

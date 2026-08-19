@@ -54,17 +54,6 @@ pub(crate) enum RegionPresenceBatchMode {
     Windowed,
 }
 
-impl RegionPresenceBatchMode {
-    pub(super) fn label(self) -> &'static str {
-        match self {
-            Self::BorrowedSingleChunk => "borrowed-single-chunk",
-            Self::RawScratch => "raw-scratch",
-            Self::ShardedScratch => "sharded-scratch",
-            Self::Windowed => "windowed",
-        }
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct RegionPresenceShard {
     pub(super) chunks: Range<usize>,
