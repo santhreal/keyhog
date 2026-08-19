@@ -2,9 +2,8 @@
 
 use keyhog_core::Chunk;
 use keyhog_scanner::decode::{DecodeAdmissionSketch, DecodeWorkloadPlan};
-use keyhog_scanner::{Phase1AdmissionSummary, Phase2KeywordTriggerSummary};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::LazyLock;
 
@@ -91,6 +90,16 @@ pub(crate) struct SourceRouteClass {
 // `Ord` gives the multi-config cache a deterministic on-disk decision order
 // (decisions are collected through a `BTreeMap<WorkloadKey, _>` on save), so a
 // recalibration that re-measures the same buckets produces a byte-stable file.
+//
+// EVERY dimension here must be one calibration can enumerate ahead of time.
+// The key used to also carry phase-1 admission counts, phase-2 keyword trigger
+// counts, decode candidate counts, and per-source chunk/payload ratios. Those
+// are measurements OF the bytes being scanned, not properties of the workload
+// class, so a real scan produced a bucket the probe ladder had never generated
+// and lookup, which is exact-match, failed closed with exit 2. Adding one file
+// to a directory moved several of them at once. They stay in the recorded
+// evidence of each measured point, where they describe what was measured; they
+// do not decide which measurement applies.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct WorkloadKey {
@@ -98,12 +107,16 @@ pub(super) struct WorkloadKey {
     pub(super) chunks_bucket: u8,
     pub(super) max_file_bucket: u8,
     pub(super) pattern_bucket: u8,
-    pub(super) phase1: Phase1AdmissionKey,
-    pub(super) phase2_keyword_triggers: Phase2KeywordTriggerKey,
-    pub(super) decode_kind_mask: u32,
-    pub(super) decode_candidate_count_bucket: u8,
-    pub(super) decode_candidate_bytes_bucket: u8,
-    pub(super) decode_unknown: bool,
+    /// Whether this workload does any decoder work at all.
+    ///
+    /// This was a 14-bit mask of exactly which decoder families the sampled
+    /// bytes contained, plus an unknown-decoder flag. A 117-byte `.env` file
+    /// produced mask `0x00000401`; the probe ladder generates its own text and
+    /// produces mask `0`, so the two never met and the scan failed closed. The
+    /// ladder can enumerate two states, decode work or none, and it already
+    /// measures both through its `decode_heavy` probes. It cannot enumerate
+    /// 16384 combinations of what a caller's files happen to contain.
+    pub(super) decode_admitted: bool,
     pub(super) source_mixture: SourceMixtureKey,
 }
 
@@ -139,23 +152,8 @@ pub(super) fn differing_workload_dimensions(
     if requested.pattern_bucket != calibrated.pattern_bucket {
         dimensions.push("pattern_bucket");
     }
-    if requested.phase1 != calibrated.phase1 {
-        dimensions.push("phase1_admission");
-    }
-    if requested.phase2_keyword_triggers != calibrated.phase2_keyword_triggers {
-        dimensions.push("phase2_keyword_triggers");
-    }
-    if requested.decode_kind_mask != calibrated.decode_kind_mask {
-        dimensions.push("decode_kind");
-    }
-    if requested.decode_candidate_count_bucket != calibrated.decode_candidate_count_bucket {
-        dimensions.push("decode_candidate_count");
-    }
-    if requested.decode_candidate_bytes_bucket != calibrated.decode_candidate_bytes_bucket {
-        dimensions.push("decode_candidate_bytes");
-    }
-    if requested.decode_unknown != calibrated.decode_unknown {
-        dimensions.push("decode_unknown");
+    if requested.decode_admitted != calibrated.decode_admitted {
+        dimensions.push("decode_admitted");
     }
     if requested.source_mixture != calibrated.source_mixture {
         dimensions.push("source_mixture");
@@ -174,55 +172,6 @@ pub(super) struct SourceMixtureKey {
 pub(super) struct SourceMixtureEntry {
     pub(super) source_class_digest: [u8; 32],
     pub(super) has_full_size: bool,
-    pub(super) chunk_ratio: u64,
-    pub(super) payload_ratio: u64,
-    pub(super) max_span_bucket: u8,
-}
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Phase2KeywordTriggerKey {
-    pub(super) chunks_bucket: u8,
-    pub(super) bytes_bucket: u8,
-    pub(super) count_bucket: u8,
-}
-
-impl Phase2KeywordTriggerKey {
-    fn from_summary(summary: Phase2KeywordTriggerSummary) -> Self {
-        Self {
-            chunks_bucket: autoroute_stable_bucket(summary.keyword_trigger_chunks),
-            bytes_bucket: autoroute_stable_bucket(summary.keyword_trigger_bytes),
-            count_bucket: autoroute_stable_bucket(summary.keyword_trigger_count),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Phase1AdmissionKey {
-    pub(super) alphabet_rejected_chunks_bucket: u8,
-    pub(super) alphabet_rejected_bytes_bucket: u8,
-    pub(super) bigram_rejected_chunks_bucket: u8,
-    pub(super) bigram_rejected_bytes_bucket: u8,
-    pub(super) admitted_chunks_bucket: u8,
-    pub(super) admitted_bytes_bucket: u8,
-}
-
-impl Phase1AdmissionKey {
-    fn from_summary(summary: Phase1AdmissionSummary) -> Self {
-        Self {
-            alphabet_rejected_chunks_bucket: autoroute_stable_bucket(
-                summary.alphabet_rejected_chunks,
-            ),
-            alphabet_rejected_bytes_bucket: autoroute_stable_bucket(
-                summary.alphabet_rejected_bytes,
-            ),
-            bigram_rejected_chunks_bucket: autoroute_stable_bucket(summary.bigram_rejected_chunks),
-            bigram_rejected_bytes_bucket: autoroute_stable_bucket(summary.bigram_rejected_bytes),
-            admitted_chunks_bucket: autoroute_stable_bucket(summary.admitted_chunks),
-            admitted_bytes_bucket: autoroute_stable_bucket(summary.admitted_bytes),
-        }
-    }
 }
 
 /// Render a bucket identically in fail-closed routing errors and cache
@@ -239,45 +188,25 @@ pub(super) fn render_workload_key(key: &WorkloadKey) -> String {
                 |class| format!("{class}@{digest}"),
             );
             format!(
-                "{}/{}/chunk_ratio={}/payload_ratio={}/max_span_log2={}",
+                "{}/{}",
                 source_class,
                 if entry.has_full_size {
                     "full"
                 } else {
                     "payload"
-                },
-                entry.chunk_ratio,
-                entry.payload_ratio,
-                entry.max_span_bucket
+                }
             )
         })
         .collect::<Vec<_>>()
         .join(",");
     format!(
         "bytes_log2={} chunks_log2={} max_file_log2={} patterns_log2={} \
-         phase1_alphabet_rejected_chunks_log2={} phase1_alphabet_rejected_bytes_log2={} \
-         phase1_bigram_rejected_chunks_log2={} phase1_bigram_rejected_bytes_log2={} \
-         phase1_admitted_chunks_log2={} phase1_admitted_bytes_log2={} \
-         phase2_keyword_trigger_chunks_log2={} phase2_keyword_trigger_bytes_log2={} \
-         phase2_keyword_trigger_count_log2={} decode_kinds={:08x} \
-         decode_candidates_log2={} decode_bytes_log2={} decode_unknown={} source_mixture=[{}]",
+         decode_admitted={} source_mixture=[{}]",
         key.bytes_bucket,
         key.chunks_bucket,
         key.max_file_bucket,
         key.pattern_bucket,
-        key.phase1.alphabet_rejected_chunks_bucket,
-        key.phase1.alphabet_rejected_bytes_bucket,
-        key.phase1.bigram_rejected_chunks_bucket,
-        key.phase1.bigram_rejected_bytes_bucket,
-        key.phase1.admitted_chunks_bucket,
-        key.phase1.admitted_bytes_bucket,
-        key.phase2_keyword_triggers.chunks_bucket,
-        key.phase2_keyword_triggers.bytes_bucket,
-        key.phase2_keyword_triggers.count_bucket,
-        key.decode_kind_mask,
-        key.decode_candidate_count_bucket,
-        key.decode_candidate_bytes_bucket,
-        key.decode_unknown,
+        key.decode_admitted,
         source_mixture
     )
 }
@@ -292,9 +221,7 @@ pub(super) enum WorkloadClassificationError {
         entries: usize,
     },
     EmptySourceMixture,
-    EmptySourcePayload,
     SourceClassIdentityCollision,
-    SourceMixtureAccountingOverflow,
 }
 
 impl WorkloadClassificationError {
@@ -331,17 +258,9 @@ impl fmt::Display for WorkloadClassificationError {
                 f,
                 "autoroute source mixture is empty; route a non-empty batch or choose an explicit backend for diagnostics"
             ),
-            Self::EmptySourcePayload => write!(
-                f,
-                "autoroute source mixture contains no payload bytes; route a non-empty payload or choose an explicit backend for diagnostics"
-            ),
             Self::SourceClassIdentityCollision => write!(
                 f,
                 "autoroute source-class identities collided after hashing; no routing decision can be trusted for this batch"
-            ),
-            Self::SourceMixtureAccountingOverflow => write!(
-                f,
-                "autoroute source-mixture accounting exceeds the supported u64 range; lower --fused-batch and recalibrate"
             ),
         }
     }
@@ -352,8 +271,6 @@ impl std::error::Error for WorkloadClassificationError {}
 pub(super) fn workload_key(
     batch: &[Chunk],
     pattern_count: usize,
-    phase1_admission: Phase1AdmissionSummary,
-    phase2_keyword_triggers: Phase2KeywordTriggerSummary,
     decode_plan: DecodeWorkloadPlan,
 ) -> Result<WorkloadKey, WorkloadClassificationError> {
     let bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
@@ -363,42 +280,25 @@ pub(super) fn workload_key(
         .max()
         .unwrap_or(0); // LAW10: empty/absent => documented numeric default, recall-safe
     let decode = decode_workload_sketch(batch, decode_plan);
-    let (
-        decode_kind_mask,
-        decode_candidate_count_bucket,
-        decode_candidate_bytes_bucket,
-        decode_unknown,
-    ) = decode_workload_projection(decode);
+    let decode_admitted = decode_workload_projection(decode);
     Ok(WorkloadKey {
         bytes_bucket: autoroute_stable_bucket(bytes),
         chunks_bucket: autoroute_stable_bucket(batch.len() as u64),
         max_file_bucket: autoroute_stable_bucket(max_file),
         pattern_bucket: log2_bucket(pattern_count as u64),
-        phase1: Phase1AdmissionKey::from_summary(phase1_admission),
-        phase2_keyword_triggers: Phase2KeywordTriggerKey::from_summary(phase2_keyword_triggers),
-        decode_kind_mask,
-        decode_candidate_count_bucket,
-        decode_candidate_bytes_bucket,
-        decode_unknown,
+        decode_admitted,
         source_mixture: source_mixture_key(batch)?,
     })
 }
 
-pub(super) fn decode_workload_projection(sketch: DecodeAdmissionSketch) -> (u32, u8, u8, bool) {
-    (
-        sketch.kind_mask(),
-        autoroute_stable_decode_bucket(log2_bucket(u64::from(sketch.candidate_count()))),
-        autoroute_stable_decode_bucket(log2_bucket(u64::from(sketch.candidate_bytes()))),
-        sketch.has_unknown(),
-    )
+/// Does this batch do any decoder work? An unknown decoder kind still counts
+/// as work, so it folds into the same flag rather than forming a third state.
+pub(super) fn decode_workload_projection(sketch: DecodeAdmissionSketch) -> bool {
+    sketch.kind_mask() != 0 || sketch.has_unknown()
 }
 
 pub(super) fn autoroute_stable_bucket(value: u64) -> u8 {
     log2_bucket(value)
-}
-
-pub(super) fn autoroute_stable_decode_bucket(raw_bucket: u8) -> u8 {
-    raw_bucket.saturating_add(1) / 2
 }
 
 #[derive(Clone, Copy)]
@@ -554,54 +454,22 @@ pub(super) fn source_mixture_key(
     // max-size bucket was derived from a stream or transformed payload. Bind
     // that provenance to each source class so numerically equal buckets do
     // not reuse measurements made for a different kind of workload evidence.
-    let mut classes: BTreeMap<(String, bool), (u64, u64, u64)> = BTreeMap::new();
+    let mut classes: BTreeSet<(String, bool)> = BTreeSet::new();
     for chunk in batch {
         let source_class = source_execution_class(chunk)?.to_string();
-        let has_full_size = chunk.metadata.size_bytes.is_some();
-        let payload_bytes = chunk.data.len() as u64;
-        let span = chunk.metadata.size_bytes.unwrap_or(payload_bytes); // LAW10: absent backing size means the payload is the exact transformed or streamed span
-        let entry = classes.entry((source_class, has_full_size)).or_default();
-        entry.0 = entry
-            .0
-            .checked_add(1)
-            .ok_or(WorkloadClassificationError::SourceMixtureAccountingOverflow)?;
-        entry.1 = entry
-            .1
-            .checked_add(payload_bytes)
-            .ok_or(WorkloadClassificationError::SourceMixtureAccountingOverflow)?;
-        entry.2 = entry.2.max(span);
+        classes.insert((source_class, chunk.metadata.size_bytes.is_some()));
         if classes.len() > MAX_SOURCE_MIXTURE_ENTRIES {
             return Err(WorkloadClassificationError::TooManySourceMixtureEntries {
                 entries: classes.len(),
             });
         }
     }
-    let Some(chunk_divisor) = classes
-        .values()
-        .map(|(chunks, _, _)| *chunks)
-        .reduce(greatest_common_divisor)
-    else {
-        return Err(WorkloadClassificationError::EmptySourceMixture);
-    };
-    let payload_divisor = classes
-        .values()
-        .map(|(_, payload_bytes, _)| *payload_bytes)
-        .filter(|bytes| *bytes > 0)
-        .reduce(greatest_common_divisor)
-        .ok_or(WorkloadClassificationError::EmptySourcePayload)?;
     let mut entries = classes
         .into_iter()
-        .map(
-            |((source_class, has_full_size), (chunks, payload_bytes, max_span))| {
-                SourceMixtureEntry {
-                    source_class_digest: source_class_id(&source_class),
-                    has_full_size,
-                    chunk_ratio: chunks / chunk_divisor,
-                    payload_ratio: payload_bytes / payload_divisor,
-                    max_span_bucket: autoroute_stable_bucket(max_span),
-                }
-            },
-        )
+        .map(|(source_class, has_full_size)| SourceMixtureEntry {
+            source_class_digest: source_class_id(source_class.as_str()),
+            has_full_size,
+        })
         .collect::<Vec<_>>();
     entries.sort_unstable();
     if entries.windows(2).any(|pair| {
@@ -633,52 +501,7 @@ pub(super) fn workload_evidence_digest(key: &WorkloadKey) -> [u8; 32] {
         .field_u64("chunks_bucket", u64::from(key.chunks_bucket))
         .field_u64("max_file_bucket", u64::from(key.max_file_bucket))
         .field_u64("pattern_bucket", u64::from(key.pattern_bucket))
-        .field_u64(
-            "phase1.alphabet_rejected_chunks_bucket",
-            u64::from(key.phase1.alphabet_rejected_chunks_bucket),
-        )
-        .field_u64(
-            "phase1.alphabet_rejected_bytes_bucket",
-            u64::from(key.phase1.alphabet_rejected_bytes_bucket),
-        )
-        .field_u64(
-            "phase1.bigram_rejected_chunks_bucket",
-            u64::from(key.phase1.bigram_rejected_chunks_bucket),
-        )
-        .field_u64(
-            "phase1.bigram_rejected_bytes_bucket",
-            u64::from(key.phase1.bigram_rejected_bytes_bucket),
-        )
-        .field_u64(
-            "phase1.admitted_chunks_bucket",
-            u64::from(key.phase1.admitted_chunks_bucket),
-        )
-        .field_u64(
-            "phase1.admitted_bytes_bucket",
-            u64::from(key.phase1.admitted_bytes_bucket),
-        )
-        .field_u64(
-            "phase2_keyword_triggers.chunks_bucket",
-            u64::from(key.phase2_keyword_triggers.chunks_bucket),
-        )
-        .field_u64(
-            "phase2_keyword_triggers.bytes_bucket",
-            u64::from(key.phase2_keyword_triggers.bytes_bucket),
-        )
-        .field_u64(
-            "phase2_keyword_triggers.count_bucket",
-            u64::from(key.phase2_keyword_triggers.count_bucket),
-        )
-        .field_u64("decode_kind_mask", u64::from(key.decode_kind_mask))
-        .field_u64(
-            "decode_candidate_count_bucket",
-            u64::from(key.decode_candidate_count_bucket),
-        )
-        .field_u64(
-            "decode_candidate_bytes_bucket",
-            u64::from(key.decode_candidate_bytes_bucket),
-        )
-        .field_bool("decode_unknown", key.decode_unknown)
+        .field_bool("decode_admitted", key.decode_admitted)
         .field_usize("source_mixture.entries", key.source_mixture.entries.len());
     for (index, entry) in key.source_mixture.entries.iter().enumerate() {
         hasher
@@ -687,13 +510,7 @@ pub(super) fn workload_evidence_digest(key: &WorkloadKey) -> [u8; 32] {
                 "source_mixture.source_class_digest",
                 &entry.source_class_digest,
             )
-            .field_bool("source_mixture.has_full_size", entry.has_full_size)
-            .field_u64("source_mixture.chunk_ratio", entry.chunk_ratio)
-            .field_u64("source_mixture.payload_ratio", entry.payload_ratio)
-            .field_u64(
-                "source_mixture.max_span_bucket",
-                u64::from(entry.max_span_bucket),
-            );
+            .field_bool("source_mixture.has_full_size", entry.has_full_size);
     }
     hasher.finish_256()
 }
@@ -818,67 +635,14 @@ pub(super) fn validate_source_mixture_key(key: &SourceMixtureKey) -> Result<(), 
                 "source mixture entries are duplicate or not canonically sorted".to_string(),
             );
         }
-        if entry.chunk_ratio == 0
-            || (!entry.has_full_size && entry.payload_ratio == 0 && entry.max_span_bucket > 0)
-        {
-            return Err(format!(
-                "source mixture entry {} has an inconsistent chunk ratio, payload ratio, or span",
-                keyhog_core::hex_encode(&entry.source_class_digest)
-            ));
-        }
         previous = Some(identity);
-    }
-    let Some(chunk_divisor) = key
-        .entries
-        .iter()
-        .map(|entry| entry.chunk_ratio)
-        .reduce(greatest_common_divisor)
-    else {
-        return Err("source mixture has no chunk ratios".into());
-    };
-    let payload_divisor = key
-        .entries
-        .iter()
-        .map(|entry| entry.payload_ratio)
-        .filter(|ratio| *ratio > 0)
-        .reduce(greatest_common_divisor)
-        .unwrap_or(0); // LAW10: fail-closed invalid zero sentinel rejected immediately below
-    if chunk_divisor != 1 || payload_divisor != 1 {
-        return Err(
-            "source mixture ratios are zero or not reduced to canonical lowest terms".into(),
-        );
     }
     Ok(())
 }
 
 pub(super) fn validate_workload_source_mixture(key: &WorkloadKey) -> Result<(), String> {
     validate_workload_buckets(key)?;
-    validate_source_mixture_key(&key.source_mixture)?;
-    let Some(max_span_bucket) = key
-        .source_mixture
-        .entries
-        .iter()
-        .map(|entry| entry.max_span_bucket)
-        .max()
-    else {
-        return Err("source mixture has no span buckets".into());
-    };
-    if max_span_bucket != key.max_file_bucket {
-        return Err(
-            "source mixture maximum span is inconsistent with the parent workload key".into(),
-        );
-    }
-    if key
-        .source_mixture
-        .entries
-        .iter()
-        .any(|entry| !entry.has_full_size && entry.max_span_bucket > key.bytes_bucket)
-    {
-        return Err(
-            "a payload-derived source span cannot exceed the aggregate payload band".into(),
-        );
-    }
-    Ok(())
+    validate_source_mixture_key(&key.source_mixture)
 }
 
 fn validate_workload_buckets(key: &WorkloadKey) -> Result<(), String> {
@@ -888,36 +652,6 @@ fn validate_workload_buckets(key: &WorkloadKey) -> Result<(), String> {
         ("chunks", key.chunks_bucket),
         ("max_file", key.max_file_bucket),
         ("patterns", key.pattern_bucket),
-        (
-            "phase1_alphabet_rejected_chunks",
-            key.phase1.alphabet_rejected_chunks_bucket,
-        ),
-        (
-            "phase1_alphabet_rejected_bytes",
-            key.phase1.alphabet_rejected_bytes_bucket,
-        ),
-        (
-            "phase1_bigram_rejected_chunks",
-            key.phase1.bigram_rejected_chunks_bucket,
-        ),
-        (
-            "phase1_bigram_rejected_bytes",
-            key.phase1.bigram_rejected_bytes_bucket,
-        ),
-        ("phase1_admitted_chunks", key.phase1.admitted_chunks_bucket),
-        ("phase1_admitted_bytes", key.phase1.admitted_bytes_bucket),
-        (
-            "phase2_keyword_trigger_chunks",
-            key.phase2_keyword_triggers.chunks_bucket,
-        ),
-        (
-            "phase2_keyword_trigger_bytes",
-            key.phase2_keyword_triggers.bytes_bucket,
-        ),
-        (
-            "phase2_keyword_trigger_count",
-            key.phase2_keyword_triggers.count_bucket,
-        ),
     ];
     if let Some((name, bucket)) = scalar_buckets
         .into_iter()
@@ -932,107 +666,7 @@ fn validate_workload_buckets(key: &WorkloadKey) -> Result<(), String> {
             "workload byte and chunk buckets must describe non-empty calibration input".into(),
         );
     }
-    for (name, bucket) in [
-        (
-            "phase1_alphabet_rejected_chunks",
-            key.phase1.alphabet_rejected_chunks_bucket,
-        ),
-        (
-            "phase1_bigram_rejected_chunks",
-            key.phase1.bigram_rejected_chunks_bucket,
-        ),
-        ("phase1_admitted_chunks", key.phase1.admitted_chunks_bucket),
-    ] {
-        if bucket > key.chunks_bucket {
-            return Err(format!(
-                "workload {name} bucket {bucket} exceeds the parent chunk bucket {}",
-                key.chunks_bucket
-            ));
-        }
-    }
-    if key.phase1.alphabet_rejected_chunks_bucket == 0
-        && key.phase1.bigram_rejected_chunks_bucket == 0
-        && key.phase1.admitted_chunks_bucket == 0
-    {
-        return Err("non-empty workload has no phase-one chunk accounting".into());
-    }
-    if key.phase1.alphabet_rejected_bytes_bucket == 0
-        && key.phase1.bigram_rejected_bytes_bucket == 0
-        && key.phase1.admitted_bytes_bucket == 0
-    {
-        return Err("non-empty workload has no phase-one byte accounting".into());
-    }
-    for (name, bucket) in [
-        (
-            "phase1_alphabet_rejected_bytes",
-            key.phase1.alphabet_rejected_bytes_bucket,
-        ),
-        (
-            "phase1_bigram_rejected_bytes",
-            key.phase1.bigram_rejected_bytes_bucket,
-        ),
-        ("phase1_admitted_bytes", key.phase1.admitted_bytes_bucket),
-    ] {
-        if bucket > key.bytes_bucket {
-            return Err(format!(
-                "workload {name} bucket {bucket} exceeds the parent byte bucket {}",
-                key.bytes_bucket
-            ));
-        }
-    }
-
-    let known_decode_mask = (DecodeAdmissionSketch::COMPRESSED_CONTAINER << 1) - 1;
-    if key.decode_kind_mask & !known_decode_mask != 0 {
-        return Err(format!(
-            "workload decode-kind mask {:08x} contains unsupported decoder bits",
-            key.decode_kind_mask
-        ));
-    }
-    let max_decode_count_bucket = autoroute_stable_decode_bucket(log2_bucket(u64::from(u16::MAX)));
-    let max_decode_bytes_bucket = autoroute_stable_decode_bucket(log2_bucket(u64::from(u32::MAX)));
-    if key.decode_candidate_count_bucket > max_decode_count_bucket
-        || key.decode_candidate_bytes_bucket > max_decode_bytes_bucket
-    {
-        return Err(format!(
-            "workload decoder buckets count={} bytes={} exceed the supported maxima count={} bytes={}",
-            key.decode_candidate_count_bucket,
-            key.decode_candidate_bytes_bucket,
-            max_decode_count_bucket,
-            max_decode_bytes_bucket
-        ));
-    }
-    if key.decode_unknown
-        && (key.decode_candidate_count_bucket != max_decode_count_bucket
-            || key.decode_candidate_bytes_bucket != max_decode_bytes_bucket)
-    {
-        return Err(
-            "workload with unknown decoder admission must retain saturated decoder buckets".into(),
-        );
-    }
-    if !key.decode_unknown
-        && key.decode_kind_mask == 0
-        && (key.decode_candidate_count_bucket != 0 || key.decode_candidate_bytes_bucket != 0)
-    {
-        return Err(
-            "workload without decoder candidates must use zero decoder cost buckets".into(),
-        );
-    }
-    if !key.decode_unknown
-        && key.decode_kind_mask != 0
-        && (key.decode_candidate_count_bucket == 0 || key.decode_candidate_bytes_bucket == 0)
-    {
-        return Err(
-            "workload with decoder candidates must use nonzero decoder cost buckets".into(),
-        );
-    }
     Ok(())
-}
-
-fn greatest_common_divisor(mut left: u64, mut right: u64) -> u64 {
-    while right != 0 {
-        (left, right) = (right, left % right);
-    }
-    left
 }
 
 fn source_execution_class(chunk: &Chunk) -> Result<&str, WorkloadClassificationError> {

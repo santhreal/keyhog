@@ -21,14 +21,29 @@ pub fn keyhog_command(args: &[&str]) -> Command {
     cmd
 }
 
+/// The diagnostic `--backend` this build can actually dispatch.
+///
+/// A portable build carries no Hyperscan, and an explicit `--backend simd`
+/// against it is refused with exit 2 rather than quietly substituted, so a
+/// hardcoded `simd` turns a correct routing refusal into what reads as a
+/// product failure. `cargo test -p keyhog` on default features is a real
+/// configuration; CI's `--features simd` run is not the only one.
+#[cfg(feature = "simd")]
+pub const DIAGNOSTIC_BACKEND: &str = "simd";
+#[cfg(not(feature = "simd"))]
+pub const DIAGNOSTIC_BACKEND: &str = "cpu";
+
+/// The materialized route name `DIAGNOSTIC_BACKEND` resolves to in the routing
+/// decision line.
+#[cfg(feature = "simd")]
+pub const DIAGNOSTIC_BACKEND_ROUTE: &str = "simd-regex";
+#[cfg(not(feature = "simd"))]
+pub const DIAGNOSTIC_BACKEND_ROUTE: &str = "cpu-fallback";
+
 pub fn apply_default_scan_backend(cmd: &mut Command, args: &[&str]) {
     if args.first() == Some(&"scan") && !args.iter().any(|arg| *arg == "--backend") {
-        #[cfg(feature = "simd")]
-        let default_backend = "simd";
-        #[cfg(not(feature = "simd"))]
-        let default_backend = "cpu";
         cmd.arg("scan")
-            .args(["--backend", default_backend])
+            .args(["--backend", DIAGNOSTIC_BACKEND])
             .args(&args[1..]);
     } else {
         cmd.args(args);
@@ -58,7 +73,7 @@ pub fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Op
         "--format".into(),
         "json".into(),
         "--backend".into(),
-        "simd".into(),
+        DIAGNOSTIC_BACKEND.into(),
     ];
     for arg in extra_args {
         cmd_args.push((*arg).into());

@@ -406,14 +406,71 @@ fn build_async_runtime() -> std::result::Result<tokio::runtime::Runtime, ExitCod
     }
 }
 
-fn run_async<F, Fut>(f: F) -> ExitCode
-where
-    F: FnOnce() -> Fut,
-    Fut: Future<Output = anyhow::Result<ExitCode>>,
-{
-    let runtime = match build_async_runtime() {
-        Ok(runtime) => runtime,
-        Err(code) => return code,
+    let command_outcome = match cli.command {
+        Some(args::Command::Scan(args)) => {
+            let profile_requested = args.profile;
+            set_operator_profile_active(profile_requested);
+            let outcome = subcommands::scan::run(*args).await;
+            if profile_requested {
+                set_operator_profile_active(false);
+            }
+            outcome
+        }
+        Some(args::Command::Config(args)) => subcommands::config::run(*args),
+        Some(args::Command::CompileExecutionPacks(args)) => {
+            subcommands::compile_execution_packs::run(args).map(|()| ExitCode::SUCCESS)
+        }
+        Some(args::Command::CompileGpuLiterals(args)) => {
+            subcommands::compile_gpu_literals::run(args).map(|()| ExitCode::SUCCESS)
+        }
+        Some(args::Command::ActionReport(args)) => match args.command {
+            args::ActionReportCommand::Verify(args) => action_report::verify(args),
+        },
+        Some(args::Command::Hook { command }) => subcommands::hook::run(command),
+        Some(args::Command::Detectors(args)) => subcommands::detectors::run(args),
+        Some(args::Command::Explain(args)) => {
+            subcommands::explain::run(args).map(|()| ExitCode::SUCCESS)
+        }
+        Some(args::Command::Diff(args)) => subcommands::diff::run(args).await,
+        Some(args::Command::Triage(args)) => subcommands::triage::run(args),
+        Some(args::Command::Calibrate(args)) => {
+            subcommands::calibrate::run(args).map(|()| ExitCode::SUCCESS)
+        }
+        Some(args::Command::CalibrateAutoroute(args)) => {
+            subcommands::calibrate_autoroute::run(args)
+        }
+        Some(args::Command::Watch(args)) => {
+            subcommands::watch::run(args).map(|()| ExitCode::SUCCESS)
+        }
+        Some(args::Command::Completion(args)) => {
+            subcommands::completion::run(args);
+            return ExitCode::SUCCESS;
+        }
+        Some(args::Command::Backend(args)) => subcommands::backend::run(args),
+        Some(args::Command::Doctor(args)) => subcommands::doctor::run(args),
+        Some(args::Command::BloomDiagnostic(args)) => bloom_diagnostic::run(args),
+        Some(args::Command::Uninstall(args)) => subcommands::uninstall::run(args),
+        Some(args::Command::ScanSystem(args)) => subcommands::scan_system::run(args),
+        #[cfg(unix)]
+        Some(args::Command::Daemon(args)) => subcommands::daemon::run(args).await,
+        #[cfg(not(unix))]
+        Some(args::Command::Daemon(_args)) => Err(anyhow::anyhow!(
+            "`keyhog daemon` is a unix-only command (it serves scans over a \
+             Unix-domain socket). On Windows, run scans in-process: \
+             `keyhog scan <path>`. No Windows daemon transport ships."
+        )),
+        #[cfg(unix)]
+        Some(args::Command::Guard(args)) => subcommands::guard::run(args).await,
+        #[cfg(not(unix))]
+        Some(args::Command::Guard(_args)) => Err(anyhow::anyhow!(
+            "`keyhog guard` requires the Unix daemon transport. On Windows, \
+             run `keyhog scan <path>` in process; no guard daemon ships."
+        )),
+        None => {
+            let mut cmd = args::command();
+            let _ = cmd.print_help(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+            return ExitCode::SUCCESS;
+        }
     };
 
     #[cfg(not(unix))]

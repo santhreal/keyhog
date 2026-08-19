@@ -134,8 +134,9 @@ REQUIRED_TEXT = {
         "--features ci",
         "`ci-lean` is a broad maintainer test closure",
         "Cargo does not execute the binary after installation",
-        "historical binary-asset channel",
-        "does not publish binary release assets or installer bundles",
+        "There is no binary download channel",
+        "No workflow builds, signs, or uploads",
+        "Neither script contacts the network",
     ),
     "introduction": (
         "sample below comes from a `portable,simd` build",

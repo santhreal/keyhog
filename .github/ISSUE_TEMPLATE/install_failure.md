@@ -12,10 +12,10 @@ labels: ["install", "needs-triage"]
 
 ## Install path
 
-- [ ] `install.sh` (Linux / macOS)
-- [ ] `install.ps1` (Windows)
+- [ ] `cargo install --locked keyhog` (crates.io, the normal path)
 - [ ] `cargo install --git https://github.com/santhreal/keyhog`
-- [ ] Pre-built tarball from a release page
+- [ ] `install.sh --from-file=PATH` (Linux / macOS, local bundle)
+- [ ] `install.ps1 -FromFile PATH` (Windows, local bundle)
 - [ ] GitHub Action (`santhreal/keyhog/.github/actions/keyhog@…`)
 
 ## Exact command

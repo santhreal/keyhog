@@ -65,8 +65,6 @@ crate::kh_matrix!(
     backend => "backend",
     doctor => "doctor",
     bloom_diagnostic => "bloom-diagnostic",
-    update => "update",
-    repair => "repair",
     uninstall => "uninstall",
     scan_system => "scan-system",
     daemon => "daemon",
@@ -74,4 +72,5 @@ crate::kh_matrix!(
     triage => "triage",
     calibrate_autoroute => "calibrate-autoroute",
     compile_execution_packs => "compile-execution-packs",
+    compile_gpu_literals => "compile-gpu-literals",
 );

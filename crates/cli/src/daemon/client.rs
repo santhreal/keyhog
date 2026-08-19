@@ -60,7 +60,7 @@ fn request_timeout(request: &Request) -> Duration {
 
 /// Open a connection to the daemon and confirm wire, build, and detector-corpus
 /// compatibility with this client. Use this
-/// for the scan route: a daemon left running across a `keyhog update` would
+/// for the scan route: a daemon left running across a binary upgrade would
 /// otherwise keep serving scans with its OLD detector corpus, silently
 /// returning stale results to the upgraded client. Returns the live stream
 /// split into reader and writer halves.
@@ -169,8 +169,8 @@ async fn connect_inner(
             validate_backend_policy(&backend_policy)?;
             // Staleness gate: the wire version can stay stable across keyhog
             // releases that change the DETECTOR CORPUS or scan pipeline (e.g.
-            // 0.5.40 -> 0.5.41). A daemon started before a
-            // `keyhog update` keeps the old scanner in memory and would serve
+            // 0.5.40 -> 0.5.41). A daemon started before the
+            // binary was upgraded keeps the old scanner in memory and would serve
             // the upgraded client OLD-corpus results, a silent recall/precision
             // divergence the wire check cannot catch. Refuse so the scan path
             // never depends on whether a stale daemon happens to be running.

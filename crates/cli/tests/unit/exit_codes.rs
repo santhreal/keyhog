@@ -11,9 +11,8 @@
 use keyhog::exit_codes::{
     help, ExitCodeDefinition, DEFINITIONS, EXIT_BACKEND_SELF_TEST_FAILED, EXIT_CREDENTIALS_FOUND,
     EXIT_DETECTOR_AUDIT_FAILED, EXIT_DOCTOR_UNHEALTHY, EXIT_FINDINGS, EXIT_HEALTH_FAILURE,
-    EXIT_INTERRUPTED, EXIT_LIVE_CREDENTIALS, EXIT_REPAIR_FAILED, EXIT_REQUIRE_GPU_UNMET,
-    EXIT_SCANNER_PANIC, EXIT_SOURCE_FAILED, EXIT_SUCCESS, EXIT_SYSTEM_ERROR, EXIT_UPDATE_AVAILABLE,
-    EXIT_USER_ERROR,
+    EXIT_INTERRUPTED, EXIT_LIVE_CREDENTIALS, EXIT_REQUIRE_GPU_UNMET, EXIT_SCANNER_PANIC,
+    EXIT_SOURCE_FAILED, EXIT_SUCCESS, EXIT_SYSTEM_ERROR, EXIT_USER_ERROR,
 };
 
 /// The leading integer of every `HELP` line that starts with one (the header line
@@ -38,8 +37,6 @@ const ALIASES: &[(&str, u8)] = &[
     ),
     ("EXIT_DETECTOR_AUDIT_FAILED", EXIT_DETECTOR_AUDIT_FAILED),
     ("EXIT_DOCTOR_UNHEALTHY", EXIT_DOCTOR_UNHEALTHY),
-    ("EXIT_REPAIR_FAILED", EXIT_REPAIR_FAILED),
-    ("EXIT_UPDATE_AVAILABLE", EXIT_UPDATE_AVAILABLE),
     ("EXIT_CREDENTIALS_FOUND", EXIT_CREDENTIALS_FOUND),
 ];
 
@@ -169,18 +166,8 @@ fn doctor_unhealthy_alias_is_health_failure() {
 }
 
 #[test]
-fn repair_failed_alias_is_health_failure() {
-    assert_eq!(EXIT_REPAIR_FAILED, EXIT_HEALTH_FAILURE);
-}
-
-#[test]
 fn detector_audit_alias_is_system_error() {
     assert_eq!(EXIT_DETECTOR_AUDIT_FAILED, EXIT_SYSTEM_ERROR);
-}
-
-#[test]
-fn update_available_alias_is_live_credentials() {
-    assert_eq!(EXIT_UPDATE_AVAILABLE, EXIT_LIVE_CREDENTIALS);
 }
 
 #[test]
@@ -208,8 +195,8 @@ fn generated_help_is_byte_identical_to_the_documented_block() {
 1   Findings block the active evidence policy, none confirmed live\n  \
 2   User error (bad flag/config, missing path/baseline, detector-load failure, invalid autoroute calibration, not-found/permission-denied path)\n  \
 3   System error (local environment failure: low-level I/O, fatal daemon service failure, or selected SIMD/Hyperscan unavailable)\n  \
-4   Health/self-test failure (doctor unhealthy / repair could not restore a working binary / backend --self-test failed)\n  \
-10  Live credentials found under scan --verify, or update available under update --check\n  \
+4   Health/self-test failure (doctor unhealthy / backend --self-test failed)\n  \
+10  Live credentials found under scan --verify\n  \
 11  Scanner thread panicked mid-scan (state is unreliable)\n  \
 12  Required GPU unavailable (--require-gpu, explicit gpu, or proof-selected daemon GPU before readiness)\n  \
 13  Requested source failed, input coverage incomplete, or guard root degraded/stale/stopped/indexing (run `keyhog guard status <root>` for the repair command)\n  \
