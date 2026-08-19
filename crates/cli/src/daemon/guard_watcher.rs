@@ -32,6 +32,9 @@ struct WatchedRoot {
 }
 
 /// Manages filesystem watchers for all guard roots.
+///
+/// Detects channel disconnection and thread failure to enforce fail-closed
+/// reconciliation across all registered roots when event monitoring is lost.
 pub struct GuardWatcher {
     /// The native watcher handle. One watcher serves all roots.
     /// `None` when the platform watcher could not be created.
@@ -42,6 +45,10 @@ pub struct GuardWatcher {
     roots: HashMap<PathBuf, WatchedRoot>,
     /// Reconciliation config (bounds for subtree reconciliation).
     config: GuardReconciliationConfig,
+    /// Explicit flag indicating the watcher is running in disabled/unmonitored mode.
+    disabled: bool,
+    /// Named reason why the watcher disconnected, if disconnection occurred.
+    disconnection_reason: parking_lot::Mutex<Option<String>>,
 }
 
 impl GuardWatcher {
@@ -57,6 +64,8 @@ impl GuardWatcher {
             rx,
             roots: HashMap::new(),
             config,
+            disabled: false,
+            disconnection_reason: parking_lot::Mutex::new(None),
         })
     }
 
@@ -70,6 +79,24 @@ impl GuardWatcher {
             rx,
             roots: HashMap::new(),
             config: GuardReconciliationConfig::default(),
+            disabled: true,
+            disconnection_reason: parking_lot::Mutex::new(None),
+        }
+    }
+
+    /// Create a watcher backed by an explicit channel receiver for testing.
+    #[doc(hidden)]
+    pub fn with_channel_for_test(
+        rx: mpsc::Receiver<notify::Result<notify::Event>>,
+        config: GuardReconciliationConfig,
+    ) -> Self {
+        Self {
+            watcher: None,
+            rx,
+            roots: HashMap::new(),
+            config,
+            disabled: false,
+            disconnection_reason: parking_lot::Mutex::new(None),
         }
     }
 
@@ -85,6 +112,8 @@ impl GuardWatcher {
                 rx,
                 roots: HashMap::new(),
                 config,
+                disabled: false,
+                disconnection_reason: parking_lot::Mutex::new(None),
             },
             tx,
         )
@@ -100,6 +129,14 @@ impl GuardWatcher {
     pub fn add_root(&mut self, path: PathBuf) -> Result<(), String> {
         if self.roots.contains_key(&path) {
             return Err(format!("root already watched: {}", path.display()));
+        }
+        if self.is_disconnected() {
+            return Err(format!(
+                "failed to watch {}: watcher backend disconnected ({})",
+                path.display(),
+                self.disconnection_reason()
+                    .unwrap_or_else(|| "channel closed".to_string())
+            ));
         }
         if let Some(watcher) = &mut self.watcher {
             watcher
@@ -136,6 +173,9 @@ impl GuardWatcher {
     /// the overflow flag is cleared.
     pub fn poll_events(&self) -> Vec<(PathBuf, Vec<GuardEvent>)> {
         let mut results: HashMap<PathBuf, Vec<GuardEvent>> = HashMap::new();
+        if self.disabled {
+            return Vec::new();
+        }
         loop {
             match self.rx.try_recv() {
                 Ok(Ok(event)) => {
@@ -181,7 +221,28 @@ impl GuardWatcher {
                     }
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    let reason = "watcher backend disconnected: notify event channel closed";
+                    let newly_disconnected = {
+                        let mut reason_guard = self.disconnection_reason.lock();
+                        if reason_guard.is_none() {
+                            *reason_guard = Some(reason.to_string());
+                            true
+                        } else {
+                            false
+                        }
+                    };
+                    if newly_disconnected {
+                        tracing::warn!("daemon: guard watcher event channel disconnected; failing closed for all watched roots");
+                        for root in self.roots.keys() {
+                            results
+                                .entry(root.clone())
+                                .or_default()
+                                .push(GuardEvent::ReconcileSubtree(root.clone()));
+                        }
+                    }
+                    break;
+                }
             }
         }
         // Drain each root's buffer and check for overflow. If overflowed,
@@ -236,6 +297,45 @@ impl GuardWatcher {
             .get(root)
             .map(|r| r.buffer.lock().len())
             .unwrap_or(0)
+    }
+
+    /// Whether the watcher is in disabled (unmonitored) mode.
+    pub fn is_disabled(&self) -> bool {
+        self.disabled
+    }
+
+    /// Whether the watcher backend has disconnected.
+    pub fn is_disconnected(&self) -> bool {
+        self.disconnection_reason.lock().is_some()
+    }
+
+    /// Named reason why the watcher disconnected, if any.
+    pub fn disconnection_reason(&self) -> Option<String> {
+        self.disconnection_reason.lock().clone()
+    }
+
+    /// Record an explicit watcher disconnection reason.
+    pub fn record_disconnection(&self, reason: &str) {
+        let mut reason_guard = self.disconnection_reason.lock();
+        if reason_guard.is_none() {
+            *reason_guard = Some(reason.to_string());
+        }
+    }
+
+    /// Status label for operator inspection.
+    pub fn watcher_status(&self) -> &'static str {
+        if self.is_disconnected() {
+            "disconnected"
+        } else if self.disabled {
+            "unmonitored"
+        } else {
+            "watching"
+        }
+    }
+
+    /// Whether the watcher is actively monitoring filesystem events.
+    pub fn is_watching(&self) -> bool {
+        !self.disabled && !self.is_disconnected() && self.watcher.is_some()
     }
 }
 

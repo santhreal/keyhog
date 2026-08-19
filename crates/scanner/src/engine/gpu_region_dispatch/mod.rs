@@ -10,6 +10,9 @@
 //! Hyperscan trigger floor is not part of the default fast path; it is enabled
 //! only for explicit parity/debug runs.
 
+pub mod pool;
+pub use pool::{GpuResidentExecutionPermit, GpuResidentExecutionPool};
+
 use super::gpu_region_batch::{
     for_each_region_presence_batch, for_each_region_presence_window,
     region_presence_batch_byte_limit, region_presence_batch_byte_limit_for_depth, set_trigger_bit,
@@ -89,15 +92,7 @@ impl CompiledScanner {
                 gpu_recovery_receipts: 0,
             });
         }
-        let _direct_dispatch_guard = if device.is_none() {
-            Some(self.direct_gpu_resident_dispatch.lock().map_err(|_| {
-                super::gpu_forced::SelectedGpuDispatchError::new(
-                    "direct GPU resident dispatch lock is unavailable after an internal panic",
-                )
-            })?)
-        } else {
-            None
-        };
+        let _permit = self.gpu_resident_execution_pool.acquire()?;
 
         let dispatch_failure =
             |reason: String| Err(super::gpu_forced::SelectedGpuDispatchError::new(reason));

@@ -150,3 +150,62 @@ fn poll_events_empty_paths_triggers_all_roots_reconcile() {
         &vec![GuardEvent::ReconcileSubtree(root_b)]
     );
 }
+
+#[test]
+fn disabled_watcher_reports_unmonitored_and_polls_empty() {
+    let watcher = GuardWatcher::new_disabled();
+    assert!(watcher.is_disabled());
+    assert!(!watcher.is_watching());
+    assert_eq!(watcher.watcher_status(), "unmonitored");
+    let events = watcher.poll_events();
+    assert!(events.is_empty());
+}
+
+#[test]
+fn watcher_channel_disconnect_fans_reconcile_subtree_and_records_reason() {
+    let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+    let mut watcher = GuardWatcher::with_channel_for_test(rx, GuardReconciliationConfig::default());
+
+    let dir1 = tempdir().unwrap();
+    let dir2 = tempdir().unwrap();
+    watcher.add_root(dir1.path().to_path_buf()).unwrap();
+    watcher.add_root(dir2.path().to_path_buf()).unwrap();
+
+    assert_eq!(watcher.watcher_status(), "watching");
+    assert!(!watcher.is_disconnected());
+    assert!(watcher.disconnection_reason().is_none());
+
+    // Drop sender to simulate watcher backend thread exit / panic / disconnection.
+    drop(tx);
+
+    let events = watcher.poll_events();
+    assert!(watcher.is_disconnected());
+    assert_eq!(watcher.watcher_status(), "disconnected");
+    assert!(watcher
+        .disconnection_reason()
+        .unwrap()
+        .contains("watcher backend disconnected"));
+
+    // Fail-closed invariant: Every watched root must receive a ReconcileSubtree event.
+    assert_eq!(events.len(), 2);
+    for (_root, evts) in events {
+        assert!(evts
+            .iter()
+            .any(|e| matches!(e, GuardEvent::ReconcileSubtree(_))));
+    }
+}
+
+#[test]
+fn add_root_fails_when_watcher_disconnected() {
+    let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+    let mut watcher = GuardWatcher::with_channel_for_test(rx, GuardReconciliationConfig::default());
+
+    drop(tx);
+    let _ = watcher.poll_events();
+    assert!(watcher.is_disconnected());
+
+    let dir = tempdir().unwrap();
+    let res = watcher.add_root(dir.path().to_path_buf());
+    assert!(res.is_err());
+    assert!(res.unwrap_err().contains("watcher backend disconnected"));
+}
