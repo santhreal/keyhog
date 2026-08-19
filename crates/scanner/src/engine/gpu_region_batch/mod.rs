@@ -130,11 +130,22 @@ impl Drop for ZeroRegionPresenceScratch<'_> {
 pub(super) const REGION_PRESENCE_BATCH_BYTE_LIMIT: usize =
     vyre::scan::dispatch_io::DEFAULT_MAX_SCAN_BYTES as usize;
 
-/// Bound each positioned-match shard to the portable 8 MiB grid. CUDA can
-/// launch a larger byte grid, but dense real corpora can produce more than the
-/// bounded exact-match replay capacity in one larger dispatch. Equal shard
-/// ceilings keep both GPU backends exact without CPU substitution.
+/// Bound each WebGPU positioned-match shard to the portable 8 MiB grid (65,535 workgroups).
 pub(super) const WGPU_BYTE_SCAN_DISPATCH_LIMIT: usize = 65_535 * 128;
+
+/// CUDA launches large 1D grids, bounded by VYRE's 64 MiB scan ceiling.
+pub(super) const CUDA_BYTE_SCAN_DISPATCH_LIMIT: usize = REGION_PRESENCE_BATCH_BYTE_LIMIT;
+
+/// Metal launches 1D dispatch grids, bounded by 32 MiB portable replay capacity.
+pub(super) const METAL_BYTE_SCAN_DISPATCH_LIMIT: usize = 262_144 * 128;
+
+pub(super) fn region_presence_batch_byte_limit_for_backend(backend_id: &str) -> usize {
+    match backend_id {
+        "cuda" => CUDA_BYTE_SCAN_DISPATCH_LIMIT,
+        "metal" => METAL_BYTE_SCAN_DISPATCH_LIMIT,
+        _ => WGPU_BYTE_SCAN_DISPATCH_LIMIT,
+    }
+}
 
 /// Bound overlap amplification from pathological custom detector literals.
 /// A selected GPU route fails visibly instead of issuing an effectively
@@ -198,11 +209,12 @@ pub(super) fn with_test_region_presence_byte_limit<R>(limit: usize, f: impl FnOn
 }
 
 fn region_presence_batch_byte_limit_for_input_budget(
-    _backend_id: &str,
+    backend_id: &str,
     input_budget: usize,
 ) -> usize {
+    let backend_limit = region_presence_batch_byte_limit_for_backend(backend_id);
     REGION_PRESENCE_BATCH_BYTE_LIMIT
-        .min(WGPU_BYTE_SCAN_DISPATCH_LIMIT)
+        .min(backend_limit)
         .min(input_budget)
 }
 

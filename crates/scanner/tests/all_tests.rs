@@ -365,6 +365,8 @@ pub mod regression_row_79_capability_ledger_and_vacuous_gate;
 pub mod regression_row_111_window_overlap_canonical_ownership;
 #[path = "regression_row_115_proportional_scrub_cost.rs"]
 pub mod regression_row_115_proportional_scrub_cost;
+#[path = "regression_row_116_backend_derived_dispatch_limit.rs"]
+pub mod regression_row_116_backend_derived_dispatch_limit;
 #[path = "regression_saas_platform_token_recall.rs"]
 pub mod regression_saas_platform_token_recall;
 #[path = "regression_scan_telemetry_rayon_scope.rs"]
