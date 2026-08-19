@@ -293,24 +293,36 @@ pub(crate) fn installed_execution_pack_directory() -> Result<PathBuf> {
         .join("current"))
 }
 
-pub(crate) fn current_binary_digest() -> Result<[u8; 32]> {
-    let path = std::env::current_exe().context("resolving current KeyHog executable")?;
-    let mut file = File::open(&path).with_context(|| format!("opening {}", path.display()))?;
-    let mut hasher = blake3::Hasher::new();
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = file
-            .read(&mut buffer)
-            .with_context(|| format!("hashing {}", path.display()))?;
-        if read == 0 {
-            break;
+static CURRENT_BINARY_DIGEST: std::sync::LazyLock<Result<[u8; 32], String>> =
+    std::sync::LazyLock::new(|| {
+        let mut path = std::env::current_exe()
+            .map_err(|error| format!("resolving current KeyHog executable: {error}"))?;
+        if let Some(path_str) = path.to_str() {
+            if let Some(stripped) = path_str.strip_suffix(" (deleted)") {
+                path = PathBuf::from(stripped);
+            }
         }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(*hasher.finalize().as_bytes())
+        let mut file =
+            File::open(&path).map_err(|error| format!("opening {}: {error}", path.display()))?;
+        let mut hasher = blake3::Hasher::new();
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let read = file
+                .read(&mut buffer)
+                .map_err(|error| format!("hashing {}: {error}", path.display()))?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+        }
+        Ok(*hasher.finalize().as_bytes())
+    });
+
+pub(crate) fn current_binary_digest() -> Result<[u8; 32]> {
+    CURRENT_BINARY_DIGEST.clone().map_err(anyhow::Error::msg)
 }
 
-pub(crate) fn current_target_digest() -> [u8; 32] {
+static CURRENT_TARGET_DIGEST: std::sync::LazyLock<[u8; 32]> = std::sync::LazyLock::new(|| {
     let hardware = keyhog_scanner::hw_probe::probe_host_hardware();
     let physical_cores = hardware.physical_cores.to_le_bytes();
     let logical_cores = hardware.logical_cores.to_le_bytes();
@@ -344,9 +356,13 @@ pub(crate) fn current_target_digest() -> [u8; 32] {
             .unwrap_or_default() // LAW10: absent optional runtime identity is disambiguated by the adjacent presence flag in this hardware digest.
             .as_bytes(),
     ])
+});
+
+pub(crate) fn current_target_digest() -> [u8; 32] {
+    *CURRENT_TARGET_DIGEST
 }
 
-pub(crate) fn current_feature_digest() -> [u8; 32] {
+static CURRENT_FEATURE_DIGEST: std::sync::LazyLock<[u8; 32]> = std::sync::LazyLock::new(|| {
     digest_parts(&[
         if cfg!(feature = "simd") {
             b"simd=1"
@@ -360,6 +376,10 @@ pub(crate) fn current_feature_digest() -> [u8; 32] {
         },
         env!("CARGO_PKG_VERSION").as_bytes(),
     ])
+});
+
+pub(crate) fn current_feature_digest() -> [u8; 32] {
+    *CURRENT_FEATURE_DIGEST
 }
 
 fn digest_parts(parts: &[&[u8]]) -> [u8; 32] {
@@ -490,13 +510,11 @@ fn load_manifest(
     if manifest.packs.is_empty() {
         bail!("execution-pack manifest contains no packs. Fix: run `keyhog install` or `keyhog update`");
     }
-    let embedded_detectors = keyhog_core::load_embedded_detectors_or_fail()
-        .context("loading embedded detectors for execution-pack verification")?;
-    let embedded_ir =
-        keyhog_scanner::execution_pack::CanonicalDetectorExecutionIr::compile(&embedded_detectors)
+    let expected_detector_digest = keyhog_core::hex_encode(
+        &keyhog_scanner::execution_pack::CanonicalDetectorExecutionIr::embedded_digest()
             .map_err(anyhow::Error::msg)
-            .context("compiling canonical detector execution IR for verification")?;
-    let expected_detector_digest = keyhog_core::hex_encode(&embedded_ir.digest());
+            .context("loading embedded detector execution IR digest for verification")?,
+    );
     let current_binary = keyhog_core::hex_encode(&current_binary_digest()?);
     let current_target = keyhog_core::hex_encode(&current_target_digest());
     let current_feature = keyhog_core::hex_encode(&current_feature_digest());

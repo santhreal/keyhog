@@ -183,8 +183,7 @@ fn effective_pattern_count(args: &BackendArgs) -> Result<usize> {
     if let Some(patterns) = args.patterns {
         return Ok(patterns);
     }
-    let detectors = keyhog_core::load_embedded_detectors_or_fail()
-        .map_err(|error| anyhow::anyhow!("backend: load embedded detectors: {error}"))?;
+    let detectors = keyhog_core::embedded_detector_specs().to_vec();
     let scanner = keyhog_scanner::CompiledScanner::compile(detectors)
         .map_err(|error| anyhow::anyhow!("backend: compile embedded scanner: {error}"))?;
     Ok(scanner.runtime_status().pattern_count)

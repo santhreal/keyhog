@@ -106,3 +106,21 @@ impl std::error::Error for ExecutionPackError {
         }
     }
 }
+impl Clone for ExecutionPackError {
+    fn clone(&self) -> Self {
+        match self {
+            Self::InvalidCompilerInput(message) => Self::InvalidCompilerInput(message.clone()),
+            Self::InvalidPack(message) => Self::InvalidPack(message.clone()),
+            Self::Incompatible(message) => Self::Incompatible(message.clone()),
+            Self::Io {
+                operation,
+                path,
+                source,
+            } => Self::Io {
+                operation,
+                path: path.clone(),
+                source: std::io::Error::new(source.kind(), source.to_string()),
+            },
+        }
+    }
+}

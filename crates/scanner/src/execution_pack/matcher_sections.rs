@@ -319,7 +319,11 @@ impl CompiledRouteMatcherSections {
         &self,
         detectors: &[keyhog_core::DetectorSpec],
     ) -> Result<CompileState, ExecutionPackError> {
-        let detector_ir_digest = CanonicalDetectorExecutionIr::compile(detectors)?.digest();
+        let detector_ir_digest = if CanonicalDetectorExecutionIr::is_embedded_corpus(detectors) {
+            CanonicalDetectorExecutionIr::embedded_digest()?
+        } else {
+            CanonicalDetectorExecutionIr::compile(detectors)?.digest()
+        };
         decode_compile_state_sections(
             self.backend,
             &self.literal_index,

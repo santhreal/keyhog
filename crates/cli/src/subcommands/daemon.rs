@@ -81,8 +81,7 @@ async fn start(
         (detectors, rules_digest)
     } else {
         (
-            keyhog_core::load_embedded_detectors_or_fail()
-                .context("daemon start: load embedded detectors")?,
+            keyhog_core::embedded_detector_specs().to_vec(),
             keyhog_core::detector_digest().to_owned(),
         )
     };

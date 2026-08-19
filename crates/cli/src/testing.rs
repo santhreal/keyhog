@@ -1384,7 +1384,7 @@ impl CliTestApi for TestApi {
         backend: &str,
         body: &str,
     ) -> Result<Vec<String>> {
-        let detectors = keyhog_core::load_embedded_detectors_or_fail()?;
+        let detectors = keyhog_core::embedded_detector_specs().to_vec();
         let forced = crate::orchestrator::explicit_backend_override(Some(backend))?
             .ok_or_else(|| anyhow::anyhow!("'{backend}' is auto, not an explicit backend"))?;
         let runtime =
@@ -1413,7 +1413,7 @@ impl CliTestApi for TestApi {
         _guard: &ScanRuntimeGuard,
     ) -> Result<Vec<String>> {
         crate::reset_scan_runtime_state();
-        let detectors = keyhog_core::load_embedded_detectors_or_fail()?;
+        let detectors = keyhog_core::embedded_detector_specs().to_vec();
         let scanner = keyhog_scanner::CompiledScanner::compile_with_gpu_policy(
             detectors,
             keyhog_scanner::GpuInitPolicy::ForceDisabled,
