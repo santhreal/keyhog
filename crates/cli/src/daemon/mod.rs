@@ -44,7 +44,7 @@ mod frame_streaming_tests;
 #[cfg(feature = "git")]
 pub(crate) mod guard_commit;
 pub(crate) mod guard_runtime;
-pub(crate) mod guard_watcher;
+pub mod guard_watcher;
 #[cfg(test)]
 #[path = "path_resolution_tests.rs"]
 mod path_resolution_tests;

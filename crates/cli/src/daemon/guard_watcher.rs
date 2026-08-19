@@ -73,6 +73,23 @@ impl GuardWatcher {
         }
     }
 
+    /// Create a guard watcher connected to a custom event channel.
+    /// Used for deterministic simulation and tests without native watcher hooks.
+    pub fn new_with_channel(
+        config: GuardReconciliationConfig,
+    ) -> (Self, mpsc::Sender<notify::Result<notify::Event>>) {
+        let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+        (
+            Self {
+                watcher: None,
+                rx,
+                roots: HashMap::new(),
+                config,
+            },
+            tx,
+        )
+    }
+
     /// Returns the configured coalesce window in milliseconds.
     pub fn coalesce_window_ms(&self) -> u64 {
         self.config.coalesce_window_ms
@@ -84,7 +101,7 @@ impl GuardWatcher {
         if self.roots.contains_key(&path) {
             return Err(format!("root already watched: {}", path.display()));
         }
-        if let Some(ref mut watcher) = self.watcher {
+        if let Some(watcher) = &mut self.watcher {
             watcher
                 .watch(&path, RecursiveMode::Recursive)
                 .map_err(|e| {
@@ -105,11 +122,12 @@ impl GuardWatcher {
     /// Remove a root from watching.
     pub fn remove_root(&mut self, path: &std::path::Path) {
         if self.roots.remove(path).is_some() {
-            if let Some(ref mut watcher) = self.watcher {
+            if let Some(watcher) = &mut self.watcher {
                 let _ = watcher.unwatch(path);
             }
         }
     }
+
     /// Poll for events from the native watcher. Returns normalized
     /// guard events grouped by root path. Non-blocking. Drains the
     /// per-root buffer as events are handed to the caller, so the
@@ -121,13 +139,25 @@ impl GuardWatcher {
         loop {
             match self.rx.try_recv() {
                 Ok(Ok(event)) => {
-                    if let Some(path) = event.paths.first() {
-                        if let Some(root) = self.find_root_for_path(path) {
-                            let guard_events = normalize_notify_event(&event);
-                            if let Some(buffer) = self.roots.get(&root) {
-                                let mut buf = buffer.buffer.lock();
-                                for ge in &guard_events {
-                                    buf.push(ge.clone());
+                    if event.paths.is_empty() {
+                        // Empty paths vector indicates fidelity loss or unresolvable
+                        // bulk event: trigger subtree reconciliation across all roots.
+                        for root in self.roots.keys() {
+                            results
+                                .entry(root.clone())
+                                .or_default()
+                                .push(GuardEvent::ReconcileSubtree(root.clone()));
+                        }
+                    } else {
+                        // Process and attribute ALL paths present on the event so
+                        // moves/renames across roots update both source and destination.
+                        for path in &event.paths {
+                            if let Some(root) = self.find_root_for_path(path) {
+                                let guard_event =
+                                    normalize_notify_path_event(&event.kind, path);
+                                if let Some(buffer) = self.roots.get(&root) {
+                                    let mut buf = buffer.buffer.lock();
+                                    buf.push(guard_event);
                                 }
                             }
                         }
@@ -157,7 +187,8 @@ impl GuardWatcher {
                     .push(GuardEvent::ReconcileSubtree(root.clone()));
                 buf.drain_and_reset();
             } else {
-                let buffered: Vec<GuardEvent> = buf.drain().into_iter().map(|(_, ge)| ge).collect();
+                let buffered: Vec<GuardEvent> =
+                    buf.drain().into_iter().map(|(_, ge)| ge).collect();
                 if !buffered.is_empty() {
                     results.entry(root.clone()).or_default().extend(buffered);
                 }
@@ -166,14 +197,22 @@ impl GuardWatcher {
         results.into_iter().collect()
     }
 
-    /// Find which registered root a path belongs to.
+    /// Find which registered root a path belongs to. Selects the longest
+    /// matching prefix when roots are nested.
     fn find_root_for_path(&self, path: &std::path::Path) -> Option<PathBuf> {
+        let mut best: Option<PathBuf> = None;
         for root in self.roots.keys() {
             if path.starts_with(root) {
-                return Some(root.clone());
+                if let Some(current) = &best {
+                    if root.as_os_str().len() > current.as_os_str().len() {
+                        best = Some(root.clone());
+                    }
+                } else {
+                    best = Some(root.clone());
+                }
             }
         }
-        None
+        best
     }
 
     /// Number of watched roots.
@@ -197,21 +236,32 @@ impl GuardWatcher {
     }
 }
 
-/// Convert a notify::Event into normalized GuardEvent(s).
-fn normalize_notify_event(event: &notify::Event) -> Vec<GuardEvent> {
-    let path = event.paths.first().cloned().unwrap_or_default();
-    match event.kind {
-        EventKind::Create(_) => vec![GuardEvent::Create(path)],
-        EventKind::Modify(_) => vec![GuardEvent::Modify(path)],
-        EventKind::Remove(_) => vec![GuardEvent::Remove(path)],
-        _ => {
-            if !event.paths.is_empty() {
-                vec![GuardEvent::Modify(path)]
-            } else {
-                Vec::new()
-            }
-        }
+/// Convert a notify::Event for a specific path into a normalized GuardEvent.
+fn normalize_notify_path_event(kind: &EventKind, path: &std::path::Path) -> GuardEvent {
+    match kind {
+        EventKind::Create(_) => GuardEvent::Create(path.to_path_buf()),
+        EventKind::Modify(_) => GuardEvent::Modify(path.to_path_buf()),
+        EventKind::Remove(_) => GuardEvent::Remove(path.to_path_buf()),
+        _ => GuardEvent::Modify(path.to_path_buf()),
     }
+}
+
+/// Convert a notify::Event into normalized GuardEvent(s).
+pub fn normalize_notify_event(event: &notify::Event) -> Vec<GuardEvent> {
+    if event.paths.is_empty() {
+        let path = PathBuf::default();
+        return match event.kind {
+            EventKind::Create(_) => vec![GuardEvent::Create(path)],
+            EventKind::Modify(_) => vec![GuardEvent::Modify(path)],
+            EventKind::Remove(_) => vec![GuardEvent::Remove(path)],
+            _ => vec![GuardEvent::Modify(path)],
+        };
+    }
+    event
+        .paths
+        .iter()
+        .map(|path| normalize_notify_path_event(&event.kind, path))
+        .collect()
 }
 #[cfg(test)]
 #[path = "../../tests/unit/daemon_guard_watcher.rs"]
