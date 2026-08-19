@@ -139,6 +139,7 @@ fn sample_root(
         last_reconciliation_time: Some(1700000100),
         backend_route_label: "simd".to_string(),
         last_receipt: receipt,
+        recent_transitions: Vec::new(),
     }
 }
 

@@ -123,7 +123,11 @@ pub fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 /// Atomically replace `path` with `bytes` using a custom temp-file prefix.
-pub fn write_atomically_with_prefix(path: &Path, prefix: &str, bytes: &[u8]) -> std::io::Result<()> {
+pub fn write_atomically_with_prefix(
+    path: &Path,
+    prefix: &str,
+    bytes: &[u8],
+) -> std::io::Result<()> {
     write_atomically_with_writer_and_prefix(path, prefix, |tmp| {
         use std::io::Write as _;
         tmp.write_all(bytes)
@@ -175,11 +179,7 @@ where
 /// the keyhog-owned `prefixes` AND older than `cutoff_secs` are removed, so a
 /// peer process's in-flight save or an unrelated file is never touched. Returns
 /// the number of files removed; callers own their summary logging.
-pub fn sweep_stale_tmp_siblings(
-    cache_path: &Path,
-    prefixes: &[&str],
-    cutoff_secs: u64,
-) -> usize {
+pub fn sweep_stale_tmp_siblings(cache_path: &Path, prefixes: &[&str], cutoff_secs: u64) -> usize {
     let Some(parent) = cache_path.parent() else {
         return 0;
     };

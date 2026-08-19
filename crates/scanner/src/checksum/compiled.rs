@@ -42,20 +42,23 @@ impl LazyPatternShape {
     }
 
     fn compile(&self, full: bool) -> regex::RegexSet {
-        regex::RegexSet::new(self.patterns.iter().map(|pattern| {
+        let patterns = self.patterns.iter().map(|pattern| {
             if full {
                 format!("^(?:{pattern})$")
             } else {
                 format!("^(?:{pattern})")
             }
-        }))
-        // LAW10: invalid built-in validator regexes terminate with a loud build-invariant panic.
-        .unwrap_or_else(|error| {
-            panic!(
-                "BUILD-INVARIANT VIOLATION: detector {:?} pattern-shape validator failed to compile: {error}",
-                self.detector_id
-            )
-        })
+        });
+        regex::RegexSetBuilder::new(patterns)
+            .case_insensitive(true)
+            .build()
+            // LAW10: invalid built-in validator regexes terminate with a loud build-invariant panic.
+            .unwrap_or_else(|error| {
+                panic!(
+                    "BUILD-INVARIANT VIOLATION: detector {:?} pattern-shape validator failed to compile: {error}",
+                    self.detector_id
+                )
+            })
     }
 }
 
@@ -275,6 +278,7 @@ fn is_provider_token_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')
 }
 
+/// Compiled offline validator catalog for a single detector.
 #[derive(Debug, Default)]
 pub struct CompiledDetectorValidators {
     validators: Box<[CompiledValidator]>,
@@ -423,6 +427,7 @@ impl CompiledValidatorCatalog {
 }
 
 impl CompiledDetectorValidators {
+    /// Compile offline validators from a detector specification.
     pub fn compile(detector: &keyhog_core::DetectorSpec) -> Result<Self, String> {
         keyhog_profile::record_compile_surface_invocation(
             keyhog_profile::CompileSurfaceId::ValidatorCatalog,
@@ -452,6 +457,7 @@ impl CompiledDetectorValidators {
         })
     }
 
+    /// Validate a candidate credential against the compiled detector validators.
     #[inline]
     pub fn validate(&self, credential: &str, pattern_proven: bool) -> ChecksumConfidenceDecision {
         for validator in &self.validators {

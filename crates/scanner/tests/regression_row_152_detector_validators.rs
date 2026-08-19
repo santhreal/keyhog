@@ -201,7 +201,7 @@ fn test_luhn_checksum_validator_valid_and_corrupted() {
     let non_digit_decision = compiled.validate(non_digit, false);
     assert_eq!(non_digit_decision.result(), ChecksumResult::Invalid);
 
-    // Corrupted: too short (< 13 digits)
+    // Corrupted: too short (< 10 digits)
     let too_short = "card_79927398";
     let too_short_decision = compiled.validate(too_short, false);
     assert_eq!(too_short_decision.result(), ChecksumResult::Invalid);

@@ -831,7 +831,9 @@ pub fn store_matcher_artifact(
         if actual_len != artifact_len {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("matcher artifact writer produced {actual_len} bytes, expected {artifact_len}"),
+                format!(
+                    "matcher artifact writer produced {actual_len} bytes, expected {artifact_len}"
+                ),
             ));
         }
         Ok(())
@@ -849,7 +851,6 @@ fn evict_old_matcher_artifacts(cache_dir: &Path) {
         policy,
     );
 }
-
 
 fn record_outcome(outcome: &MatcherArtifactCacheOutcome) {
     match outcome {

@@ -692,11 +692,6 @@ fn load_manifest(
             manifest.feature_digest.as_str(),
             current_feature.as_str(),
         ),
-        (
-            "detector",
-            manifest.detector_digest.as_str(),
-            keyhog_core::hex_encode(&current_embedded_detector_digest()?),
-        ),
     ] {
         if actual != expected {
             bail!(

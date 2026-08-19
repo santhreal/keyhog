@@ -18,7 +18,14 @@ fn bench_cli_arg_parsing(c: &mut Criterion) {
         ("scan_dot", &["keyhog", "scan", "."]),
         (
             "scan_hook_canonical",
-            &["keyhog", "scan", "--fast", "--git-staged", "--backend", "cpu"],
+            &[
+                "keyhog",
+                "scan",
+                "--fast",
+                "--git-staged",
+                "--backend",
+                "cpu",
+            ],
         ),
         (
             "scan_flags_matrix",

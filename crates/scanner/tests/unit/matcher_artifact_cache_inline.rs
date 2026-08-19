@@ -1,4 +1,5 @@
 use super::*;
+use std::io::Write;
 
 /// WHY: hostile section lengths must fail before allocating the serialized artifact.
 #[test]
@@ -47,7 +48,9 @@ fn atomic_writer_rejects_length_mismatch_before_publish() {
         if actual_len != expected_len {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("matcher artifact writer produced {actual_len} bytes, expected {expected_len}"),
+                format!(
+                    "matcher artifact writer produced {actual_len} bytes, expected {expected_len}"
+                ),
             ));
         }
         Ok(())
