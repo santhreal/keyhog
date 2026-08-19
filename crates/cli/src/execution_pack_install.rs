@@ -197,28 +197,34 @@ impl InstalledArtifactRegistry {
     }
 
     /// Execute the installer producer loop over every registered artifact class.
-    pub fn execute_installer_producer_loop<F>(mut producer: F) -> Result<BTreeSet<InstalledArtifactClass>>
+    pub fn execute_installer_producer_loop<F>(
+        mut producer: F,
+    ) -> Result<BTreeSet<InstalledArtifactClass>>
     where
         F: FnMut(InstalledArtifactClass) -> Result<()>,
     {
         let mut produced = BTreeSet::new();
         for &class in Self::all_classes() {
-            producer(class)
-                .with_context(|| format!("installer producer failed for artifact class {class:?}"))?;
+            producer(class).with_context(|| {
+                format!("installer producer failed for artifact class {class:?}")
+            })?;
             produced.insert(class);
         }
         Ok(produced)
     }
 
     /// Execute the updater regeneration loop over every registered artifact class.
-    pub fn execute_updater_regeneration_loop<F>(mut regenerator: F) -> Result<BTreeSet<InstalledArtifactClass>>
+    pub fn execute_updater_regeneration_loop<F>(
+        mut regenerator: F,
+    ) -> Result<BTreeSet<InstalledArtifactClass>>
     where
         F: FnMut(InstalledArtifactClass) -> Result<()>,
     {
         let mut regenerated = BTreeSet::new();
         for &class in Self::all_classes() {
-            regenerator(class)
-                .with_context(|| format!("updater regeneration failed for artifact class {class:?}"))?;
+            regenerator(class).with_context(|| {
+                format!("updater regeneration failed for artifact class {class:?}")
+            })?;
             regenerated.insert(class);
         }
         Ok(regenerated)
