@@ -44,8 +44,16 @@ fn example_config_contains_guard_section() {
         ".keyhog.toml.example [guard] must document max_pending_events_per_root"
     );
     assert!(
+        content.contains("max_pending_events_total"),
+        ".keyhog.toml.example [guard] must document max_pending_events_total"
+    );
+    assert!(
         content.contains("coalesce_window"),
         ".keyhog.toml.example [guard] must document coalesce_window"
+    );
+    assert!(
+        content.contains("scanner_residency"),
+        ".keyhog.toml.example [guard] must document scanner_residency"
     );
     assert!(
         content.contains("scanner_idle_timeout"),
@@ -180,7 +188,9 @@ fn guard_docs_and_example_keys_coherence() {
         "state_path",
         "hot_index_memory",
         "max_pending_events_per_root",
+        "max_pending_events_total",
         "coalesce_window",
+        "scanner_residency",
         "scanner_idle_timeout",
         "subtree_max_files",
         "subtree_max_depth",

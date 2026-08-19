@@ -331,12 +331,17 @@ The guard runtime resolves settings from the `[guard]` table in `.keyhog.toml`:
 # Maximum queued filesystem events per root before degraded status (default: 8192).
 # max_pending_events_per_root = 8192
 
+# Maximum total queued filesystem events across all roots (default: 65536).
+# max_pending_events_total = 65536
+
 # Event coalescing window before applying state transitions (default: "100ms").
 # coalesce_window = "100ms"
 
+# Scanner residency mode: "warm" (keep loaded) or "idle-unload" (unload after idle timeout).
+# scanner_residency = "warm"
+
 # Scanner idle timeout before reporting `idle-unload` residency (default: "5m").
 # scanner_idle_timeout = "5m"
-
 # Maximum files scanned during one subtree reconciliation (default: 10000).
 # subtree_max_files = 10000
 
@@ -350,7 +355,9 @@ The guard runtime resolves settings from the `[guard]` table in `.keyhog.toml`:
 | `state_path` | string | disabled | Durable guard state path (e.g. `~/.local/state/keyhog/guard.redb`). Persists root records and attestations across daemon restarts. Ignored in lockdown mode (guard operates in ephemeral memory). |
 | `hot_index_memory` | string | 64MB | Hot clean attestation index memory budget (e.g. `64MB`). |
 | `max_pending_events_per_root` | integer | 8192 | Maximum queued filesystem events per root before degraded status. |
+| `max_pending_events_total` | integer | 65536 | Maximum total queued filesystem events across all roots before degraded status. |
 | `coalesce_window` | string | 100ms | Event coalescing window before applying state transitions. |
+| `scanner_residency` | string | warm | Scanner residency mode (`warm` or `idle-unload`). |
 | `scanner_idle_timeout` | string | 5m | Scanner idle-unload timeout. After this duration without guard activity, residency reports `idle-unload`. |
 | `subtree_max_files` | integer | 10000 | Maximum files for one subtree reconciliation. |
 | `subtree_max_depth` | integer | 64 | Maximum depth for one subtree reconciliation. |

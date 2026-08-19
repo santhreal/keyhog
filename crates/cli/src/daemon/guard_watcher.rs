@@ -228,6 +228,7 @@ impl GuardWatcher {
             disabled: false,
             disconnection_reason: parking_lot::Mutex::new(None),
         })
+    }
 
     /// Create a null/no-op watcher.
     pub fn new_null(config: GuardReconciliationConfig) -> Result<Self, String> {
