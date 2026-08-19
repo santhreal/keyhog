@@ -72,7 +72,7 @@ KH_FEAT="$KEYHOG_INSTALL_FEATURES"
 if [ -z "\$KH_FEAT" ]; then
   case "\$OS" in
     Darwin*) KH_FEAT="--no-default-features --features portable" ;;  # no system libs
-    *)       KH_FEAT="" ;;                                            # Linux: Hyperscan SIMD
+    *)       KH_FEAT="--features simd" ;;                            # Linux: Hyperscan SIMD
   esac
 fi
 echo "installing keyhog (cargo install --path crates/cli \$KH_FEAT)..." >&2
