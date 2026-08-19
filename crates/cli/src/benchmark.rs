@@ -98,7 +98,7 @@ pub(crate) fn run_benchmark(orchestrator: &ScanOrchestrator) -> Result<Vec<Backe
     Ok(results)
 }
 
-fn build_benchmark_corpus() -> Vec<Chunk> {
+pub(crate) fn build_benchmark_corpus() -> Vec<Chunk> {
     let mut chunks = Vec::with_capacity(BENCHMARK_CHUNKS);
     for index in 0..BENCHMARK_CHUNKS {
         let mut data = String::with_capacity(BENCHMARK_CHUNK_BYTES + 512);
@@ -117,9 +117,9 @@ fn build_benchmark_corpus() -> Vec<Chunk> {
 
         let suffix = format!(
             "// configuration constants\n\
-             export const GITHUB_TOKEN_{index} = \"ghp_ABCDEF1234567890ABCDEF1234567890AB\";\n\
+             export const GITHUB_TOKEN_{index} = \"ghp_ABCDEF1234567890ABCDEF1234567890ABCD\";\n\
              export const STRIPE_SECRET_{index} = \"sk_live_1234567890abcdefghijklmnopqrstuv\";\n\
-             export const AWS_KEY_{index} = \"AKIA1234567890ABCD\";\n"
+             export const AWS_KEY_{index} = \"AKIA1234567890ABCDEF\";\n"
         );
         data.push_str(&suffix);
 

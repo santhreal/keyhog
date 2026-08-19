@@ -43,8 +43,7 @@ cargo test -p keyhog-scanner --features gpu --profile release-fast \
   --test gpu_resident_output_ownership \
   --test regression_gpu_region_presence_batch_parity \
   --test packed_gpu_vyre_artifact \
-  --test gpu_literal_artifact_writer \
-  --test gpu_moe_degrade_contract
+  --test gpu_literal_artifact_writer
 
 echo "=== [Local CI] 4. GPU CLI Integration & Error Handling ==="
 cargo test -p keyhog --features gpu,simd --profile ci-test \

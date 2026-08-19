@@ -33,7 +33,11 @@ fn bin() -> &'static str {
 /// Scan `path` with an explicit backend and return the set of
 /// `(detector_id, credential_hash)` findings (order-independent identity).
 fn findings(path: &str, backend: &str, no_gpu: bool) -> BTreeSet<(String, String)> {
+    let cache_dir = tempfile::tempdir().expect("tempdir");
     let mut cmd = Command::new(bin());
+    cmd.env("HOME", cache_dir.path())
+        .env("XDG_CACHE_HOME", cache_dir.path())
+        .env("NO_COLOR", "1");
     cmd.args([
         "scan",
         path,
