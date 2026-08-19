@@ -245,13 +245,7 @@ fn normalize_notify_path_event(kind: &EventKind, path: &std::path::Path) -> Guar
 /// Convert a notify::Event into normalized GuardEvent(s).
 pub fn normalize_notify_event(event: &notify::Event) -> Vec<GuardEvent> {
     if event.paths.is_empty() {
-        let path = PathBuf::default();
-        return match event.kind {
-            EventKind::Create(_) => vec![GuardEvent::Create(path)],
-            EventKind::Modify(_) => vec![GuardEvent::Modify(path)],
-            EventKind::Remove(_) => vec![GuardEvent::Remove(path)],
-            _ => vec![GuardEvent::Modify(path)],
-        };
+        return Vec::new();
     }
     event
         .paths

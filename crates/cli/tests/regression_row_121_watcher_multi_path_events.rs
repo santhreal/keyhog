@@ -212,11 +212,10 @@ fn normalize_notify_event_multi_path_totality() {
     assert_eq!(normalized.len(), 1);
     assert_eq!(normalized[0], GuardEvent::Modify(PathBuf::from("/a/1.txt")));
 
-    // 5. Empty paths event normalization
+    // 5. Empty paths event normalization yields empty list (handled via ReconcileSubtree in watcher)
     let empty_create = notify::Event::new(EventKind::Create(CreateKind::File));
     let normalized = normalize_notify_event(&empty_create);
-    assert_eq!(normalized.len(), 1);
-    assert_eq!(normalized[0], GuardEvent::Create(PathBuf::from("")));
+    assert_eq!(normalized.len(), 0);
 }
 
 #[test]
