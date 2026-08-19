@@ -2897,17 +2897,15 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 .guard
                 .take_coverage_lost_during_indexing(root.as_bytes());
             let dirty = state.guard.take_dirty_during_indexing(root.as_bytes());
-            let terminal = baseline_terminal_transition(
-                scan_result,
-                coverage_lost || state.guard.is_watcher_disconnected(),
-            );
+            let force_degraded = coverage_lost || state.guard.is_watcher_disconnected();
+            let terminal = baseline_terminal_transition(scan_result, force_degraded);
             match state.guard.transition_root(root.as_bytes(), &terminal) {
                 Ok(_) => {
                     // Ordinary (non-overflow) events during indexing mean the
                     // tree changed mid-walk. Move Current/Blocked to Dirty so
                     // status stays fail-closed until a later reconcile.
-                    // Overflow already forced Degraded via coverage_lost.
-                    if dirty && !coverage_lost {
+                    // Overflow or watcher disconnection already forced Degraded.
+                    if dirty && !force_degraded {
                         if let Err(e) = state.guard.transition_root(
                             root.as_bytes(),
                             &keyhog_core::guard_state::GuardTransition::EventAccepted,
