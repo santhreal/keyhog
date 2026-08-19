@@ -91,7 +91,7 @@ pub fn evict_cache_dir_with_policy(
                     remaining_count = remaining_count.saturating_sub(1);
                     continue;
                 }
-                // LAW10: file cannot be removed due to permissions or io; it is retained in cache accounting
+                // LAW10: recall-safe cache eviction failure keeps unlinked artifact in retained accounting
                 Err(_) => {}
             }
         }
