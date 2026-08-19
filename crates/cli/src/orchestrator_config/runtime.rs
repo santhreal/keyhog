@@ -220,7 +220,9 @@ impl ScanRuntimeInput {
             reader_threads: args.reader_threads,
             fused_batch: args.fused_batch.unwrap_or(FUSED_BATCH_DEFAULT), // LAW10: absent fused-batch config => documented compiled throughput default; no recall path changes and the value is printed/hashes into autoroute identity
             fused_depth: args.fused_depth,
-            window_overlap: args.window_overlap.unwrap_or(keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES), // LAW10: absent window-overlap config => canonical window overlap default; printed in effective config
+            window_overlap: args
+                .window_overlap
+                .unwrap_or(keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES), // LAW10: absent window-overlap config => canonical window overlap default; printed in effective config
             gpu_runtime_policy: gpu_runtime_policy_from_args(args),
             autoroute_gpu: args.autoroute_gpu && !args.no_autoroute_gpu,
             autoroute_calibration: args.autoroute_calibrate,

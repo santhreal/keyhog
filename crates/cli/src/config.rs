@@ -4,17 +4,17 @@ use crate::args::ScanArgs;
 use std::path::PathBuf;
 
 mod limits;
+pub mod operational;
 mod policy;
 mod scan;
 pub(crate) mod schema;
 mod sections;
-pub mod operational;
 pub use operational::{OperationalKnob, OperationalUnit};
 
 pub(crate) use policy::ConfigOutcome;
 use policy::{base_config_outcome, config_file_error, resolve_policy_outcome};
-use scan::{apply_scan_section, apply_top_level_scan_fields, validate_scan_preset_conflicts};
 pub(crate) use scan::parse_config_byte_size;
+use scan::{apply_scan_section, apply_top_level_scan_fields, validate_scan_preset_conflicts};
 pub(crate) use schema::ConfigFile;
 use sections::{
     apply_allowlist_section, apply_aws_section, apply_http_section, apply_system_section,

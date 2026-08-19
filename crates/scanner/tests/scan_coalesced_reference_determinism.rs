@@ -250,8 +250,7 @@ fn scan_coalesced_finding_parity_across_worker_counts() {
 
     // Derive worker count variant space dynamically at run time:
     // 1 worker, 2 workers, an odd count, and host maximum from pool / available parallelism.
-    let host_max = rayon::current_num_threads()
-        .max(keyhog_profile::logical_cpu_count().max(4));
+    let host_max = rayon::current_num_threads().max(keyhog_profile::logical_cpu_count().max(4));
     let odd_count = if host_max > 3 { (host_max / 2) | 1 } else { 3 };
     let mut worker_counts = std::collections::BTreeSet::new();
     worker_counts.insert(1);
