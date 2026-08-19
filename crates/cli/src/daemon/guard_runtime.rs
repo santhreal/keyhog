@@ -15,11 +15,12 @@
 use keyhog_core::guard_state::{
     FilesystemAuthority, FilesystemIdentity, GitCleanAttestation, GitHashAlgorithm,
     GuardPolicyIdentity, GuardRootMode, GuardRootRecord, GuardRootState, GuardTransition,
+    GuardTransitionRecord,
 };
 use keyhog_core::guard_store::{HotAttestationIndex, RootRegistry};
 use keyhog_core::RawMatch;
 use parking_lot::{Mutex, RwLock};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
 
 /// One in-flight guard commit transaction.
@@ -109,6 +110,10 @@ pub struct GuardRuntime {
     watcher_disconnection_reason: parking_lot::RwLock<Option<String>>,
     /// Explicit watcher status description ("watching", "unmonitored", "disconnected: ...", etc.).
     watcher_status: parking_lot::RwLock<Option<String>>,
+    /// Continuous transition feed across all registered roots (bounded ring buffer).
+    transition_feed: Mutex<VecDeque<GuardTransitionRecord>>,
+    /// Monotonically increasing global transition sequence.
+    global_transition_sequence: Mutex<u64>,
 }
 
 /// Default scanner idle timeout in seconds (5 minutes).
@@ -135,6 +140,8 @@ impl GuardRuntime {
             coverage_lost_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
             watcher_disconnection_reason: parking_lot::RwLock::new(None),
             watcher_status: parking_lot::RwLock::new(None),
+            transition_feed: Mutex::new(VecDeque::new()),
+            global_transition_sequence: Mutex::new(1),
         }
     }
 
@@ -153,6 +160,8 @@ impl GuardRuntime {
             coverage_lost_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
             watcher_disconnection_reason: parking_lot::RwLock::new(None),
             watcher_status: parking_lot::RwLock::new(None),
+            transition_feed: Mutex::new(VecDeque::new()),
+            global_transition_sequence: Mutex::new(1),
         }
     }
 
@@ -200,9 +209,23 @@ impl GuardRuntime {
                     .collect();
                 for path in paths {
                     if let Some(r) = roots.get_mut(&path) {
-                        if let Ok(new_state) = r.state.transition(&GuardTransition::PolicyChanged) {
-                            r.state = new_state;
-                            r.terminal_sequence = r.terminal_sequence.saturating_add(1);
+                        let from_state = r.state;
+                        match r.state.transition(&GuardTransition::PolicyChanged) {
+                            Ok(new_state) => {
+                                r.state = new_state;
+                                r.terminal_sequence = r.terminal_sequence.saturating_add(1);
+                                self.record_transition_internal(
+                                    r,
+                                    GuardTransition::PolicyChanged,
+                                    from_state,
+                                    new_state,
+                                    "policy identity changed: detector/suppression/schema digest mismatch",
+                                );
+                            }
+                            Err(_) => {
+                                // Transition is illegal (e.g. Degraded).
+                                // Leave the root in its current state.
+                            }
                         }
                     }
                 }
@@ -305,11 +328,57 @@ impl GuardRuntime {
             .remove(canonical_path)
     }
 
-    /// Apply a transition to a root. Returns the new state or an error.
-    pub fn transition_root(
+    /// Internal helper to record a transition in both root-local history and global feed.
+    fn record_transition_internal(
+        &self,
+        record: &mut GuardRootRecord,
+        event: GuardTransition,
+        from_state: GuardRootState,
+        to_state: GuardRootState,
+        cause: impl Into<String>,
+    ) -> GuardTransitionRecord {
+        let mut seq_guard = self.global_transition_sequence.lock();
+        let seq = *seq_guard;
+        *seq_guard = seq.saturating_add(1);
+        drop(seq_guard);
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let transition = GuardTransitionRecord {
+            canonical_path: record.canonical_path.clone(),
+            sequence: seq,
+            timestamp: now,
+            from_state,
+            to_state,
+            event,
+            cause: cause.into(),
+        };
+
+        // Bounded per-root history (keep last 50 transitions).
+        record.recent_transitions.push(transition.clone());
+        if record.recent_transitions.len() > 50 {
+            record.recent_transitions.remove(0);
+        }
+
+        // Bounded global feed ring buffer (keep last 1000 transitions).
+        let mut feed = self.transition_feed.lock();
+        feed.push_back(transition.clone());
+        if feed.len() > 1000 {
+            feed.pop_front();
+        }
+
+        transition
+    }
+
+    /// Apply a transition with causal attribution to a root. Returns the new state or an error.
+    pub fn transition_root_with_cause(
         &self,
         canonical_path: &[u8],
         event: &GuardTransition,
+        cause: impl Into<String>,
     ) -> Result<GuardRootState, keyhog_core::guard_state::TransitionError> {
         let mut roots = self.roots.write();
         let record = roots.get_mut(canonical_path).ok_or_else(|| {
@@ -318,6 +387,7 @@ impl GuardRuntime {
                 from: GuardRootState::Stopped,
             }
         })?;
+        let from_state = record.state;
         let new_state = record.state.transition(event)?;
         record.state = new_state;
         if let GuardTransition::ReconciliationClean
@@ -329,8 +399,40 @@ impl GuardRuntime {
         {
             record.terminal_sequence = record.terminal_sequence.saturating_add(1);
         }
+        self.record_transition_internal(record, *event, from_state, new_state, cause);
         self.touch_activity();
         Ok(new_state)
+    }
+
+    /// Apply a transition to a root. Returns the new state or an error.
+    pub fn transition_root(
+        &self,
+        canonical_path: &[u8],
+        event: &GuardTransition,
+    ) -> Result<GuardRootState, keyhog_core::guard_state::TransitionError> {
+        self.transition_root_with_cause(canonical_path, event, event.label())
+    }
+
+    /// Return the transition feed across roots, optionally filtered by root and limited.
+    pub fn transition_feed(
+        &self,
+        root: Option<&[u8]>,
+        limit: Option<usize>,
+    ) -> Vec<GuardTransitionRecord> {
+        let feed = self.transition_feed.lock();
+        let limit = limit.unwrap_or(50);
+        let mut entries: Vec<GuardTransitionRecord> = if let Some(target_root) = root {
+            feed.iter()
+                .filter(|t| t.canonical_path == target_root)
+                .cloned()
+                .collect()
+        } else {
+            feed.iter().cloned().collect()
+        };
+        if entries.len() > limit {
+            entries = entries.split_off(entries.len() - limit);
+        }
+        entries
     }
 
     /// Look up a clean attestation. A hit does not read blob payload.
@@ -572,10 +674,11 @@ impl GuardRuntime {
         // terminal_state is the proven state, so set it directly
         // rather than going through the transition table (which
         // would reject EventsClean from Current, for example).
+        let from_state = record.state;
         record.state = receipt.terminal_state;
         record.terminal_sequence = record.terminal_sequence.saturating_add(1);
-        let mut receipt = receipt;
-        receipt.terminal_sequence = record.terminal_sequence;
+        let mut receipt_clone = receipt.clone();
+        receipt_clone.terminal_sequence = record.terminal_sequence;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -584,7 +687,43 @@ impl GuardRuntime {
             record.initial_reconciliation_time = Some(now);
         }
         record.last_reconciliation_time = Some(now);
-        record.last_receipt = Some(receipt);
+        record.last_receipt = Some(receipt_clone);
+
+        let (commit_event, cause) = match receipt.terminal_state {
+            GuardRootState::Current => (
+                GuardTransition::EventsClean,
+                format!(
+                    "commit transaction clean: {} objects ({} hits, {} scanned), 0 findings",
+                    receipt.objects_requested, receipt.objects_hit, receipt.objects_scanned
+                ),
+            ),
+            GuardRootState::Blocked => (
+                GuardTransition::EventsFindings,
+                format!(
+                    "commit transaction blocked: {} unsuppressed findings across {} objects",
+                    receipt.findings_count, receipt.objects_scanned
+                ),
+            ),
+            GuardRootState::Degraded => (
+                GuardTransition::EventsDegraded,
+                format!(
+                    "commit transaction degraded: {} coverage gaps across {} objects",
+                    receipt.coverage_gaps, receipt.objects_requested
+                ),
+            ),
+            other => (
+                GuardTransition::EventsClean,
+                format!("commit transaction terminal state: {other}"),
+            ),
+        };
+        self.record_transition_internal(
+            record,
+            commit_event,
+            from_state,
+            receipt.terminal_state,
+            cause,
+        );
+        self.touch_activity();
         Ok(())
     }
 

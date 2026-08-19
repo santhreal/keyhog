@@ -1,4 +1,4 @@
-//! `keyhog guard {add, remove, up, down, list, status, reconcile, rebuild}` subcommand.
+//! `keyhog guard {add, remove, up, down, list, status, reconcile, rebuild, feed}` subcommand.
 //!
 //! Connects to the daemon and sends guard control frames. Starts or stops
 //! the background daemon via `guard up` / `guard down`.
@@ -35,6 +35,12 @@ pub(crate) async fn run(args: GuardArgs) -> anyhow::Result<ExitCode> {
         } => run_status(root, format, socket).await,
         GuardAction::Reconcile { root, socket } => run_reconcile(root, socket).await,
         GuardAction::Rebuild { root, mode, socket } => run_rebuild(root, mode, socket).await,
+        GuardAction::Feed {
+            root,
+            limit,
+            format,
+            socket,
+        } => run_feed(root, limit, format, socket).await,
     }
 }
 
@@ -635,6 +641,7 @@ impl GuardStatusView {
             store_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
             store_path: store_path.to_string(),
             repair_command: format!("keyhog guard reconcile {canonical_str}"),
+            recent_transitions: Vec::new(),
         }
     }
 }
@@ -699,6 +706,7 @@ async fn run_status_online(
                 store_schema_version,
                 store_path,
                 repair_command,
+                recent_transitions,
             } => {
                 let view = GuardStatusView {
                     root: daemon_root,
@@ -733,13 +741,14 @@ async fn run_status_online(
                     store_schema_version,
                     store_path,
                     repair_command,
+                    recent_transitions,
                 };
                 if format == "json" {
                     println!("{}", view.to_json());
                 } else {
                     view.print_human();
                 }
-                Ok(exit_for_guard_state(&view.state, view.findings_count))
+                Ok(exit_code_for_guard_state(&view.state, view.findings_count))
             }
             Response::Error { message } => {
                 anyhow::bail!("{message}");
@@ -1219,6 +1228,84 @@ async fn run_rebuild(
         other => {
             anyhow::bail!(
                 "guard rebuild: reconcile protocol mismatch (got {})",
+                response_kind(&other)
+            );
+        }
+    }
+}
+
+async fn run_feed(
+    root: Option<std::path::PathBuf>,
+    limit: usize,
+    format: String,
+    socket: Option<std::path::PathBuf>,
+) -> anyhow::Result<ExitCode> {
+    let socket = socket.unwrap_or_else(default_socket_path);
+    let mut conn = match client::connect(&socket).await {
+        Ok(c) => c,
+        Err(e) => {
+            anyhow::bail!(
+                "guard feed: no compatible daemon at {} (start one with `keyhog guard up`): {e}",
+                socket.display()
+            );
+        }
+    };
+
+    let canonical_root = match root {
+        Some(r) => Some(resolve_root_for_control(&r)?),
+        None => None,
+    };
+
+    let request = Request::GuardFeed {
+        root: canonical_root,
+        limit: Some(limit),
+    };
+
+    match conn.round_trip(&request).await? {
+        Response::GuardFeedResult { transitions } => {
+            if format != "human" && format != "json" {
+                anyhow::bail!(
+                    "guard feed: invalid format '{}': expected 'human' or 'json'",
+                    format
+                );
+            }
+            if format == "json" {
+                let json = serde_json::json!({
+                    "transitions": transitions,
+                });
+                println!("{json}");
+            } else {
+                let palette = style::for_stderr();
+                if transitions.is_empty() {
+                    eprintln!(
+                        "{} no guard transitions recorded",
+                        style::pass("OK", &palette)
+                    );
+                } else {
+                    eprintln!(
+                        "{} {} guard transition{} recorded",
+                        style::pass("OK", &palette),
+                        transitions.len(),
+                        if transitions.len() == 1 { "" } else { "s" }
+                    );
+                    for t in &transitions {
+                        println!(
+                            "  seq={}  {}  {} -> {}  [{}]  cause: {}",
+                            t.sequence, t.root, t.from_state, t.to_state, t.event, t.cause
+                        );
+                    }
+                }
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        Response::Error { message } => {
+            let palette = style::for_stderr();
+            eprintln!("{} guard feed: {}", style::warn("WARN", &palette), message);
+            Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
+        }
+        other => {
+            anyhow::bail!(
+                "guard feed: protocol mismatch (got {})",
                 response_kind(&other)
             );
         }

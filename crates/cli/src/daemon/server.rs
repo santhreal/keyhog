@@ -871,10 +871,11 @@ fn scrub_guard_roots(
 
                 if should_scrub {
                     let path_str = String::from_utf8_lossy(&record.canonical_path);
-                    match state
-                        .guard
-                        .transition_root(&record.canonical_path, &GuardTransition::EventAccepted)
-                    {
+                    match state.guard.transition_root_with_cause(
+                        &record.canonical_path,
+                        &GuardTransition::EventAccepted,
+                        "filesystem scrub: periodic change event on unauthoritative root",
+                    ) {
                         Ok(_) => {
                             tracing::info!(
                                 "daemon: scrub: mark root dirty for re-reconciliation: {}",
@@ -1071,7 +1072,18 @@ fn process_guard_events(
             }
         }
         GuardEventAction::Transition(transition) => {
-            match state.guard.transition_root(root_bytes, &transition) {
+            let cause = if has_overflow {
+                "watcher overflow: event buffer overflowed or channel disconnected".to_string()
+            } else {
+                format!(
+                    "filesystem watcher: {} change events accepted",
+                    events.len()
+                )
+            };
+            match state
+                .guard
+                .transition_root_with_cause(root_bytes, &transition, cause)
+            {
                 Ok(_) => {}
                 Err(e) => {
                     tracing::warn!(
@@ -2046,6 +2058,7 @@ fn is_work_request(request: &Request) -> bool {
         | Request::Health
         | Request::Shutdown
         | Request::GuardList
+        | Request::GuardFeed { .. }
         | Request::GuardRemove { .. }
         | Request::GuardStatus { .. } => false,
     }
@@ -3041,6 +3054,23 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     store_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
                     store_path: String::new(),
                     repair_command: format!("keyhog guard reconcile {}", root),
+                    recent_transitions: record
+                        .recent_transitions
+                        .iter()
+                        .map(|r| {
+                            let root_str = String::from_utf8(r.canonical_path.clone())
+                                .unwrap_or_else(|_| format!("<non-utf8 {:?}>", r.canonical_path));
+                            crate::daemon::protocol::GuardTransitionWireEntry {
+                                root: root_str,
+                                sequence: r.sequence,
+                                timestamp: r.timestamp,
+                                from_state: r.from_state.label().to_string(),
+                                to_state: r.to_state.label().to_string(),
+                                event: r.event.label().to_string(),
+                                cause: r.cause.clone(),
+                            }
+                        })
+                        .collect(),
                 }
             }
             None => Response::Error {
@@ -3082,9 +3112,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 | keyhog_core::guard_state::GuardRootState::Blocked => {
                     // Stop first, then start reconciliation. The stop
                     // transition is always legal from active states.
-                    match state.guard.transition_root(
+                    match state.guard.transition_root_with_cause(
                         root.as_bytes(),
                         &keyhog_core::guard_state::GuardTransition::Stopped,
+                        "reconciliation initiated: root stopped before scan",
                     ) {
                         Ok(_) => {}
                         Err(e) => {
@@ -3100,7 +3131,16 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     return Response::GuardReconcileStarted { root: root.clone() };
                 }
             };
-            match state.guard.transition_root(root.as_bytes(), &transition) {
+            let start_cause = match transition {
+                keyhog_core::guard_state::GuardTransition::RepairStarted => {
+                    "manual repair started: full baseline reconciliation requested"
+                }
+                _ => "manual reconciliation started",
+            };
+            match state
+                .guard
+                .transition_root_with_cause(root.as_bytes(), &transition, start_cause)
+            {
                 Ok(_) => {}
                 Err(e) => {
                     return Response::Error {
@@ -3118,16 +3158,32 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             let dirty = state.guard.take_dirty_during_indexing(root.as_bytes());
             let force_degraded = coverage_lost || state.guard.is_watcher_disconnected();
             let terminal = baseline_terminal_transition(scan_result, force_degraded);
-            match state.guard.transition_root(root.as_bytes(), &terminal) {
+            let terminal_cause = match terminal {
+                keyhog_core::guard_state::GuardTransition::ReconciliationClean => {
+                    "baseline reconciliation clean: 0 findings"
+                }
+                keyhog_core::guard_state::GuardTransition::ReconciliationFindings => {
+                    "baseline reconciliation findings: unsuppressed findings detected"
+                }
+                keyhog_core::guard_state::GuardTransition::ReconciliationDegraded => {
+                    "baseline reconciliation degraded: coverage lost or watcher disconnected"
+                }
+                other => other.label(),
+            };
+            match state
+                .guard
+                .transition_root_with_cause(root.as_bytes(), &terminal, terminal_cause)
+            {
                 Ok(_) => {
                     // Ordinary (non-overflow) events during indexing mean the
                     // tree changed mid-walk. Move Current/Blocked to Dirty so
                     // status stays fail-closed until a later reconcile.
                     // Overflow or watcher disconnection already forced Degraded.
                     if dirty && !force_degraded {
-                        if let Err(e) = state.guard.transition_root(
+                        if let Err(e) = state.guard.transition_root_with_cause(
                             root.as_bytes(),
                             &keyhog_core::guard_state::GuardTransition::EventAccepted,
+                            "filesystem events received during baseline reconciliation walk",
                         ) {
                             tracing::warn!(
                                 "daemon: guard reconcile: dirty-during-indexing transition failed for {}: {}",
@@ -3156,6 +3212,28 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 })
                 .collect();
             Response::GuardListResult { roots }
+        }
+        Request::GuardFeed { root, limit } => {
+            let root_bytes = root.as_deref().map(str::as_bytes);
+            let limit_val = limit.unwrap_or(50).min(1000);
+            let feed_records = state.guard.transition_feed(root_bytes, Some(limit_val));
+            let transitions: Vec<crate::daemon::protocol::GuardTransitionWireEntry> = feed_records
+                .into_iter()
+                .map(|r| {
+                    let root_str = String::from_utf8(r.canonical_path.clone())
+                        .unwrap_or_else(|_| format!("<non-utf8 {:?}>", r.canonical_path));
+                    crate::daemon::protocol::GuardTransitionWireEntry {
+                        root: root_str,
+                        sequence: r.sequence,
+                        timestamp: r.timestamp,
+                        from_state: r.from_state.label().to_string(),
+                        to_state: r.to_state.label().to_string(),
+                        event: r.event.label().to_string(),
+                        cause: r.cause,
+                    }
+                })
+                .collect();
+            Response::GuardFeedResult { transitions }
         }
         // The wire contract says Shutdown flushes in-flight scans. Refuse new
         // work, wait for the running scans, and only then acknowledge, so a

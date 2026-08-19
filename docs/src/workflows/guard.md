@@ -54,7 +54,8 @@ staged content is clean.
 | `keyhog guard down` | Stop the background guard daemon cleanly. Persisted root registrations and durable indexes remain on disk. |
 | `keyhog guard add <path> [--mode repo]` | Register a repository or tree for continuous guard protection. Performs initial baseline reconciliation and installs hook before returning. |
 | `keyhog guard list` | Enumerate all registered guard roots, their active states, and terminal sequences. Reads durable store when daemon is offline. |
-| `keyhog guard status [<path>] [--format human\|json]` | Print detailed metrics for a guarded root or summarize all registered roots when path is omitted. Works offline via durable store. |
+| `keyhog guard feed [--root <path>] [--limit <N>]` | Inspect continuous state machine transitions and event log with causal attribution across roots. |
+| `keyhog guard status [<path>] [--format human|json]` | Print detailed metrics for a guarded root (including policy digest and recent transitions) or summarize all registered roots when path is omitted. Works offline via durable store. |
 | `keyhog guard remove <path>` | Stop guarding a repository and drop its in-memory index and attestation cache to immediately free daemon memory and CPU. |
 | `keyhog guard reconcile <path>` | Force a full baseline reconciliation after intentional policy updates or mass branch operations. |
 | `keyhog guard rebuild <path>` | Delete and recreate the durable guard store for a root after corruption or irrecoverable state. |

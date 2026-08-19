@@ -159,7 +159,8 @@ impl std::fmt::Display for GuardRootState {
 /// Events that drive the root state machine.
 ///
 /// Adding a variant here MUST be handled in [`GuardRootState::transition`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum GuardTransition {
     /// Registration or explicit reconciliation started (stopped -> indexing).
     ReconciliationStarted,
@@ -302,7 +303,7 @@ impl GuardRootState {
         };
 
         result.ok_or(TransitionError::Illegal {
-            event: event.clone(),
+            event: *event,
             from: self,
         })
     }
@@ -599,6 +600,28 @@ pub struct GuardRootRecord {
     pub backend_route_label: String,
     /// Last complete receipt summary (non-secret).
     pub last_receipt: Option<GuardReceipt>,
+    /// Recent state transitions with causes for this root.
+    #[serde(default)]
+    pub recent_transitions: Vec<GuardTransitionRecord>,
+}
+
+/// Record of one state transition event for a guarded root with causal attribution.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GuardTransitionRecord {
+    /// Canonical root path (bytes, no lossy Unicode conversion).
+    pub canonical_path: Vec<u8>,
+    /// Transition sequence for this event.
+    pub sequence: u64,
+    /// Unix timestamp (seconds) when the transition occurred.
+    pub timestamp: u64,
+    /// State before transition.
+    pub from_state: GuardRootState,
+    /// State after transition.
+    pub to_state: GuardRootState,
+    /// Transition event that triggered the state change.
+    pub event: GuardTransition,
+    /// Causal attribution / reason for the transition.
+    pub cause: String,
 }
 
 /// Non-secret filesystem identity for root replacement detection.

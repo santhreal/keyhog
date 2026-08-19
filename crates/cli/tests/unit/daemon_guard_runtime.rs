@@ -342,6 +342,7 @@ fn restore_root_preserves_metadata_but_resets_state() {
         last_reconciliation_time: Some(2000),
         backend_route_label: "scalar-cpu".to_string(),
         last_receipt: None,
+        recent_transitions: Vec::new(),
     };
     rt.restore_root(record.clone()).expect("restore root");
 
@@ -376,6 +377,7 @@ fn restore_root_rejects_duplicate() {
         last_reconciliation_time: None,
         backend_route_label: String::new(),
         last_receipt: None,
+        recent_transitions: Vec::new(),
     };
     rt.restore_root(record.clone()).expect("first restore");
     let result = rt.restore_root(record);
@@ -399,6 +401,7 @@ fn restore_root_then_reconcile_transitions_to_indexing() {
         last_reconciliation_time: None,
         backend_route_label: String::new(),
         last_receipt: None,
+        recent_transitions: Vec::new(),
     };
     rt.restore_root(record).expect("restore");
 
@@ -440,6 +443,7 @@ fn mutation_restore_current_directly_is_rejected_by_caller_contract() {
         last_reconciliation_time: Some(2000),
         backend_route_label: "scalar-cpu".to_string(),
         last_receipt: None,
+        recent_transitions: Vec::new(),
     };
     rt.restore_root(record).expect("restore");
     // restore_root preserves state. The CALLER must reset to Stopped.
@@ -450,6 +454,107 @@ fn mutation_restore_current_directly_is_rejected_by_caller_contract() {
         rt.root_state(b"/mutation/current"),
         Some(keyhog_core::guard_state::GuardRootState::Current)
     );
+}
+
+#[test]
+fn transition_feed_records_events_and_causes() {
+    let rt = GuardRuntime::new();
+    rt.add_root(
+        b"/test/repo".to_vec(),
+        test_fs_identity(),
+        keyhog_core::guard_state::FilesystemAuthority::default(),
+        GuardRootMode::Repo,
+    )
+    .unwrap();
+
+    rt.transition_root_with_cause(
+        b"/test/repo",
+        &GuardTransition::ReconciliationStarted,
+        "initial reconciliation start",
+    )
+    .unwrap();
+
+    rt.transition_root_with_cause(
+        b"/test/repo",
+        &GuardTransition::ReconciliationClean,
+        "clean reconciliation complete: 10 files scanned",
+    )
+    .unwrap();
+
+    let feed = rt.transition_feed(None, None);
+    assert_eq!(feed.len(), 2);
+    assert_eq!(feed[0].from_state, GuardRootState::Stopped);
+    assert_eq!(feed[0].to_state, GuardRootState::Indexing);
+    assert_eq!(feed[0].cause, "initial reconciliation start");
+    assert_eq!(feed[1].from_state, GuardRootState::Indexing);
+    assert_eq!(feed[1].to_state, GuardRootState::Current);
+    assert_eq!(
+        feed[1].cause,
+        "clean reconciliation complete: 10 files scanned"
+    );
+
+    // Per-root history is also preserved
+    let record = rt.root_record(b"/test/repo").unwrap();
+    assert_eq!(record.recent_transitions.len(), 2);
+    assert_eq!(
+        record.recent_transitions[0].cause,
+        "initial reconciliation start"
+    );
+}
+
+#[test]
+fn transition_feed_filters_by_root_and_limits() {
+    let rt = GuardRuntime::new();
+    rt.add_root(
+        b"/root1".to_vec(),
+        test_fs_identity(),
+        keyhog_core::guard_state::FilesystemAuthority::default(),
+        GuardRootMode::Repo,
+    )
+    .unwrap();
+    rt.add_root(
+        b"/root2".to_vec(),
+        test_fs_identity(),
+        keyhog_core::guard_state::FilesystemAuthority::default(),
+        GuardRootMode::Repo,
+    )
+    .unwrap();
+
+    rt.transition_root_with_cause(
+        b"/root1",
+        &GuardTransition::ReconciliationStarted,
+        "root1 start",
+    )
+    .unwrap();
+    rt.transition_root_with_cause(
+        b"/root2",
+        &GuardTransition::ReconciliationStarted,
+        "root2 start",
+    )
+    .unwrap();
+    rt.transition_root_with_cause(
+        b"/root1",
+        &GuardTransition::ReconciliationClean,
+        "root1 clean",
+    )
+    .unwrap();
+
+    let all_feed = rt.transition_feed(None, None);
+    assert_eq!(all_feed.len(), 3);
+
+    let root1_feed = rt.transition_feed(Some(b"/root1"), None);
+    assert_eq!(root1_feed.len(), 2);
+    assert_eq!(root1_feed[0].cause, "root1 start");
+    assert_eq!(root1_feed[1].cause, "root1 clean");
+
+    let root2_feed = rt.transition_feed(Some(b"/root2"), None);
+    assert_eq!(root2_feed.len(), 1);
+    assert_eq!(root2_feed[0].cause, "root2 start");
+
+    let limited_feed = rt.transition_feed(None, Some(2));
+    assert_eq!(limited_feed.len(), 2);
+    assert_eq!(limited_feed[0].cause, "root2 start");
+    assert_eq!(limited_feed[1].cause, "root1 clean");
 }
 
 #[test]
