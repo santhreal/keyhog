@@ -513,11 +513,11 @@ pub fn cli_main() -> ExitCode {
 }
 
 fn dispatch_command(command: args::Command) -> ExitCode {
+    interrupt::install();
     let _warn_dedup_summary = init_tracing();
 
     match command {
         args::Command::Scan(args) => {
-            interrupt::install();
             let profile_requested = args.profile;
             set_operator_profile_active(profile_requested);
             run_async(|| async {
