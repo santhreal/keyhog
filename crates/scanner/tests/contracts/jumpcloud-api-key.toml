@@ -1,0 +1,27 @@
+schema_version = 1
+detector_id = "jumpcloud-api-key"
+service = "jumpcloud"
+severity = "critical"
+
+[[positive]]
+text = "jumpcloud_api_key = \"1a2b3c4d5e6f7g8h9i0j1a2b3c4d5e6f7g8h9i0j\""
+credential = "1a2b3c4d5e6f7g8h9i0j1a2b3c4d5e6f7g8h9i0j"
+reason = "JumpCloud 40-character API key."
+
+[[positive]]
+text = "JUMPCLOUD_SECRET=k9l8m7n6o5p4q3r2s1t0k9l8m7n6o5p4q3r2s1t0"
+credential = "k9l8m7n6o5p4q3r2s1t0k9l8m7n6o5p4q3r2s1t0"
+reason = "JumpCloud secret env var."
+
+[[negative]]
+text = "jumpcloud_api_key=short"
+reason = "Too short."
+
+[[negative]]
+text = "jumpcloud_api_key=YOUR_JUMPCLOUD_API_KEY_HERE"
+reason = "Placeholder."
+
+[[evasion]]
+text = "# jumpcloud_api_key=1a2b3c4d5e6f7g8h9i0j1a2b3c4d5e6f7g8h9i0j"
+credential = "1a2b3c4d5e6f7g8h9i0j1a2b3c4d5e6f7g8h9i0j"
+reason = "Commented assignment."

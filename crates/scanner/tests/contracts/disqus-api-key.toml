@@ -1,0 +1,27 @@
+schema_version = 1
+detector_id = "disqus-api-key"
+service = "disqus"
+severity = "high"
+
+[[positive]]
+text = "disqus_secret_key = \"jK5HbxY2QrPn7vMNL8tADcF3mWg4kXqR9sBdZyE1hVuT6fGwJpC0nI9vUxY2aM3K\""
+credential = "jK5HbxY2QrPn7vMNL8tADcF3mWg4kXqR9sBdZyE1hVuT6fGwJpC0nI9vUxY2aM3K"
+reason = "Disqus 64-character alphanumeric secret key."
+
+[[positive]]
+text = "DISQUS_PRIVATE_TOKEN=Nh7vRf3mKp9wXc5tJq2YbL8sAg4dB6TzWeUx1nGQjCkPyDHVME0aI1FSx2Z5vY3n"
+credential = "Nh7vRf3mKp9wXc5tJq2YbL8sAg4dB6TzWeUx1nGQjCkPyDHVME0aI1FSx2Z5vY3n"
+reason = "Disqus private token env var."
+
+[[negative]]
+text = "disqus_secret_key=short"
+reason = "Too short."
+
+[[negative]]
+text = "disqus_secret_key=YOUR_DISQUS_SECRET_KEY_HERE"
+reason = "Placeholder."
+
+[[evasion]]
+text = "# disqus_secret_key = jK5HbxY2QrPn7vMNL8tADcF3mWg4kXqR9sBdZyE1hVuT6fGwJpC0nI9vUxY2aM3K"
+credential = "jK5HbxY2QrPn7vMNL8tADcF3mWg4kXqR9sBdZyE1hVuT6fGwJpC0nI9vUxY2aM3K"
+reason = "Commented assignment."

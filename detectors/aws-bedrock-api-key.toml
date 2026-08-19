@@ -31,8 +31,8 @@ keywords = ["ABSK", "bedrock", "bedrock-api-key", "AWS_BEARER_TOKEN_BEDROCK"]
 # Long-term Bedrock API key: `ABSK` + `QmVkcm9ja0FQSUtleS` header + base64
 # body, 132 chars total. Body bounded to {100,130}+padding so the compiled
 # NFA stays linear (AWS's published form uses an unbounded `+`).
-regex = 'ABSKQmVkcm9ja0FQSUtleS[A-Za-z0-9+/]{100,130}={0,2}'
-description = "AWS Bedrock long-term API key (ABSK prefix, BedrockAPIKey anchor, 132 chars)"
+regex = 'ABSKQmVkcm9ja0FQSUtleS[A-Za-z0-9+/]{100,270}={0,2}'
+description = "AWS Bedrock long-term API key (ABSK prefix, BedrockAPIKey anchor)"
 
 [[detector.tests]]
 test_positive = "ABSKQmVkcm9ja0FQSUtleSYGcEYmTIBr6ysnXHravYjroDShigIQLS0PNHDWjrpil9o3qRwpbzFl0vePrls1cDN8QvUdbqJwNSlzq23meO5ACW3zsuzeDQgwLd92dO3gFCPF"

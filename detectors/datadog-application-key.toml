@@ -14,13 +14,13 @@ match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20,
 # 0.40 global floor on entropy alone, dropping a real token as a false negative
 # (SecretBench mirror floor-gate analysis). FP risk bounded by the anchor.
 min_confidence = 0.3
-keywords = ["DD-APP-Key", "DD_APP_KEY", "DATADOG_APP_KEY", "datadog_app_key"]
+keywords = ["DD-APP-Key", "DD_APP_KEY", "DATADOG_APP_KEY", "datadog_app_key", "DATADOG_APPLICATION_KEY", "datadog_application_key"]
 
 [[detector.patterns]]
-regex = "(?:DD.APP.KEY|DATADOG_APP_KEY|datadog_app_key)[=:\\s\"']+([a-f0-9]{40})"
+regex = '''(?i)(?:DD[_\-\s]*APP[_\-\s]*KEY|DATADOG[_\-\s]*(?:APP|APPLICATION)[_\-\s]*KEY|datadog[_\-\s]*(?:app|application)[_\-\s]*key)[=:\s"'']+([a-zA-Z0-9]{40})(?:[^a-zA-Z0-9]|$)'''
 description = "Datadog application key with context anchor"
 group = 1
-required_literals = ["app", "datadog_app_key"]
+required_literals = ["app", "datadog"]
 
 [[detector.companions]]
 name = "datadog_api_key"

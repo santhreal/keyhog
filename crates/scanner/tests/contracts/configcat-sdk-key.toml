@@ -1,0 +1,27 @@
+schema_version = 1
+detector_id = "configcat-sdk-key"
+service = "configcat"
+severity = "high"
+
+[[positive]]
+text = "CONFIGCAT_SDK_KEY=\"Aa1Bb2Cc3Dd4Ee5Ff6Gg7H/aA1bB2cC3dD4eE5fF6gG7h\""
+credential = "Aa1Bb2Cc3Dd4Ee5Ff6Gg7H/aA1bB2cC3dD4eE5fF6gG7h"
+reason = "ConfigCat standard SDK key."
+
+[[positive]]
+text = "configcat-sdk-1/Aa1Bb2Cc3Dd4Ee5Ff6Gg7H/aA1bB2cC3dD4eE5fF6gG7h"
+credential = "configcat-sdk-1/Aa1Bb2Cc3Dd4Ee5Ff6Gg7H/aA1bB2cC3dD4eE5fF6gG7h"
+reason = "ConfigCat extended SDK key."
+
+[[negative]]
+text = "CONFIGCAT_SDK_KEY=short"
+reason = "Too short."
+
+[[negative]]
+text = "CONFIGCAT_SDK_KEY=YOUR_CONFIGCAT_SDK_KEY_HERE"
+reason = "Placeholder."
+
+[[evasion]]
+text = "# CONFIGCAT_SDK_KEY=Aa1Bb2Cc3Dd4Ee5Ff6Gg7H/aA1bB2cC3dD4eE5fF6gG7h"
+credential = "Aa1Bb2Cc3Dd4Ee5Ff6Gg7H/aA1bB2cC3dD4eE5fF6gG7h"
+reason = "Commented assignment."
