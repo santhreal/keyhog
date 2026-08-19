@@ -119,6 +119,7 @@ pub fn gpu_region_presence_self_test(
     }
     #[cfg(feature = "gpu")]
     {
+        #[cfg(test)]
         if std::env::var_os("KEYHOG_TEST_GPU_UNAVAILABLE").is_some() {
             return Err(GpuRegionPresenceSelfTestFailure {
                 acquired_backends: Vec::new(),

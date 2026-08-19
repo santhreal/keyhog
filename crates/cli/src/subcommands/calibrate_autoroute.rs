@@ -494,6 +494,9 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
         if let Some(packs) = args.execution_packs.as_deref() {
             command.arg("--execution-packs").arg(packs);
         }
+        if let Some(key) = args.signing_key.as_deref() {
+            command.arg("--signing-key").arg(key);
+        }
         let status = command
             .status()
             .with_context(|| format!("starting isolated {policy_name} autoroute calibration"))?;
@@ -608,7 +611,12 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     let execution_pack_binding = args
         .execution_packs
         .as_deref()
-        .map(crate::execution_pack_install::load_authenticated_binding)
+        .map(|packs| {
+            crate::execution_pack_install::load_authenticated_binding(
+                packs,
+                args.signing_key.as_deref(),
+            )
+        })
         .transpose()
         .context("loading authenticated execution-pack generation for calibration")?;
     if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
