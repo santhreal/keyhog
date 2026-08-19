@@ -32,6 +32,9 @@ struct WatchedRoot {
 }
 
 /// Manages filesystem watchers for all guard roots.
+///
+/// Detects channel disconnection and thread failure to enforce fail-closed
+/// reconciliation across all registered roots when event monitoring is lost.
 pub struct GuardWatcher {
     /// The native watcher handle. One watcher serves all roots.
     /// `None` when the platform watcher could not be created.
