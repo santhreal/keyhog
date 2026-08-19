@@ -2,6 +2,7 @@
 
 ## 0.5.80 - 2026-08-17
 
+- feat(cache): load-only scan execution and zero compilation fallback on prepared artifact caches (Row 127).
 - feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).
 - feat(profile): compile surface runtime counters across all 13 compiler surfaces (Row 125).
 - feat(gates): validate allowlists across reality and enforce meta-gate audit against unvalidated bypasses (Row 137).
