@@ -1,0 +1,27 @@
+schema_version = 1
+detector_id = "curl-auth-user"
+service = "curl"
+severity = "high"
+
+[[positive]]
+text = "curl -sw '%{http_code}' -X POST --user 'johns:h0pk1ns~21s' $GItHUB_API_URL/$GIT_COMMIT --data"
+credential = "johns:h0pk1ns~21s"
+reason = "cURL basic auth credentials with single quotes."
+
+[[positive]]
+text = "curl -s -v --user \"j.smith:dB2yF6@qL9vZm1P#4J\" \"https://api.contoso.org/user/me\""
+credential = "j.smith:dB2yF6@qL9vZm1P#4J"
+reason = "cURL basic auth credentials with double quotes."
+
+[[negative]]
+text = "curl -i -u 'test:test'"
+reason = "Placeholder / low entropy credentials."
+
+[[negative]]
+text = "curl -u \"$USER:$PASSWORD\""
+reason = "Variable placeholder."
+
+[[evasion]]
+text = "# curl -u 'deployer:k3yH0gP@ssw0rd!2026' https://api.example.com"
+credential = "deployer:k3yH0gP@ssw0rd!2026"
+reason = "Commented cURL command."

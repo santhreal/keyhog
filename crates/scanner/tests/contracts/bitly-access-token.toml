@@ -1,0 +1,27 @@
+schema_version = 1
+detector_id = "bitly-access-token"
+service = "bitly"
+severity = "high"
+
+[[positive]]
+text = "bitly_token = \"20e9817b9c5ddde1b0cec7622bfc557dbc823791\""
+credential = "20e9817b9c5ddde1b0cec7622bfc557dbc823791"
+reason = "Bitly 40-hex access token."
+
+[[positive]]
+text = "BITLY_ACCESS_TOKEN=20e9817b9c5ddde1b0cec7622bfc557dbc823791"
+credential = "20e9817b9c5ddde1b0cec7622bfc557dbc823791"
+reason = "Bitly access token in env var."
+
+[[negative]]
+text = "bitly_token = \"short\""
+reason = "Too short."
+
+[[negative]]
+text = "bitly_token = \"YOUR_BITLY_TOKEN_HERE\""
+reason = "Placeholder."
+
+[[evasion]]
+text = "# bitly_token = 20e9817b9c5ddde1b0cec7622bfc557dbc823791"
+credential = "20e9817b9c5ddde1b0cec7622bfc557dbc823791"
+reason = "Commented assignment."

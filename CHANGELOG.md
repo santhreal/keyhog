@@ -4,6 +4,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [0.5.80] - 2026-08-17
 ### Added
+- feat(detectors): add and update competitor recall parity detectors with verified contracts and zero false-positive constraints for `sidekiq-secret`, `jumpcloud-api-key`, `disqus-api-key`, `configcat-sdk-key`, `curl-auth-user`, `datadog-application-key`, `bitly-access-token`, `aws-amazon-bedrock-api-key-long-lived`, `anthropic-admin-api-key`, and `airtable-api-key` (Row 161).
 - feat(artifacts): fail closed with EXIT_USER_ERROR and actionable repair instructions on stale or mismatched execution-pack artifact identity inputs (Row 129).
 - feat(compiler): install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata (Row 128).
 - feat(cache): load-only scan execution and zero compilation fallback on prepared artifact caches (Row 127).

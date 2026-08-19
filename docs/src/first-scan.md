@@ -159,7 +159,7 @@ the artifact without scraping console progress.
     "scan_status": "success",
     "keyhog_version": "0.5.80",
     "git_hash": "<build-commit>",
-    "detector_digest": "926-<digest>",
+    "detector_digest": "934-<digest>",
     "config_digest": "<effective-config-digest>",
     "resolved_scan": {
       "schema_version": 1,
@@ -174,7 +174,7 @@ the artifact without scraping console progress.
     "targets": ["."],
     "source_chunks_scanned": 1,
     "source_bytes_scanned": 128,
-    "detector_count": 926
+    "detector_count": 934
   },
   "coverage_gap_summary": [],
   "findings": [
