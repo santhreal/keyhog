@@ -16,7 +16,6 @@ use std::path::Path;
 /// when no operator scrub interval is configured.
 pub const DEFAULT_UNAUTHORITATIVE_SCRUB_INTERVAL_SECS: u64 = 60;
 
-#[cfg(any(test, feature = "testing"))]
 static TEST_FS_AUTHORITY_OVERRIDE: parking_lot::RwLock<Option<FilesystemAuthority>> =
     parking_lot::RwLock::new(None);
 
@@ -96,11 +95,9 @@ pub fn classify_filesystem_type(fs_type: &str) -> FilesystemAuthority {
 /// Probe the filesystem authority for a given path.
 #[must_use]
 pub fn probe_filesystem_authority(path: &Path) -> FilesystemAuthority {
-    #[cfg(any(test, feature = "testing"))]
     if let Some(auth) = TEST_FS_AUTHORITY_OVERRIDE.read().as_ref() {
         return auth.clone();
     }
-
     #[cfg(target_os = "linux")]
     {
         if let Some(auth) = probe_linux(path) {
