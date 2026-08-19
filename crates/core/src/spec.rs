@@ -680,6 +680,7 @@ pub enum DetectorValidatorSpec {
     /// CRC32 over a fixed entropy body, encoded as a fixed-width base62 suffix.
     Crc32Base62 {
         /// Literal token prefixes this validator claims.
+        #[serde(default)]
         prefixes: Vec<String>,
         /// Exact length of the entropy body between the prefix and the checksum.
         entropy_len: usize,
@@ -694,6 +695,7 @@ pub enum DetectorValidatorSpec {
     /// segments and compatibility for the two formats GitHub has emitted.
     GithubFineGrainedCrc32 {
         /// Literal token prefixes this validator claims.
+        #[serde(default)]
         prefixes: Vec<String>,
         /// Exact length of the segment before the underscore separator.
         left_len: usize,
@@ -708,6 +710,7 @@ pub enum DetectorValidatorSpec {
     /// evidence, such as the macaroon carried by a PyPI API token.
     Base64Payload {
         /// Literal token prefixes this validator claims.
+        #[serde(default)]
         prefixes: Vec<String>,
         /// Base64 dialect the payload must decode under.
         alphabet: DetectorBase64Alphabet,
@@ -726,11 +729,58 @@ pub enum DetectorValidatorSpec {
     /// a second regex.
     PatternShape {
         /// Literal token prefixes this validator claims.
+        #[serde(default)]
         prefixes: Vec<String>,
         /// Whether a candidate that begins with a complete declared pattern but
         /// continues with provider-token bytes is an unknown future shape
         /// (`true`) or malformed (`false`).
         allow_overlong: bool,
+    },
+    /// JSON Web Token (JWT) structural validation (RFC 7519).
+    /// Validates 3 dot-separated base64url segments, parseable header JSON,
+    /// and valid signature algorithm.
+    Jwt {
+        /// Literal token prefixes this validator claims.
+        #[serde(default)]
+        prefixes: Vec<String>,
+        /// Reject unsigned `alg = "none"` tokens.
+        #[serde(default)]
+        reject_alg_none: bool,
+        /// Confidence assigned when the JWT structure is valid.
+        confidence_floor: f64,
+    },
+    /// Canonical 8-4-4-4-12 hyphenated hexadecimal UUID validation (RFC 4122 / RFC 9562).
+    Uuid {
+        /// Literal token prefixes this validator claims.
+        #[serde(default)]
+        prefixes: Vec<String>,
+        /// Confidence assigned when the UUID is structurally valid.
+        confidence_floor: f64,
+    },
+    /// Fixed-length hexadecimal digest / hash validation.
+    HexHash {
+        /// Literal token prefixes this validator claims.
+        #[serde(default)]
+        prefixes: Vec<String>,
+        /// Expected hexadecimal payload length.
+        expected_len: usize,
+        /// Whether uppercase hex characters are rejected (lowercase only).
+        #[serde(default)]
+        lowercase_only: bool,
+        /// Confidence assigned when the hex hash is structurally valid.
+        confidence_floor: f64,
+    },
+    /// Luhn (mod 10) checksum validation algorithm (ISO/IEC 7812).
+    LuhnChecksum {
+        /// Literal token prefixes this validator claims.
+        #[serde(default)]
+        prefixes: Vec<String>,
+        /// Minimum accepted digit length.
+        min_len: usize,
+        /// Maximum accepted digit length.
+        max_len: usize,
+        /// Confidence assigned when the Luhn checksum verifies.
+        confidence_floor: f64,
     },
 }
 
@@ -741,7 +791,11 @@ impl DetectorValidatorSpec {
             Self::Crc32Base62 { prefixes, .. }
             | Self::GithubFineGrainedCrc32 { prefixes, .. }
             | Self::Base64Payload { prefixes, .. }
-            | Self::PatternShape { prefixes, .. } => prefixes,
+            | Self::PatternShape { prefixes, .. }
+            | Self::Jwt { prefixes, .. }
+            | Self::Uuid { prefixes, .. }
+            | Self::HexHash { prefixes, .. }
+            | Self::LuhnChecksum { prefixes, .. } => prefixes,
         }
     }
 
@@ -755,6 +809,18 @@ impl DetectorValidatorSpec {
                 confidence_floor, ..
             }
             | Self::Base64Payload {
+                confidence_floor, ..
+            }
+            | Self::Jwt {
+                confidence_floor, ..
+            }
+            | Self::Uuid {
+                confidence_floor, ..
+            }
+            | Self::HexHash {
+                confidence_floor, ..
+            }
+            | Self::LuhnChecksum {
                 confidence_floor, ..
             } => Some(*confidence_floor),
             Self::PatternShape { .. } => None,

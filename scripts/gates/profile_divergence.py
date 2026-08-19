@@ -93,6 +93,18 @@ def classify_profile_keys(profiles: Dict[str, Dict[str, Any]]) -> Tuple[List[str
                 f"[profile.release] overflow-checks must be true (got {overflow_val!r}) "
                 f"to prevent silent arithmetic overflow in release builds."
             )
+        strip_val = release_profile.get("strip")
+        if strip_val != "symbols":
+            errors.append(
+                f"[profile.release] strip must be 'symbols' (got {strip_val!r}) "
+                f"to enforce stripped release artifacts and eliminate unneeded DWARF bloat."
+            )
+        debug_val = release_profile.get("debug")
+        if debug_val is not False and debug_val != 0 and debug_val != "0":
+            errors.append(
+                f"[profile.release] debug must be false or 0 (got {debug_val!r}) "
+                f"to eliminate unneeded DWARF bloat in shipped release binaries."
+            )
 
     return errors, warnings
 
@@ -141,6 +153,8 @@ def run_self_test() -> int:
         "release": {
             "panic": "abort",
             "overflow-checks": True,
+            "strip": "symbols",
+            "debug": False,
         }
     }
     errors, _ = classify_profile_keys(abort_profile)
@@ -153,11 +167,41 @@ def run_self_test() -> int:
         "release": {
             "panic": "unwind",
             "overflow-checks": False,
+            "strip": "symbols",
+            "debug": False,
         }
     }
     errors, _ = classify_profile_keys(overflow_profile)
     assert any("overflow-checks must be true" in e for e in errors), (
         f"Expected overflow-checks error, got: {errors}"
+    )
+
+    # 5. Release strip != "symbols" mutation
+    unstripped_profile = {
+        "release": {
+            "panic": "unwind",
+            "overflow-checks": True,
+            "strip": "none",
+            "debug": False,
+        }
+    }
+    errors, _ = classify_profile_keys(unstripped_profile)
+    assert any("strip must be 'symbols'" in e for e in errors), (
+        f"Expected strip error, got: {errors}"
+    )
+
+    # 6. Release debug != false mutation
+    debug_profile = {
+        "release": {
+            "panic": "unwind",
+            "overflow-checks": True,
+            "strip": "symbols",
+            "debug": True,
+        }
+    }
+    errors, _ = classify_profile_keys(debug_profile)
+    assert any("debug must be false" in e for e in errors), (
+        f"Expected debug error, got: {errors}"
     )
 
     print("All profile_divergence self-tests passed successfully.")

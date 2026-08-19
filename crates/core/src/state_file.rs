@@ -1,5 +1,5 @@
-//! Bounded reads for on-disk KeyHog state artifacts (calibration cache,
-//! merkle index, etc.).
+//! Bounded reads and atomic durable writes for on-disk KeyHog state artifacts
+//! (calibration cache, merkle index, compiled matcher artifacts, etc.).
 
 use fs2::FileExt;
 use std::ffi::OsString;
@@ -62,6 +62,9 @@ pub fn state_file_lock_path(state_path: &Path) -> std::io::Result<PathBuf> {
     Ok(state_path.with_file_name(file_name))
 }
 
+/// Default temp-file name prefix for atomic state writes.
+pub const DEFAULT_TMP_PREFIX: &str = ".tmp.keyhog-";
+
 /// Maximum on-disk calibration cache (`calibration.json`) size.
 ///
 /// The artifact holds one `{alpha, beta}` pair per detector id, control-plane
@@ -82,7 +85,7 @@ pub(crate) const RULE_CONFIG_FILE_BYTES: u64 = 16 * 1024 * 1024;
 pub(crate) const MERKLE_INDEX_CACHE_FILE_BYTES: u64 = 512 * 1024 * 1024;
 
 /// Read a state artifact through a metadata pre-check and a TOCTOU-safe cap.
-pub(crate) fn read_capped(path: &Path, cap: u64, kind: &str) -> std::io::Result<Vec<u8>> {
+pub fn read_capped(path: &Path, cap: u64, kind: &str) -> std::io::Result<Vec<u8>> {
     let file = std::fs::File::open(path)?;
     let len = file.metadata()?.len();
     if len > cap {
@@ -111,13 +114,46 @@ pub(crate) fn read_capped(path: &Path, cap: u64, kind: &str) -> std::io::Result<
 
 /// Atomically replace `path` with `bytes` via a same-directory temp file.
 ///
-/// Single owner for the create-dir / prefixed-tempfile / fsync / rename dance
-/// that the calibration cache and the merkle index both persist through. The
-/// `prefix` is the temp-file name prefix so each caller's stale-tmp sweep can
-/// still recognize its own orphans by name. A parentless or empty path resolves
-/// to the current directory so a bare `calibration.json` filename saves cleanly
-/// instead of failing `create_dir_all("")`.
-pub(crate) fn write_atomically(path: &Path, prefix: &str, bytes: &[u8]) -> std::io::Result<()> {
+/// Single owner for the create-dir / prefixed-tempfile / sync / rename dance
+/// that all KeyHog state artifacts, caches, and scanner artifacts persist through.
+/// A parentless or empty path resolves to the current directory (`.`) so a bare
+/// output filename saves cleanly instead of failing `create_dir_all("")`.
+pub fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    write_atomically_with_prefix(path, DEFAULT_TMP_PREFIX, bytes)
+}
+
+/// Atomically replace `path` with `bytes` using a custom temp-file prefix.
+pub fn write_atomically_with_prefix(path: &Path, prefix: &str, bytes: &[u8]) -> std::io::Result<()> {
+    write_atomically_with_writer_and_prefix(path, prefix, |tmp| {
+        use std::io::Write as _;
+        tmp.write_all(bytes)
+    })
+}
+
+/// Atomically create or replace `path` by executing a writer closure against a
+/// same-directory temp file.
+///
+/// The temp file is synced to disk via [`std::fs::File::sync_all`] before atomic
+/// rename onto `path`. If `writer` returns an error or panics, the temporary file
+/// is automatically dropped and unlinked by [`tempfile::NamedTempFile`]'s `Drop`
+/// implementation, preventing partially-written files from corrupting state or
+/// leaking stale artifacts.
+pub fn write_atomically_with_writer<F>(path: &Path, writer: F) -> std::io::Result<()>
+where
+    F: FnOnce(&mut tempfile::NamedTempFile) -> std::io::Result<()>,
+{
+    write_atomically_with_writer_and_prefix(path, DEFAULT_TMP_PREFIX, writer)
+}
+
+/// Atomically create or replace `path` with a custom temp-file prefix via a writer closure.
+pub fn write_atomically_with_writer_and_prefix<F>(
+    path: &Path,
+    prefix: &str,
+    writer: F,
+) -> std::io::Result<()>
+where
+    F: FnOnce(&mut tempfile::NamedTempFile) -> std::io::Result<()>,
+{
     let parent = match path.parent().filter(|p| !p.as_os_str().is_empty()) {
         Some(parent) => parent,
         None => Path::new("."),
@@ -126,10 +162,9 @@ pub(crate) fn write_atomically(path: &Path, prefix: &str, bytes: &[u8]) -> std::
     let mut tmp = tempfile::Builder::new()
         .prefix(prefix)
         .tempfile_in(parent)?;
-    std::io::Write::write_all(&mut tmp, bytes)?;
+    writer(&mut tmp)?;
     tmp.as_file().sync_all()?;
-    tmp.persist(path).map_err(|e| e.error)?;
-    Ok(())
+    tmp.persist(path).map(drop).map_err(|e| e.error)
 }
 
 /// Best-effort sweep of stale temp files left beside `cache_path` by a
@@ -140,7 +175,7 @@ pub(crate) fn write_atomically(path: &Path, prefix: &str, bytes: &[u8]) -> std::
 /// the keyhog-owned `prefixes` AND older than `cutoff_secs` are removed, so a
 /// peer process's in-flight save or an unrelated file is never touched. Returns
 /// the number of files removed; callers own their summary logging.
-pub(crate) fn sweep_stale_tmp_siblings(
+pub fn sweep_stale_tmp_siblings(
     cache_path: &Path,
     prefixes: &[&str],
     cutoff_secs: u64,

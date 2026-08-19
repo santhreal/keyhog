@@ -17,6 +17,8 @@ match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20,
 # the global floor and be dropped. The structured prefix bounds FP risk;
 # declare the per-detector floor so the detector ships working.
 min_confidence = 0.5
+decode_transforms = { reverse_prefixes = ["xapp-"], caesar_prefixes = ["xapp-"] }
+validators = [{ type = "pattern-shape", prefixes = ["xapp-"], allow_overlong = false }]
 keywords = ["xapp-", "slack", "SLACK_APP_TOKEN", "app-level"]
 
 [[detector.patterns]]

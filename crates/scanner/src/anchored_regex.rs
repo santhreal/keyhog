@@ -39,6 +39,7 @@ impl AnchoredRegex {
         keyhog_profile::record_compile_surface_invocation(
             keyhog_profile::CompileSurfaceId::DetectorPlan,
         );
+        crate::types::record_lazy_regex_compile();
         let anchored = format!("{prefix}{}{suffix}", self.src);
         match RegexBuilder::new(&anchored)
             .case_insensitive(self.case_insensitive)
