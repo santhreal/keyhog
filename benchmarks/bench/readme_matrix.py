@@ -239,6 +239,8 @@ def load_snapshot(path: pathlib.Path) -> dict[str, Any]:
         value["daemon_rows"], list
     ):
         raise MatrixError(f"{path}: matrix rows must be arrays")
+    if "accuracy_rows" in value and not isinstance(value["accuracy_rows"], list):
+        raise MatrixError(f"{path}: accuracy_rows must be an array")
     return value
 
 
@@ -310,6 +312,47 @@ def render_accuracy(snapshot: dict[str, Any]) -> str:
         ]
     )
 
+    host, scanner = _context(snapshot)
+    corpora_names = [
+        f"**{r['corpus']['name']}**"
+        for r in accuracy_rows
+        if "corpus" in r and "name" in r["corpus"]
+    ]
+    if len(corpora_names) > 1:
+        corpus_intro = (
+            f"both the synthetic {corpora_names[0]} corpus and competitor {corpora_names[1]} rule ground-truth"
+        )
+    elif corpora_names:
+        corpus_intro = f"the {corpora_names[0]} corpus"
+    else:
+        corpus_intro = "the configured corpora"
+
+    lines = [
+        f"KeyHog `{scanner['version'].splitlines()[0]}` evaluated on {corpus_intro} on **{host['cpu']}** with the explicit Hyperscan/SIMD default route. The answer-key manifest was excluded from the scan tree.",
+        "",
+        "| Corpus | Fixtures | Positives | Input size | Precision | Recall | F1 | True positives | False positives | False negatives |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+
+    for row in accuracy_rows:
+        corpus = row.get("corpus")
+        detection = row.get("detection")
+        if corpus is None or detection is None:
+            raise MatrixError("snapshot accuracy row missing corpus or detection data")
+        size_bytes = corpus.get("bytes", 0)
+        size_str = (
+            f"{size_bytes / (1024 * 1024):.2f} MB"
+            if size_bytes >= 1024 * 1024
+            else f"{round(size_bytes / 1000):,} KB"
+        )
+        lines.append(
+            f"| **{corpus['name']}** | {corpus['fixture_count']:,} | {corpus['labeled_positives']:,} | "
+            f"{size_str} | {detection['precision']:.4f} | {detection['recall']:.4f} | "
+            f"{detection['f1']:.4f} | {detection['tp']:,} | {detection['fp']:,} | {detection['fn']:,} |"
+        )
+
+    lines.extend(["", _qualification(snapshot, scanner)])
+    return "\n".join(lines)
 
 def render_configuration(snapshot: dict[str, Any]) -> str:
     """Render backend, policy, and incremental comparisons."""
