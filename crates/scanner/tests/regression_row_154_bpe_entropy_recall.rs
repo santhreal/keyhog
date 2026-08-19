@@ -56,18 +56,34 @@ fn complex_secret_key_with_ampersand_and_symbols_is_not_truncated() {
 }
 
 #[test]
-fn unquoted_complex_secret_with_ampersand_is_detected() {
+fn quoted_secret_with_trailing_comment_does_not_capture_comment() {
     let scanner = build_scanner();
-    let secret = "kL9#mP2$vR5&xT8*zW1!bC4@dF7^hJ0~";
-    let text = format!("master_secret={secret}\n");
+    let secret = "ufnlbbavawsdeecn";
+    let text = format!("api_secret=\"{secret}\" // trailing comment\n");
     let matches = scan(&scanner, &text, "config/secrets.env");
     assert!(
         !matches.is_empty(),
-        "unquoted complex secret with & and symbols must be detected"
+        "quoted secret with trailing comment must be detected"
     );
     assert!(
         matches.iter().any(|m| m.credential.as_ref() == secret),
-        "full unquoted secret value must be captured, got: {matches:?}"
+        "matched credential must not include trailing comment, got: {matches:?}"
+    );
+}
+
+#[test]
+fn quoted_secret_with_ampersand_and_trailing_comment() {
+    let scanner = build_scanner();
+    let secret = "aB3dE5gH7&K9mN1p";
+    let text = format!("auth_secret=\"{secret}\" ; other_flag=true\n");
+    let matches = scan(&scanner, &text, "config/secrets.env");
+    assert!(
+        !matches.is_empty(),
+        "quoted secret with & and trailing text must be detected"
+    );
+    assert!(
+        matches.iter().any(|m| m.credential.as_ref() == secret),
+        "matched credential must preserve internal & and ignore trailing text, got: {matches:?}"
     );
 }
 

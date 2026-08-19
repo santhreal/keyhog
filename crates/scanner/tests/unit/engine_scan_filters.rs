@@ -220,6 +220,7 @@ fn run_resumes_after_a_break_and_can_still_trigger() {
 fn every_allowed_symbol_byte_is_a_candidate() {
     for sym in [
         b'-', b'_', b'+', b'/', b'=', b'.', b':', b'!', b'@', b'#', b'$', b'%', b'^', b'&', b'*',
+        b'~',
     ] {
         assert!(
             has_high_entropy_run_at_least(&[sym; 32], 32),

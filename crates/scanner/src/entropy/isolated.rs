@@ -803,9 +803,9 @@ fn isolated_bare_candidate(
                         | b'$'
                         | b'%'
                         | b'^'
-                    | b'&'
-                    | b'*'
-                    | b'~'
+                        | b'&'
+                        | b'*'
+                        | b'~'
                 )
         });
     let bang_led_symbolic_token = has_assignment_equals
