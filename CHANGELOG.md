@@ -67,6 +67,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - feat(profile): directional queue attribution distinguishing producer backpressure from consumer starvation (Row 133).
 - feat(gates): validate allowlists across reality and enforce meta-gate audit against unvalidated bypasses (Row 137).
 - fix(daemon): filter out ignored and excluded paths (.git, target, node_modules, [scan].exclude, .gitignore, .keyhogignore, default excludes) in guard filesystem watcher matching scan path semantics with dynamic ignore matcher reloading (Row 141).
+- fix(scanner): classify standard configuration and credentials paths (`credentials`, `.credentials`, `config`, `.config`, `secrets`, `.secrets`, `.conf`, `.properties`, `.txt`) as structured INI context to prevent false downgrade of AWS credentials to unsupported-context (Row 164).
 - fix(scanner): clamp decode-through window overlap to enforce strictly advancing window progress across UTF-8 scalar boundaries in release builds.
 - fix(cli): add `parse_decode_size_limit` rejecting empty and sub-4B `--decode-size-limit` inputs with actionable error diagnostic.
 - style: format guard massive diff test and git sources modules.

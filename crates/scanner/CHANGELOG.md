@@ -12,6 +12,7 @@
 - feat(execution-pack): lazy canonical IR compilation and embedded IR digest for fast zero-compile scanner hydration (Row 158).
 - feat(pipeline): single large file chunk partitioning, worker-proportional subdivision, and deterministic match deduplication across chunk boundaries (Row 160).
 - feat(detectors): add and update competitor recall parity detectors with verified contracts and zero false-positive constraints for `sidekiq-secret`, `jumpcloud-api-key`, `disqus-api-key`, `configcat-sdk-key`, `curl-auth-user`, `datadog-application-key`, `bitly-access-token`, `aws-amazon-bedrock-api-key-long-lived`, `anthropic-admin-api-key`, and `airtable-api-key` (Row 161).
+- fix(scanner): classify standard configuration and credentials paths (`credentials`, `.credentials`, `config`, `.config`, `secrets`, `.secrets`, `.conf`, `.properties`, `.txt`) as structured INI context to prevent false downgrade of AWS credentials to unsupported-context (Row 164).
 - feat(scanner): instrument compile surface invocations and prepared artifact loads across 13 compile entrypoints (Row 125).
 - feat(parallelism): unify scanner execution width with keyhog_profile host parallelism (Row 110/137).
 - refactor(scanner): move rayon to dev-dependencies and replace internal usages with standard iterators (Row 119).
