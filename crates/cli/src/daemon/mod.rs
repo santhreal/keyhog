@@ -43,16 +43,16 @@ mod frame_incremental_tests;
 mod frame_streaming_tests;
 #[cfg(feature = "git")]
 pub(crate) mod guard_commit;
-pub(crate) mod guard_runtime;
-pub(crate) mod guard_watcher;
+pub mod guard_runtime;
+pub mod guard_watcher;
 #[cfg(test)]
 #[path = "path_resolution_tests.rs"]
 mod path_resolution_tests;
 #[cfg(test)]
 #[path = "protected_wire_tests.rs"]
 mod protected_wire_tests;
-pub(crate) mod protocol;
-pub(crate) mod server;
+pub mod protocol;
+pub mod server;
 pub(crate) mod sigpipe;
 pub(crate) mod transport;
 mod trust;

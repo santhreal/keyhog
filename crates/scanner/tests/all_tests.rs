@@ -361,6 +361,8 @@ pub mod regression_row_115_proportional_scrub_cost;
 pub mod regression_row_116_backend_derived_dispatch_limit;
 #[path = "regression_row_117_scratch_retention_memory_budget.rs"]
 pub mod regression_row_117_scratch_retention_memory_budget;
+#[path = "regression_row_118_gpu_dispatch_concurrency_pool.rs"]
+pub mod regression_row_118_gpu_dispatch_concurrency_pool;
 #[path = "regression_row_76_backend_finding_parity.rs"]
 pub mod regression_row_76_backend_finding_parity;
 #[path = "regression_row_77_decode_window_overlap_derived.rs"]

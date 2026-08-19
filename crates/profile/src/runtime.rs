@@ -1245,6 +1245,8 @@ impl Runtime {
             }
             return;
         }
+        self.inner.elapsed_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
+        self.inner.calls[index].fetch_add(1, Ordering::Relaxed);
         if !outcome.blocked {
             self.inner.attributed_ns[index].fetch_add(self_ns, Ordering::Relaxed);
         }

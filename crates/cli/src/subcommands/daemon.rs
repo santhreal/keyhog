@@ -507,6 +507,9 @@ fn load_guard_config() -> (
         max_pending_events_per_root: guard
             .max_pending_events_per_root
             .unwrap_or(defaults.max_pending_events_per_root),
+        max_pending_events_total: guard
+            .max_pending_events_total
+            .unwrap_or(defaults.max_pending_events_total),
         coalesce_window_ms: guard
             .coalesce_window
             .as_deref()
