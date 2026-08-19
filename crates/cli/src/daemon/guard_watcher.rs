@@ -149,10 +149,11 @@ impl GuardWatcher {
                                 .push(GuardEvent::ReconcileSubtree(root.clone()));
                         }
                     } else {
-                        // Process and attribute ALL paths present on the event so
-                        // moves/renames across roots update both source and destination.
+                        // Process and attribute ALL paths present on the event to ALL matching
+                        // enclosing roots so nested and parent roots both receive events.
                         for path in &event.paths {
-                            if let Some(root) = self.find_root_for_path(path) {
+                            let roots = self.find_matching_roots_for_path(path);
+                            for root in roots {
                                 let guard_event =
                                     normalize_notify_path_event(&event.kind, path);
                                 if let Some(buffer) = self.roots.get(&root) {
@@ -197,22 +198,17 @@ impl GuardWatcher {
         results.into_iter().collect()
     }
 
-    /// Find which registered root a path belongs to. Selects the longest
-    /// matching prefix when roots are nested.
-    fn find_root_for_path(&self, path: &std::path::Path) -> Option<PathBuf> {
-        let mut best: Option<PathBuf> = None;
+    /// Find all registered roots that are prefixes of a path.
+    /// When roots are nested, returns all enclosing roots so parent roots
+    /// receive events for changes inside sub-roots.
+    fn find_matching_roots_for_path(&self, path: &std::path::Path) -> Vec<PathBuf> {
+        let mut matched = Vec::new();
         for root in self.roots.keys() {
             if path.starts_with(root) {
-                if let Some(current) = &best {
-                    if root.as_os_str().len() > current.as_os_str().len() {
-                        best = Some(root.clone());
-                    }
-                } else {
-                    best = Some(root.clone());
-                }
+                matched.push(root.clone());
             }
         }
-        best
+        matched
     }
 
     /// Number of watched roots.

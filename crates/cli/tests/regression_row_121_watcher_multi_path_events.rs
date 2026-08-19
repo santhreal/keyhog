@@ -220,7 +220,7 @@ fn normalize_notify_event_multi_path_totality() {
 }
 
 #[test]
-fn nested_roots_longest_prefix_attribution() {
+fn nested_roots_multi_prefix_attribution() {
     let config = GuardReconciliationConfig::default();
     let (mut watcher, tx) = GuardWatcher::new_with_channel(config);
 
@@ -243,10 +243,12 @@ fn nested_roots_longest_prefix_attribution() {
     let results: HashMap<PathBuf, Vec<GuardEvent>> = polled.into_iter().collect();
 
     assert_eq!(results.len(), 2);
+    // Parent root receives events for both parent_file and nested_file
     assert_eq!(
         results.get(&parent_root).unwrap(),
-        &vec![GuardEvent::Modify(parent_file)]
+        &vec![GuardEvent::Modify(parent_file), GuardEvent::Modify(nested_file.clone())]
     );
+    // Nested root receives event for nested_file
     assert_eq!(
         results.get(&nested_root).unwrap(),
         &vec![GuardEvent::Modify(nested_file)]
