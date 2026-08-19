@@ -4,6 +4,7 @@ All notable changes to `keyhog-profile` are documented here. Versions follow [Se
 
 ## 0.5.80 - 2026-08-17
 - feat(profile): instrument runtime compile surface counters and phases across `CompileSurfaceId` and `CompilePhase` with deterministic `CausalProfileV2` export (Row 125).
+- feat(profile): directional queue attribution distinguishing producer backpressure from consumer starvation (Row 133).
 - feat(profile): canonical owner of host parallelism width and provenance resolution (Row 110).
 - feat(profile): render tabular Markdown profile and comparison reports with blocked wait time, worker concurrency, and queue depths (Row 108).
 - fix(profile): calculate worker occupancy and stage self-time from exclusive span durations without nested container double-counting (Row 104, Row 109).
