@@ -2,6 +2,7 @@
 
 ## 0.5.80 - 2026-08-17
 
+- feat(gates): validate allowlists across reality and enforce meta-gate audit against unvalidated bypasses (Row 137).
 - feat(profile): directional queue attribution distinguishing producer backpressure from consumer starvation (Row 133).
 - feat(daemon): filesystem authority probe and default periodic scrub for unauthoritative filesystems (Row 132).
 - feat(config): add guard configuration section to example TOML and docs truth (Row 131).

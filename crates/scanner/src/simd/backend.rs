@@ -865,9 +865,7 @@ impl HsScanner {
     /// determines how many persistent workers explicit warm-up seeds; callers
     /// outside Rayon can still allocate their own exact TLS scratch lazily.
     fn executor_width() -> usize {
-        std::thread::available_parallelism()
-            .map_or(1, std::num::NonZeroUsize::get)
-            .clamp(1, MAX_COMPILE_SHARDS)
+        keyhog_profile::host_parallelism::logical_cpu_count().clamp(1, MAX_COMPILE_SHARDS)
     }
 
     /// Warm the scanner for steady-state execution: allocate one

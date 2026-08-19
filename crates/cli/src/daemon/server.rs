@@ -869,7 +869,7 @@ fn scrub_guard_roots(
 
                 if should_scrub {
                     let path_str = String::from_utf8_lossy(&record.canonical_path);
-                    let _ = state // LAW10: best-effort transition to Stopped before ReconciliationStarted
+                    let _ = state // LAW10: no runtime effect: best-effort transition to Stopped before ReconciliationStarted
                         .guard
                         .transition_root(&record.canonical_path, &GuardTransition::Stopped);
                     match state.guard.transition_root(

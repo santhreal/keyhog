@@ -23,6 +23,13 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
 ALLOWED_CANONICAL_OWNER = pathlib.Path("crates/core/src/source.rs")
+def validate_owners(root: pathlib.Path) -> list[str]:
+    """Validate that configured owner paths exist on disk."""
+    errors: list[str] = []
+    if not (root / ALLOWED_CANONICAL_OWNER).is_file():
+        errors.append(f"canonical owner does not exist: {ALLOWED_CANONICAL_OWNER}")
+    return errors
+
 
 # Pattern detecting private window overlap constant declarations with literal numbers
 REDECLARED_OVERLAP_RE = re.compile(
@@ -55,6 +62,12 @@ def find_redeclared_overlap_constants(root: pathlib.Path) -> list[tuple[pathlib.
 
 
 def run_gate(root: pathlib.Path) -> int:
+    owner_errors = validate_owners(root)
+    if owner_errors:
+        print("FAIL: Missing canonical owner file(s):", file=sys.stderr)
+        for err in owner_errors:
+            print(f"  {err}", file=sys.stderr)
+        return 1
     violations = find_redeclared_overlap_constants(root)
     if violations:
         print("FAIL: Found redeclared window overlap constants (Row 111 violation):")

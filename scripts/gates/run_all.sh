@@ -177,6 +177,12 @@ run "Gate #5: exact complexity ratchet (growth, slack, and metric drift)" \
   python3 -B scripts/gates/complexity_budget.py
 run "VYRE pin consistency: 6 crates at one immutable Git revision, no vendor build-path" \
   python3 -B scripts/gates/vyre_pin_consistency.py
+run "Gate allowlists validation self-test: unvalidated allowlists and missing targets are caught" \
+  python3 -B scripts/gates/gate_allowlists_validated.py --self-test
+run "Gate allowlists validation: all gate allowlists and exemptions are validated against reality (Row 137)" \
+  python3 -B scripts/gates/gate_allowlists_validated.py
+run "Gate allowlists validation unit tests: AST inspection across gates" \
+  python3 -B -m unittest scripts.tests.test_gate_allowlists_validated -v
 run "GPU wiring self-test: unfeatured, absorbed, orphaned, and unarmed GPU lanes are detected" \
   python3 -B scripts/gates/gpu_wired.py --self-test
 run "GPU wiring: GPU targets are feature-built, unabsorbed, wired, and the release lane is armed" \

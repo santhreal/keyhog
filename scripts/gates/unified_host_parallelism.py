@@ -23,6 +23,12 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 
 ALLOWED_OWNER = pathlib.Path("crates/profile/src/host_parallelism.rs")
 PARALLELISM_CALL_RE = re.compile(r"available_parallelism\s*\(")
+def validate_owners(root: pathlib.Path) -> list[str]:
+    """Validate that configured owner paths exist on disk."""
+    errors: list[str] = []
+    if not (root / ALLOWED_OWNER).is_file():
+        errors.append(f"canonical owner does not exist: {ALLOWED_OWNER}")
+    return errors
 
 
 def find_parallelism_calls(root: pathlib.Path) -> list[tuple[pathlib.Path, int, str]]:
@@ -53,6 +59,12 @@ def find_parallelism_calls(root: pathlib.Path) -> list[tuple[pathlib.Path, int, 
 
 
 def run_gate(root: pathlib.Path) -> int:
+    owner_errors = validate_owners(root)
+    if owner_errors:
+        print("FAIL: Missing canonical owner file(s):", file=sys.stderr)
+        for err in owner_errors:
+            print(f"  {err}", file=sys.stderr)
+        return 1
     violations = find_parallelism_calls(root)
     if violations:
         print("FAIL: Stray available_parallelism() calls found outside canonical owner:")

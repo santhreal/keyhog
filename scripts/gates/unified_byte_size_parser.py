@@ -29,9 +29,17 @@ PRIVATE_PARSE_BYTE_SIZE_RE = re.compile(
     r"\bfn\s+parse_byte_size\s*\("
 )
 
+def validate_owners(root: pathlib.Path) -> list[str]:
+    """Validate that configured owner paths exist on disk."""
+    errors: list[str] = []
+    if not (root / ALLOWED_CANONICAL_OWNER).is_file():
+        errors.append(f"canonical owner does not exist: {ALLOWED_CANONICAL_OWNER}")
+    if not (root / ALLOWED_TESTING_TRAIT).is_file():
+        errors.append(f"testing trait owner does not exist: {ALLOWED_TESTING_TRAIT}")
+    return errors
+
 
 def find_private_byte_size_parsers(root: pathlib.Path) -> list[tuple[pathlib.Path, int, str]]:
-    """Find all occurrences of private parse_byte_size functions."""
     violations = []
     crates_dir = root / "crates"
     if not crates_dir.exists():
@@ -55,6 +63,12 @@ def find_private_byte_size_parsers(root: pathlib.Path) -> list[tuple[pathlib.Pat
 
 
 def run_gate(root: pathlib.Path) -> int:
+    owner_errors = validate_owners(root)
+    if owner_errors:
+        print("FAIL: Missing canonical owner file(s):", file=sys.stderr)
+        for err in owner_errors:
+            print(f"  {err}", file=sys.stderr)
+        return 1
     violations = find_private_byte_size_parsers(root)
     if violations:
         print("FAIL: Found private byte size parser functions (Row 112 violation):")
@@ -62,7 +76,6 @@ def run_gate(root: pathlib.Path) -> int:
             print(f"  {path}:{line_num}: {text}")
         print("\nAll byte size parsing must use `keyhog::value_parsers::parse_byte_size`.")
         return 1
-
     print("PASS: Unified byte size parser ownership is maintained (Row 112).")
     return 0
 

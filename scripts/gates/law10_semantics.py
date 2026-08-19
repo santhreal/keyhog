@@ -26,8 +26,24 @@ from collections import Counter
 from dataclasses import dataclass
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
-CRATES = ["scanner", "sources", "core", "cli", "verifier"]
 
+
+def discover_crates(repo: pathlib.Path = REPO) -> list[str]:
+    """Discover all workspace crates under crates/ dynamically at run time."""
+    crates_dir = repo / "crates"
+    if not crates_dir.is_dir():
+        raise ValueError(f"crates directory does not exist: {crates_dir}")
+    crates = [
+        p.name
+        for p in sorted(crates_dir.iterdir())
+        if p.is_dir() and (p / "Cargo.toml").is_file()
+    ]
+    if not crates:
+        raise ValueError("no crates found under crates/")
+    return crates
+
+
+CRATES = discover_crates(REPO)
 CATEGORIES: dict[str, re.Pattern[str]] = {
     "no_runtime_effect": re.compile(
         r"(?i)\b(?:unused-binding|no runtime effect|warm-up|compile-time|"
@@ -159,9 +175,10 @@ def iter_src_files() -> list[pathlib.Path]:
     files: list[pathlib.Path] = []
     for crate in CRATES:
         root = REPO / "crates" / crate / "src"
+        if not root.is_dir():
+            raise ValueError(f"crate src directory does not exist: {root}")
         files.extend(sorted(root.rglob("*.rs")))
     return files
-
 
 def strip_comment_text(line: str) -> str | None:
     stripped = line.strip()

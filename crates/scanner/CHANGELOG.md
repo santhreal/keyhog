@@ -2,6 +2,7 @@
 
 
 ## 0.5.80 - 2026-08-17
+- feat(parallelism): unify scanner execution width with keyhog_profile host parallelism (Row 110/137).
 - refactor(scanner): move rayon to dev-dependencies and replace internal usages with standard iterators (Row 119).
 - feat(gpu): resident accelerator execution pool for GPU region dispatch concurrency across CLI and daemon (Row 118).
 - perf(scanner): scratch buffer capacity retention under memory budget (Row 117).

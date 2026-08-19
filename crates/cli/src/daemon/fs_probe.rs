@@ -84,7 +84,7 @@ pub fn classify_filesystem_type(fs_type: &str) -> FilesystemAuthority {
     } else {
         FilesystemAuthority::unauthoritative(
             lower,
-            reason.unwrap_or("unauthoritative filesystem requires periodic scrub"), // LAW10: default unauthoritative fallback reason
+            reason.unwrap_or("unauthoritative filesystem requires periodic scrub"), // LAW10: documented default reason fails closed to unauthoritative periodic scrub
         )
     }
 }
@@ -93,7 +93,7 @@ pub fn classify_filesystem_type(fs_type: &str) -> FilesystemAuthority {
 #[must_use]
 pub fn probe_filesystem_authority(path: &Path) -> FilesystemAuthority {
     if let Ok(val) = std::env::var(TEST_FORCE_FS_AUTHORITY_ENV) {
-        // LAW10: test environment variable override
+        // LAW10: test-only environment variable override for deterministic test fixtures
         if let Some(auth) = parse_test_force_fs_authority(&val) {
             return auth;
         }
@@ -145,7 +145,7 @@ fn parse_test_force_fs_authority(val: &str) -> Option<FilesystemAuthority> {
 #[cfg(target_os = "linux")]
 fn probe_linux(path: &Path) -> Option<FilesystemAuthority> {
     if let Ok(mounts) = std::fs::read_to_string("/proc/mounts") {
-        // LAW10: mount table probing failure falls through to statfs probing
+        // LAW10: fail-open for suppression: mount table probing failure falls through to statfs probing
         if let Some(fs_type) = find_mount_fs_type(&mounts, path) {
             return Some(classify_filesystem_type(&fs_type));
         }
@@ -158,7 +158,7 @@ fn probe_linux(path: &Path) -> Option<FilesystemAuthority> {
 fn find_mount_fs_type(mounts: &str, target_path: &Path) -> Option<String> {
     let canonical = target_path
         .canonicalize()
-        .unwrap_or_else(|_| target_path.to_path_buf()); // LAW10: fallback to uncanonicalized path when canonicalize fails
+        .unwrap_or_else(|_| target_path.to_path_buf()); // LAW10: recall-preserving fallback to uncanonicalized path when canonicalize fails
     let mut best_match: Option<(usize, String)> = None;
 
     for line in mounts.lines() {
@@ -186,7 +186,8 @@ fn probe_statfs_magic(path: &Path) -> Option<FilesystemAuthority> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
 
-    let c_path = CString::new(path.as_os_str().as_bytes()).ok()?; // LAW10: non-nul path conversion failure falls closed to unauthoritative
+    let c_path = CString::new(path.as_os_str().as_bytes()).ok()?; // LAW10: fail-closed: non-nul path conversion failure falls closed to unauthoritative
+                                                                  // SAFETY: libc::statfs populates a zeroed statfs struct for a valid nul-terminated path pointer.
     let mut stat: libc::statfs = unsafe { std::mem::zeroed() };
     let res = unsafe { libc::statfs(c_path.as_ptr(), &mut stat) };
     if res != 0 {
@@ -221,15 +222,17 @@ fn probe_macos(path: &Path) -> Option<FilesystemAuthority> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
 
-    let c_path = CString::new(path.as_os_str().as_bytes()).ok()?; // LAW10: non-nul path conversion failure falls closed to unauthoritative
+    let c_path = CString::new(path.as_os_str().as_bytes()).ok()?; // LAW10: fail-closed: non-nul path conversion failure falls closed to unauthoritative
+                                                                  // SAFETY: libc::statfs populates a zeroed statfs struct for a valid nul-terminated path pointer.
     let mut stat: libc::statfs = unsafe { std::mem::zeroed() };
     let res = unsafe { libc::statfs(c_path.as_ptr(), &mut stat) };
     if res != 0 {
         return None;
     }
 
+    // SAFETY: f_fstypename is a nul-terminated C string in the populated statfs struct.
     let fstypename = unsafe { CStr::from_ptr(stat.f_fstypename.as_ptr()) };
-    let fs_str = fstypename.to_str().ok()?; // LAW10: non-utf8 fstypename falls closed to unauthoritative
+    let fs_str = fstypename.to_str().ok()?; // LAW10: fail-closed: non-utf8 fstypename falls closed to unauthoritative
     Some(classify_filesystem_type(fs_str))
 }
 
@@ -243,7 +246,7 @@ fn probe_windows(path: &Path) -> Option<FilesystemAuthority> {
 
     let mut path_buf = path.to_path_buf();
     if !path_buf.is_absolute() {
-        path_buf = path_buf.canonicalize().ok()?; // LAW10: canonicalization failure falls closed to unauthoritative
+        path_buf = path_buf.canonicalize().ok()?; // LAW10: fail-closed: canonicalization failure falls closed to unauthoritative
     }
     let root_str = path_buf.components().next()?.as_os_str();
     let root_with_slash = format!("{}\\", root_str.to_string_lossy());
@@ -252,6 +255,7 @@ fn probe_windows(path: &Path) -> Option<FilesystemAuthority> {
         .chain(std::iter::once(0))
         .collect();
 
+    // SAFETY: wide_root is a nul-terminated wide string path representing the drive root.
     let drive_type = unsafe { GetDriveTypeW(wide_root.as_ptr()) };
     if drive_type == DRIVE_REMOTE {
         return Some(FilesystemAuthority::unauthoritative(
@@ -261,6 +265,7 @@ fn probe_windows(path: &Path) -> Option<FilesystemAuthority> {
     }
 
     let mut fs_name_buf = [0u16; 256];
+    // SAFETY: GetVolumeInformationW is passed valid buffer pointers and buffer lengths.
     let ok = unsafe {
         GetVolumeInformationW(
             wide_root.as_ptr(),
@@ -275,7 +280,7 @@ fn probe_windows(path: &Path) -> Option<FilesystemAuthority> {
     };
 
     if ok != 0 {
-        let len = fs_name_buf.iter().position(|&c| c == 0).unwrap_or(0); // LAW10: fallback length if no nul terminator in buffer
+        let len = fs_name_buf.iter().position(|&c| c == 0).unwrap_or(0); // LAW10: documented default fallback length if no nul terminator in buffer
         let fs_name = String::from_utf16_lossy(&fs_name_buf[..len]);
         Some(classify_filesystem_type(&fs_name))
     } else {
