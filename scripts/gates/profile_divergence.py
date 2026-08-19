@@ -100,9 +100,9 @@ def classify_profile_keys(profiles: Dict[str, Dict[str, Any]]) -> Tuple[List[str
                 f"to enforce stripped release artifacts and eliminate unneeded DWARF bloat."
             )
         debug_val = release_profile.get("debug")
-        if debug_val is not False:
+        if debug_val is not False and debug_val != 0 and debug_val != "0":
             errors.append(
-                f"[profile.release] debug must be false (got {debug_val!r}) "
+                f"[profile.release] debug must be false or 0 (got {debug_val!r}) "
                 f"to eliminate unneeded DWARF bloat in shipped release binaries."
             )
 
