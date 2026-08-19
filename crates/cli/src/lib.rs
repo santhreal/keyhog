@@ -24,6 +24,7 @@
 
 mod stable_hash;
 
+use std::future::Future;
 use std::io::Write;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -350,62 +351,7 @@ fn exit_now(code: u8) -> ! {
     std::process::exit(i32::from(code))
 }
 
-pub async fn cli_main() -> ExitCode {
-    // Startup/dispatch setup (flag pre-scan + tracing init) is synchronous and
-    // completes before the first `.await`, so the span guard never crosses an
-    // await point in this Send future.
-    let startup_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
-    // `env::args()` panics on non-UTF-8 args (Linux allows raw-byte
-    // paths). The version check only needs to recognize literal ASCII flags,
-    // so inspect args_os(); non-UTF-8 args cannot equal these literals.
-    //
-    // `update` and `repair` deliberately own a value-taking `--version`.
-    // Once either subcommand is selected, that long flag must reach clap and
-    // the release SemVer validator rather than triggering this root fast path.
-    // The root-only `-V` remains unambiguous in every position.
-    let mut is_version = false;
-    let mut full_version = false;
-    let mut maintenance_subcommand_seen = false;
-    for arg in std::env::args_os().skip(1) {
-        if let Some(value) = arg.to_str() {
-            maintenance_subcommand_seen |= value == "update" || value == "repair";
-            is_version |= value == "-V" || (value == "--version" && !maintenance_subcommand_seen);
-            full_version |= value == "--full";
-        }
-    }
-
-    // Fast-path: root --version/-V skips Ctrl-C handler spawn, tracing
-    // subscriber install, and Cli::parse(). The cold-start audit measured this
-    // at ~25ms saved per invocation on top of the hardware-probe skip.
-    if is_version {
-        print_version_info(full_version);
-        return ExitCode::SUCCESS;
-    }
-
-    // Unix installs a synchronous OS SIGINT handler in `main()` (before the
-    // runtime starts) instead, a `tokio::signal::ctrl_c` task never registers
-    // on the `current_thread` runtime once a synchronous scan is in flight, so
-    // it cannot honor the exit-130 contract. Non-unix (Windows) has no such
-    // synchronous handler path here, so keep the async ctrl_c task there.
-    #[cfg(not(unix))]
-    tokio::spawn(async move {
-        if let Ok(()) = tokio::signal::ctrl_c().await {
-            // LAW10: no recall impact (a failed signal hook only loses graceful Ctrl-C handling; scan/report exit semantics stay owned by the main task).
-            let (scanned, total, findings) = interrupt_counts();
-            eprintln!("\nScan interrupted. {scanned}/{total} files scanned. {findings} findings.");
-            if operator_profile_active() {
-                eprintln!(
-                    "profile outcome status=failed coverage=cancelled errors=1 exit=130 interruption=ctrl-c"
-                );
-            }
-            std::process::exit(i32::from(exit_codes::EXIT_INTERRUPTED));
-        }
-    });
-
-    // Color the log stream only when stderr is a TTY and color is not opted
-    // out via NO_COLOR; otherwise pipes, files, and CI logs would receive raw
-    // ANSI escape sequences. Route through the one `no_color_requested()` owner
-    // so the empty-string `NO_COLOR=` spec rule is applied consistently.
+fn init_tracing() -> log_dedup::WarnDedupSummaryGuard {
     let log_ansi = {
         use std::io::IsTerminal;
         std::io::stderr().is_terminal() && !crate::style::no_color_requested()
@@ -441,82 +387,54 @@ pub async fn cli_main() -> ExitCode {
             .with(fmt_layer)
             .init();
     }
-    let _warn_dedup_summary = log_dedup::WarnDedupSummaryGuard;
+    log_dedup::WarnDedupSummaryGuard
+}
 
-    drop(startup_span);
-    let cli = args::parse();
-
-    if cli.build_version {
-        print_version_info(cli.full);
-        return ExitCode::SUCCESS;
+fn build_async_runtime() -> std::result::Result<tokio::runtime::Runtime, ExitCode> {
+    match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => Ok(runtime),
+        Err(error) => {
+            eprintln!(
+                "error: failed to build the KeyHog async runtime: {error}. \
+                 Fix: verify available process resources and retry."
+            );
+            Err(ExitCode::from(exit_codes::EXIT_SYSTEM_ERROR))
+        }
     }
+}
 
-    let command_outcome = match cli.command {
-        Some(args::Command::Scan(args)) => {
-            let profile_requested = args.profile;
-            set_operator_profile_active(profile_requested);
-            let outcome = subcommands::scan::run(*args).await;
-            if profile_requested {
-                set_operator_profile_active(false);
-            }
-            outcome
-        }
-        Some(args::Command::Config(args)) => subcommands::config::run(*args),
-        Some(args::Command::CompileExecutionPacks(args)) => {
-            subcommands::compile_execution_packs::run(args).map(|()| ExitCode::SUCCESS)
-        }
-        Some(args::Command::ActionReport(args)) => match args.command {
-            args::ActionReportCommand::Verify(args) => action_report::verify(args),
-        },
-        Some(args::Command::Hook { command }) => subcommands::hook::run(command),
-        Some(args::Command::Detectors(args)) => subcommands::detectors::run(args),
-        Some(args::Command::Explain(args)) => {
-            subcommands::explain::run(args).map(|()| ExitCode::SUCCESS)
-        }
-        Some(args::Command::Diff(args)) => subcommands::diff::run(args).await,
-        Some(args::Command::Triage(args)) => subcommands::triage::run(args),
-        Some(args::Command::Calibrate(args)) => {
-            subcommands::calibrate::run(args).map(|()| ExitCode::SUCCESS)
-        }
-        Some(args::Command::CalibrateAutoroute(args)) => {
-            subcommands::calibrate_autoroute::run(args)
-        }
-        Some(args::Command::Watch(args)) => {
-            subcommands::watch::run(args).map(|()| ExitCode::SUCCESS)
-        }
-        Some(args::Command::Completion(args)) => {
-            subcommands::completion::run(args);
-            return ExitCode::SUCCESS;
-        }
-        Some(args::Command::Backend(args)) => subcommands::backend::run(args),
-        Some(args::Command::Doctor(args)) => subcommands::doctor::run(args),
-        Some(args::Command::BloomDiagnostic(args)) => bloom_diagnostic::run(args),
-        Some(args::Command::Update(args)) => subcommands::update::run(args).await,
-        Some(args::Command::Repair(args)) => subcommands::repair::run(args).await,
-        Some(args::Command::Uninstall(args)) => subcommands::uninstall::run(args),
-        Some(args::Command::ScanSystem(args)) => subcommands::scan_system::run(args),
-        #[cfg(unix)]
-        Some(args::Command::Daemon(args)) => subcommands::daemon::run(args).await,
-        #[cfg(not(unix))]
-        Some(args::Command::Daemon(_args)) => Err(anyhow::anyhow!(
-            "`keyhog daemon` is a unix-only command (it serves scans over a \
-             Unix-domain socket). On Windows, run scans in-process: \
-             `keyhog scan <path>`. No Windows daemon transport ships."
-        )),
-        #[cfg(unix)]
-        Some(args::Command::Guard(args)) => subcommands::guard::run(args).await,
-        #[cfg(not(unix))]
-        Some(args::Command::Guard(_args)) => Err(anyhow::anyhow!(
-            "`keyhog guard` requires the Unix daemon transport. On Windows, \
-             run `keyhog scan <path>` in process; no guard daemon ships."
-        )),
-        None => {
-            let mut cmd = args::command();
-            let _ = cmd.print_help(); // LAW10: unused-binding marker; no runtime effect, not a fallback
-            return ExitCode::SUCCESS;
-        }
+fn run_async<F, Fut>(f: F) -> ExitCode
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = anyhow::Result<ExitCode>>,
+{
+    let runtime = match build_async_runtime() {
+        Ok(runtime) => runtime,
+        Err(code) => return code,
     };
 
+    #[cfg(not(unix))]
+    runtime.spawn(async move {
+        if let Ok(()) = tokio::signal::ctrl_c().await {
+            // LAW10: no recall impact (a failed signal hook only loses graceful Ctrl-C handling; scan/report exit semantics stay owned by the main task).
+            let (scanned, total, findings) = interrupt_counts();
+            eprintln!("\nScan interrupted. {scanned}/{total} files scanned. {findings} findings.");
+            if operator_profile_active() {
+                eprintln!(
+                    "profile outcome status=failed coverage=cancelled errors=1 exit=130 interruption=ctrl-c"
+                );
+            }
+            std::process::exit(i32::from(exit_codes::EXIT_INTERRUPTED));
+        }
+    });
+
+    handle_command_outcome(runtime.block_on(f()))
+}
+
+fn handle_command_outcome(command_outcome: anyhow::Result<ExitCode>) -> ExitCode {
     match command_outcome {
         Ok(outcome) => {
             if SCANNER_PANICKED.load(Ordering::Relaxed) {
@@ -538,6 +456,131 @@ pub async fn cli_main() -> ExitCode {
             // immediately so the fail-closed code always reaches the operator.
             exit_now(code);
         }
+    }
+}
+
+pub fn cli_main() -> ExitCode {
+    // Startup/dispatch setup (flag pre-scan) is synchronous.
+    let startup_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
+    // `env::args()` panics on non-UTF-8 args (Linux allows raw-byte
+    // paths). The version check only needs to recognize literal ASCII flags,
+    // so inspect args_os(); non-UTF-8 args cannot equal these literals.
+    //
+    // `update` and `repair` deliberately own a value-taking `--version`.
+    // Once either subcommand is selected, that long flag must reach clap and
+    // the release SemVer validator rather than triggering this root fast path.
+    // The root-only `-V` remains unambiguous in every position.
+    let mut is_version = false;
+    let mut full_version = false;
+    let mut maintenance_subcommand_seen = false;
+    for arg in std::env::args_os().skip(1) {
+        if let Some(value) = arg.to_str() {
+            maintenance_subcommand_seen |= value == "update" || value == "repair";
+            is_version |= value == "-V" || (value == "--version" && !maintenance_subcommand_seen);
+            full_version |= value == "--full";
+        }
+    }
+
+    // Fast-path: root --version/-V skips runtime initialization, tracing
+    // subscriber install, and Cli::parse(). The cold-start audit measured this
+    // at ~25ms saved per invocation on top of the hardware-probe skip.
+    if is_version {
+        drop(startup_span);
+        print_version_info(full_version);
+        return ExitCode::SUCCESS;
+    }
+
+    drop(startup_span);
+    let cli = args::parse();
+
+    if cli.build_version {
+        print_version_info(cli.full);
+        return ExitCode::SUCCESS;
+    }
+
+    match cli.command {
+        Some(args::Command::Completion(args)) => {
+            subcommands::completion::run(args);
+            ExitCode::SUCCESS
+        }
+        None => {
+            let mut cmd = args::command();
+            let _ = cmd.print_help(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+            ExitCode::SUCCESS
+        }
+        Some(command) => dispatch_command(command),
+    }
+}
+
+fn dispatch_command(command: args::Command) -> ExitCode {
+    let _warn_dedup_summary = init_tracing();
+
+    match command {
+        args::Command::Scan(args) => {
+            interrupt::install();
+            let profile_requested = args.profile;
+            set_operator_profile_active(profile_requested);
+            run_async(|| async {
+                let outcome = subcommands::scan::run(*args).await;
+                if profile_requested {
+                    set_operator_profile_active(false);
+                }
+                outcome
+            })
+        }
+        args::Command::Config(args) => handle_command_outcome(subcommands::config::run(*args)),
+        args::Command::CompileExecutionPacks(args) => handle_command_outcome(
+            subcommands::compile_execution_packs::run(args).map(|()| ExitCode::SUCCESS),
+        ),
+        args::Command::ActionReport(args) => match args.command {
+            args::ActionReportCommand::Verify(args) => {
+                handle_command_outcome(action_report::verify(args))
+            }
+        },
+        args::Command::Hook { command } => handle_command_outcome(subcommands::hook::run(command)),
+        args::Command::Detectors(args) => handle_command_outcome(subcommands::detectors::run(args)),
+        args::Command::Explain(args) => {
+            handle_command_outcome(subcommands::explain::run(args).map(|()| ExitCode::SUCCESS))
+        }
+        args::Command::Diff(args) => run_async(|| subcommands::diff::run(args)),
+        args::Command::Triage(args) => handle_command_outcome(subcommands::triage::run(args)),
+        args::Command::Calibrate(args) => {
+            handle_command_outcome(subcommands::calibrate::run(args).map(|()| ExitCode::SUCCESS))
+        }
+        args::Command::CalibrateAutoroute(args) => {
+            handle_command_outcome(subcommands::calibrate_autoroute::run(args))
+        }
+        args::Command::Watch(args) => {
+            handle_command_outcome(subcommands::watch::run(args).map(|()| ExitCode::SUCCESS))
+        }
+        args::Command::Completion(args) => {
+            subcommands::completion::run(args);
+            ExitCode::SUCCESS
+        }
+        args::Command::Backend(args) => handle_command_outcome(subcommands::backend::run(args)),
+        args::Command::Doctor(args) => handle_command_outcome(subcommands::doctor::run(args)),
+        args::Command::BloomDiagnostic(args) => handle_command_outcome(bloom_diagnostic::run(args)),
+        args::Command::Update(args) => run_async(|| subcommands::update::run(args)),
+        args::Command::Repair(args) => run_async(|| subcommands::repair::run(args)),
+        args::Command::Uninstall(args) => handle_command_outcome(subcommands::uninstall::run(args)),
+        args::Command::ScanSystem(args) => {
+            handle_command_outcome(subcommands::scan_system::run(args))
+        }
+        #[cfg(unix)]
+        args::Command::Daemon(args) => run_async(|| subcommands::daemon::run(args)),
+        #[cfg(not(unix))]
+        args::Command::Daemon(_args) => handle_command_outcome(Err(anyhow::anyhow!(
+            "`keyhog daemon` is a unix-only command (it serves scans over a \
+             Unix-domain socket). On Windows, run scans in-process: \
+             `keyhog scan <path>`. No Windows daemon transport ships."
+        ))),
+        #[cfg(unix)]
+        args::Command::Guard(args) => run_async(|| subcommands::guard::run(args)),
+        #[cfg(not(unix))]
+        args::Command::Guard(_args) => handle_command_outcome(Err(anyhow::anyhow!(
+            "`keyhog guard` requires the Unix daemon transport. On Windows, \
+             run `keyhog scan <path>` in process; no guard daemon ships."
+        ))),
     }
 }
 
@@ -674,6 +717,7 @@ pub mod execution_pack_install;
 pub mod exit_codes;
 pub(crate) mod format;
 pub(crate) mod installer;
+pub(crate) mod interrupt;
 pub(crate) mod log_dedup;
 pub(crate) mod matcher_cache_path;
 pub(crate) mod runtime_preflight;
