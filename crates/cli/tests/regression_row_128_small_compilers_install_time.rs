@@ -130,7 +130,17 @@ fn small_compilers_install_and_scan_invariants() {
         !compile_records.is_empty(),
         "compile_surfaces must not be empty"
     );
-
+    for monitored in monitored_surfaces {
+        assert!(
+            compile_records.iter().any(|r| {
+                r.get("name")
+                    .or_else(|| r.get("surface"))
+                    .and_then(|s| s.as_str())
+                    == Some(monitored)
+            }),
+            "monitored surface {monitored} must be recorded in profile compile_surfaces"
+        );
+    }
     for record in compile_records {
         let surface = record
             .get("name")

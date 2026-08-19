@@ -225,6 +225,10 @@ impl WatchedRoot {
             if matcher
                 .matched_path_or_any_parents(rel_path, is_dir)
                 .is_ignore()
+                || (!is_dir
+                    && matcher
+                        .matched_path_or_any_parents(rel_path, true)
+                        .is_ignore())
             {
                 return true;
             }
@@ -240,7 +244,14 @@ impl WatchedRoot {
                 || file_name == ".gitignore"
                 || file_name == ".keyhog.toml"
             {
-                *self.ignore_matcher.write() = build_root_ignore_matcher(root, &self.ignore_paths);
+                let (ignore_paths, _respect_default) = resolve_root_exclusions(root);
+                let merged_ignore_paths = if !ignore_paths.is_empty() {
+                    ignore_paths
+                } else {
+                    self.ignore_paths.clone()
+                };
+                *self.ignore_matcher.write() =
+                    build_root_ignore_matcher(root, &merged_ignore_paths);
             }
         }
     }
@@ -251,17 +262,18 @@ fn build_root_ignore_matcher(
     ignore_paths: &[String],
 ) -> Option<ignore::gitignore::Gitignore> {
     let mut builder = ignore::gitignore::GitignoreBuilder::new(root);
-    let keyhogignore = root.join(".keyhogignore");
-    if keyhogignore.is_file() {
-        let _ = builder.add(&keyhogignore);
-    }
-    let keyhogignore_toml = root.join(".keyhogignore.toml");
-    if keyhogignore_toml.is_file() {
-        let _ = builder.add(&keyhogignore_toml);
-    }
     let gitignore = root.join(".gitignore");
     if gitignore.is_file() {
         let _ = builder.add(&gitignore);
+    }
+    let keyhogignore = root.join(".keyhogignore");
+    if keyhogignore.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&keyhogignore) {
+            let allowlist = keyhog_core::Allowlist::parse(&content);
+            for pattern in &*allowlist.ignored_paths {
+                let _ = builder.add_line(None, pattern);
+            }
+        }
     }
     for pattern in ignore_paths {
         let _ = builder.add_line(None, pattern);
@@ -274,9 +286,9 @@ fn resolve_root_exclusions(root: &std::path::Path) -> (Vec<String>, bool) {
     if let Ok(bytes) = std::fs::read(&dot_config) {
         if let Ok(text) = std::str::from_utf8(&bytes) {
             if let Ok(value) = toml::from_str::<toml::Value>(text) {
-                let ignore_paths = value
-                    .get("scan")
-                    .and_then(|s| s.get("ignore_paths"))
+                let scan_table = value.get("scan");
+                let ignore_paths = scan_table
+                    .and_then(|s| s.get("exclude").or_else(|| s.get("ignore_paths")))
                     .and_then(|v| v.as_array())
                     .map(|arr| {
                         arr.iter()
@@ -284,11 +296,17 @@ fn resolve_root_exclusions(root: &std::path::Path) -> (Vec<String>, bool) {
                             .collect()
                     })
                     .unwrap_or_default();
-                let respect_default_excludes = value
-                    .get("scan")
-                    .and_then(|s| s.get("respect_default_excludes"))
+                let respect_default_excludes = if let Some(no_default) = scan_table
+                    .and_then(|s| s.get("no_default_excludes"))
                     .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
+                {
+                    !no_default
+                } else {
+                    scan_table
+                        .and_then(|s| s.get("respect_default_excludes"))
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true)
+                };
                 return (ignore_paths, respect_default_excludes);
             }
         }
@@ -589,6 +607,7 @@ impl GuardWatcher {
                             let roots = self.find_matching_roots_for_path(path);
                             for root in roots {
                                 if let Some(watched) = self.roots.get(&root) {
+                                    watched.maybe_reload_ignore_matcher(&root, path);
                                     if watched.is_path_excluded(&root, path, &self.skip_dirs) {
                                         continue;
                                     }

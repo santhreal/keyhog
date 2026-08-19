@@ -180,8 +180,11 @@ impl GuardRuntime {
                 }
             }
         }
-        root_map.insert(root_path.to_vec(), identity.clone());
-        *self.current_identity.write() = Some(identity);
+        root_map.insert(root_path.to_vec(), identity);
+    }
+    /// Get the policy identity for a specific root.
+    pub fn get_root_policy_identity(&self, root_path: &[u8]) -> Option<GuardPolicyIdentity> {
+        self.root_identities.read().get(root_path).cloned()
     }
     /// Set the default policy identity. When it changes, invalidates attestations and transitions active roots.
     pub fn set_policy_identity(&self, identity: GuardPolicyIdentity) {

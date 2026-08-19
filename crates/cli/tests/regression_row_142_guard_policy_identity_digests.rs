@@ -10,8 +10,7 @@
 
 use keyhog::testing::daemon::guard_runtime::GuardRuntime;
 use keyhog::testing::daemon::server::{
-    compute_config_digest, compute_keyhogignore_digest, compute_root_policy_identity,
-    compute_source_policy_digest, compute_suppression_digest, guard_event_action_with_policy,
+    compute_keyhogignore_digest, compute_root_policy_identity, guard_event_action_with_policy,
     is_policy_path, GuardEventAction, KEYHOG_VERSION,
 };
 use keyhog_core::guard_state::{
@@ -20,7 +19,7 @@ use keyhog_core::guard_state::{
     GUARD_DECODE_POLICY_VERSION, GUARD_REPORT_SEMANTICS_VERSION, GUARD_SCHEMA_VERSION,
 };
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tempfile::tempdir;
 
 fn sample_fs_identity() -> FilesystemIdentity {
@@ -188,13 +187,16 @@ fn row_142_editing_keyhog_toml_changes_config_digest_and_breaks_compatibility() 
     assert_ne!(id_created.config_digest, id_modified.config_digest);
     assert!(!id_created.is_compatible_with(&id_modified));
 
-    // Parent directory .keyhog.toml is discovered and hashed when walking up from child
+    // Removing .keyhog.toml returns to initial default config digest
     fs::remove_file(&config_path).expect("remove .keyhog.toml");
+    let id_deleted = compute_root_policy_identity(root, KEYHOG_VERSION, "det-1");
+    assert_eq!(id_initial.config_digest, id_deleted.config_digest);
+
+    // Child directory with its own .keyhog.toml hashes its own config
     let sub_dir = root.join("child");
     fs::create_dir(&sub_dir).expect("create child dir");
-    let parent_config = root.join(".keyhog.toml");
-    fs::write(&parent_config, "[scan]\nmin_confidence = 0.90\n")
-        .expect("write parent .keyhog.toml");
+    let child_config = sub_dir.join(".keyhog.toml");
+    fs::write(&child_config, "[scan]\nmin_confidence = 0.90\n").expect("write child .keyhog.toml");
     let id_child = compute_root_policy_identity(&sub_dir, KEYHOG_VERSION, "det-1");
     assert_ne!(id_initial.config_digest, id_child.config_digest);
 }
@@ -431,5 +433,38 @@ fn row_142_guard_receipt_carries_fully_populated_policy_identity() {
     assert_ne!(
         receipt.policy_identity.config_digest,
         GuardPolicyIdentity::default_config_digest()
+    );
+}
+
+#[test]
+fn row_142_independent_root_policy_identities_do_not_clobber_each_other() {
+    let rt = GuardRuntime::new();
+    let root1 = b"/repo/project-a".to_vec();
+    let root2 = b"/repo/project-b".to_vec();
+
+    let default_id = GuardPolicyIdentity::from_build_and_detectors("0.5.80", "det-default");
+    rt.set_policy_identity(default_id.clone());
+
+    let mut id_a = default_id.clone();
+    id_a.keyhogignore_digest = "ignore-a".to_string();
+    let mut id_b = default_id.clone();
+    id_b.keyhogignore_digest = "ignore-b".to_string();
+
+    rt.set_root_policy_identity(&root1, id_a.clone());
+    rt.set_root_policy_identity(&root2, id_b.clone());
+
+    assert_eq!(rt.get_root_policy_identity(&root1), Some(id_a));
+    assert_eq!(rt.get_root_policy_identity(&root2), Some(id_b));
+    // Default identity is not clobbered by set_root_policy_identity
+    assert_eq!(rt.policy_identity(), Some(default_id));
+}
+
+#[test]
+fn row_142_overflow_takes_precedence_over_policy_change_in_event_action() {
+    let action = guard_event_action_with_policy(Some(GuardRootState::Current), true, true);
+    assert_eq!(
+        action,
+        GuardEventAction::Transition(GuardTransition::CoverageLost),
+        "overflow with policy change must transition to CoverageLost"
     );
 }
