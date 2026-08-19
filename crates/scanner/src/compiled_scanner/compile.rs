@@ -1123,23 +1123,15 @@ impl CompiledScanner {
         //     detector whose rare trailing literal (`.*<sitename>`) is absent
         //     skips its O(chunk) whole-chunk regex run.
         //   - confirmed_anchor_index: AC over the confirmed ac_map anchors.
-        let phase2_always_active_indices_ref = &phase2_always_active_indices;
-        let (phase2_anchor_index, ((suffix_gate_ac, ac_suffix_gate), confirmed_anchor_index)) =
-            rayon::join(
-                move || {
-                    Phase2AnchorIndex::build_with_hints(
-                        phase2_patterns,
-                        phase2_always_active_indices_ref,
-                        phase2_localization,
-                    )
-                },
-                move || {
-                    rayon::join(
-                        move || build_confirmed_suffix_gate_with_hints(ac_map, confirmed_suffixes),
-                        move || ConfirmedAnchorIndex::build_with_hints(ac_map, confirmed_prefixes),
-                    )
-                },
-            );
+        let phase2_anchor_index = Phase2AnchorIndex::build_with_hints(
+            phase2_patterns,
+            &phase2_always_active_indices,
+            phase2_localization,
+        );
+        let (suffix_gate_ac, ac_suffix_gate) =
+            build_confirmed_suffix_gate_with_hints(ac_map, confirmed_suffixes);
+        let confirmed_anchor_index =
+            ConfirmedAnchorIndex::build_with_hints(ac_map, confirmed_prefixes);
         let phase2_always_anchor_literal_count = phase2_anchor_index
             .as_ref()
             .map_or(0, |index| index.always_anchor_literals().len());

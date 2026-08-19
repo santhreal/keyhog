@@ -376,8 +376,6 @@ impl HsScanner {
         patterns: &[(usize, usize, &str, bool)],
         opts: HsCompileOpts<'_>,
     ) -> PreparedPatterns {
-        use rayon::prelude::*;
-
         enum PrepResult {
             Pattern {
                 input_index: usize,
@@ -417,11 +415,7 @@ impl HsScanner {
                     },
                 }
             };
-        let prepared: Vec<PrepResult> = if opts.parallel_prepare {
-            patterns.par_iter().enumerate().map(prepare).collect()
-        } else {
-            patterns.iter().enumerate().map(prepare).collect()
-        };
+        let prepared: Vec<PrepResult> = patterns.iter().enumerate().map(prepare).collect();
 
         let mut hs_pats = Vec::new();
         let mut pattern_map = Vec::new();
@@ -605,26 +599,14 @@ impl HsScanner {
         // lets that worker steal another scan job and re-enter the scratch
         // borrow. Compile inline on workers; cold startup keeps parallel shard
         // compilation when entered from a non-worker coordinator thread.
-        if shard_count == 1 || rayon::current_thread_index().is_some() {
-            return shard_pats
-                .into_iter()
-                .enumerate()
-                .map(|(shard_idx, pats)| {
-                    Self::compile_cached_shard(pats, shard_count, shard_idx, cache_key, cache_dir)
-                })
-                .collect();
-        }
-
-        use rayon::prelude::*;
         shard_pats
-            .into_par_iter()
+            .into_iter()
             .enumerate()
             .map(|(shard_idx, pats)| {
                 Self::compile_cached_shard(pats, shard_count, shard_idx, cache_key, cache_dir)
             })
             .collect()
     }
-
     fn compile_cached_shard(
         pats: Vec<Pattern>,
         shard_count: usize,
@@ -883,18 +865,16 @@ impl HsScanner {
     /// determines how many persistent workers explicit warm-up seeds; callers
     /// outside Rayon can still allocate their own exact TLS scratch lazily.
     fn executor_width() -> usize {
-        rayon::current_num_threads().clamp(1, MAX_COMPILE_SHARDS)
+        std::thread::available_parallelism()
+            .map_or(1, std::num::NonZeroUsize::get)
+            .clamp(1, MAX_COMPILE_SHARDS)
     }
 
     /// Warm the scanner for steady-state execution: allocate one
-    /// Hyperscan scratch per shard on every Rayon worker thread and retain
-    /// them in thread-local storage keyed by this scanner's identity. After a
-    /// successful warm, ordinary scan requests reuse those scratches instead
-    /// of allocating on the request path.
+    /// Hyperscan scratch per shard on the current thread and retain
+    /// it in thread-local storage keyed by this scanner's identity.
     pub(crate) fn warm(&self) -> Result<(), String> {
-        let results: Vec<Result<(), String>> =
-            rayon::broadcast(|_| self.scan_matches_result(b"", |_, _, _| {}));
-        results.into_iter().collect::<Result<Vec<()>, String>>()?;
+        self.scan_matches_result(b"", |_, _, _| {})?;
         Ok(())
     }
 

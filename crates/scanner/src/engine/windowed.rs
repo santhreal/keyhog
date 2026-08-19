@@ -12,8 +12,6 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
-        use rayon::prelude::*;
-
         if crate::deadline::expired(deadline) {
             return Ok(Vec::new());
         }
@@ -27,7 +25,7 @@ impl CompiledScanner {
         let recovery_receipts = crate::gpu::capture_recovery_receipts();
         let profile_runtime = keyhog_profile::current_runtime();
         let window_matches: crate::error::Result<Vec<(usize, usize, Vec<RawMatch>)>> = ranges
-            .par_iter()
+            .iter()
             .map(|&(offset, end)| {
                 let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
                 crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
@@ -81,8 +79,6 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
-        use rayon::prelude::*;
-
         let chunk_text = &chunk.data;
         if reject_oversized_window_chunk(chunk, chunk_text) {
             return Ok(Vec::new());
@@ -97,7 +93,7 @@ impl CompiledScanner {
         let profile_runtime = keyhog_profile::current_runtime();
 
         let window_matches: crate::error::Result<Vec<(usize, usize, Vec<RawMatch>)>> = ranges
-            .par_iter()
+            .iter()
             .map(|&(offset, end)| {
                 let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
                 crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
