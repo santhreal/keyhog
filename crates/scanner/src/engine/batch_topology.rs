@@ -48,7 +48,7 @@ impl CoalescedWorkLanes {
 
 /// Builds the scheduler topology used by every parallel chunk dispatch path.
 pub(super) fn coalesced_work_lanes(chunks: &[Chunk], threshold_bytes: usize) -> CoalescedWorkLanes {
-    let workers = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+    let workers = keyhog_profile::logical_cpu_count();
     coalesced_work_lanes_for_workers(chunks, threshold_bytes, workers)
 }
 
