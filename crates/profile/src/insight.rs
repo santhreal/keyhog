@@ -413,11 +413,7 @@ impl RunInsightV2 {
             input_units,
             mib_per_second_milli: mib_per_second_milli(input_bytes, wall_ns),
             units_per_second_milli: per_second_milli(input_units, wall_ns),
-            ns_per_unit: if input_units == 0 {
-                0
-            } else {
-                wall_ns / input_units
-            },
+            ns_per_unit: wall_ns.checked_div(input_units).unwrap_or(0),
             ns_per_byte_milli: milli(wall_ns, input_bytes),
             cpu_ns_per_byte_milli: milli(process_cpu_ns, input_bytes),
             phases,
@@ -1011,11 +1007,7 @@ fn derive_stages(
                 elapsed_ns: stage.elapsed_ns,
                 share_of_recorded_ppm: ppm(stage.elapsed_ns, recorded_ns),
                 ns_per_call: stage.elapsed_ns / stage.calls.max(1),
-                ns_per_input_unit: if input_units == 0 {
-                    0
-                } else {
-                    stage.elapsed_ns / input_units
-                },
+                ns_per_input_unit: stage.elapsed_ns.checked_div(input_units).unwrap_or(0),
                 ns_per_input_byte_milli: milli(stage.elapsed_ns, input_bytes),
                 bytes,
                 mib_per_second_milli: mib_per_second_milli(
@@ -1147,6 +1139,7 @@ fn finding(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rank_findings(
     wall_ns: u64,
     throughput: &ThroughputInsightV2,

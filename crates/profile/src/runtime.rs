@@ -98,7 +98,7 @@ impl SamplingPolicy {
 
     fn selects(self, observation: u64) -> bool {
         observation < self.initial_events
-            || (observation - self.initial_events) % self.every_nth_after_initial == 0
+            || (observation - self.initial_events).is_multiple_of(self.every_nth_after_initial)
     }
 }
 
@@ -291,7 +291,7 @@ const fn zero_metric_values() -> [AtomicU64; crate::MetricId::COUNT] {
     [const { AtomicU64::new(0) }; crate::MetricId::COUNT]
 }
 
-const GAUGE_PRESENT_WORDS: usize = (crate::MetricId::COUNT + 63) / 64;
+const GAUGE_PRESENT_WORDS: usize = crate::MetricId::COUNT.div_ceil(64);
 
 const fn zero_latency_buckets() -> [[AtomicU64; LATENCY_BUCKET_COUNT]; STAGE_COUNT] {
     [const { [const { AtomicU64::new(0) }; LATENCY_BUCKET_COUNT] }; STAGE_COUNT]

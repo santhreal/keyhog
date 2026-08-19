@@ -693,6 +693,7 @@ impl Phase1AdmissionSummary {
         }
     }
 
+    #[allow(dead_code)]
     #[inline]
     fn merge(self, other: Self) -> Self {
         Self {
