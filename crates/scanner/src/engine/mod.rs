@@ -22,7 +22,9 @@ mod gpu_literal_scratch;
 #[cfg(feature = "gpu")]
 pub(crate) mod gpu_region_batch;
 #[cfg(feature = "gpu")]
-mod gpu_region_dispatch;
+pub mod gpu_region_dispatch;
+#[cfg(feature = "gpu")]
+pub use gpu_region_dispatch::{GpuResidentExecutionPermit, GpuResidentExecutionPool};
 #[cfg(feature = "gpu")]
 mod gpu_region_dispatch_helpers;
 #[cfg(feature = "gpu")]
@@ -473,6 +475,22 @@ impl CompiledScanner {
         self.reusable_phase1_evidence.lock().clear();
         release_idle_candidate_scratch();
     }
+
+    #[cfg(feature = "gpu")]
+    #[must_use]
+    pub fn gpu_resident_execution_pool(
+        &self,
+    ) -> &gpu_region_dispatch::GpuResidentExecutionPool {
+        &self.gpu_resident_execution_pool
+    }
+
+    #[cfg(feature = "gpu")]
+    #[must_use]
+    pub fn with_gpu_resident_execution_pool_capacity(mut self, capacity: usize) -> Self {
+        self.gpu_resident_execution_pool =
+            gpu_region_dispatch::GpuResidentExecutionPool::new(capacity);
+        self
+    }
 }
 
 pub struct CompiledScanner {
@@ -500,7 +518,7 @@ pub struct CompiledScanner {
     /// Exact selected route or the temporary all-peer calibration census.
     pub(crate) backend_state: ScannerBackendState,
     #[cfg(feature = "gpu")]
-    pub(crate) direct_gpu_resident_dispatch: std::sync::Mutex<()>,
+    pub(crate) gpu_resident_execution_pool: gpu_region_dispatch::GpuResidentExecutionPool,
     /// True only when a signed GPU execution pack authenticated the exact
     /// quantized feature schema, model artifact, and scoring ABI.
     pub(crate) quantized_confidence_authenticated: bool,

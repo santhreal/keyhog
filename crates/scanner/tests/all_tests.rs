@@ -369,6 +369,8 @@ pub mod regression_row_115_proportional_scrub_cost;
 pub mod regression_row_116_backend_derived_dispatch_limit;
 #[path = "regression_row_117_scratch_retention_memory_budget.rs"]
 pub mod regression_row_117_scratch_retention_memory_budget;
+#[path = "regression_row_118_gpu_dispatch_concurrency_pool.rs"]
+pub mod regression_row_118_gpu_dispatch_concurrency_pool;
 #[path = "regression_saas_platform_token_recall.rs"]
 pub mod regression_saas_platform_token_recall;
 #[path = "regression_scan_telemetry_rayon_scope.rs"]
