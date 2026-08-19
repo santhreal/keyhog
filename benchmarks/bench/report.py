@@ -612,7 +612,7 @@ def _name(scanner: str) -> str:
 
 
 def render_leaderboard(results: list[RunResult], corpus: str) -> str:
-    """Render Markdown leaderboard table for corpus."""
+    """Render Markdown leaderboard table for corpus and companion corpora."""
     rows = canonical_leaderboard(results, corpus)
     if not rows:
         return f"_No results for corpus `{corpus}` yet - run `make leaderboard`._"
@@ -639,7 +639,39 @@ def render_leaderboard(results: list[RunResult], corpus: str) -> str:
             f"{r.finding_count} | {_fmt_secs(r.speed.wall_ms)} | "
             f"{r.speed.peak_rss_kb // 1024} MB |"
         )
-    lines.extend(["", render_provenance(rows)])
+    other_corpora = sorted(
+        {r.corpus.name for r in results if r.corpus.name and r.corpus.name != corpus and not r.corpus.name.startswith("daemon")}
+    )
+    provenance_rows = list(rows)
+    for other in other_corpora:
+        other_rows = canonical_leaderboard(results, other)
+        if not other_rows:
+            continue
+        o_fixtures = next((r.corpus.fixture_count for r in other_rows if r.corpus.fixture_count), 0)
+        o_positives = next((r.corpus.labeled_positives for r in other_rows if r.corpus.labeled_positives), 0)
+        lines.extend([
+            "",
+            f"#### Competitor {other} rule corpus",
+            f"Corpus: **{other}** - {o_fixtures} fixtures, {o_positives} labeled positives. "
+            "Cross-tool evaluation on competitor ground truth.",
+            "",
+            "| Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |",
+            "|---|---|---|---|---|---|---|---|",
+        ])
+        for i, r in enumerate(other_rows, 1):
+            o = r.detection.overall
+            if not r.available:
+                lines.append(f"| {i} | {_name(r.scanner.name)} | - | - | - | - | _n/a_ | - |")
+                continue
+            bold = "**" if r.scanner.name == "keyhog" else ""
+            lines.append(
+                f"| {i} | {bold}{_name(r.scanner.name)}{bold} | "
+                f"{bold}{o.f1():.4f}{bold} | {o.precision():.4f} | {o.recall():.4f} | "
+                f"{r.finding_count} | {_fmt_secs(r.speed.wall_ms)} | "
+                f"{r.speed.peak_rss_kb // 1024} MB |"
+            )
+        provenance_rows.extend(other_rows)
+    lines.extend(["", render_provenance(provenance_rows)])
     return "\n".join(lines)
 
 
@@ -649,6 +681,26 @@ def render_perf(results: list[RunResult], corpus: str | None = None) -> str:
     rows.sort(key=lambda r: r.speed.wall_ms)
     if not rows:
         return "_No timed runs yet._"
+    corpora_in_rows = sorted({r.corpus.name for r in rows if r.corpus.name and not r.corpus.name.startswith("daemon")})
+    if len(corpora_in_rows) > 1 and corpus is None:
+        lines = []
+        for c in corpora_in_rows:
+            c_rows = [r for r in rows if r.corpus.name == c]
+            c_rows.sort(key=lambda r: r.speed.wall_ms)
+            lines.extend([
+                f"#### {'Synthetic SecretBench-shape mirror corpus' if c == 'mirror' else f'Competitor {c} / home-turf rule corpus'}",
+                "",
+                "| Scanner | Config | Corpus | Wall | Throughput | Peak RSS |",
+                "|---|---|---|---|---|---|",
+            ])
+            for r in c_rows:
+                tp = f"{r.speed.throughput_mb_s:.1f} MB/s" if r.speed.throughput_mb_s else "-"
+                lines.append(
+                    f"| {_name(r.scanner.name)} | `{r.scanner.config_id}` | {r.corpus.name} | "
+                    f"{_fmt_secs(r.speed.wall_ms)} | {tp} | {r.speed.peak_rss_kb // 1024} MB |"
+                )
+            lines.append("")
+        return "\n".join(lines).rstrip()
     lines = [
         "| Scanner | Config | Corpus | Wall | Throughput | Peak RSS |",
         "|---|---|---|---|---|---|",

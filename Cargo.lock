@@ -2763,6 +2763,7 @@ dependencies = [
  "dirs",
  "flate2",
  "futures-util",
+ "goblin",
  "hex",
  "httpmock",
  "ignore",

@@ -56,6 +56,17 @@ pub(crate) fn run(args: CalibrateArgs) -> Result<()> {
         .save(&cache_path)
         .with_context(|| format!("saving calibration cache to {}", cache_path.display()))?;
 
+    if !args.tp.is_empty() || !args.fp.is_empty() {
+        if let Err(error) = crate::execution_pack_install::invalidate_installed_artifacts(
+            "Bayesian calibration counters updated by keyhog calibrate",
+        ) {
+            tracing::warn!(
+                error = %error,
+                "failed to invalidate stale artifacts after calibration update"
+            );
+        }
+    }
+
     if args.show {
         print_show(&calibration, &cache_path);
     } else {
