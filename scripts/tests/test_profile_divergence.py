@@ -128,6 +128,19 @@ class ProfileClassificationTests(unittest.TestCase):
             any("Missing required [profile.release]" in e for e in errors)
         )
 
+    def test_release_valid_strip_and_debug_variants(self) -> None:
+        for strip_val in ("symbols", True):
+            for debug_val in (False, 0, "none"):
+                profiles = {
+                    "release": {
+                        "panic": "unwind",
+                        "overflow-checks": True,
+                        "strip": strip_val,
+                        "debug": debug_val,
+                    }
+                }
+                errors, _ = pd.classify_profile_keys(profiles)
+                self.assertEqual(errors, [])
 
 if __name__ == "__main__":
     unittest.main()

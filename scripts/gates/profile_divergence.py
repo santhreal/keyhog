@@ -94,15 +94,15 @@ def classify_profile_keys(profiles: Dict[str, Dict[str, Any]]) -> Tuple[List[str
                 f"to prevent silent arithmetic overflow in release builds."
             )
         strip_val = release_profile.get("strip")
-        if strip_val != "symbols":
+        if strip_val != "symbols" and strip_val is not True:
             errors.append(
-                f"[profile.release] strip must be 'symbols' (got {strip_val!r}) "
+                f"[profile.release] strip must be 'symbols' or true (got {strip_val!r}) "
                 f"to enforce stripped release artifacts and eliminate unneeded DWARF bloat."
             )
         debug_val = release_profile.get("debug")
-        if debug_val is not False and debug_val != 0 and debug_val != "0":
+        if debug_val is not False and debug_val != 0 and debug_val != "none":
             errors.append(
-                f"[profile.release] debug must be false or 0 (got {debug_val!r}) "
+                f"[profile.release] debug must be false, 0, or 'none' (got {debug_val!r}) "
                 f"to eliminate unneeded DWARF bloat in shipped release binaries."
             )
 

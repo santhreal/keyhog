@@ -120,7 +120,7 @@ fn small_compilers_install_and_scan_invariants() {
     let profile_json: serde_json::Value =
         serde_json::from_str(&profile_content).expect("parse profile json");
 
-    let monitored_surfaces = ["EntropyPolicy", "AssignmentKeywordMatcher", "DetectorPlan"];
+    let _monitored_surfaces = ["EntropyPolicy", "AssignmentKeywordMatcher", "DetectorPlan"];
 
     let compile_records = profile_json
         .get("compile_surfaces")

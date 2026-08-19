@@ -42,21 +42,19 @@ fn known_keys() -> HashSet<&'static str> {
 
 fn locate_workspace_cargo_toml() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let candidate = manifest_dir.join("../../Cargo.toml");
-    if candidate.is_file() {
-        return candidate;
-    }
-    let direct = manifest_dir.join("Cargo.toml");
-    let parent = manifest_dir
-        .parent()
-        .and_then(|p| p.parent())
-        .map(|p| p.join("Cargo.toml"));
-    if let Some(p) = parent {
-        if p.is_file() {
-            return p;
+    let mut current = Some(manifest_dir.as_path());
+    while let Some(dir) = current {
+        let candidate = dir.join("Cargo.toml");
+        if candidate.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&candidate) {
+                if content.contains("[workspace]") {
+                    return candidate;
+                }
+            }
         }
+        current = dir.parent();
     }
-    direct
+    manifest_dir.join("../../Cargo.toml")
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -100,11 +98,11 @@ fn validate_profile_table(parsed: &toml::Table) -> ProfileValidationResult {
         }
     };
 
-    // Assert strip = "symbols"
+    // Assert strip = "symbols" (or boolean true)
     match release.get("strip") {
         Some(val) => {
-            let s = val.as_str().unwrap_or("");
-            if s != "symbols" {
+            let is_valid = val.as_str() == Some("symbols") || val.as_bool() == Some(true);
+            if !is_valid {
                 errors.push(format!(
                     "[profile.release] strip must be \"symbols\", got {val:?}"
                 ));
@@ -116,12 +114,15 @@ fn validate_profile_table(parsed: &toml::Table) -> ProfileValidationResult {
     }
 
     // Assert debug = false (or 0) to eliminate DWARF debuginfo bloat
+    // Assert debug = false, 0, or "none" to eliminate DWARF debuginfo bloat
     match release.get("debug") {
         Some(val) => {
-            let is_false = val.as_bool() == Some(false) || val.as_integer() == Some(0);
+            let is_false = val.as_bool() == Some(false)
+                || val.as_integer() == Some(0)
+                || val.as_str() == Some("none");
             if !is_false {
                 errors.push(format!(
-                    "[profile.release] debug must be false to eliminate DWARF bloat, got {val:?}"
+                    "[profile.release] debug must be false or 0 to eliminate DWARF bloat, got {val:?}"
                 ));
             }
         }
@@ -250,20 +251,26 @@ fn validate_stripped_binary_bytes(bytes: &[u8]) -> Result<(), Vec<String>> {
                     &mut violations,
                 );
             }
-            goblin::mach::Mach::Fat(fat) => {
-                if let Ok(arches) = fat.arches() {
+            goblin::mach::Mach::Fat(fat) => match fat.arches() {
+                Ok(arches) => {
                     for arch in arches {
                         let arch_bytes = arch.slice(bytes);
-                        if let Ok(sub_macho) = goblin::mach::MachO::parse(arch_bytes, 0) {
-                            check_macho_segments_and_sections(
+                        match goblin::mach::MachO::parse(arch_bytes, 0) {
+                            Ok(sub_macho) => check_macho_segments_and_sections(
                                 &sub_macho.segments,
                                 "Fat Mach-O binary",
                                 &mut violations,
-                            );
+                            ),
+                            Err(err) => {
+                                violations.push(format!("Failed to parse Fat Mach-O slice: {err}"))
+                            }
                         }
                     }
                 }
-            }
+                Err(err) => {
+                    violations.push(format!("Failed to enumerate Fat Mach-O arches: {err}"))
+                }
+            },
         },
         goblin::Object::PE(pe) => {
             for section in &pe.sections {
@@ -675,14 +682,13 @@ debug-assertions = true
         .iter()
         .any(|e| e.contains("codegen-units must be 1")));
     // 8. Novel unclassified profile key fails closed
-    let unclassified: toml::Table =
-        format!("{valid_base}\nunknown-experimental-profile-key = true\n")
-            .replace(
-                "[profile.release]",
-                "[profile.release]\nunknown-experimental-profile-key = true",
-            )
-            .parse()
-            .unwrap();
+    let unclassified: toml::Table = valid_base
+        .replace(
+            "[profile.release]",
+            "[profile.release]\nunknown-experimental-profile-key = true",
+        )
+        .parse()
+        .unwrap();
     let res = validate_profile_table(&unclassified);
     assert!(res.errors.iter().any(|e| e.contains("Unclassified key")));
 }
@@ -724,11 +730,15 @@ fn regression_row_139_binary_stripping_and_dwarf_bloat_detection() {
         "Error must name .symtab section, got: {errs:?}"
     );
 
-    // 4. If a compiled release binary exists in target directories, validate it
-    let mut candidate_paths = vec![
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/keyhog"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/keyhog.exe"),
-    ];
+    // 4. Validate built release binary if present or required
+    let mut candidate_paths = Vec::new();
+    if let Some(explicit) = std::env::var_os("KEYHOG_RELEASE_BIN") {
+        candidate_paths.push(PathBuf::from(explicit));
+    }
+    candidate_paths
+        .push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/keyhog"));
+    candidate_paths
+        .push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/keyhog.exe"));
     if let Some(target_dir) =
         std::env::var_os("CARGO_TARGET_DIR").or_else(|| std::env::var_os("CARGO_BUILD_TARGET_DIR"))
     {
@@ -737,6 +747,7 @@ fn regression_row_139_binary_stripping_and_dwarf_bloat_detection() {
         candidate_paths.push(p.join("keyhog.exe"));
     }
 
+    let mut validated_any = false;
     for path in &candidate_paths {
         if path.is_file() {
             let bytes = std::fs::read(path).expect("read existing release binary");
@@ -747,6 +758,14 @@ fn regression_row_139_binary_stripping_and_dwarf_bloat_detection() {
                 path.display(),
                 result
             );
+            validated_any = true;
         }
+    }
+
+    if std::env::var_os("KEYHOG_REQUIRE_RELEASE_BINARY").is_some() && !validated_any {
+        panic!(
+            "KEYHOG_REQUIRE_RELEASE_BINARY is set but no release binary was found in candidates: {:?}",
+            candidate_paths
+        );
     }
 }
