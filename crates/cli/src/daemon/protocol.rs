@@ -676,7 +676,7 @@ pub struct GuardWireManifestEntry {
 /// One state transition entry in a guard transition feed or status result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct GuardTransitionWireEntry {
+pub struct GuardTransitionWireEntry {
     /// Canonical root path.
     pub root: String,
     /// Global transition sequence.

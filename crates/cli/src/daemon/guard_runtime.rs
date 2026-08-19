@@ -177,20 +177,22 @@ impl GuardRuntime {
         let existing = root_map.get(root_path);
         if let Some(existing) = existing {
             if !existing.is_compatible_with(&identity) {
-                self.attestations.invalidate_for_policy(&identity);
-                let mut roots = self.roots.write();
-                if let Some(r) = roots.get_mut(root_path) {
-                    if r.state != GuardRootState::Stopped && r.state != GuardRootState::Indexing {
-                        if let Ok(new_state) = r.state.transition(&GuardTransition::PolicyChanged) {
-                            r.state = new_state;
-                            r.terminal_sequence = r.terminal_sequence.saturating_add(1);
-                        }
-                    }
+                if let Ok(old_short) = existing.short_digest() {
+                    self.attestations
+                        .invalidate_matching_policy_digest(&old_short);
                 }
             }
         }
-        root_map.insert(root_path.to_vec(), identity.clone());
-        *self.current_identity.write() = Some(identity);
+        root_map.insert(root_path.to_vec(), identity);
+    }
+
+    /// Retrieve the policy identity for a specific root, falling back to the daemon default.
+    pub fn root_policy_identity(&self, root_path: &[u8]) -> Option<GuardPolicyIdentity> {
+        self.root_identities
+            .read()
+            .get(root_path)
+            .cloned()
+            .or_else(|| self.current_identity.read().clone())
     }
     /// Set the default policy identity. When it changes, invalidates attestations and transitions active roots.
     pub fn set_policy_identity(&self, identity: GuardPolicyIdentity) {

@@ -2,8 +2,8 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use keyhog_core::guard_state::{GuardPolicyIdentity, GuardRootState, GuardTransition};
 use keyhog_core::suppression::RuleSuppressor;
 use keyhog_core::{
-    compute_detector_corpus_digest, correlate_findings, dedup_matches, load_detectors,
-    sha256_hash, validate_detector, DedupScope, DetectorSpec, MatchLocation, MerkleIndex, RawMatch,
+    compute_detector_corpus_digest, correlate_findings, dedup_matches, load_detectors, sha256_hash,
+    validate_detector, DedupScope, DetectorSpec, MatchLocation, MerkleIndex, RawMatch,
     SensitiveString, Severity, VerificationResult, VerifiedFinding,
 };
 use std::borrow::Cow;
@@ -25,13 +25,16 @@ fn sample_finding(
         service: Arc::from(service),
         severity,
         credential_redacted: Cow::Owned(format!("{}...", &hash[..4.min(hash.len())])),
-        credential_hash: sha256_hash(hash.as_bytes()),
+        credential_hash: sha256_hash(hash),
         companions_redacted: HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from(path)),
             line: Some(10),
             offset: 100,
+            commit: None,
+            author: None,
+            date: None,
         },
         verification: VerificationResult::Live,
         metadata: HashMap::new(),
@@ -56,6 +59,9 @@ fn sample_raw_match(detector_id: &str, file: &str, line: usize, secret: &str) ->
             file_path: Some(Arc::from(file)),
             line: Some(line),
             offset: line * 80,
+            commit: None,
+            author: None,
+            date: None,
         },
         entropy: None,
         confidence: Some(0.9),
@@ -314,7 +320,7 @@ fn bench_guard_state_and_policy(c: &mut Criterion) {
 
     group.bench_function("guard_root_state_transition_sequence", |b| {
         b.iter(|| {
-            let s0 = GuardRootState::Uninitialized;
+            let s0 = GuardRootState::Stopped;
             let s1 = s0
                 .transition(&GuardTransition::ReconciliationStarted)
                 .expect("start");
@@ -322,11 +328,9 @@ fn bench_guard_state_and_policy(c: &mut Criterion) {
                 .transition(&GuardTransition::ReconciliationClean)
                 .expect("clean");
             let s3 = s2
-                .transition(&GuardTransition::FsEventReceived)
+                .transition(&GuardTransition::EventAccepted)
                 .expect("event");
-            let s4 = s3
-                .transition(&GuardTransition::ReconciliationClean)
-                .expect("clean");
+            let s4 = s3.transition(&GuardTransition::EventsClean).expect("clean");
             let _ = black_box(s4);
         });
     });

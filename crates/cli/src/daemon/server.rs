@@ -1074,6 +1074,8 @@ fn process_guard_events(
         GuardEventAction::Transition(transition) => {
             let cause = if has_overflow {
                 "watcher overflow: event buffer overflowed or channel disconnected".to_string()
+            } else if has_policy_change {
+                "policy change: configuration or suppression rules modified".to_string()
             } else {
                 format!(
                     "filesystem watcher: {} change events accepted",
@@ -1115,24 +1117,24 @@ pub fn guard_event_action_with_policy(
     has_policy_change: bool,
 ) -> GuardEventAction {
     use keyhog_core::guard_state::{GuardRootState, GuardTransition};
-    if has_policy_change {
-        match current_state {
-            Some(GuardRootState::Stopped) | None => GuardEventAction::Ignore,
-            Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
-                coverage_lost: has_overflow,
-            },
-            Some(GuardRootState::Degraded) => GuardEventAction::Ignore,
-            Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
-            _ => GuardEventAction::Transition(GuardTransition::PolicyChanged),
-        }
-    } else if has_overflow {
+    if has_overflow {
         match current_state {
             Some(GuardRootState::Stopped) | None => GuardEventAction::Ignore,
             Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
                 coverage_lost: true,
             },
-            Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
+            Some(GuardRootState::Degraded) => GuardEventAction::Ignore,
             _ => GuardEventAction::Transition(GuardTransition::CoverageLost),
+        }
+    } else if has_policy_change {
+        match current_state {
+            Some(GuardRootState::Stopped) | None => GuardEventAction::Ignore,
+            Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
+                coverage_lost: false,
+            },
+            Some(GuardRootState::Degraded) => GuardEventAction::Ignore,
+            Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
+            _ => GuardEventAction::Transition(GuardTransition::PolicyChanged),
         }
     } else {
         match current_state {
@@ -1399,6 +1401,7 @@ enum MassFilesystemMessage {
         source_coverage_gaps: SourceCoverageGaps,
         skipped_unchanged: usize,
     },
+    #[allow(dead_code)]
     Error(String),
 }
 
@@ -2252,7 +2255,15 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 }
             };
             // Get the policy identity for attestation lookup.
-            let identity = match state.guard.policy_identity() {
+            let canonical_repo = match std::fs::canonicalize(&repo_path) {
+                Ok(p) => p,
+                Err(_) => std::path::PathBuf::from(&repo_path),
+            };
+            let identity = match state
+                .guard
+                .root_policy_identity(canonical_repo.as_os_str().as_encoded_bytes())
+                .or_else(|| state.guard.policy_identity())
+            {
                 Some(id) => id,
                 None => {
                     return Response::Error {
@@ -2724,18 +2735,20 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             let bytes_hit = txn.bytes_hit;
             let terminal_state =
                 guard_commit_terminal_state(txn.blocking_findings_count, txn.coverage_gaps);
-            let identity = state.guard.policy_identity();
             let commit_root = match std::fs::canonicalize(&txn.repo_path) {
                 Ok(p) => p,
                 Err(_) => std::path::PathBuf::from(&txn.repo_path),
             };
-            let policy_identity = identity.clone().unwrap_or_else(|| {
-                compute_root_policy_identity(
-                    &commit_root,
-                    KEYHOG_VERSION,
-                    &state.detector_rules_digest,
-                )
-            });
+            let policy_identity = state
+                .guard
+                .root_policy_identity(commit_root.as_os_str().as_encoded_bytes())
+                .unwrap_or_else(|| {
+                    compute_root_policy_identity(
+                        &commit_root,
+                        KEYHOG_VERSION,
+                        &state.detector_rules_digest,
+                    )
+                });
             let receipt = keyhog_core::guard_state::GuardReceipt {
                 objects_requested: total_objects,
                 objects_hit,
@@ -2983,6 +2996,9 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 } else {
                     0
                 };
+                let root_identity = state
+                    .guard
+                    .root_policy_identity(record.canonical_path.as_slice());
                 Response::GuardStatusResult {
                     root: root.clone(),
                     mode: record.mode.label().to_string(),
@@ -3011,15 +3027,11 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     last_reconciliation_time: record.last_reconciliation_time,
                     scanner_residency: state.guard.scanner_residency().to_string(),
                     backend_route_label: record.backend_route_label.clone(),
-                    build_identity_short: state
-                        .guard
-                        .policy_identity()
+                    build_identity_short: root_identity
                         .as_ref()
                         .and_then(|id| id.short_digest().ok())
                         .unwrap_or_default(),
-                    detector_digest_short: state
-                        .guard
-                        .policy_identity()
+                    detector_digest_short: root_identity
                         .as_ref()
                         .map(|id| {
                             id.detector_digest
@@ -3028,9 +3040,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                                 .to_string()
                         })
                         .unwrap_or_default(),
-                    suppression_digest_short: state
-                        .guard
-                        .policy_identity()
+                    suppression_digest_short: root_identity
                         .as_ref()
                         .map(|id| {
                             id.suppression_digest
@@ -3039,9 +3049,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                                 .to_string()
                         })
                         .unwrap_or_default(),
-                    config_digest_short: state
-                        .guard
-                        .policy_identity()
+                    config_digest_short: root_identity
                         .as_ref()
                         .map(|id| {
                             id.config_digest

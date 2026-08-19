@@ -236,7 +236,6 @@ impl WatchedRoot {
     fn maybe_reload_ignore_matcher(&self, root: &std::path::Path, path: &std::path::Path) {
         if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
             if file_name == ".keyhogignore"
-                || file_name == ".keyhogignore.toml"
                 || file_name == ".gitignore"
                 || file_name == ".keyhog.toml"
             {
@@ -255,10 +254,7 @@ fn build_root_ignore_matcher(
     if keyhogignore.is_file() {
         let _ = builder.add(&keyhogignore);
     }
-    let keyhogignore_toml = root.join(".keyhogignore.toml");
-    if keyhogignore_toml.is_file() {
-        let _ = builder.add(&keyhogignore_toml);
-    }
+
     let gitignore = root.join(".gitignore");
     if gitignore.is_file() {
         let _ = builder.add(&gitignore);
@@ -589,6 +585,7 @@ impl GuardWatcher {
                             let roots = self.find_matching_roots_for_path(path);
                             for root in roots {
                                 if let Some(watched) = self.roots.get(&root) {
+                                    watched.maybe_reload_ignore_matcher(&root, path);
                                     if watched.is_path_excluded(&root, path, &self.skip_dirs) {
                                         continue;
                                     }
