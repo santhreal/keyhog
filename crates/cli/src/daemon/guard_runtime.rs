@@ -260,6 +260,7 @@ impl GuardRuntime {
             self.coverage_lost_during_indexing
                 .lock()
                 .remove(canonical_path);
+            self.root_identities.write().remove(canonical_path);
             self.touch_activity();
         }
         removed
