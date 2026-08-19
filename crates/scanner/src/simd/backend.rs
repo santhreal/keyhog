@@ -348,7 +348,6 @@ impl Default for HsCompileOpts<'_> {
             shard_target: None,
             utf8: false,
             ucp: false,
-            parallel_prepare: true,
         }
     }
 }
@@ -505,7 +504,6 @@ impl HsScanner {
             shard_target: _,
             utf8,
             ucp,
-            parallel_prepare: _,
         } = opts;
         let mut h = Sha256::new();
         for p in hs_pats {

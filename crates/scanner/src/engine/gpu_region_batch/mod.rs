@@ -490,6 +490,7 @@ pub(super) fn build_region_presence_batch(
     let total = region_presence_batch_len(chunks)?;
     validate_region_presence_batch_len(total)?;
 
+    scratch.haystack.fill(0);
     scratch.haystack.clear();
     scratch.region_starts.clear();
     scratch
