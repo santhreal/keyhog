@@ -117,9 +117,7 @@ fn binary_replacement_paths_trigger_execution_generation_and_gpu_literals() {
 }
 
 #[test]
-fn legacy_candidate_binary_probe_skips_generation_compilation_safely() {
-    // When candidate binary is e.g. a simple mock binary that doesn't have compile-execution-packs,
-    // install_execution_generation must fail closed on missing probe or succeed with no-op on non-supported command.
+fn candidate_binary_execution_generation_fails_closed_on_error() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mock_bin = dir.path().join("mock_keyhog");
     // Write a mock binary that exits 1 on compile-execution-packs
@@ -132,11 +130,9 @@ fn legacy_candidate_binary_probe_skips_generation_compilation_safely() {
         fs::set_permissions(&mock_bin, perms).expect("set permissions");
     }
 
-    let is_committed = API
-        .install_execution_generation(&mock_bin)
-        .expect("install_execution_generation on legacy binary must not panic");
+    let result = API.install_execution_generation(&mock_bin);
     assert!(
-        is_committed,
-        "legacy candidate transaction must be committed no-op"
+        result.is_err(),
+        "install_execution_generation on broken candidate must fail closed"
     );
 }

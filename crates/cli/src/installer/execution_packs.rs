@@ -24,7 +24,7 @@ pub(crate) struct ExecutionGenerationInstallTransaction {
     current_cache: PathBuf,
     old_packs: PathBuf,
     old_cache: PathBuf,
-    _stage: Option<tempfile::TempDir>,
+    _stage: tempfile::TempDir,
     packs_published: bool,
     cache_published: bool,
     had_old_packs: bool,
@@ -83,38 +83,6 @@ impl Drop for ExecutionGenerationInstallTransaction {
 pub(crate) fn install_execution_generation(
     candidate: &Path,
 ) -> Result<ExecutionGenerationInstallTransaction> {
-    let probe = Command::new(candidate)
-        .arg("compile-execution-packs")
-        .arg("--help")
-        .output()
-        .with_context(|| {
-            format!(
-                "executing candidate binary {} to probe execution-pack capabilities",
-                candidate.display()
-            )
-        })?;
-    if !probe.status.success() {
-        // Candidate binary genuinely lacks compile-execution-packs (legacy version).
-        // Surface warning loudly. We do not stage or publish packs, but we preserve existing
-        // artifacts in place so rollbacks remain valid if the candidate fails later health gates.
-        eprintln!(
-            "warning: candidate binary {} does not support compile-execution-packs; skipping generation compilation",
-            candidate.display()
-        );
-        return Ok(ExecutionGenerationInstallTransaction {
-            current_packs: PathBuf::new(),
-            current_cache: PathBuf::new(),
-            old_packs: PathBuf::new(),
-            old_cache: PathBuf::new(),
-            _stage: None,
-            packs_published: false,
-            cache_published: false,
-            had_old_packs: false,
-            had_old_cache: false,
-            created_signing_key: None,
-            committed: true,
-        });
-    }
     let cache_root = dirs::cache_dir()
         .context("platform cache directory is unavailable; cannot publish execution packs")?
         .join("keyhog");
@@ -180,7 +148,7 @@ pub(crate) fn install_execution_generation(
         current_cache,
         old_packs,
         old_cache,
-        _stage: Some(stage),
+        _stage: stage,
         packs_published: false,
         cache_published: false,
         had_old_packs,
@@ -209,27 +177,6 @@ pub(crate) fn install_execution_generation(
     Ok(transaction)
 }
 
-#[allow(dead_code)]
-/// Invalidate the current installed execution-pack generation and autoroute cache.
-pub(crate) fn invalidate_installed_execution_generation() -> Result<()> {
-    let cache_root = match dirs::cache_dir() {
-        Some(dir) => dir.join("keyhog"),
-        None => return Ok(()),
-    };
-    let current_packs = cache_root.join("execution-packs").join("current");
-    let current_cache = cache_root.join("autoroute.json");
-    remove_directory_if_present(&current_packs)?;
-    remove_regular_file_if_present(&current_cache)?;
-    Ok(())
-}
-
-#[allow(dead_code)]
-/// Regenerate the installed execution-pack generation and autoroute calibration.
-pub(crate) fn regenerate_installed_execution_generation(
-    candidate: &Path,
-) -> Result<ExecutionGenerationInstallTransaction> {
-    install_execution_generation(candidate)
-}
 fn run_candidate(candidate: &Path, args: &[&str], phase: &str) -> Result<()> {
     let output = Command::new(candidate)
         .args(args)

@@ -109,7 +109,6 @@ impl InstalledArtifactClass {
                 ArtifactIdentityInput::TargetHardwareDigest,
                 ArtifactIdentityInput::FeatureDigest,
                 ArtifactIdentityInput::DetectorCorpusDigest,
-                ArtifactIdentityInput::ConfigDigest,
             ],
             Self::VerificationKey => &[ArtifactIdentityInput::SigningKeyIdentity],
             Self::ExecutionPack => &[
@@ -117,7 +116,6 @@ impl InstalledArtifactClass {
                 ArtifactIdentityInput::TargetHardwareDigest,
                 ArtifactIdentityInput::FeatureDigest,
                 ArtifactIdentityInput::DetectorCorpusDigest,
-                ArtifactIdentityInput::ConfigDigest,
                 ArtifactIdentityInput::SigningKeyIdentity,
             ],
             Self::Signature => &[
@@ -135,7 +133,6 @@ impl InstalledArtifactClass {
                 ArtifactIdentityInput::TargetHardwareDigest,
                 ArtifactIdentityInput::FeatureDigest,
                 ArtifactIdentityInput::DetectorCorpusDigest,
-                ArtifactIdentityInput::ConfigDigest,
                 ArtifactIdentityInput::GpuDeviceIdentity,
             ],
         }
@@ -296,16 +293,8 @@ pub(crate) fn installed_execution_pack_directory() -> Result<PathBuf> {
 }
 
 pub fn current_binary_digest() -> Result<[u8; 32]> {
-    #[cfg(target_os = "linux")]
-    let mut file = File::open("/proc/self/exe").or_else(|_| {
-        let path = std::env::current_exe().context("resolving current KeyHog executable")?;
-        File::open(&path).with_context(|| format!("opening {}", path.display()))
-    })?;
-    #[cfg(not(target_os = "linux"))]
-    let mut file = {
-        let path = std::env::current_exe().context("resolving current KeyHog executable")?;
-        File::open(&path).with_context(|| format!("opening {}", path.display()))?
-    };
+    let path = std::env::current_exe().context("resolving current KeyHog executable")?;
+    let mut file = File::open(&path).with_context(|| format!("opening {}", path.display()))?;
     let mut hasher = blake3::Hasher::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
@@ -502,6 +491,85 @@ pub fn check_installed_artifacts_freshness_at(
         }
     };
 
+    if manifest.version != MANIFEST_VERSION {
+        return Ok(ArtifactFreshnessStatus::Missing {
+            detail: format!("manifest version {} unsupported", manifest.version),
+        });
+    }
+
+    if manifest.packs.is_empty() {
+        return Ok(ArtifactFreshnessStatus::Missing {
+            detail: "manifest contains no packs".to_string(),
+        });
+    }
+
+    let key_path = match directory.parent() {
+        Some(parent) => parent.join("signing.key"),
+        None => {
+            return Ok(ArtifactFreshnessStatus::Missing {
+                detail: "execution pack generation has no parent directory".to_string(),
+            });
+        }
+    };
+    match fs::symlink_metadata(&key_path) {
+        Ok(meta) if meta.file_type().is_file() && meta.len() == 32 => {}
+        Ok(meta) => {
+            return Ok(ArtifactFreshnessStatus::Missing {
+                detail: format!(
+                    "signing key {} is invalid (type: {:?}, len: {})",
+                    key_path.display(),
+                    meta.file_type(),
+                    meta.len()
+                ),
+            });
+        }
+        Err(err) => {
+            return Ok(ArtifactFreshnessStatus::Missing {
+                detail: format!("signing key {}: {err}", key_path.display()),
+            });
+        }
+    }
+
+    for row in &manifest.packs {
+        let pack_path = directory.join(&row.file);
+        match fs::symlink_metadata(&pack_path) {
+            Ok(meta) if meta.file_type().is_file() && meta.len() == row.bytes as u64 => {}
+            Ok(meta) => {
+                return Ok(ArtifactFreshnessStatus::Missing {
+                    detail: format!(
+                        "pack file {} is invalid (len {} vs expected {})",
+                        pack_path.display(),
+                        meta.len(),
+                        row.bytes
+                    ),
+                });
+            }
+            Err(err) => {
+                return Ok(ArtifactFreshnessStatus::Missing {
+                    detail: format!("pack file {}: {err}", pack_path.display()),
+                });
+            }
+        }
+
+        let sig_path = directory.join(&row.signature_file);
+        match fs::symlink_metadata(&sig_path) {
+            Ok(meta) if meta.file_type().is_file() && meta.len() > 0 => {}
+            Ok(_) => {
+                return Ok(ArtifactFreshnessStatus::Missing {
+                    detail: format!(
+                        "signature file {} is invalid (empty or not a file)",
+                        sig_path.display()
+                    ),
+                });
+            }
+            Err(err) => {
+                return Ok(ArtifactFreshnessStatus::Missing {
+                    detail: format!("signature file {}: {err}", sig_path.display()),
+                });
+            }
+        }
+    }
+
     let binary_expected = keyhog_core::hex_encode(&current_binary_digest()?);
     if manifest.binary_digest != binary_expected {
         return Ok(ArtifactFreshnessStatus::Stale {
@@ -660,13 +728,7 @@ fn load_manifest(
     if manifest.packs.is_empty() {
         bail!("execution-pack manifest contains no packs. Fix: run `keyhog install` or `keyhog update`");
     }
-    let embedded_detectors = keyhog_core::load_embedded_detectors_or_fail()
-        .context("loading embedded detectors for execution-pack verification")?;
-    let embedded_ir =
-        keyhog_scanner::execution_pack::CanonicalDetectorExecutionIr::compile(&embedded_detectors)
-            .map_err(anyhow::Error::msg)
-            .context("compiling canonical detector execution IR for verification")?;
-    let expected_detector_digest = keyhog_core::hex_encode(&embedded_ir.digest());
+    let expected_detector_digest = keyhog_core::hex_encode(&current_embedded_detector_digest()?);
     let current_binary = keyhog_core::hex_encode(&current_binary_digest()?);
     let current_target = keyhog_core::hex_encode(&current_target_digest());
     let current_feature = keyhog_core::hex_encode(&current_feature_digest());
@@ -691,11 +753,6 @@ fn load_manifest(
             "feature",
             manifest.feature_digest.as_str(),
             current_feature.as_str(),
-        ),
-        (
-            "detector",
-            manifest.detector_digest.as_str(),
-            keyhog_core::hex_encode(&current_embedded_detector_digest()?),
         ),
     ] {
         if actual != expected {
