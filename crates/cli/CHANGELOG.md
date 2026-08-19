@@ -8,6 +8,7 @@
 - feat(guard): implement continuous guard transition feed / event log surface with causal attribution across registered roots (`keyhog guard feed`, `GuardFeed` protocol frame) (Row 146).
 - feat(cli): enhance pass-gate terminal output craft with structured volume, blob counts, bytes scanned, and execution timing (Row 143).
 - fix(daemon): filter out ignored and excluded paths (.git, target, node_modules, ignore_paths, default excludes) in guard filesystem watcher matching scan path semantics (Row 141).
+- fix(daemon): filter out ignored and excluded paths (.git, target, node_modules, [scan].exclude, .gitignore, .keyhogignore, default excludes) in guard filesystem watcher matching scan path semantics with dynamic ignore matcher reloading (Row 141).
 - feat(guard): offline guard status and list inspectability reading durable store from disk with optional root summary (Row 140).
 - feat(cli): optimize startup execution path for informational commands with fast zero-allocation dispatch, deferred runtime initialization, and zero detector corpus parsing (Row 138).
 - feat(installer): multi-dimensional artifact invalidation and regeneration across detector corpus changes, configuration updates, and calibration changes (Row 135).

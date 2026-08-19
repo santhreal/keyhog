@@ -84,13 +84,6 @@ impl SkipDirPolicy {
             .map_err(|error| anyhow::anyhow!("invalid path skip-dir policy: {error}"))
     }
 
-    pub(crate) fn from_bundled() -> Result<Self> {
-        let section = parse_section(BUNDLED_SKIP_DIRS)
-            .map_err(|error| anyhow::anyhow!("invalid data/path_skip_dirs.toml: {error}"))?;
-        Self::from_section(section)
-            .map_err(|error| anyhow::anyhow!("invalid path skip-dir policy: {error}"))
-    }
-
     pub(crate) fn is_watch_component(&self, component: &str) -> bool {
         contains_component(&self.watch, component)
     }
@@ -127,17 +120,6 @@ impl SkipDirPolicy {
             watch,
             git_discovery,
         })
-    }
-}
-
-impl Default for SkipDirPolicy {
-    fn default() -> Self {
-        Self::load()
-            .or_else(|_| Self::from_bundled())
-            .unwrap_or_else(|_| Self {
-                watch: Vec::new(),
-                git_discovery: Vec::new(),
-            })
     }
 }
 

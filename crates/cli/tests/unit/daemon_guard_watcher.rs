@@ -251,7 +251,7 @@ fn custom_ignore_paths_filtered_in_unit_watcher() {
         .unwrap();
 
     assert_eq!(
-        watcher.root_ignore_paths(&root).unwrap(),
+        &watcher.root_ignore_paths(&root).unwrap()[..],
         &["*.log", "build/**"]
     );
     assert_eq!(watcher.root_respects_default_excludes(&root), Some(true));
