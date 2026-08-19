@@ -50,17 +50,13 @@ const SENTINEL_B: &str = "KEYHOG_SECOND_SENTINEL_b7c2d4e6";
 /// test calls this first, so concurrent refusals never pollute a count assertion.
 /// Poison is recovered (`into_inner`) so a single failing assert isolates to that
 /// test instead of cascading `PoisonError` through the rest of the binary.
-fn guarded() -> (
-    MutexGuard<'static, ()>,
-    keyhog_sources::testing::ScanCounterScope,
-) {
+fn guarded() -> MutexGuard<'static, ()> {
     let guard = COUNTER_LOCK
         .lock()
         .unwrap_or_else(|poison| poison.into_inner());
-    let scope = TestApi.skip_counter_guard();
     reset_binary_counters();
     TestApi.reset_skip_counters();
-    (guard, scope)
+    guard
 }
 
 /// Run `f` on a worker thread and REQUIRE it to finish within `secs`. A blocking
@@ -95,6 +91,7 @@ fn make_fifo(path: &Path) {
 /// Collect the binary source's emitted rows for `path` (strings-only, so the
 /// read always reaches `read_binary_capped`).
 fn scan_rows(path: PathBuf) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
+    let _scope = TestApi.skip_counter_guard();
     TestApi.binary_strings_only(path).chunks().collect()
 }
 
