@@ -6,9 +6,7 @@
 //! What this does NOT catch: OS scheduler preemption delays or CPU frequency scaling occurring
 //! within a single leaf span.
 
-use keyhog_profile::{
-    span, RunIdentity, RunState, Session, Stage,
-};
+use keyhog_profile::{span, RunIdentity, RunState, Session, Stage};
 use std::time::{Duration, Instant};
 
 fn test_identity(name: &str) -> RunIdentity {

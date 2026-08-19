@@ -135,8 +135,8 @@ impl GpuResidentExecutionPool {
     /// Construct pool for the active scanner backend state.
     #[must_use]
     pub(crate) fn for_backend_state(backend_state: &ScannerBackendState) -> Self {
-        let host_concurrency = std::thread::available_parallelism()
-            .map_or(4, std::num::NonZeroUsize::get);
+        let host_concurrency =
+            std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get);
         let capacity = Self::derive_capacity(backend_state, host_concurrency);
         Self::new(capacity)
     }
@@ -175,7 +175,9 @@ impl GpuResidentExecutionPool {
     pub fn total_dispatches(&self) -> u64 {
         self.state.lock().total_dispatches
     }
-    pub(crate) fn acquire(&self) -> Result<GpuResidentExecutionPermit<'_>, SelectedGpuDispatchError> {
+    pub(crate) fn acquire(
+        &self,
+    ) -> Result<GpuResidentExecutionPermit<'_>, SelectedGpuDispatchError> {
         let mut state = self.state.lock();
         loop {
             if state.poisoned {
@@ -232,7 +234,6 @@ impl GpuResidentExecutionPool {
     pub fn try_acquire_permit(&self) -> Result<Option<GpuResidentExecutionPermit<'_>>, String> {
         self.try_acquire().map_err(|err| err.to_string())
     }
-
 
     pub(crate) fn release(&self) {
         let mut state = self.state.lock();

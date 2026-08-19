@@ -19,10 +19,7 @@ fn host_identity_records_operating_system_architecture_and_parallelism() {
         recorded(&identity.architecture).map(String::as_str),
         Some(std::env::consts::ARCH)
     );
-    assert_eq!(
-        identity.logical_cpus,
-        keyhog_profile::logical_cpus()
-    );
+    assert_eq!(identity.logical_cpus, keyhog_profile::logical_cpus());
     let json = serde_json::to_string(&identity).expect("serialize host identity");
     assert!(!json.contains("hostname"));
     assert!(!json.contains("nodename"));

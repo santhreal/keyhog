@@ -476,14 +476,14 @@ impl CompiledScanner {
         release_idle_candidate_scratch();
     }
 
+    /// Return a reference to the scanner's resident accelerator execution pool (Row 118).
     #[cfg(feature = "gpu")]
     #[must_use]
-    pub fn gpu_resident_execution_pool(
-        &self,
-    ) -> &gpu_region_dispatch::GpuResidentExecutionPool {
+    pub fn gpu_resident_execution_pool(&self) -> &gpu_region_dispatch::GpuResidentExecutionPool {
         &self.gpu_resident_execution_pool
     }
 
+    /// Set an explicit capacity override for the resident accelerator execution pool (Row 118).
     #[cfg(feature = "gpu")]
     #[must_use]
     pub fn with_gpu_resident_execution_pool_capacity(mut self, capacity: usize) -> Self {

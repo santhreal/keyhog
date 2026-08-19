@@ -63,7 +63,9 @@ fn row_108_markdown_report_renders_blocked_time_concurrency_and_queue_depth() {
     let md = causal.render_markdown();
 
     // Verify all required table headers are present
-    assert!(md.contains("| Stage | Calls | Elapsed (ms) | Self (ms) | Blocked (ms) | Concurrency | Queue Depth |"));
+    assert!(md.contains(
+        "| Stage | Calls | Elapsed (ms) | Self (ms) | Blocked (ms) | Concurrency | Queue Depth |"
+    ));
     assert!(md.contains("| :--- | ---: | ---: | ---: | ---: | ---: | :--- |"));
 
     // Find the row for source-queue-wait
@@ -96,7 +98,10 @@ fn row_108_markdown_report_renders_blocked_time_concurrency_and_queue_depth() {
     // Non-wait stage should render explicit '-' for blocked time
     let parts: Vec<&str> = backend_dispatch_row.split('|').map(str::trim).collect();
     // parts[0] is empty, parts[1] is Stage, parts[2] is Calls, parts[3] is Elapsed, parts[4] is Self, parts[5] is Blocked, parts[6] is Concurrency, parts[7] is Queue Depth
-    assert_eq!(parts[5], "-", "non-wait stage must render explicit dash for blocked time: {backend_dispatch_row}");
+    assert_eq!(
+        parts[5], "-",
+        "non-wait stage must render explicit dash for blocked time: {backend_dispatch_row}"
+    );
 }
 
 #[test]
@@ -110,12 +115,17 @@ fn row_108_every_stage_renders_tabular_columns() {
     let md = profile.render_markdown();
 
     // Table headers and structural separator
-    assert!(md.contains("| Stage | Calls | Elapsed (ms) | Self (ms) | Blocked (ms) | Concurrency | Queue Depth |"));
+    assert!(md.contains(
+        "| Stage | Calls | Elapsed (ms) | Self (ms) | Blocked (ms) | Concurrency | Queue Depth |"
+    ));
 
     // Every stage must appear as a row with valid markdown table columns
     for stage in Stage::ALL {
         let stage_name = stage.as_str();
-        let row = md.lines().find(|l| l.contains(stage_name)).expect("stage row exists");
+        let row = md
+            .lines()
+            .find(|l| l.contains(stage_name))
+            .expect("stage row exists");
         let col_count = row.matches('|').count();
         // 7 columns -> 8 pipe symbols
         assert_eq!(
@@ -144,7 +154,9 @@ fn row_108_observer_effect_overhead_is_recorded_and_proportional() {
     let profile = session.finish(RunState::Completed);
     let causal = CausalProfileV2::from_v1(profile);
 
-    let observer = causal.observer_effect.expect("observer effect must be present");
+    let observer = causal
+        .observer_effect
+        .expect("observer effect must be present");
     assert!(observer.total_instrumentation_events >= 102);
     assert!(observer.estimated_overhead_ns > 0);
     assert_eq!(observer.estimated_ns_per_event, 35);
