@@ -1390,6 +1390,8 @@ impl CompiledScanner {
                 crate::engine::gpu_region_dispatch::GpuResidentExecutionPool::for_backend_state(
                     &backend_state,
                 ),
+            #[cfg(feature = "gpu")]
+            direct_gpu_resident_dispatch: parking_lot::Mutex::new(()),
             backend_state,
             quantized_confidence_authenticated,
             detector_digest,

@@ -36,7 +36,11 @@ fn catch_unwind_sites_are_classified_and_profile_release_unwinds() {
                     if let Ok(content) = std::fs::read_to_string(&path) {
                         for (idx, line) in content.lines().enumerate() {
                             if line.contains("catch_unwind(") {
-                                let relative = path.strip_prefix(manifest_dir).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+                                let relative = path
+                                    .strip_prefix(manifest_dir)
+                                    .unwrap_or(&path)
+                                    .to_string_lossy()
+                                    .replace('\\', "/");
                                 sites.push(format!("{}:{}", relative, idx + 1));
                             }
                         }
