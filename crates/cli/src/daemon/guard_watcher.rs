@@ -159,6 +159,9 @@ struct WatchedRoot {
 }
 
 /// Manages filesystem watchers for all guard roots.
+///
+/// Detects channel disconnection and thread failure to enforce fail-closed
+/// reconciliation across all registered roots when event monitoring is lost.
 pub struct GuardWatcher {
     /// The native watcher handle. One watcher serves all roots.
     /// `None` when the platform watcher could not be created or is disabled.
@@ -173,6 +176,10 @@ pub struct GuardWatcher {
     roots: HashMap<PathBuf, WatchedRoot>,
     /// Reconciliation config (bounds for subtree reconciliation).
     config: GuardReconciliationConfig,
+    /// Explicit flag indicating the watcher is running in disabled/unmonitored mode.
+    disabled: bool,
+    /// Named reason why the watcher disconnected, if disconnection occurred.
+    disconnection_reason: parking_lot::Mutex<Option<String>>,
 }
 
 impl GuardWatcher {
@@ -230,6 +237,8 @@ impl GuardWatcher {
             rx,
             roots: HashMap::new(),
             config,
+            disabled: false,
+            disconnection_reason: parking_lot::Mutex::new(None),
         })
     }
 
@@ -245,9 +254,28 @@ impl GuardWatcher {
             rx,
             roots: HashMap::new(),
             config: GuardReconciliationConfig::default(),
+            disabled: true,
+            disconnection_reason: parking_lot::Mutex::new(None),
         }
     }
 
+    /// Create a watcher backed by an explicit channel receiver for testing.
+    #[doc(hidden)]
+    pub fn with_channel_for_test(
+        rx: mpsc::Receiver<notify::Result<notify::Event>>,
+        config: GuardReconciliationConfig,
+    ) -> Self {
+        Self {
+            watcher: None,
+            backend_kind: GuardWatcherBackendKind::CustomTest,
+            poll_interval_ms: None,
+            rx,
+            roots: HashMap::new(),
+            config,
+            disabled: false,
+            disconnection_reason: parking_lot::Mutex::new(None),
+        }
+    }
     /// Create a guard watcher connected to a custom event channel.
     /// Used for deterministic simulation and tests without native watcher hooks.
     pub fn new_with_channel(
@@ -262,6 +290,8 @@ impl GuardWatcher {
                 rx,
                 roots: HashMap::new(),
                 config,
+                disabled: false,
+                disconnection_reason: parking_lot::Mutex::new(None),
             },
             tx,
         )
@@ -290,7 +320,6 @@ impl GuardWatcher {
     pub fn poll_interval_ms(&self) -> Option<u64> {
         self.poll_interval_ms
     }
-
     /// Returns the configured coalesce window in milliseconds.
     pub fn coalesce_window_ms(&self) -> u64 {
         self.config.coalesce_window_ms
@@ -302,7 +331,15 @@ impl GuardWatcher {
         if self.roots.contains_key(&path) {
             return Err(format!("root already watched: {}", path.display()));
         }
-        if let Some(ref mut watcher) = self.watcher {
+        if self.is_disconnected() {
+            return Err(format!(
+                "failed to watch {}: watcher backend disconnected ({})",
+                path.display(),
+                self.disconnection_reason()
+                    .unwrap_or_else(|| "channel closed".to_string())
+            ));
+        }
+        if let Some(watcher) = &mut self.watcher {
             watcher
                 .watch(&path, RecursiveMode::Recursive)
                 .map_err(|e| {
@@ -323,11 +360,12 @@ impl GuardWatcher {
     /// Remove a root from watching.
     pub fn remove_root(&mut self, path: &std::path::Path) {
         if self.roots.remove(path).is_some() {
-            if let Some(ref mut watcher) = self.watcher {
+            if let Some(watcher) = &mut self.watcher {
                 let _ = watcher.unwatch(path);
             }
         }
     }
+
     /// Poll for events from the native watcher. Returns normalized
     /// guard events grouped by root path. Non-blocking. Drains the
     /// per-root buffer as events are handed to the caller, so the
@@ -336,16 +374,40 @@ impl GuardWatcher {
     /// the overflow flag is cleared.
     pub fn poll_events(&self) -> Vec<(PathBuf, Vec<GuardEvent>)> {
         let mut results: HashMap<PathBuf, Vec<GuardEvent>> = HashMap::new();
+        if self.disabled {
+            return Vec::new();
+        }
         loop {
             match self.rx.try_recv() {
                 Ok(Ok(event)) => {
-                    if let Some(path) = event.paths.first() {
-                        if let Some(root) = self.find_root_for_path(path) {
-                            let guard_events = normalize_notify_event(&event);
-                            if let Some(buffer) = self.roots.get(&root) {
-                                let mut buf = buffer.buffer.lock();
-                                for ge in &guard_events {
-                                    buf.push(ge.clone());
+                    if event.need_rescan() || event.paths.is_empty() {
+                        // Rescan flag or empty paths vector indicates fidelity loss or unresolvable
+                        // bulk event: trigger subtree reconciliation across matching roots (or all roots if none match / pathless).
+                        let mut triggered_roots = Vec::new();
+                        for path in &event.paths {
+                            triggered_roots.extend(self.find_matching_roots_for_path(path));
+                        }
+                        if triggered_roots.is_empty() {
+                            triggered_roots.extend(self.roots.keys().cloned());
+                        }
+                        triggered_roots.sort();
+                        triggered_roots.dedup();
+                        for root in triggered_roots {
+                            results
+                                .entry(root.clone())
+                                .or_default()
+                                .push(GuardEvent::ReconcileSubtree(root.clone()));
+                        }
+                    } else {
+                        // Process and attribute ALL paths present on the event to ALL matching
+                        // enclosing roots so nested and parent roots both receive events.
+                        for path in &event.paths {
+                            let roots = self.find_matching_roots_for_path(path);
+                            for root in roots {
+                                let guard_event = normalize_notify_path_event(&event.kind, path);
+                                if let Some(buffer) = self.roots.get(&root) {
+                                    let mut buf = buffer.buffer.lock();
+                                    buf.push(guard_event);
                                 }
                             }
                         }
@@ -360,7 +422,28 @@ impl GuardWatcher {
                     }
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    let reason = "watcher backend disconnected: notify event channel closed";
+                    let newly_disconnected = {
+                        let mut reason_guard = self.disconnection_reason.lock();
+                        if reason_guard.is_none() {
+                            *reason_guard = Some(reason.to_string());
+                            true
+                        } else {
+                            false
+                        }
+                    };
+                    if newly_disconnected {
+                        tracing::warn!("daemon: guard watcher event channel disconnected; failing closed for all watched roots");
+                        for root in self.roots.keys() {
+                            results
+                                .entry(root.clone())
+                                .or_default()
+                                .push(GuardEvent::ReconcileSubtree(root.clone()));
+                        }
+                    }
+                    break;
+                }
             }
         }
         // Drain each root's buffer and check for overflow. If overflowed,
@@ -384,14 +467,17 @@ impl GuardWatcher {
         results.into_iter().collect()
     }
 
-    /// Find which registered root a path belongs to.
-    fn find_root_for_path(&self, path: &std::path::Path) -> Option<PathBuf> {
+    /// Find all registered roots that are prefixes of a path.
+    /// When roots are nested, returns all enclosing roots so parent roots
+    /// receive events for changes inside sub-roots.
+    fn find_matching_roots_for_path(&self, path: &std::path::Path) -> Vec<PathBuf> {
+        let mut matched = Vec::new();
         for root in self.roots.keys() {
             if path.starts_with(root) {
-                return Some(root.clone());
+                matched.push(root.clone());
             }
         }
-        None
+        matched
     }
 
     /// Number of watched roots.
@@ -413,23 +499,67 @@ impl GuardWatcher {
             .map(|r| r.buffer.lock().len())
             .unwrap_or(0)
     }
+
+    /// Whether the watcher is in disabled (unmonitored) mode.
+    pub fn is_disabled(&self) -> bool {
+        self.disabled
+    }
+
+    /// Whether the watcher backend has disconnected.
+    pub fn is_disconnected(&self) -> bool {
+        self.disconnection_reason.lock().is_some()
+    }
+
+    /// Named reason why the watcher disconnected, if any.
+    pub fn disconnection_reason(&self) -> Option<String> {
+        self.disconnection_reason.lock().clone()
+    }
+
+    /// Record an explicit watcher disconnection reason.
+    pub fn record_disconnection(&self, reason: &str) {
+        let mut reason_guard = self.disconnection_reason.lock();
+        if reason_guard.is_none() {
+            *reason_guard = Some(reason.to_string());
+        }
+    }
+
+    /// Status label for operator inspection.
+    pub fn watcher_status(&self) -> &'static str {
+        if self.is_disconnected() {
+            "disconnected"
+        } else if self.disabled {
+            "unmonitored"
+        } else {
+            "watching"
+        }
+    }
+
+    /// Whether the watcher is actively monitoring filesystem events.
+    pub fn is_watching(&self) -> bool {
+        !self.disabled && !self.is_disconnected() && self.watcher.is_some()
+    }
+}
+
+/// Convert a notify::Event for a specific path into a normalized GuardEvent.
+fn normalize_notify_path_event(kind: &EventKind, path: &std::path::Path) -> GuardEvent {
+    match kind {
+        EventKind::Create(_) => GuardEvent::Create(path.to_path_buf()),
+        EventKind::Modify(_) => GuardEvent::Modify(path.to_path_buf()),
+        EventKind::Remove(_) => GuardEvent::Remove(path.to_path_buf()),
+        _ => GuardEvent::Modify(path.to_path_buf()),
+    }
 }
 
 /// Convert a notify::Event into normalized GuardEvent(s).
-fn normalize_notify_event(event: &notify::Event) -> Vec<GuardEvent> {
-    let path = event.paths.first().cloned().unwrap_or_default();
-    match event.kind {
-        EventKind::Create(_) => vec![GuardEvent::Create(path)],
-        EventKind::Modify(_) => vec![GuardEvent::Modify(path)],
-        EventKind::Remove(_) => vec![GuardEvent::Remove(path)],
-        _ => {
-            if !event.paths.is_empty() {
-                vec![GuardEvent::Modify(path)]
-            } else {
-                Vec::new()
-            }
-        }
+pub fn normalize_notify_event(event: &notify::Event) -> Vec<GuardEvent> {
+    if event.paths.is_empty() {
+        return Vec::new();
     }
+    event
+        .paths
+        .iter()
+        .map(|path| normalize_notify_path_event(&event.kind, path))
+        .collect()
 }
 #[cfg(test)]
 #[path = "../../tests/unit/daemon_guard_watcher.rs"]

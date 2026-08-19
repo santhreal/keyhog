@@ -48,6 +48,8 @@ pub mod regression_incremental_cache_config_wiring;
 pub mod regression_ml_threshold_wired_to_confidence_floor;
 pub mod regression_row_112_byte_size_parser_canonicalization;
 pub mod regression_row_113_operational_constants_governance;
+pub mod regression_row_120_watcher_disconnected_fail_closed;
+pub mod regression_row_121_watcher_multi_path_events;
 #[path = "regression_row_123_watcher_backend_status.rs"]
 pub mod regression_row_123_watcher_backend_status;
 pub mod regression_row_131_config_example_guard_section;
