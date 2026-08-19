@@ -50,7 +50,7 @@ CPU route and load their GPU peers through the host's runtime drivers.
 `install.sh`, `install.ps1`, `keyhog update`, and `keyhog repair` operate only on
 that historical binary-asset channel. They select a release with a complete
 signed asset bundle; they do not update a Cargo installation to the current
-crates.io release. Use `cargo install --locked --force keyhog && keyhog doctor` for
+crates.io release. Use `cargo install --locked --force keyhog` followed by `keyhog doctor` for
 current updates and repairs.
 
 ## Install Rust

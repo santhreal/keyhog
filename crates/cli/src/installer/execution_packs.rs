@@ -38,6 +38,9 @@ impl ExecutionGenerationInstallTransaction {
         self.committed = true;
     }
 
+    pub(crate) fn is_committed(&self) -> bool {
+        self.committed
+    }
     fn rollback(&mut self) -> Result<()> {
         if self.cache_published {
             remove_regular_file_if_present(&self.current_cache)?;
@@ -80,13 +83,36 @@ impl Drop for ExecutionGenerationInstallTransaction {
 pub(crate) fn install_execution_generation(
     candidate: &Path,
 ) -> Result<ExecutionGenerationInstallTransaction> {
-    let supports_execution_packs = Command::new(candidate)
+    let probe = Command::new(candidate)
         .arg("compile-execution-packs")
         .arg("--help")
         .output()
-        .map(|out| out.status.success())
-        .unwrap_or(false);
-    if !supports_execution_packs {
+        .with_context(|| {
+            format!(
+                "executing candidate binary {} to probe execution-pack capabilities",
+                candidate.display()
+            )
+        })?;
+    if !probe.status.success() {
+        // Candidate binary genuinely lacks compile-execution-packs (legacy version).
+        // Surface warning loudly and clean up any stale packs / autoroute cache so the
+        // legacy candidate cannot be confused by stale artifacts bound to other binaries.
+        eprintln!(
+            "warning: candidate binary {} does not support compile-execution-packs; skipping generation compilation",
+            candidate.display()
+        );
+        let cache_root = dirs::cache_dir()
+            .context("platform cache directory is unavailable; cannot publish execution packs")?
+            .join("keyhog");
+        let pack_root = cache_root.join("execution-packs");
+        let current_packs = pack_root.join("current");
+        let current_cache = cache_root.join("autoroute.json");
+        if current_packs.exists() {
+            let _ = fs::remove_dir_all(&current_packs);
+        }
+        if current_cache.exists() {
+            let _ = fs::remove_file(&current_cache);
+        }
         return Ok(ExecutionGenerationInstallTransaction {
             current_packs: PathBuf::new(),
             current_cache: PathBuf::new(),
@@ -101,7 +127,6 @@ pub(crate) fn install_execution_generation(
             committed: true,
         });
     }
-
     let cache_root = dirs::cache_dir()
         .context("platform cache directory is unavailable; cannot publish execution packs")?
         .join("keyhog");

@@ -59,10 +59,9 @@ pub(crate) async fn run(args: UpdateArgs) -> Result<ExitCode> {
                 );
                 println!("  The binary-asset channel stopped at {latest}, so it cannot tell you");
                 println!("  whether a newer KeyHog exists. Automatic releases publish");
-                println!("  crates.io packages only. Update with:");
-                println!(
-                    "\n      {bold}cargo install --locked --force keyhog && keyhog doctor{reset}\n"
-                );
+                println!("  crates.io packages only. Update with:\n");
+                println!("      {bold}cargo install --locked --force keyhog{reset}");
+                println!("      {bold}keyhog doctor{reset}\n");
                 return Ok(ExitCode::SUCCESS);
             }
             installer::ReleaseChannelState::UpdateAvailable => {}
