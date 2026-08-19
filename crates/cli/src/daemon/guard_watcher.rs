@@ -184,11 +184,7 @@ impl GuardWatcher {
         })
         .map_err(|e| format!("failed to create filesystem watcher: {}", e))?;
         let backend_kind = GuardWatcherBackendKind::from_notify_kind(RecommendedWatcher::kind());
-        let poll_interval_ms = if backend_kind == GuardWatcherBackendKind::PollWatcher {
-            Some(2000)
-        } else {
-            None
-        };
+        let poll_interval_ms = None;
         Ok(Self {
             watcher: Some(ActiveWatcherHandle::Recommended(watcher)),
             backend_kind,

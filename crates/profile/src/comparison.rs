@@ -282,7 +282,10 @@ impl ProfileComparison {
             out.push_str("| Field | Baseline | Candidate |\n");
             out.push_str("| :--- | :--- | :--- |\n");
             for diff in &self.incompatibilities {
-                out.push_str(&format!("| {} | {} | {} |\n", diff.field, diff.baseline, diff.candidate));
+                out.push_str(&format!(
+                    "| {} | {} | {} |\n",
+                    diff.field, diff.baseline, diff.candidate
+                ));
             }
             out.push('\n');
         }

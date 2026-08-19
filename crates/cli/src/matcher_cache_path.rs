@@ -63,7 +63,9 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
                 error = %error,
                 "matcher-artifact cache unusable: no default cache location"
             );
-            eprintln!("warning: matcher-artifact cache unusable: {error}; configure with --matcher-cache <DIR>");
+            eprintln!(
+                "warning: matcher-artifact cache unusable: {error}; configure with --matcher-cache <DIR>"
+            );
             Ok(None)
         }
     }

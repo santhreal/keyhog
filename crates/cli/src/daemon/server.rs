@@ -2745,6 +2745,20 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 } else {
                     (0, 0, 0, 0, 0, 0)
                 };
+                let (
+                    pending_events,
+                    watcher_backend,
+                    watcher_latency_tier,
+                    watcher_poll_interval_ms,
+                ) = {
+                    let watcher = state.guard_watcher.lock();
+                    (
+                        watcher.pending_event_count(std::path::Path::new(&root)) as u64,
+                        watcher.backend_label().to_string(),
+                        watcher.latency_tier().to_string(),
+                        watcher.poll_interval_ms(),
+                    )
+                };
                 Response::GuardStatusResult {
                     root: root.clone(),
                     mode: record.mode.label().to_string(),
@@ -2752,14 +2766,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     terminal_sequence: record.terminal_sequence,
                     accepted_event_sequence: record.accepted_event_sequence,
                     completed_event_sequence: record.completed_event_sequence,
-                    pending_events: state
-                        .guard_watcher
-                        .lock()
-                        .pending_event_count(std::path::Path::new(&root))
-                        as u64,
-                    watcher_backend: state.guard_watcher.lock().backend_label().to_string(),
-                    watcher_latency_tier: state.guard_watcher.lock().latency_tier().to_string(),
-                    watcher_poll_interval_ms: state.guard_watcher.lock().poll_interval_ms(),
+                    pending_events,
+                    watcher_backend,
+                    watcher_latency_tier,
+                    watcher_poll_interval_ms,
                     files_scanned,
                     bytes_scanned,
                     attestation_hits,

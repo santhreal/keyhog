@@ -99,11 +99,7 @@ fn row_123_recommended_watcher_reports_native_or_platform_fallback() {
     assert_eq!(watcher.backend_kind(), expected_backend);
     assert_eq!(watcher.backend_label(), expected_backend.label());
     assert_eq!(watcher.latency_tier(), expected_backend.latency_tier());
-    if expected_backend == GuardWatcherBackendKind::PollWatcher {
-        assert!(watcher.poll_interval_ms().is_some());
-    } else {
-        assert_eq!(watcher.poll_interval_ms(), None);
-    }
+    assert_eq!(watcher.poll_interval_ms(), None);
 }
 
 #[test]

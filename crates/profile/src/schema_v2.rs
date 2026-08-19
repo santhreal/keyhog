@@ -957,9 +957,19 @@ impl CausalProfileV2 {
         };
 
         let backend_req = &self.identity.route.requested_backend;
-        let backend_sel = self.identity.route.selected_backend.value().map_or("unselected", |s| s.as_str());
+        let backend_sel = self
+            .identity
+            .route
+            .selected_backend
+            .value()
+            .map_or("unselected", |s| s.as_str());
         let workload_class = &self.identity.workload.class;
-        let adapter = self.identity.source.adapters.first().map_or("unknown", |s| s.as_str());
+        let adapter = self
+            .identity
+            .source
+            .adapters
+            .first()
+            .map_or("unknown", |s| s.as_str());
         let worker_count = self.worker_occupancy.as_ref().map_or(1, |w| w.worker_count);
 
         out.push_str(&format!("# KeyHog Profile: {}\n\n", self.identity.run_id));
@@ -983,8 +993,14 @@ impl CausalProfileV2 {
 
         for stage in &self.stages {
             let metric_id = crate::MetricId::from(stage.stage);
-            let blocked_rec = self.blocked_waits.iter().find(|bw| bw.metric_id == metric_id);
-            let concurrency_rec = self.stage_concurrency.iter().find(|sc| sc.metric_id == metric_id);
+            let blocked_rec = self
+                .blocked_waits
+                .iter()
+                .find(|bw| bw.metric_id == metric_id);
+            let concurrency_rec = self
+                .stage_concurrency
+                .iter()
+                .find(|sc| sc.metric_id == metric_id);
 
             let matching_queue = match stage.stage {
                 crate::Stage::SourceQueueWait | crate::Stage::ScannerQueueWait => {
