@@ -51,7 +51,7 @@ pub(super) fn coalesced_work_lanes(chunks: &[Chunk], threshold_bytes: usize) -> 
     coalesced_work_lanes_for_workers(
         chunks,
         threshold_bytes,
-        keyhog_profile::host_parallelism::logical_cpu_count(),
+        keyhog_profile::logical_cpu_count(),
     )
 }
 
