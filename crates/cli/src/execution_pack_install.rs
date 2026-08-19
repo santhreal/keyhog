@@ -490,21 +490,37 @@ fn load_manifest(
     if manifest.packs.is_empty() {
         bail!("execution-pack manifest contains no packs. Fix: run `keyhog install` or `keyhog update`");
     }
+    let embedded_detectors = keyhog_core::load_embedded_detectors_or_fail()
+        .context("loading embedded detectors for execution-pack verification")?;
+    let embedded_ir =
+        keyhog_scanner::execution_pack::CanonicalDetectorExecutionIr::compile(&embedded_detectors)
+            .map_err(anyhow::Error::msg)
+            .context("compiling canonical detector execution IR for verification")?;
+    let expected_detector_digest = keyhog_core::hex_encode(&embedded_ir.digest());
+    let current_binary = keyhog_core::hex_encode(&current_binary_digest()?);
+    let current_target = keyhog_core::hex_encode(&current_target_digest());
+    let current_feature = keyhog_core::hex_encode(&current_feature_digest());
+
     for (name, actual, expected) in [
+        (
+            "detector",
+            manifest.detector_digest.as_str(),
+            expected_detector_digest.as_str(),
+        ),
         (
             "binary",
             manifest.binary_digest.as_str(),
-            keyhog_core::hex_encode(&current_binary_digest()?),
+            current_binary.as_str(),
         ),
         (
             "target",
             manifest.target_digest.as_str(),
-            keyhog_core::hex_encode(&current_target_digest()),
+            current_target.as_str(),
         ),
         (
             "feature",
             manifest.feature_digest.as_str(),
-            keyhog_core::hex_encode(&current_feature_digest()),
+            current_feature.as_str(),
         ),
     ] {
         if actual != expected {
