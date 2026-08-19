@@ -325,14 +325,11 @@ The guard runtime resolves settings from the `[guard]` table in `.keyhog.toml`:
 # Durable redb state database path (default: disabled, ephemeral memory).
 # state_path = "~/.local/state/keyhog/guard.redb"
 
-# Memory budget ceiling for hot clean attestation index (default: unlimited).
+# Memory budget ceiling for hot clean attestation index (default: "64MB").
 # hot_index_memory = "64MB"
 
 # Maximum queued filesystem events per root before degraded status (default: 8192).
 # max_pending_events_per_root = 8192
-
-# Maximum total queued filesystem events across all roots (default: 65536).
-# max_pending_events_total = 65536
 
 # Event coalescing window before applying state transitions (default: "100ms").
 # coalesce_window = "100ms"
@@ -351,9 +348,8 @@ The guard runtime resolves settings from the `[guard]` table in `.keyhog.toml`:
 |---|---|---|---|
 | `scrub_interval` | string | disabled | Periodic re-scan interval for `current` roots (e.g. `5m`, `24h`). Catches changes that filesystem events missed. |
 | `state_path` | string | disabled | Durable guard state path (e.g. `~/.local/state/keyhog/guard.redb`). Persists root records and attestations across daemon restarts. Rejected in lockdown mode. |
-| `hot_index_memory` | string | unlimited | Hot clean attestation index memory budget (e.g. `64MB`). |
+| `hot_index_memory` | string | 64MB | Hot clean attestation index memory budget (e.g. `64MB`). |
 | `max_pending_events_per_root` | integer | 8192 | Maximum queued filesystem events per root before degraded status. |
-| `max_pending_events_total` | integer | 65536 | Maximum total queued filesystem events across all roots. |
 | `coalesce_window` | string | 100ms | Event coalescing window before applying state transitions. |
 | `scanner_idle_timeout` | string | 5m | Scanner idle-unload timeout. After this duration without guard activity, residency reports `idle-unload`. |
 | `subtree_max_files` | integer | 10000 | Maximum files for one subtree reconciliation. |
