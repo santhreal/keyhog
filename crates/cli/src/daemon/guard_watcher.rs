@@ -111,12 +111,6 @@ impl GuardWatcher {
         if self.roots.contains_key(&path) {
             return Err(format!("root already watched: {}", path.display()));
         }
-        if self.disabled {
-            return Err(format!(
-                "failed to watch {}: watcher backend disabled: unmonitored",
-                path.display()
-            ));
-        }
         if self.is_disconnected() {
             return Err(format!(
                 "failed to watch {}: watcher backend disconnected ({})",
@@ -286,10 +280,10 @@ impl GuardWatcher {
 
     /// Status label for operator inspection.
     pub fn watcher_status(&self) -> &'static str {
-        if self.disabled {
-            "unmonitored"
-        } else if self.is_disconnected() {
+        if self.is_disconnected() {
             "disconnected"
+        } else if self.disabled {
+            "unmonitored"
         } else {
             "watching"
         }
@@ -297,7 +291,7 @@ impl GuardWatcher {
 
     /// Whether the watcher is actively monitoring filesystem events.
     pub fn is_watching(&self) -> bool {
-        !self.disabled && !self.is_disconnected()
+        !self.disabled && !self.is_disconnected() && self.watcher.is_some()
     }
 }
 
