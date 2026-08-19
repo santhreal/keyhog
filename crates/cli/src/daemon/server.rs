@@ -569,29 +569,12 @@ pub(crate) async fn run_with_backend_override(
     ));
 
     // Set the initial default guard policy identity from the daemon's build and detector digest.
-    state
-        .guard
-        .set_policy_identity(keyhog_core::guard_state::GuardPolicyIdentity {
-            build_identity: KEYHOG_VERSION.to_string(),
-            detector_digest: detector_rules_digest.clone(),
-            suppression_digest: {
-                let mut hasher = blake3::Hasher::new();
-                hasher.update(b"keyhog-suppressions-v1:bundled:");
-                hasher.update(
-                    crate::test_fixture_suppressions::TestFixtureSuppressions::bundled_raw()
-                        .as_bytes(),
-                );
-                hex::encode(hasher.finalize().as_bytes())
-            },
-            keyhogignore_digest:
-                keyhog_core::guard_state::GuardPolicyIdentity::default_keyhogignore_digest(),
-            config_digest: crate::orchestrator::autoroute_default_config_identity(),
-            decode_policy_version: keyhog_core::guard_state::GUARD_DECODE_POLICY_VERSION,
-            source_policy_digest:
-                keyhog_core::guard_state::GuardPolicyIdentity::default_source_policy_digest(),
-            guard_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
-            report_semantics_version: keyhog_core::guard_state::GUARD_REPORT_SEMANTICS_VERSION,
-        });
+    state.guard.set_policy_identity(
+        keyhog_core::guard_state::GuardPolicyIdentity::from_build_and_detectors(
+            KEYHOG_VERSION,
+            detector_rules_digest.clone(),
+        ),
+    );
     // Apply configured scanner idle timeout to the guard runtime.
     if let Some(secs) = guard_scanner_idle_timeout {
         state.guard.set_scanner_idle_timeout(secs);

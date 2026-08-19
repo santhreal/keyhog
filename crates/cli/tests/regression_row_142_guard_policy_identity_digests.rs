@@ -468,3 +468,54 @@ fn row_142_overflow_takes_precedence_over_policy_change_in_event_action() {
         "overflow with policy change must transition to CoverageLost"
     );
 }
+
+#[test]
+fn row_142_policy_update_on_one_root_preserves_other_root_attestations() {
+    let rt = GuardRuntime::new();
+    let root1 = b"/repo/project-a".to_vec();
+    let root2 = b"/repo/project-b".to_vec();
+
+    let default_id = GuardPolicyIdentity::from_build_and_detectors("0.5.80", "det-default");
+    let mut id_a = default_id.clone();
+    id_a.keyhogignore_digest = "ignore-a".to_string();
+    let mut id_b = default_id.clone();
+    id_b.keyhogignore_digest = "ignore-b".to_string();
+
+    rt.set_root_policy_identity(&root1, id_a.clone());
+    rt.set_root_policy_identity(&root2, id_b.clone());
+
+    // Insert clean attestation for root1
+    let att_a = GitCleanAttestation {
+        hash_algorithm: GitHashAlgorithm::Sha1,
+        blob_oid: "da39a3ee5e6b4b0d3255bfef95601890afd80709".to_string(),
+        object_size: 1024,
+        policy_identity: id_a.clone(),
+        last_seen_sequence: 1,
+    };
+    rt.insert_attestation(att_a);
+
+    let short_a = id_a.short_digest().unwrap();
+    assert!(rt
+        .lookup_attestation(
+            GitHashAlgorithm::Sha1,
+            "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+            &short_a
+        )
+        .is_some());
+
+    // Update policy for root2
+    let mut id_b_new = id_b.clone();
+    id_b_new.keyhogignore_digest = "ignore-b-updated".to_string();
+    rt.set_root_policy_identity(&root2, id_b_new);
+
+    // Attestation for root1 is preserved!
+    assert!(
+        rt.lookup_attestation(
+            GitHashAlgorithm::Sha1,
+            "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+            &short_a
+        )
+        .is_some(),
+        "root1 attestation must survive root2 policy update"
+    );
+}
