@@ -20,7 +20,6 @@ pub const DEFAULT_WINDOW_SIZE_BYTES: usize = 1024 * 1024;
 /// secrets with generous margin while bounding per-window re-scan overhead.
 pub const DEFAULT_WINDOW_OVERLAP_BYTES: usize = 128 * 1024;
 
-
 /// Machine-readable reason a requested source surface was not fully scanned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceCoverageGapKind {

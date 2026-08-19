@@ -52,16 +52,16 @@ fn row_112_valid_inputs_agree_across_all_doors() {
 #[test]
 fn row_112_invalid_inputs_rejected_across_all_doors() {
     let invalid_cases = [
-        "10",            // Bare number missing unit
-        "100",           // Bare number missing unit
-        "10XYZ",         // Unknown suffix
-        "10MB_extra",    // Trailing junk
-        "-5MB",          // Negative number
-        "10 20 MB",      // Disjoint numbers
-        "MB",            // Suffix without number
-        "NaN MB",        // Non-numeric
-        "inf MB",        // Infinity
-        "-inf GB",       // Negative infinity
+        "10",         // Bare number missing unit
+        "100",        // Bare number missing unit
+        "10XYZ",      // Unknown suffix
+        "10MB_extra", // Trailing junk
+        "-5MB",       // Negative number
+        "10 20 MB",   // Disjoint numbers
+        "MB",         // Suffix without number
+        "NaN MB",     // Non-numeric
+        "inf MB",     // Infinity
+        "-inf GB",    // Negative infinity
     ];
 
     for input in invalid_cases {
@@ -82,7 +82,9 @@ fn row_112_invalid_inputs_rejected_across_all_doors() {
 fn row_112_error_text_equivalence_across_direct_doors() {
     // Assert error text consistency for direct parse doors
     let invalid = "10XYZ";
-    let err_cli = ByteSizeParserDoor::CliValueParser.parse(invalid).unwrap_err();
+    let err_cli = ByteSizeParserDoor::CliValueParser
+        .parse(invalid)
+        .unwrap_err();
     let err_test = ByteSizeParserDoor::TestingApi.parse(invalid).unwrap_err();
     assert_eq!(err_cli, err_test);
     assert!(err_cli.contains("unknown size suffix"));
