@@ -153,9 +153,9 @@ pub use metrics::{
 };
 pub use runtime::{
     add_backend_dispatched_bytes, add_counter, add_derived_decoder_bytes, add_indexed_counter,
-    add_input_bytes, add_input_units, add_stage_bytes, blocked, counter_span,
-    current_causal_parent, current_runtime, current_task_id, current_work_origin, decision_timer,
-    enabled, instrument_future, instrument_future_with_parent, record_annotation,
+    add_input_bytes, add_input_units, add_stage_bytes, blocked, cache_hits, cache_misses,
+    counter_span, current_causal_parent, current_runtime, current_task_id, current_work_origin,
+    decision_timer, enabled, instrument_future, instrument_future_with_parent, record_annotation,
     record_batch_route, record_cache_hit, record_cache_miss, record_distribution, record_event,
     record_fs_metadata_latency_ns, record_fs_open_latency_ns, record_fs_read_latency_ns,
     record_io_cache_state, record_network_bytes, record_network_latency_ns, record_network_request,

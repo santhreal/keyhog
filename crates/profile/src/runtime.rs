@@ -1270,6 +1270,30 @@ impl Runtime {
         slot.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Read total cache hits across all worker shards for `cache`.
+    #[inline]
+    #[must_use]
+    pub fn cache_hits(&self, cache: crate::CacheId) -> u64 {
+        let index = cache.index();
+        let mut total = 0u64;
+        for shard in self.inner.sorted_shards() {
+            total = total.saturating_add(shard.cache_hits[index].load(Ordering::Relaxed));
+        }
+        total
+    }
+
+    /// Read total cache misses across all worker shards for `cache`.
+    #[inline]
+    #[must_use]
+    pub fn cache_misses(&self, cache: crate::CacheId) -> u64 {
+        let index = cache.index();
+        let mut total = 0u64;
+        for shard in self.inner.sorted_shards() {
+            total = total.saturating_add(shard.cache_misses[index].load(Ordering::Relaxed));
+        }
+        total
+    }
+
     fn record_retry(&self, cause: crate::RetryCause) {
         if let Some(shard) = self.worker_shard() {
             shard.retries[cause.index()].fetch_add(1, Ordering::Relaxed);
@@ -2273,7 +2297,7 @@ impl Drop for AsyncSpan {
                 self_ns: elapsed_ns,
                 blocked: false,
                 serial: false,
-                outermost: true,
+                outermost: false,
             },
         );
         if let Some(trace) = self.trace {
@@ -2522,7 +2546,7 @@ impl DecisionTimer {
                         self_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
                         blocked: false,
                         serial: false,
-                        outermost: true,
+                        outermost: false,
                     },
                 );
             }
@@ -2646,6 +2670,20 @@ pub fn record_cache_miss(cache: crate::CacheId) {
     if let Some(runtime) = current_runtime() {
         runtime.record_cache_outcome(cache, false);
     }
+}
+
+/// Read total cache hits recorded in the active profile for `cache`.
+#[inline]
+#[must_use]
+pub fn cache_hits(cache: crate::CacheId) -> u64 {
+    current_runtime().map_or(0, |runtime| runtime.cache_hits(cache))
+}
+
+/// Read total cache misses recorded in the active profile for `cache`.
+#[inline]
+#[must_use]
+pub fn cache_misses(cache: crate::CacheId) -> u64 {
+    current_runtime().map_or(0, |runtime| runtime.cache_misses(cache))
 }
 
 /// Add source bytes processed by the current profile.
