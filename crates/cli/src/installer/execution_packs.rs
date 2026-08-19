@@ -175,6 +175,27 @@ pub(crate) fn install_execution_generation(
     Ok(transaction)
 }
 
+#[allow(dead_code)]
+/// Invalidate the current installed execution-pack generation and autoroute cache.
+pub(crate) fn invalidate_installed_execution_generation() -> Result<()> {
+    let cache_root = match dirs::cache_dir() {
+        Some(dir) => dir.join("keyhog"),
+        None => return Ok(()),
+    };
+    let current_packs = cache_root.join("execution-packs").join("current");
+    let current_cache = cache_root.join("autoroute.json");
+    remove_directory_if_present(&current_packs)?;
+    remove_regular_file_if_present(&current_cache)?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+/// Regenerate the installed execution-pack generation and autoroute calibration.
+pub(crate) fn regenerate_installed_execution_generation(
+    candidate: &Path,
+) -> Result<ExecutionGenerationInstallTransaction> {
+    install_execution_generation(candidate)
+}
 fn run_candidate(candidate: &Path, args: &[&str], phase: &str) -> Result<()> {
     let output = Command::new(candidate)
         .args(args)
