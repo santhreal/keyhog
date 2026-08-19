@@ -6,10 +6,16 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Added
 
 - feat(cli): optimize startup execution path for informational commands with fast zero-allocation dispatch, deferred runtime initialization, and zero detector corpus parsing (Row 138).
+- feat(installer): multi-dimensional artifact invalidation and regeneration across detector corpus changes, configuration updates, and calibration changes (Row 135).
+- feat(installer): update recommendation parity and complete artifact generation on binary replacement (Row 134).
+- feat(build): audit and enforce release binary symbol stripping and zero DWARF debuginfo bloat via Cargo.toml [profile.release] and profile divergence gates (Row 139).
+- feat(artifacts): fail closed with EXIT_USER_ERROR and actionable repair instructions on stale or mismatched execution-pack artifact identity inputs (Row 129).
 - feat(compiler): install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata (Row 128).
 - feat(cache): load-only scan execution and zero compilation fallback on prepared artifact caches (Row 127).
 - feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).
 - feat(profile): instrument runtime compile surface counters across all 13 compiler surfaces and 4 phases (Row 125).
+- feat(gates): single authoritative structural gate architecture consolidating `no_inline_tests_in_src` and `no_cwd_relative_source_reads` workspace-wide and eliminating redundant per-crate gap tests (Row 149).
+- feat(benchmarks): publish honest multi-corpus benchmark data across mirror and competitor corpora with transparent F1, precision, recall, runtime metrics, and drift-prevention gate coverage (Row 151).
 
 
 ### Changed
