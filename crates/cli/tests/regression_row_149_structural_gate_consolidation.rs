@@ -46,7 +46,10 @@ fn single_structural_gate_scripts_exist_and_pass() {
         .current_dir(&root)
         .status()
         .expect("run no_inline_tests_in_src.py --self-test");
-    assert!(status.success(), "no_inline_tests_in_src.py --self-test must succeed");
+    assert!(
+        status.success(),
+        "no_inline_tests_in_src.py --self-test must succeed"
+    );
 
     let status = Command::new("python3")
         .arg("-B")
@@ -55,7 +58,10 @@ fn single_structural_gate_scripts_exist_and_pass() {
         .current_dir(&root)
         .status()
         .expect("run no_cwd_relative_source_reads.py --self-test");
-    assert!(status.success(), "no_cwd_relative_source_reads.py --self-test must succeed");
+    assert!(
+        status.success(),
+        "no_cwd_relative_source_reads.py --self-test must succeed"
+    );
 }
 
 #[test]

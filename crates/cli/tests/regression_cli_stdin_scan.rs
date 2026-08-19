@@ -23,10 +23,55 @@
 //! test asserts finding-parity OR the exit-3 fail-closed, never assuming an
 //! accelerator. Every assertion pins a concrete value.
 
+use std::fs;
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::LazyLock;
 
+static PREPARED_INSTALLATION: LazyLock<(tempfile::TempDir, PathBuf, PathBuf, PathBuf)> =
+    LazyLock::new(|| {
+        let directory = tempfile::Builder::new()
+            .prefix("keyhog-stdin-test-")
+            .tempdir_in(if std::path::Path::new("/var/tmp").exists() {
+                "/var/tmp"
+            } else {
+                "/tmp"
+            })
+            .expect("temporary install root");
+        let binary_path = directory.path().join("keyhog-test-bin");
+        fs::copy(env!("CARGO_BIN_EXE_keyhog"), &binary_path).expect("copy test binary");
+        fs::set_permissions(&binary_path, fs::Permissions::from_mode(0o755))
+            .expect("make binary executable");
+
+        let cache_home = directory.path().join("cache");
+        let pack_root = cache_home.join("keyhog/execution-packs");
+        fs::create_dir_all(&pack_root).expect("execution-pack root");
+        let key_path = pack_root.join("signing.key");
+        let key_bytes = [0x5cu8; 32];
+        fs::write(&key_path, key_bytes).expect("write signing key");
+        fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
+            .expect("protect signing key");
+        let output = pack_root.join("current");
+
+        let result = Command::new(&binary_path)
+            .arg("compile-execution-packs")
+            .arg("--output-dir")
+            .arg(&output)
+            .arg("--signing-key")
+            .arg(&key_path)
+            .env("XDG_CACHE_HOME", &cache_home)
+            .env("HOME", directory.path())
+            .output()
+            .expect("run install pack compiler");
+        assert!(
+            result.status.success(),
+            "install pack compiler failed: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        (directory, pack_root, output, binary_path)
+    });
 /// A Slack bot token proven to fire `slack-bot-token` on its own stdin bytes:
 /// `xoxb-` + 13-digit + 13-digit + 24 alnum secret.
 const TOKEN: &str = "xoxb-1234567890123-1234567890123-abcdefghijklmnopqrstuvwx";
@@ -42,7 +87,7 @@ const TOKEN2_SHA256: &str = "3b67577d54380c9ef8ac608f95f411da22f05eff991898431d8
 const REDACTED: &str = "xoxb...uvwx";
 
 fn binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
+    PREPARED_INSTALLATION.3.clone()
 }
 
 /// Run `keyhog scan --daemon=off --backend <backend> --stdin --format <format>`
@@ -55,6 +100,8 @@ fn run(input: &[u8], backend: &str, format: &str) -> (Option<i32>, String, Strin
             "--daemon=off",
             "--backend",
             backend,
+            "--evidence-policy",
+            "paranoid",
             "--no-suppress-test-fixtures",
             "--stdin",
             "--format",
@@ -65,8 +112,12 @@ fn run(input: &[u8], backend: &str, format: &str) -> (Option<i32>, String, Strin
 
 /// Run the binary with an explicit arg vector, piping `input` over stdin.
 fn run_args(input: &[u8], args: &[&str]) -> (Option<i32>, String, String) {
+    let (temp, _pack_root, _output, _bin) = &*PREPARED_INSTALLATION;
+    let cache_home = temp.path().join("cache");
     let mut child = Command::new(binary())
         .args(args)
+        .env("XDG_CACHE_HOME", &cache_home)
+        .env_remove("KEYHOG_BACKEND")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -504,6 +555,13 @@ fn stdin_simd_backend_surfaces_finding_or_fails_closed() {
                 "simd path (when available) surfaces the same slack-bot-token id"
             );
         }
+        Some(2) => {
+            assert!(
+                err.contains("no usable detector execution pack available")
+                    || err.contains("installed generation has no default simd execution pack"),
+                "a build without a simd execution pack must fail closed (exit 2); stderr:\n{err}"
+            );
+        }
         Some(3) => {
             assert!(
                 err.contains("silent cpu-fallback execution is forbidden"),
@@ -513,7 +571,7 @@ fn stdin_simd_backend_surfaces_finding_or_fails_closed() {
         }
         other => panic!(
             "simd stdin scan must either surface the finding (exit 1) or fail closed \
-             (exit 3); got exit {other:?}\nstdout:\n{out}\nstderr:\n{err}"
+             (exit 2 or 3); got exit {other:?}\nstdout:\n{out}\nstderr:\n{err}"
         ),
     }
 }

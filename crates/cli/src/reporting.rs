@@ -139,6 +139,9 @@ fn report_with<W: std::io::Write + 'static + Send>(
         }
         OutputFormat::Json => {
             let _encoder = keyhog_profile::span(Stage::Reporting);
+            if metadata.scan_status == ScanCompletionStatus::Failed && findings.is_empty() {
+                return Ok(());
+            }
             keyhog_core::write_scan_report(w, ReportFormat::Json, report)?;
             Ok(())
         }
@@ -333,12 +336,15 @@ fn report_metadata_from_scan_run_inner(
         );
     }
     metadata.resolved_scan = Some(resolved_scan);
+    let scan_failed = crate::FAILED_SOURCES.load(std::sync::atomic::Ordering::Relaxed) > 0;
     let scan_incomplete = crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed)
         || !coverage_gap_summary(&CoverageCounts::current_with_scanned_bytes(
             source_bytes_scanned,
         ))
         .is_empty();
-    metadata.scan_status = if scan_incomplete {
+    metadata.scan_status = if scan_failed {
+        ScanCompletionStatus::Failed
+    } else if scan_incomplete {
         ScanCompletionStatus::Partial
     } else if crate::BACKEND_RECOVERY_EVENTS.load(std::sync::atomic::Ordering::Relaxed) > 0 {
         ScanCompletionStatus::CompleteAfterRecovery
