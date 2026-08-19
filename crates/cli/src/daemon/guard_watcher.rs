@@ -115,7 +115,8 @@ impl GuardWatcher {
             return Err(format!(
                 "failed to watch {}: watcher backend disconnected ({})",
                 path.display(),
-                self.disconnection_reason().unwrap_or_else(|| "channel closed".to_string())
+                self.disconnection_reason()
+                    .unwrap_or_else(|| "channel closed".to_string())
             ));
         }
         if let Some(ref mut watcher) = self.watcher {

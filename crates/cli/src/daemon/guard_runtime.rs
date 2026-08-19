@@ -621,7 +621,6 @@ impl GuardRuntime {
         let reason_str = reason.into();
         *self.watcher_disconnection_reason.write() = Some(reason_str.clone());
         *self.watcher_status.write() = Some(format!("disconnected: {}", reason_str));
-        self.touch_activity();
     }
 
     /// Reason why the watcher backend disconnected, if any.

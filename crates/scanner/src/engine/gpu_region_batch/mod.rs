@@ -20,8 +20,7 @@ impl RegionPresenceScratch {
     #[cfg(test)]
     pub(super) fn reserve_outlier_for_test(&mut self) {
         let ceiling = region_presence_scratch_retention_limit();
-        self.haystack
-            .reserve_exact(ceiling + 1);
+        self.haystack.reserve_exact(ceiling + 1);
         self.region_starts
             .reserve_exact(ceiling / std::mem::size_of::<u32>() + 1);
     }

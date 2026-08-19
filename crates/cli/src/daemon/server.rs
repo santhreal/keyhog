@@ -298,12 +298,14 @@ impl ServerState {
             }
             None => crate::daemon::guard_runtime::GuardRuntime::new(),
         });
-        let watcher_instance = crate::daemon::guard_watcher::GuardWatcher::new(guard_recon_config).unwrap_or_else(
-            |e| {
-                tracing::warn!("daemon: guard watcher disabled: unmonitored (not watching): {}", e);
+        let watcher_instance = crate::daemon::guard_watcher::GuardWatcher::new(guard_recon_config)
+            .unwrap_or_else(|e| {
+                tracing::warn!(
+                    "daemon: guard watcher disabled: unmonitored (not watching): {}",
+                    e
+                );
                 crate::daemon::guard_watcher::GuardWatcher::new_disabled()
-            },
-        );
+            });
         guard.set_watcher_status(watcher_instance.watcher_status());
         let guard_watcher = Arc::new(parking_lot::Mutex::new(watcher_instance));
         Self {
@@ -920,13 +922,18 @@ pub(crate) fn process_guard_events(
     }
 }
 
+/// Action to take on a guard event depending on root state and overflow condition.
 #[derive(Debug, PartialEq, Eq)]
 pub enum GuardEventAction {
+    /// Ignore event for stopped or unmonitored root.
     Ignore,
+    /// Mark coverage or dirtiness during active baseline indexing.
     MarkDuringIndexing { coverage_lost: bool },
+    /// Apply a state transition immediately to the root.
     Transition(keyhog_core::guard_state::GuardTransition),
 }
 
+/// Determine the appropriate action for a guard event given the current root state.
 pub fn guard_event_action(
     current_state: Option<keyhog_core::guard_state::GuardRootState>,
     has_overflow: bool,
@@ -2890,7 +2897,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 .guard
                 .take_coverage_lost_during_indexing(root.as_bytes());
             let dirty = state.guard.take_dirty_during_indexing(root.as_bytes());
-            let terminal = baseline_terminal_transition(scan_result, coverage_lost);
+            let terminal = baseline_terminal_transition(
+                scan_result,
+                coverage_lost || state.guard.is_watcher_disconnected(),
+            );
             match state.guard.transition_root(root.as_bytes(), &terminal) {
                 Ok(_) => {
                     // Ordinary (non-overflow) events during indexing mean the

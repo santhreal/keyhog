@@ -1,3 +1,4 @@
+#![cfg(unix)]
 //! WHY: Closes defect class where filesystem watcher channel disconnection or backend
 //! worker thread death/panic silently stops event monitoring while leaving roots in Current.
 //! (Row 120)
@@ -30,7 +31,6 @@ fn test_fs_identity() -> FilesystemIdentity {
     }
 }
 
-
 #[test]
 fn disabled_watcher_reports_unmonitored_not_quiet() {
     let watcher = GuardWatcher::new_disabled();
@@ -58,8 +58,7 @@ fn disabled_watcher_reports_unmonitored_not_quiet() {
 #[test]
 fn watcher_disconnection_fans_reconcile_subtree_to_all_roots() {
     let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
-    let mut watcher =
-        GuardWatcher::with_channel_for_test(rx, GuardReconciliationConfig::default());
+    let mut watcher = GuardWatcher::with_channel_for_test(rx, GuardReconciliationConfig::default());
 
     let dir_a = tempdir().unwrap();
     let dir_b = tempdir().unwrap();
@@ -88,10 +87,7 @@ fn watcher_disconnection_fans_reconcile_subtree_to_all_roots() {
         "watcher status must report 'disconnected'"
     );
     let reason = watcher.disconnection_reason();
-    assert!(
-        reason.is_some(),
-        "disconnection reason must be recorded"
-    );
+    assert!(reason.is_some(), "disconnection reason must be recorded");
     let reason_str = reason.unwrap();
     assert!(
         reason_str.contains("watcher backend disconnected"),
@@ -129,12 +125,8 @@ fn watcher_disconnection_transitions_current_roots_to_degraded() {
     let rt = GuardRuntime::new();
     let root_path = b"/test/guarded/repo".to_vec();
 
-    rt.add_root(
-        root_path.clone(),
-        test_fs_identity(),
-        GuardRootMode::Repo,
-    )
-    .unwrap();
+    rt.add_root(root_path.clone(), test_fs_identity(), GuardRootMode::Repo)
+        .unwrap();
 
     // Transition Stopped -> Indexing -> Current
     rt.transition_root(&root_path, &GuardTransition::ReconciliationStarted)
@@ -192,7 +184,9 @@ fn watcher_disconnection_transitions_all_active_states_to_degraded_or_coverage_l
             GuardRootState::Indexing => {
                 assert_eq!(
                     action,
-                    GuardEventAction::MarkDuringIndexing { coverage_lost: true },
+                    GuardEventAction::MarkDuringIndexing {
+                        coverage_lost: true
+                    },
                     "Indexing root marks coverage_lost_during_indexing"
                 );
             }
@@ -203,7 +197,10 @@ fn watcher_disconnection_transitions_all_active_states_to_degraded_or_coverage_l
                     "StalePolicy root is already in repair state"
                 );
             }
-            GuardRootState::Current | GuardRootState::Dirty | GuardRootState::Blocked | GuardRootState::Degraded => {
+            GuardRootState::Current
+            | GuardRootState::Dirty
+            | GuardRootState::Blocked
+            | GuardRootState::Degraded => {
                 assert_eq!(
                     action,
                     GuardEventAction::Transition(GuardTransition::CoverageLost),
@@ -220,12 +217,8 @@ fn watcher_disconnection_during_indexing_forces_degraded_baseline_completion() {
     let rt = GuardRuntime::new();
     let root_path = b"/test/indexing/repo".to_vec();
 
-    rt.add_root(
-        root_path.clone(),
-        test_fs_identity(),
-        GuardRootMode::Repo,
-    )
-    .unwrap();
+    rt.add_root(root_path.clone(), test_fs_identity(), GuardRootMode::Repo)
+        .unwrap();
 
     rt.transition_root(&root_path, &GuardTransition::ReconciliationStarted)
         .unwrap();
@@ -235,7 +228,9 @@ fn watcher_disconnection_during_indexing_forces_degraded_baseline_completion() {
     let action = guard_event_action(rt.root_state(&root_path), true);
     assert_eq!(
         action,
-        GuardEventAction::MarkDuringIndexing { coverage_lost: true }
+        GuardEventAction::MarkDuringIndexing {
+            coverage_lost: true
+        }
     );
     rt.mark_coverage_lost_during_indexing(&root_path);
 
@@ -249,7 +244,9 @@ fn watcher_disconnection_during_indexing_forces_degraded_baseline_completion() {
         GuardTransition::ReconciliationClean
     };
 
-    let terminal_state = rt.transition_root(&root_path, &terminal_transition).unwrap();
+    let terminal_state = rt
+        .transition_root(&root_path, &terminal_transition)
+        .unwrap();
     assert_eq!(
         terminal_state,
         GuardRootState::Degraded,
@@ -260,8 +257,7 @@ fn watcher_disconnection_during_indexing_forces_degraded_baseline_completion() {
 #[test]
 fn add_root_fails_closed_when_watcher_is_disconnected() {
     let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
-    let mut watcher =
-        GuardWatcher::with_channel_for_test(rx, GuardReconciliationConfig::default());
+    let mut watcher = GuardWatcher::with_channel_for_test(rx, GuardReconciliationConfig::default());
 
     drop(tx);
     let _ = watcher.poll_events();
@@ -290,10 +286,7 @@ fn runtime_tracks_named_watcher_disconnection_reason() {
     rt.record_watcher_disconnection(reason);
 
     assert!(rt.is_watcher_disconnected());
-    assert_eq!(
-        rt.watcher_disconnection_reason().as_deref(),
-        Some(reason)
-    );
+    assert_eq!(rt.watcher_disconnection_reason().as_deref(), Some(reason));
     assert_eq!(
         rt.watcher_status().as_deref(),
         Some("disconnected: notify event channel closed unexpectedly")

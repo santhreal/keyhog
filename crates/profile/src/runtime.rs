@@ -931,13 +931,10 @@ impl Runtime {
         let runtime_key = Arc::as_ptr(&self.inner) as usize;
         let active = ACTIVE_SPANS.with(|stack| {
             let stack = stack.borrow();
-            stack
-                .iter()
-                .enumerate()
-                .rev()
-                .find_map(|(slot, active)| {
-                    active.and_then(|a| (a.runtime_key == runtime_key).then_some((Some(slot), a.span_id)))
-                })
+            stack.iter().enumerate().rev().find_map(|(slot, active)| {
+                active
+                    .and_then(|a| (a.runtime_key == runtime_key).then_some((Some(slot), a.span_id)))
+            })
         });
         if let Some(pair) = active {
             return pair;
@@ -1039,7 +1036,6 @@ impl Runtime {
         });
         (trace, Some(stack_slot))
     }
-
 
     fn pop_active_span(&self, stack_slot: Option<usize>, elapsed_ns: u64) -> u64 {
         let Some(stack_slot) = stack_slot else {
