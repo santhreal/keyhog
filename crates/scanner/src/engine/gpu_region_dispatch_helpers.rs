@@ -22,7 +22,7 @@ pub(crate) fn with_test_phase2_dispatch_failure<R>(
         }
     }
     let prior = TEST_PHASE2_FAIL_AFTER_DISPATCHES
-        .with(|slot| slot.replace(Some(successful_dispatches_before_failure)));
+        .with(|s| s.replace(Some(successful_dispatches_before_failure)));
     let _reset = Reset(prior);
     run()
 }

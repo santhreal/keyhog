@@ -99,11 +99,19 @@ pub fn evict_cache_dir_with_policy(
         };
 
         if should_evict {
-            if std::fs::remove_file(&entry.path).is_ok() {
-                report.evicted_count += 1;
-                report.evicted_bytes += entry.bytes;
-                current_bytes = current_bytes.saturating_sub(entry.bytes);
-                continue;
+            match std::fs::remove_file(&entry.path) {
+                Ok(()) => {
+                    report.evicted_count += 1;
+                    report.evicted_bytes += entry.bytes;
+                    current_bytes = current_bytes.saturating_sub(entry.bytes);
+                    continue;
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    current_bytes = current_bytes.saturating_sub(entry.bytes);
+                    continue;
+                }
+                // LAW10: file cannot be removed due to permissions or io; it is retained in cache accounting
+                Err(_) => {}
             }
         }
         retained_count += 1;
