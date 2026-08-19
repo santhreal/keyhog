@@ -492,21 +492,24 @@ fn load_guard_config() -> (
             )
         }
     };
-    let budget = guard
-        .hot_index_memory
-        .as_deref()
-        .and_then(|s| match crate::value_parsers::parse_byte_size(s) {
-            Ok(bytes) => Some(bytes),
-            Err(err) => {
-                tracing::warn!("daemon: invalid guard hot_index_memory '{s}': {err}");
-                None
-            }
-        });
+    let budget =
+        guard.hot_index_memory.as_deref().and_then(
+            |s| match crate::value_parsers::parse_byte_size(s) {
+                Ok(bytes) => Some(bytes),
+                Err(err) => {
+                    tracing::warn!("daemon: invalid guard hot_index_memory '{s}': {err}");
+                    None
+                }
+            },
+        );
     let defaults = keyhog_sources::guard::GuardReconciliationConfig::default();
     let recon_config = keyhog_sources::guard::GuardReconciliationConfig {
         max_pending_events_per_root: guard
             .max_pending_events_per_root
             .unwrap_or(defaults.max_pending_events_per_root),
+        max_pending_events_total: guard
+            .max_pending_events_total
+            .unwrap_or(defaults.max_pending_events_total),
         coalesce_window_ms: guard
             .coalesce_window
             .as_deref()
@@ -571,7 +574,6 @@ fn expand_state_path(s: &str) -> Option<PathBuf> {
         Some(PathBuf::from(s))
     }
 }
-
 
 /// Parse a human-readable duration string (e.g. "100ms", "5s", "1m").
 /// Returns milliseconds. Returns `None` on parse failure.

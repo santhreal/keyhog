@@ -17,8 +17,7 @@ fn example_config_path() -> std::path::PathBuf {
 }
 
 fn read_example_config() -> String {
-    std::fs::read_to_string(example_config_path())
-        .expect("read .keyhog.toml.example")
+    std::fs::read_to_string(example_config_path()).expect("read .keyhog.toml.example")
 }
 
 #[test]

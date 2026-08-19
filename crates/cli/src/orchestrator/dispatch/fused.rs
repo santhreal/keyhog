@@ -537,10 +537,14 @@ impl ScanOrchestrator {
                             c.data.as_bytes(),
                         );
                         if unchanged {
-                            keyhog_profile::record_cache_hit(keyhog_profile::CacheId::IncrementalUnchanged);
+                            keyhog_profile::record_cache_hit(
+                                keyhog_profile::CacheId::IncrementalUnchanged,
+                            );
                             skipped_ref.fetch_add(1, Ordering::Relaxed);
                         } else {
-                            keyhog_profile::record_cache_miss(keyhog_profile::CacheId::IncrementalUnchanged);
+                            keyhog_profile::record_cache_miss(
+                                keyhog_profile::CacheId::IncrementalUnchanged,
+                            );
                         }
                         !unchanged
                     })

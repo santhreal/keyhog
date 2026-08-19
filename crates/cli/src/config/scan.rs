@@ -392,7 +392,9 @@ pub(super) fn apply_scan_section(
             );
         }
         if let Some(ref overlap_str) = scan.window_overlap {
-            if let Some(bytes) = parse_config_byte_size(config_errors, "[scan].window_overlap", overlap_str) {
+            if let Some(bytes) =
+                parse_config_byte_size(config_errors, "[scan].window_overlap", overlap_str)
+            {
                 if !(1024..=16 * 1024 * 1024).contains(&bytes) {
                     config_errors.push(format!(
                         "- [scan].window_overlap = '{overlap_str}': window overlap must be between 1KB and 16MB"

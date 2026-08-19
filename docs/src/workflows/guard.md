@@ -347,7 +347,7 @@ The guard runtime resolves settings from the `[guard]` table in `.keyhog.toml`:
 | Setting | Type | Default | Description |
 |---|---|---|---|
 | `scrub_interval` | string | disabled | Periodic re-scan interval for `current` roots (e.g. `5m`, `24h`). Catches changes that filesystem events missed. |
-| `state_path` | string | disabled | Durable guard state path (e.g. `~/.local/state/keyhog/guard.redb`). Persists root records and attestations across daemon restarts. Rejected in lockdown mode. |
+| `state_path` | string | disabled | Durable guard state path (e.g. `~/.local/state/keyhog/guard.redb`). Persists root records and attestations across daemon restarts. Ignored in lockdown mode (guard operates in ephemeral memory). |
 | `hot_index_memory` | string | 64MB | Hot clean attestation index memory budget (e.g. `64MB`). |
 | `max_pending_events_per_root` | integer | 8192 | Maximum queued filesystem events per root before degraded status. |
 | `coalesce_window` | string | 100ms | Event coalescing window before applying state transitions. |
