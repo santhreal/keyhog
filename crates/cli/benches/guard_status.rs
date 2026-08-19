@@ -176,9 +176,7 @@ fn bench_guard_state_transitions(c: &mut Criterion) {
             state = state
                 .transition(&GuardTransition::ReconciliationClean)
                 .expect("reconcile clean");
-            state = state
-                .transition(&GuardTransition::Stopped)
-                .expect("stop");
+            state = state.transition(&GuardTransition::Stopped).expect("stop");
             let _ = black_box(state);
         });
     });
