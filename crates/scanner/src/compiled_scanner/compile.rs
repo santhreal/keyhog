@@ -1397,10 +1397,18 @@ impl CompiledScanner {
             gpu_degrade_count: std::sync::atomic::AtomicU64::new(0),
             autoroute_gpu_shared_cold_ns: std::sync::atomic::AtomicU64::new(0),
             static_intern,
+            assignment_keyword_matcher: std::sync::Mutex::new(if packed_detector_plan.is_some() {
+                crate::assignment_keyword_matcher::AssignmentKeywordMatcherCache::new_hydrated(
+                    &[],
+                    detector_plans.generic_ownership().policy_keywords(),
+                )
+            } else {
+                crate::assignment_keyword_matcher::AssignmentKeywordMatcherCache::new_compiled(
+                    &[],
+                    detector_plans.generic_ownership().policy_keywords(),
+                )
+            }),
             detector_plans,
-            assignment_keyword_matcher: std::sync::Mutex::new(
-                crate::assignment_keyword_matcher::AssignmentKeywordMatcherCache::default(),
-            ),
             #[cfg(feature = "gpu")]
             ac_match_upper_bounds,
             suffix_gate_ac,

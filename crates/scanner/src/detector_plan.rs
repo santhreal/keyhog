@@ -1104,7 +1104,7 @@ fn hydrate_detector_plan(
         crate::suppression::WeakAnchorBase::Never
     };
     Ok(CompiledDetectorPlan {
-        metadata: compile_metadata(
+        metadata: hydrate_metadata(
             interner,
             &detector.id,
             "primary",
@@ -1116,7 +1116,7 @@ fn hydrate_detector_plan(
             .entropy_fallback
             .as_ref()
             .map(|metadata| {
-                compile_metadata(
+                hydrate_metadata(
                     interner,
                     &detector.id,
                     "entropy fallback",
@@ -1163,6 +1163,29 @@ fn compile_metadata(
     keyhog_profile::record_compile_surface_invocation(
         keyhog_profile::CompileSurfaceId::DetectorPlan,
     );
+    resolve_metadata(interner, detector_id, identity_kind, id, name, service)
+}
+
+fn hydrate_metadata(
+    interner: &crate::static_intern::StaticInterner,
+    detector_id: &str,
+    identity_kind: &str,
+    id: &str,
+    name: &str,
+    service: &str,
+) -> Result<CompiledDetectorMetadata, String> {
+    keyhog_profile::record_compile_surface_load(keyhog_profile::CompileSurfaceId::DetectorPlan);
+    resolve_metadata(interner, detector_id, identity_kind, id, name, service)
+}
+
+fn resolve_metadata(
+    interner: &crate::static_intern::StaticInterner,
+    detector_id: &str,
+    identity_kind: &str,
+    id: &str,
+    name: &str,
+    service: &str,
+) -> Result<CompiledDetectorMetadata, String> {
     let resolve = |field: &str, value: &str| {
         interner.lookup(value).ok_or_else(|| {
             format!(

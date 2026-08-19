@@ -1090,6 +1090,37 @@ pub fn keyword_line_ids_contain_for_test(keyword_line_ids: &[usize], line_index:
     crate::entropy::scanner::keyword_line_ids_contain(keyword_line_ids, line_index)
 }
 
+/// Helper to compile an assignment keyword matcher for testing.
+pub fn compile_assignment_keyword_matcher_for_test(
+    secret_keywords: &[String],
+    detector_policy_keywords: &[String],
+) -> Box<dyn Fn(&[u8]) -> bool + Send + Sync> {
+    let matcher = crate::assignment_keyword_matcher::AssignmentKeywordMatcher::compile(
+        secret_keywords,
+        detector_policy_keywords,
+    );
+    Box::new(move |line| matcher.matches(line))
+}
+
+/// Helper to hydrate an assignment keyword matcher for testing.
+pub fn hydrate_assignment_keyword_matcher_for_test(
+    secret_keywords: &[String],
+    detector_policy_keywords: &[String],
+) -> Box<dyn Fn(&[u8]) -> bool + Send + Sync> {
+    let matcher = crate::assignment_keyword_matcher::AssignmentKeywordMatcher::hydrate(
+        secret_keywords,
+        detector_policy_keywords,
+    );
+    Box::new(move |line| matcher.matches(line))
+}
+
+/// Helper to check whether entropy policy compiles for a detector spec.
+pub fn compile_entropy_policy_for_test(
+    detector: &keyhog_core::DetectorSpec,
+) -> Result<bool, String> {
+    crate::entropy::policy::compile_entropy_policy(detector).map(|opt| opt.is_some())
+}
+
 /// Returns the production lane topology as `(is_large, original_indices)`.
 pub fn chunk_lane_topology_for_test(
     chunk_sizes: &[usize],

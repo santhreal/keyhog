@@ -304,6 +304,9 @@ impl CompiledEntropyPolicy {
     }
 
     pub(crate) fn compile(detector: &DetectorSpec) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::EntropyPolicy,
+        );
         Self::compile_source(
             detector.into(),
             crate::detector_execution_policy::CompiledDetectorLengthPolicy::compile(detector),
@@ -314,6 +317,9 @@ impl CompiledEntropyPolicy {
         detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
         length: crate::detector_execution_policy::CompiledDetectorLengthPolicy,
     ) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_load(
+            keyhog_profile::CompileSurfaceId::EntropyPolicy,
+        );
         Self::compile_source(detector.into(), length)
     }
 
@@ -321,6 +327,9 @@ impl CompiledEntropyPolicy {
         detector: &DetectorSpec,
         length: crate::detector_execution_policy::CompiledDetectorLengthPolicy,
     ) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::EntropyPolicy,
+        );
         Self::compile_source(detector.into(), length)
     }
 
@@ -328,9 +337,6 @@ impl CompiledEntropyPolicy {
         detector: EntropyPolicySource<'_>,
         length: crate::detector_execution_policy::CompiledDetectorLengthPolicy,
     ) -> Result<Self, String> {
-        keyhog_profile::record_compile_surface_invocation(
-            keyhog_profile::CompileSurfaceId::EntropyPolicy,
-        );
         let length = length.require_bounded(detector.id)?;
         let plausibility = detector.plausibility.ok_or_else(|| {
             format!(
