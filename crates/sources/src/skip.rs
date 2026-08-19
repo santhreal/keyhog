@@ -49,9 +49,11 @@ impl SourceSkipTelemetry {
     }
 }
 
+static GLOBAL_SOURCE_TELEMETRY: std::sync::LazyLock<Arc<SourceSkipTelemetry>> =
+    std::sync::LazyLock::new(|| Arc::new(SourceSkipTelemetry::new()));
+
 thread_local! {
     static CURRENT_SOURCE_TELEMETRY: RefCell<Option<Arc<SourceSkipTelemetry>>> = const { RefCell::new(None) };
-    static DEFAULT_THREAD_SOURCE_TELEMETRY: Arc<SourceSkipTelemetry> = Arc::new(SourceSkipTelemetry::new());
 }
 
 struct SourceTelemetryRestore {
@@ -99,7 +101,7 @@ pub fn current_source_telemetry() -> Arc<SourceSkipTelemetry> {
         if let Some(current) = &*slot.borrow() {
             Arc::clone(current)
         } else {
-            DEFAULT_THREAD_SOURCE_TELEMETRY.with(|default| Arc::clone(default))
+            Arc::clone(&GLOBAL_SOURCE_TELEMETRY)
         }
     })
 }
