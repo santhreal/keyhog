@@ -106,11 +106,12 @@ impl GpuResidentExecutionPool {
             ScannerBackendState::SelectedGpu { peer, .. } => {
                 let is_software = peer.is_software;
                 let available = peer.available;
-                if !available || is_software {
-                    host_concurrency.clamp(1, 4)
+                let capability = if !available || is_software {
+                    "synchronous"
                 } else {
-                    host_concurrency.clamp(1, 16)
-                }
+                    "async-submit-retire"
+                };
+                Self::derive_capacity_for_device(capability, 4, host_concurrency)
             }
             #[cfg(feature = "gpu")]
             ScannerBackendState::Census { peers, .. } => {
@@ -122,13 +123,14 @@ impl GpuResidentExecutionPool {
                         .contains("cpu"))
                     || peers.metal_available
                     || (peers.wgpu_available && !peers.wgpu_is_software);
-                if has_hardware_gpu {
-                    host_concurrency.clamp(1, 16)
+                let capability = if has_hardware_gpu {
+                    "async-submit-retire"
                 } else {
-                    host_concurrency.clamp(1, 4)
-                }
+                    "synchronous"
+                };
+                Self::derive_capacity_for_device(capability, 4, host_concurrency)
             }
-            _ => host_concurrency.clamp(1, 4),
+            _ => Self::derive_capacity_for_device("synchronous", 1, host_concurrency),
         }
     }
 
