@@ -559,6 +559,8 @@ impl GuardWatcher {
     /// the overflow flag is cleared.
     pub fn poll_events(&self) -> Vec<(PathBuf, Vec<GuardEvent>)> {
         let mut results: HashMap<PathBuf, Vec<GuardEvent>> = HashMap::new();
+        let mut reconcile_roots: std::collections::HashSet<PathBuf> =
+            std::collections::HashSet::new();
         if self.disabled {
             return Vec::new();
         }
@@ -575,14 +577,7 @@ impl GuardWatcher {
                         if triggered_roots.is_empty() {
                             triggered_roots.extend(self.roots.keys().cloned());
                         }
-                        triggered_roots.sort();
-                        triggered_roots.dedup();
-                        for root in triggered_roots {
-                            results
-                                .entry(root.clone())
-                                .or_default()
-                                .push(GuardEvent::ReconcileSubtree(root.clone()));
-                        }
+                        reconcile_roots.extend(triggered_roots);
                     } else {
                         // Process and attribute ALL paths present on the event to ALL matching
                         // enclosing roots so nested and parent roots both receive events.
@@ -603,12 +598,7 @@ impl GuardWatcher {
                     }
                 }
                 Ok(Err(_)) => {
-                    for root in self.roots.keys() {
-                        results
-                            .entry(root.clone())
-                            .or_default()
-                            .push(GuardEvent::ReconcileSubtree(root.clone()));
-                    }
+                    reconcile_roots.extend(self.roots.keys().cloned());
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
@@ -624,16 +614,17 @@ impl GuardWatcher {
                     };
                     if newly_disconnected {
                         tracing::warn!("daemon: guard watcher event channel disconnected; failing closed for all watched roots");
-                        for root in self.roots.keys() {
-                            results
-                                .entry(root.clone())
-                                .or_default()
-                                .push(GuardEvent::ReconcileSubtree(root.clone()));
-                        }
+                        reconcile_roots.extend(self.roots.keys().cloned());
                     }
                     break;
                 }
             }
+        }
+        for root in reconcile_roots {
+            results
+                .entry(root.clone())
+                .or_default()
+                .push(GuardEvent::ReconcileSubtree(root));
         }
         // Drain each root's buffer and check for overflow. If overflowed,
         // emit a ReconcileSubtree event and reset the overflow flag so
@@ -725,7 +716,7 @@ impl GuardWatcher {
 
     /// Whether the watcher is actively monitoring filesystem events.
     pub fn is_watching(&self) -> bool {
-        !self.disabled && !self.is_disconnected() && self.watcher.is_some()
+        !self.disabled && !self.is_disconnected()
     }
 }
 

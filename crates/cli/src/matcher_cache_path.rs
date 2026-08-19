@@ -48,7 +48,7 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
                     tracing::debug!(
                         error = %error,
                         path = %path.display(),
-                        "matcher-artifact cache unusable: default cache location is unusable"
+                        "matcher-artifact cache soft-fail: default cache location is unusable"
                     );
                     Ok(None)
                 }
@@ -57,7 +57,7 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
         Err(error) => {
             tracing::debug!(
                 error = %error,
-                "matcher-artifact cache unusable: no default cache location"
+                "matcher-artifact cache soft-fail: no default cache location"
             );
             eprintln!(
                 "warning: matcher-artifact cache unusable: {error}; configure with --matcher-cache <DIR>"
