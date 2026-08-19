@@ -183,6 +183,12 @@ fn daemon_autoroute_keeps_runtime_gpu_census_open() {
 fn unavailable_daemon_gpu_is_typed_and_exits_twelve() {
     use keyhog_scanner::ScanBackend;
 
+    // `cli_error_exit_code` reads the process-global scanner-panic flag, so this
+    // test must hold the same runtime guard its siblings hold or a concurrent
+    // panic-path test turns exit 12 into exit 11.
+    let guard = crate::testing::API.scan_runtime_guard_for_test();
+    crate::testing::API.reset_scan_runtime_state_for_test(&guard);
+
     let error = daemon_requires_gpu(Some(ScanBackend::GpuWgpu), false)
         .expect_err("an explicit GPU daemon must reject a GPU-less host");
     assert_eq!(crate::cli_error_exit_code(&error), EXIT_REQUIRE_GPU_UNMET);

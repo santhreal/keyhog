@@ -1442,93 +1442,35 @@ fn doctor_reports_corpus_and_passes_scan_self_test() {
 }
 
 #[test]
-fn update_subcommand_is_wired_with_its_flags() {
-    // `keyhog update`'s download/replace path is network-bound (it queries the
-    // GitHub releases API), so it can't be a deterministic offline snapshot -
-    // its pure logic (asset selection, semver compare, executable-magic guard)
-    // is unit-tested in subcommands::update. This e2e confirms the subcommand
-    // and its flags are actually registered in the CLI (a wiring regression
-    // would otherwise only surface when a user runs it).
-    let output = Command::new(binary())
-        .arg("update")
-        .arg("--help")
-        .output()
-        .expect("run keyhog update --help");
-    assert!(
-        output.status.success(),
-        "`keyhog update --help` must succeed; stderr:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let help = String::from_utf8_lossy(&output.stdout);
-    for flag in ["--check", "--version"] {
-        assert!(
-            help.contains(flag),
-            "`keyhog update --help` must document {flag}; got:\n{help}"
-        );
-    }
-    assert!(
-        help.contains("SEMVER")
-            && help.contains("Canonical SemVer")
-            && help.contains("leading `v` is normalized")
-            && help.contains("Valid prereleases are accepted"),
-        "update help must describe exact accepted version syntax; got:\n{help}"
-    );
-}
-
-#[test]
-fn repair_subcommand_is_wired_with_its_flags() {
-    // Like `update`, `repair`'s download/reinstall path is network-bound; its
-    // shared logic is unit-tested in crate::installer. This confirms the
-    // subcommand + flags are registered.
-    let output = Command::new(binary())
-        .arg("repair")
-        .arg("--help")
-        .output()
-        .expect("run keyhog repair --help");
-    assert!(
-        output.status.success(),
-        "`keyhog repair --help` must succeed; stderr:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let help = String::from_utf8_lossy(&output.stdout);
-    for flag in ["--force", "--version"] {
-        assert!(
-            help.contains(flag),
-            "`keyhog repair --help` must document {flag}; got:\n{help}"
-        );
-    }
-    assert!(
-        help.contains("SEMVER")
-            && help.contains("Canonical SemVer")
-            && help.contains("leading `v` is normalized")
-            && help.contains("Valid prereleases are accepted"),
-        "repair help must describe exact accepted version syntax; got:\n{help}"
-    );
-}
-
-#[test]
-fn maintenance_version_validation_rejects_hostile_values_before_execution() {
-    // Why: clap is the earliest production boundary; malformed values must
-    // fail there rather than reaching either resolver URL construction or I/O.
+fn retired_maintenance_subcommands_are_not_wired_in_the_real_binary() {
+    // Why: `update` and `repair` were removed with the signed binary-asset
+    // release channel. That channel searched BACKWARD for a release that still
+    // carried a complete bundle, so once releases stopped shipping assets it
+    // did not fail - it installed a binary 33 versions stale. Reintroducing
+    // either name in the shipped binary reopens that. Absence is the contract,
+    // so this drives the real binary rather than the parser.
     for command in ["update", "repair"] {
-        for invalid in ["v1.2.3/../../latest", "v1.2.3?draft=true", "v1.2.3-rc..1"] {
-            let output = Command::new(binary())
-                .args([command, "--version", invalid])
-                .output()
-                .unwrap_or_else(|error| panic!("run keyhog {command}: {error}"));
-            assert_eq!(
-                output.status.code(),
-                Some(2),
-                "{command} must reject invalid version `{invalid}` during parsing"
-            );
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            assert!(
-                stderr.contains(invalid)
-                    && stderr.contains("not canonical SemVer")
-                    && stderr.contains("--version v1.2.3"),
-                "{command} must name the invalid value and remediation: {stderr}"
-            );
-        }
+        let output = Command::new(binary())
+            .args([command, "--help"])
+            .output()
+            .unwrap_or_else(|error| panic!("run keyhog {command}: {error}"));
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "`keyhog {command}` was retired and must exit 2 as an unknown subcommand"
+        );
+    }
+
+    let output = Command::new(binary())
+        .arg("--help")
+        .output()
+        .expect("run keyhog --help");
+    let help = String::from_utf8_lossy(&output.stdout);
+    for command in ["update", "repair"] {
+        assert!(
+            !help.contains(&format!("  {command} ")),
+            "`keyhog --help` must not advertise the retired `{command}` subcommand; got:\n{help}"
+        );
     }
 }
 

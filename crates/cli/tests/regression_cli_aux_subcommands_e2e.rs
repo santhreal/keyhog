@@ -51,8 +51,6 @@ const EXPECTED_SUBCOMMANDS: &[&str] = &[
     "backend",
     "doctor",
     "bloom-diagnostic",
-    "update",
-    "repair",
     "uninstall",
     "scan-system",
     "daemon",

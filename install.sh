@@ -1,44 +1,39 @@
 #!/usr/bin/env sh
 #
 # KeyHog installer (Linux + macOS).
-# Canonical endpoint: https://santh.dev/keyhog/install.sh
 #
-# Authenticated install from one tagged release:
-#   TAG=v0.5.42
-#   BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
-#   PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
-#   curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
-#   minisign -Vm install.sh -P "$PUB"
-#   KEYHOG_VERSION="$TAG" sh install.sh
+# This installer does NOT download from GitHub releases. KeyHog publishes to
+# crates.io only; the signed binary-asset channel was retired. Install the
+# current release with:
+#
+#   cargo install keyhog --locked
+#
+# Use this script to install a binary you already have, such as a CI artifact,
+# an air-gapped transfer, or a local build:
+#
+#   sh install.sh --from-file=./keyhog
 #
 # Modes:
-#   (default)         install or upgrade keyhog
-#   --repair          detect a broken install and re-download
+#   (default)         install or upgrade keyhog from --from-file
 #   --diagnose        print full host + binary status, make no changes
 #   --calibrate       rerun visible autoroute calibration for the installed binary
 #   --uninstall       remove the binary plus installer-owned PATH and completions
 #
 # Common flags:
-#   --version=vX.Y.Z    pin a release tag (default: latest stable complete bundle)
+#   --from-file=PATH    REQUIRED to install. Verifies a sibling PATH.minisig and
+#                       PATH.sha256 when present, then runs backup, atomic swap,
+#                       keyhog doctor, and rollback on failure.
 #   --install-dir=PATH  override the default install directory
-#   --from-file=PATH    install a pre-downloaded complete host bundle instead of
-#                       downloading a release. Skips GitHub lookup, verifies
-#                       present sibling Minisign signatures and required SHA-256
-#                       files, then runs backup, atomic swap, `keyhog doctor`,
-#                       and rollback. Requires PATH.gpu-literals.tar.gz and its
-#                       proof siblings. --insecure can accept missing proof but
-#                       never a mismatch.
 #   --yes / -y          non-interactive: accept defaults, no prompts
-#   --insecure          allow an install only when release signature/checksum
-#                       proof is unavailable; fetched mismatches still fail
-#   --no-calibrate      install and verify the binary without measuring autoroute;
-#                       explicit backends work immediately, run --calibrate before
-#                       relying on automatic routing
+#   --no-prompt         never prompt; treat every question as its default
+#   --insecure          proceed when local proof files are absent; a mismatch
+#                       still fails
+#   --no-calibrate      install and verify without measuring autoroute
 #   --no-color          disable ANSI colors
 #   --help / -h         show this help and exit
 #
 # Env overrides:
-#   KEYHOG_VERSION, GITHUB_TOKEN, NO_COLOR
+#   NO_COLOR
 
 set -eu
 
@@ -46,7 +41,7 @@ set -eu
 # `exit` inside a sourced script terminates the caller's interactive shell, a
 # nasty surprise for anyone who runs `. install.sh` / `source install.sh`. The
 # guard is scoped to bash/zsh (the shells that expose a sourcing signal); under a
-# plain POSIX `sh` the documented `curl | sh` RUN path hits neither branch and is
+# plain POSIX `sh` the normal `sh install.sh` run path hits neither branch and is
 # left completely unchanged. `if`/`then` (not `[ ] && …`) keeps it safe under the
 # `set -e` above when the condition is false on the normal run path.
 if [ -n "${BASH_SOURCE:-}" ]; then
@@ -66,15 +61,14 @@ fi
 REPO="santhreal/keyhog"
 RELEASE_PUBLIC_KEY="RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go"
 INSTALL_DIR="$HOME/.local/bin"
-VERSION="${KEYHOG_VERSION:-}"
 FROM_FILE=""
 INSECURE_INSTALL=0
 SKIP_CALIBRATION=0
+GPU_LITERALS_FROM_BINARY=0
 MODE="install"
 INTERACTIVE=1
 ASSUME_YES=0
 USE_COLOR=1
-LATEST_RELEASE_ALIAS=0
 
 # ============================================================
 # colors / style
@@ -212,13 +206,13 @@ confirm() {
 
 usage() {
     # When invoked from a file (`sh install.sh --help`) the header comment IS
-    # the help, so reproduce it from $0. Under `curl ... | sh -s -- --help`
-    # there is no readable $0 - the old `sed "$0"` printed "sed: can't read sh"
-    # and NO help at all. Fall back to a built-in synopsis so --help works on
-    # every transport.
+    # the help, so reproduce it from $0. Take the comment block itself rather
+    # than a pinned line range: a range goes stale the next time a flag is
+    # documented. When $0 is not readable, fall back to a built-in synopsis so
+    # --help still works.
     help_text=""
     if [ -r "$0" ]; then
-        help_text=$(sed -n '2,35p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//')
+        help_text=$(awk 'NR==1 {next} /^#/ {sub(/^# ?/, ""); print; next} {exit}' "$0" 2>/dev/null)
     fi
     if [ -n "$help_text" ]; then
         printf '%s\n' "$help_text"
@@ -226,26 +220,26 @@ usage() {
         printf '%s\n' \
 "KeyHog installer (Linux + macOS)." \
 "" \
-"Authenticated install:" \
-"  Download install.sh and install.sh.minisig from one tagged release," \
-"  verify with Minisign key RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go," \
-"  then run KEYHOG_VERSION=<tag> sh install.sh." \
+"This script installs a binary you already have. It does not download" \
+"from GitHub releases. For the current release, run:" \
+"  cargo install keyhog --locked" \
 "" \
-"Modes:  (default) install/upgrade   --repair   --diagnose   --calibrate   --uninstall" \
-"Flags:  --version=vX.Y.Z  --install-dir=PATH" \
-"        --from-file=PATH  --yes/-y  --no-prompt  --no-calibrate  --insecure" \
-"Env:    KEYHOG_VERSION  GITHUB_TOKEN  NO_COLOR"
+"Install a local binary:" \
+"  sh install.sh --from-file=./keyhog" \
+"" \
+"Modes:  (default) install/upgrade   --diagnose   --calibrate   --uninstall" \
+"Flags:  --from-file=PATH  --install-dir=PATH" \
+"        --yes/-y  --no-prompt  --no-calibrate  --insecure" \
+"Env:    NO_COLOR"
     fi
     exit 0
 }
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --repair)          MODE="repair" ;;
         --diagnose)        MODE="diagnose" ;;
         --calibrate)       MODE="calibrate" ;;
         --uninstall)       MODE="uninstall" ;;
-        --version=*)       VERSION="${1#--version=}" ;;
         --install-dir=*)   INSTALL_DIR="${1#--install-dir=}" ;;
         --from-file=*)     FROM_FILE="${1#--from-file=}" ;;
         --yes|-y)          ASSUME_YES=1 ;;
@@ -263,7 +257,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# stdin not a TTY (curl | sh) means we can't prompt at all.
+# stdin not a TTY (piped input, CI) means we can't prompt at all.
 [ -t 0 ] || INTERACTIVE=0
 
 setup_colors
@@ -275,213 +269,6 @@ setup_colors
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 
-# resolve_asset: sets ASSET and GPU_NOTE. The Linux binary probes CUDA and WGPU
-# dynamically, so host accelerator state does not change the release artifact.
-resolve_asset() {
-    ASSET=""
-    GPU_NOTE=""
-
-    case "$OS-$ARCH" in
-      linux-x86_64|linux-amd64)
-        ASSET="keyhog-linux-x86_64"
-        GPU_NOTE="One Linux build probes CUDA and WGPU at runtime, then autoroute selects only from persisted fastest-correct evidence."
-        ;;
-      darwin-arm64|darwin-aarch64)
-        ASSET="keyhog-macos-aarch64"
-        GPU_NOTE="Apple Silicon. Installing the native Metal and WGPU macOS build (no Hyperscan or Homebrew Vectorscan required)."
-        ;;
-      darwin-x86_64|darwin-amd64)
-        ASSET="keyhog-macos-x86_64"
-        GPU_NOTE="Intel Mac. Installing the native Metal and WGPU macOS build (no Hyperscan or Homebrew Vectorscan required)."
-        ;;
-      *)
-        err "Unsupported platform: $OS-$ARCH"
-        err "Supported: linux-x86_64, darwin-x86_64, darwin-arm64."
-        err "On Windows use install.ps1."
-        exit 1
-        ;;
-    esac
-}
-
-resolve_tag() {
-    if [ -n "$VERSION" ]; then
-        # keyhog release tags are all v-prefixed (vX.Y.Z). Accept a bare
-        # semver too (`--version=X.Y.Z`): a download URL built from the
-        # un-prefixed tag 404s. Normalise a digit-leading
-        # version to the v-prefixed tag; leave an explicit v… or any other
-        # ref (branch, sha, custom tag) untouched.
-        case "$VERSION" in
-            [0-9]*) TAG="v$VERSION" ;;
-            *)      TAG="$VERSION" ;;
-        esac
-        return
-    fi
-
-    TAG="latest"
-}
-
-github_api_get() {
-    url="$1"
-    if [ -n "${GITHUB_TOKEN:-}" ]; then
-        curl -fsSL \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "$url"
-    else
-        curl -fsSL "$url"
-    fi
-}
-
-resolve_tag_from_api() {
-    # Walk recent releases in publication order and admit only a stable,
-    # non-draft release with this host's complete signed bundle. Selecting a
-    # release merely because it has one asset can choose a partial publication
-    # or an asset for another platform.
-    releases_api_err=$(mktemp "${TMPDIR:-/tmp}/keyhog-releases-api.XXXXXX")
-    if ! releases_json=$(github_api_get "https://api.github.com/repos/$REPO/releases?per_page=10" 2>"$releases_api_err"); then
-        releases_api_msg=$(sed -n '1p' "$releases_api_err")
-        rm -f "$releases_api_err"
-        err "Could not query GitHub releases API."
-        if [ -n "$releases_api_msg" ]; then
-            err "GitHub API error: $releases_api_msg"
-        fi
-        err "Try --version=vX.Y.Z with a known published release tag explicitly."
-        exit 1
-    fi
-    rm -f "$releases_api_err"
-    if [ -z "$releases_json" ]; then
-        err "Could not query GitHub releases API."
-        err "GitHub releases API returned an empty response."
-        err "Try --version=vX.Y.Z with a known published release tag explicitly."
-        exit 1
-    fi
-
-    # GitHub emits tag/draft/prerelease before the assets array. Match exact
-    # asset names, independent of JSON indentation, without requiring jq.
-    # curl returns compact JSON in production while tests and proxies may
-    # pretty-print it. Split only the release fields we consume into records so
-    # the state machine is independent of whitespace and line layout.
-    normalized_releases=$(printf '%s' "$releases_json" | awk '
-        {
-            gsub(/"(tag_name|draft|prerelease|name)"[[:space:]]*:/, "\n&")
-            print
-        }
-    ')
-    TAG=$(printf '%s' "$normalized_releases" | awk -v base="$ASSET" '
-        /"tag_name"[[:space:]]*:/ {
-            line = $0
-            sub(/.*"tag_name"[[:space:]]*:[[:space:]]*"/, "", line)
-            sub(/".*/, "", line)
-            tag = line
-            stable = published = 0
-            binary = checksum = signature = sidecar = sidecar_checksum = sidecar_signature = 0
-        }
-        /"draft"[[:space:]]*:[[:space:]]*false/ { published = 1 }
-        /"prerelease"[[:space:]]*:[[:space:]]*false/ { stable = 1 }
-        /"name"[[:space:]]*:/ {
-            name = $0
-            sub(/.*"name"[[:space:]]*:[[:space:]]*"/, "", name)
-            sub(/".*/, "", name)
-            if (name == base) binary = 1
-            if (name == base ".sha256") checksum = 1
-            if (name == base ".minisig") signature = 1
-            if (name == base ".gpu-literals.tar.gz") sidecar = 1
-            if (name == base ".gpu-literals.tar.gz.sha256") sidecar_checksum = 1
-            if (name == base ".gpu-literals.tar.gz.minisig") sidecar_signature = 1
-        }
-        {
-            if (tag != "" && published && stable && binary && checksum && signature && sidecar && sidecar_checksum && sidecar_signature) {
-                print tag
-                exit
-            }
-        }
-    ')
-
-    if [ -z "$TAG" ]; then
-        err "No stable GitHub release in the last 10 has the complete signed bundle for $ASSET."
-        err "Required: binary, SHA-256, minisign, GPU literal sidecar, sidecar SHA-256, and sidecar minisign."
-        err "Try --version=vX.Y.Z with a known published release tag explicitly."
-        exit 1
-    fi
-}
-
-release_bundle_is_complete() {
-    bundle_tag=$1
-    for bundle_asset in \
-        "$ASSET" \
-        "$ASSET.sha256" \
-        "$ASSET.minisig" \
-        "$ASSET.gpu-literals.tar.gz" \
-        "$ASSET.gpu-literals.tar.gz.sha256" \
-        "$ASSET.gpu-literals.tar.gz.minisig"; do
-        if ! curl -fsSI "https://github.com/$REPO/releases/download/$bundle_tag/$bundle_asset" >/dev/null 2>&1; then
-            return 1
-        fi
-    done
-    return 0
-}
-
-resolve_tag_from_latest_redirect() {
-    name="$1"
-    [ -n "$name" ] || return 1
-    latest_url=$(printf 'https://github.com/%s/releases/latest/download/%s\n' "$REPO" "$name")
-    if ! redirect_url=$(curl -fsSI -o /dev/null -w '%{redirect_url}' "$latest_url" 2>/dev/null); then
-        return 1
-    fi
-    redirect_tag=$(printf '%s\n' "$redirect_url" | sed -n 's#.*/releases/download/\([^/][^/]*\)/.*#\1#p' | head -n 1)
-    [ -n "$redirect_tag" ] || return 1
-    release_bundle_is_complete "$redirect_tag" || return 1
-    TAG="$redirect_tag"
-    return 0
-}
-
-resolve_operator_release_tag() {
-    resolve_tag
-    LATEST_RELEASE_ALIAS=0
-    if [ -z "$VERSION" ] && [ "$TAG" = "latest" ]; then
-        if resolve_tag_from_latest_redirect "$ASSET"; then
-            LATEST_RELEASE_ALIAS=1
-            return
-        fi
-        warn "Latest release redirect did not prove a complete signed host bundle; checking recent stable releases."
-        resolve_tag_from_api
-        LATEST_RELEASE_ALIAS=1
-    fi
-}
-
-release_tag_label() {
-    if [ "$LATEST_RELEASE_ALIAS" = "1" ]; then
-        printf '%s (latest)\n' "$TAG"
-    else
-        printf '%s\n' "$TAG"
-    fi
-}
-
-version_tag_from_text() {
-    printf '%s\n' "$1" | sed -n 's/.*\(v[0-9][0-9A-Za-z._-]*\).*/\1/p' | head -n 1
-}
-
-show_installed_release_relation() {
-    existing="$1"
-    [ "$LATEST_RELEASE_ALIAS" = "1" ] || return 0
-    [ -n "$existing" ] || return 0
-    existing_tag=$(version_tag_from_text "$existing")
-    [ -n "$existing_tag" ] || return 0
-    if [ "$existing_tag" = "$TAG" ]; then
-        say "  Update:        up to date"
-    else
-        say "  Update:        update available ($existing_tag -> $TAG)"
-    fi
-}
-
-release_asset_url() {
-    name="$1"
-    if [ "$TAG" = "latest" ]; then
-        printf 'https://github.com/%s/releases/latest/download/%s\n' "$REPO" "$name"
-    else
-        printf 'https://github.com/%s/releases/download/%s/%s\n' "$REPO" "$TAG" "$name"
-    fi
-}
 
 current_binary() {
     if [ -x "$INSTALL_DIR/keyhog" ]; then
@@ -500,27 +287,6 @@ current_version() {
 # ============================================================
 # install flow
 # ============================================================
-
-download_asset() {
-    name="$1"
-    out="$2"
-    url=$(release_asset_url "$name")
-    # --retry rides out transient transfer failures (timeouts, connection
-    # resets, a CDN dropping a multi-MB body mid-stream). Without it a single
-    # flaky connection turns into a failed install - the failure mode that broke
-    # the Windows install smoke. --retry-connrefused also retries the initial
-    # connect; both are POSIX-curl flags available since 7.52.
-    retry="--retry 5 --retry-delay 2 --retry-connrefused"
-    if [ "$INTERACTIVE" = "1" ]; then
-        info "Downloading $name from $TAG..."
-        # shellcheck disable=SC2086
-        curl -fL $retry --progress-bar "$url" -o "$out"
-    else
-        printf 'keyhog: downloading %s\n' "$url"
-        # shellcheck disable=SC2086
-        curl -fsSL $retry "$url" -o "$out"
-    fi
-}
 
 allow_unverified_install() {
     reason="$1"
@@ -574,51 +340,6 @@ print_minisign_install_hint() {
     esac
 }
 
-# Verify the release minisign signature of $1 against the pinned keyhog release
-# public key. Missing proof/tooling fails closed unless the operator explicitly
-# chooses --insecure. A fetched signature that does not verify is always fatal.
-verify_release_signature() {
-    binary="$1"
-    asset_name="$2"
-    sigfile=$(mktemp)
-
-    # Classify the signature fetch: a transient transport failure (DNS/timeout/
-    # reset) must NOT be silently downgraded to "no signature published" and
-    # skipped (fail closed for security controls). download_asset already
-    # --retries transient blips; its curl exit code then distinguishes a genuine
-    # HTTP 404 (curl -f exit 22, asset absent) from a network/transport error
-    # (any other non-zero). Only the former legitimately means "not published".
-    if download_asset "$asset_name.minisig" "$sigfile" 2>/dev/null; then
-        sig_dl_rc=0
-    else
-        sig_dl_rc=$?
-    fi
-    if [ "$sig_dl_rc" -ne 0 ] && [ "$sig_dl_rc" -ne 22 ]; then
-        rm -f "$sigfile"
-        allow_unverified_install "Could not fetch the .minisig signature for $asset_name (curl error $sig_dl_rc): a network/transport failure, not a missing signature. A retry may succeed."
-        return $?
-    fi
-    if [ ! -s "$sigfile" ]; then
-        rm -f "$sigfile"
-        allow_unverified_install "No .minisig signature was published for $asset_name at $TAG."
-        return $?
-    fi
-    if ! command -v minisign >/dev/null 2>&1; then
-        rm -f "$sigfile"
-        allow_unverified_install "minisign is not installed, so the $asset_name release signature cannot be verified."
-        return $?
-    fi
-    if minisign -Vm "$binary" -P "$RELEASE_PUBLIC_KEY" -x "$sigfile" >/dev/null 2>&1; then
-        rm -f "$sigfile"
-        ok "Minisign signature verified."
-        return 0
-    fi
-    rm -f "$sigfile"
-    err "Minisign signature verification failed for $asset_name."
-    err "Refusing to install. The release asset may have been tampered with or signed by the wrong key."
-    return 1
-}
-
 # Verify a local artifact signature when a sibling `.minisig` is present.
 # Offline checksum-only bundles remain compatible; prerelease requires both.
 verify_local_signature_if_present() {
@@ -641,52 +362,6 @@ verify_local_signature_if_present() {
     fi
     err "Local Minisign signature verification failed for $label."
     err "Refusing to install an artifact signed by the wrong key or modified after signing."
-    return 1
-}
-
-# Verify the SHA256 of $1 against the per-asset .sha256 file on the
-# release. Returns 0 on match. Missing proof fails closed unless the
-# operator explicitly chooses --insecure.
-verify_checksum() {
-    binary="$1"
-    asset_name="$2"
-    checksum_url=$(release_asset_url "$asset_name.sha256")
-    # Fetch the checksum in its own step (not inside a pipe) so curl's exit
-    # status can be classified: a transient transport failure (DNS/timeout/reset)
-    # must NOT be silently downgraded to "no checksum published" and skipped
-    # (fail closed for security controls). --retry rides out transient blips
-    # first, matching download_asset's policy; a genuine HTTP 404 (curl -f exit
-    # 22) then legitimately means the checksum asset is absent.
-    if checksum_body=$(curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused "$checksum_url" 2>/dev/null); then
-        checksum_rc=0
-    else
-        checksum_rc=$?
-    fi
-    if [ "$checksum_rc" -ne 0 ] && [ "$checksum_rc" -ne 22 ]; then
-        allow_unverified_install "Could not fetch the .sha256 checksum for $asset_name (curl error $checksum_rc): a network/transport failure, not a missing checksum. A retry may succeed."
-        return $?
-    fi
-    expected=$(printf '%s\n' "$checksum_body" | awk '{print $1}' | head -n1)
-    if [ -z "$expected" ]; then
-        allow_unverified_install "No .sha256 checksum was published for $asset_name at $TAG."
-        return $?
-    fi
-    if command -v sha256sum >/dev/null 2>&1; then
-        actual=$(sha256sum "$binary" | awk '{print $1}')
-    elif command -v shasum >/dev/null 2>&1; then
-        actual=$(shasum -a 256 "$binary" | awk '{print $1}')
-    else
-        allow_unverified_install "No sha256sum or shasum tool is installed, so $asset_name cannot be verified."
-        return $?
-    fi
-    if [ "$expected" = "$actual" ]; then
-        ok "SHA256 verified ($expected)."
-        return 0
-    fi
-    err "SHA256 mismatch on $asset_name!"
-    err "  Expected: $expected"
-    err "  Got:      $actual"
-    err "Refusing to install. The download may have been corrupted or tampered with."
     return 1
 }
 
@@ -798,10 +473,14 @@ stage_local_gpu_literal_sidecar() {
     local_sig="$local_sidecar.minisig"
     sidecar_tmp=$(mktemp)
     if [ ! -f "$local_sidecar" ] || [ ! -s "$local_sidecar" ]; then
+        # No sidecar ships with a locally built or `cargo install` binary, and
+        # `--from-file` is the only install mode, so requiring one here failed
+        # every install. The binary compiles its own matchers instead, after the
+        # swap, from the detector corpus embedded in it. Runtime compilation is
+        # still never acceptable: a failure to generate fails the install.
         rm -f "$sidecar_tmp"
-        err "--from-file requires a sibling GPU literal sidecar: $local_sidecar"
-        err "Refusing to install a local binary that would recompile shipped detector matchers at runtime."
-        return 1
+        GPU_LITERALS_FROM_BINARY=1
+        return 0
     fi
     if ! verify_local_signature_if_present "$local_sidecar" "$local_sig" "GPU literal sidecar"; then
         rm -f "$sidecar_tmp"
@@ -821,53 +500,6 @@ stage_local_gpu_literal_sidecar() {
     if ! cp "$local_sidecar" "$sidecar_tmp" 2>/dev/null; then
         rm -f "$sidecar_tmp"
         err "--from-file: could not read GPU literal sidecar $local_sidecar"
-        return 1
-    fi
-    if ! validate_gpu_literal_sidecar_archive "$sidecar_tmp"; then
-        rm -f "$sidecar_tmp"
-        err "Refusing GPU literal sidecar with unsafe archive contents."
-        return 1
-    fi
-    cleanup_gpu_literal_sidecar_tmp
-    GPU_LITERAL_SIDECAR_TMP="$sidecar_tmp"
-}
-
-download_verified_gpu_literal_sidecar() {
-    if [ -n "$FROM_FILE" ]; then
-        stage_local_gpu_literal_sidecar
-        return $?
-    fi
-    sidecar_name="$ASSET.gpu-literals.tar.gz"
-    sidecar_tmp=$(mktemp)
-    # Classify the fetch (Law 10: never conflate a transport failure with a
-    # missing asset). curl's exit 22 (via download_asset) means the server
-    # returned an HTTP error >=400 (a real 404 => not published); any other
-    # non-zero exit is a network/DNS/transport failure and must NOT tell the
-    # operator to rebuild the release workflow for a sidecar that may be present.
-    if download_asset "$sidecar_name" "$sidecar_tmp" 2>/dev/null; then
-        sidecar_dl_rc=0
-    else
-        sidecar_dl_rc=$?
-    fi
-    if [ "$sidecar_dl_rc" -ne 0 ] && [ "$sidecar_dl_rc" -ne 22 ]; then
-        rm -f "$sidecar_tmp"
-        err "Could not download the GPU literal artifact sidecar $sidecar_name (curl error $sidecar_dl_rc): a network/transport failure, not a missing asset. A retry may succeed."
-        err "Refusing to install a release whose shipped detector matchers could not be fetched (they must not be recompiled at runtime)."
-        return 1
-    fi
-    if [ ! -s "$sidecar_tmp" ]; then
-        rm -f "$sidecar_tmp"
-        err "No GPU literal artifact sidecar was published for $ASSET at $TAG."
-        err "Refusing to install a release that would recompile shipped detector matchers at runtime."
-        err "Fix: rebuild the release workflow so $sidecar_name, $sidecar_name.sha256, and $sidecar_name.minisig are uploaded."
-        return 1
-    fi
-    if ! verify_release_signature "$sidecar_tmp" "$sidecar_name"; then
-        rm -f "$sidecar_tmp"
-        return 1
-    fi
-    if ! verify_checksum "$sidecar_tmp" "$sidecar_name"; then
-        rm -f "$sidecar_tmp"
         return 1
     fi
     if ! validate_gpu_literal_sidecar_archive "$sidecar_tmp"; then
@@ -992,8 +624,34 @@ validate_gpu_literal_sidecar_archive() {
     return 0
 }
 
+# Compile the shipped detector corpus into this host's GPU literal matchers
+# using the binary that was just installed. Runs after the atomic swap, so the
+# caller rolls the binary back when this fails.
+generate_gpu_literals_from_installed_binary() {
+    programs_dir="$(gpu_programs_cache_dir_for_install)"
+    if ! mkdir -p "$programs_dir"; then
+        err "Could not create GPU literal cache directory at $programs_dir."
+        return 1
+    fi
+    say "Compiling GPU literal matchers for this host..."
+    if ! "$INSTALL_DIR/keyhog" compile-gpu-literals --output-dir "$programs_dir" >/dev/null 2>&1; then
+        err "Could not compile GPU literal matchers into $programs_dir."
+        err "Refusing to finish an install that would recompile shipped detector matchers at runtime."
+        return 1
+    fi
+    if [ ! -f "$programs_dir/manifest.json" ]; then
+        err "GPU literal compilation reported success but published no manifest in $programs_dir."
+        return 1
+    fi
+    return 0
+}
+
 install_verified_gpu_literal_sidecar() {
-    [ -n "$GPU_LITERAL_SIDECAR_TMP" ] || return 0
+    if [ -z "$GPU_LITERAL_SIDECAR_TMP" ]; then
+        [ "$GPU_LITERALS_FROM_BINARY" = "1" ] || return 0
+        generate_gpu_literals_from_installed_binary
+        return $?
+    fi
     if ! validate_gpu_literal_sidecar_archive "$GPU_LITERAL_SIDECAR_TMP"; then
         cleanup_gpu_literal_sidecar_tmp
         err "Refusing GPU literal sidecar with unsafe archive paths."
@@ -1042,19 +700,6 @@ install_verified_gpu_literal_sidecar() {
     ok "Installed $installed GPU literal matcher artifact(s) into $programs_dir."
 }
 
-download_selected_release_asset() {
-    out="$1"
-    quiet="${2:-0}"
-    if download_asset "$ASSET" "$out" 2>/dev/null; then
-        return 0
-    fi
-    if [ "$quiet" != "1" ]; then
-        err "Download failed. Is the release published yet?"
-        err "Browse https://github.com/$REPO/releases to confirm."
-    fi
-    return 1
-}
-
 stage_and_install() {
     tmp=$(mktemp)
     staged=""
@@ -1079,7 +724,10 @@ stage_and_install() {
             trap - EXIT INT TERM
             exit 1
         fi
-    elif ! download_selected_release_asset "$tmp"; then
+    else
+        err "--from-file=PATH is required."
+        err "This installer does not download release binaries."
+        err "Install the current release with: cargo install keyhog --locked"
         rm -f "$tmp"
         trap - EXIT INT TERM
         exit 1
@@ -1093,9 +741,8 @@ stage_and_install() {
     # This happens BEFORE any backup/overwrite, so a pre-existing working
     # binary is never touched.
     if [ ! -s "$tmp" ]; then
-        err "Downloaded asset $ASSET is empty (0 bytes)."
-        err "The release asset may be missing or the download was interrupted."
-        err "Browse https://github.com/$REPO/releases to confirm asset availability."
+        err "Source binary $ASSET is empty (0 bytes)."
+        err "Check the file passed to --from-file."
         rm -f "$tmp"
         trap - EXIT INT TERM
         exit 1
@@ -1125,24 +772,7 @@ stage_and_install() {
                 exit 1
             fi
         fi
-        if ! download_verified_gpu_literal_sidecar; then
-            rm -f "$tmp"
-            cleanup_gpu_literal_sidecar_tmp
-            trap - EXIT INT TERM
-            exit 1
-        fi
-    else
-        if ! verify_release_signature "$tmp" "$ASSET"; then
-            rm -f "$tmp"
-            trap - EXIT INT TERM
-            exit 1
-        fi
-        if ! verify_checksum "$tmp" "$ASSET"; then
-            rm -f "$tmp"
-            trap - EXIT INT TERM
-            exit 1
-        fi
-        if ! download_verified_gpu_literal_sidecar; then
+        if ! stage_local_gpu_literal_sidecar; then
             rm -f "$tmp"
             cleanup_gpu_literal_sidecar_tmp
             trap - EXIT INT TERM
@@ -1242,18 +872,6 @@ verify_install() {
     # `-z "$verify_err"` gate treated any such noise as a failure and would,
     # post-rollback-fix, needlessly roll back a perfectly good upgrade.
     if [ "$verify_status" = "0" ]; then
-        if [ -n "$TAG" ] && [ "$TAG" != "latest" ] && [ "$TAG" != "(local file)" ]; then
-            observed_tag=$(version_tag_from_text "$verify_out")
-            if [ -z "$observed_tag" ]; then
-                err "Installed binary did not report a version tag; refusing to trust release $TAG."
-                return 1
-            fi
-            if [ "$observed_tag" != "$TAG" ]; then
-                err "Candidate binary version does not match release tag: binary reports $observed_tag but release resolved $TAG."
-                err "Refusing to install a mismatched binary (possible substitution or downgrade attack)."
-                return 1
-            fi
-        fi
         ok "Installed $(printf '%s\n' "$verify_out" | head -n 1)"
         [ -n "$verify_err" ] && dim "  (binary emitted a startup notice: $verify_err)"
         # Native post-install health check. `keyhog doctor` reuses the same
@@ -1286,11 +904,16 @@ verify_install() {
             err "Rolling back rather than leaving an install whose health is unknown."
             return 1
         fi
+        if ! publish_execution_packs "$INSTALL_DIR/keyhog"; then
+            return 1
+        fi
         if [ "$SKIP_CALIBRATION" = "1" ]; then
             warn "Skipped autoroute calibration by explicit --no-calibrate."
             warn "Run install.sh --calibrate before relying on automatic routing; explicit --backend routes work immediately."
         elif ! prime_autoroute_cache "$INSTALL_DIR/keyhog"; then
             err "Autoroute calibration failed; refusing to leave an install whose default auto route is not usable."
+            return 1
+        elif ! verify_autoroute_serves_a_scan "$INSTALL_DIR/keyhog"; then
             return 1
         fi
         return 0
@@ -1326,9 +949,8 @@ verify_install() {
         fi
     fi
 
-    err "The download may be corrupt or wrong for this CPU."
-    err "  Picked asset: $ASSET"
-    err "  Browse https://github.com/$REPO/releases to confirm asset availability."
+    err "The binary may be corrupt or built for a different CPU."
+    err "  Source binary: $ASSET"
     return 1
 }
 
@@ -1362,6 +984,132 @@ cleanup_autoroute_calibration() {
 docker_daemon_ready() {
     docker_cmd="$1"
     "$docker_cmd" info >/dev/null 2>&1
+}
+
+# Resolve the same per-user cache root the binary resolves with `dirs::cache_dir()`.
+# A mismatch here publishes packs the scanner will never look at.
+keyhog_cache_root() {
+    if [ "$OS" = "macos" ]; then
+        printf '%s\n' "$HOME/Library/Caches"
+        return 0
+    fi
+    if [ -n "${XDG_CACHE_HOME:-}" ]; then
+        printf '%s\n' "$XDG_CACHE_HOME"
+        return 0
+    fi
+    printf '%s\n' "$HOME/.cache"
+}
+
+# Compile and publish the host execution-pack generation.
+#
+# Without an installed generation every scan re-parses and re-compiles the
+# embedded detector corpus: measured on a 16-core AVX-512 host, scan setup costs
+# 284 ms wall and 1570 ms CPU with no packs against 132 ms and 170 ms with them.
+# That work belongs to install, once, not to every scan. It must run BEFORE
+# autoroute calibration, because the packs change the resolved detector and
+# config digests calibration measures its buckets against.
+publish_execution_packs() {
+    bin="$1"
+
+    # Capability probe, same contract as the --autoroute-calibrate probe below:
+    # a binary without the subcommand is not broken, it just predates packs.
+    if ! "$bin" compile-execution-packs --help >/dev/null 2>&1; then
+        warn "  Execution packs not supported by this build; scans will compile detectors in-process."
+        return 0
+    fi
+
+    pack_root="$(keyhog_cache_root)/keyhog/execution-packs"
+    key_path="$pack_root/signing.key"
+    generation="$pack_root/current"
+
+    say ""
+    info "Execution packs"
+    dim "  visible install phase; removes detector compilation from every later scan"
+
+    if ! mkdir -p "$pack_root"; then
+        err "Could not create execution-pack root $pack_root."
+        return 1
+    fi
+
+    # The signing key authenticates this host's packs to this host's binary. It
+    # is generated here and never leaves the machine; 32 bytes exactly, 0600, a
+    # regular file. `compile-execution-packs` re-validates all three and refuses
+    # anything else, so a partially-written key fails the build rather than
+    # publishing a generation nothing can authenticate.
+    if [ ! -f "$key_path" ]; then
+        if [ ! -r /dev/urandom ]; then
+            err "No readable /dev/urandom; cannot generate the execution-pack signing key."
+            return 1
+        fi
+        key_tmp="$pack_root/.signing.key.$$"
+        if ! (umask 077 && head -c 32 /dev/urandom > "$key_tmp") 2>/dev/null; then
+            rm -f "$key_tmp" 2>/dev/null || true
+            err "Could not generate the 32-byte execution-pack signing key."
+            return 1
+        fi
+        if ! chmod 600 "$key_tmp" 2>/dev/null || ! mv "$key_tmp" "$key_path" 2>/dev/null; then
+            rm -f "$key_tmp" 2>/dev/null || true
+            err "Could not install the execution-pack signing key at $key_path."
+            return 1
+        fi
+        dim "  Generated a new 32-byte signing key at $key_path"
+    else
+        chmod 600 "$key_path" 2>/dev/null || true
+    fi
+
+    pack_err="$pack_root/.compile.err.$$"
+    if "$bin" compile-execution-packs --output-dir "$generation" --signing-key "$key_path" 2>"$pack_err"; then
+        rm -f "$pack_err" 2>/dev/null || true
+        ok "  Published the host execution-pack generation."
+        return 0
+    fi
+
+    pack_reason="$(head -n 3 "$pack_err" 2>/dev/null)"
+    rm -f "$pack_err" 2>/dev/null || true
+    err "Execution-pack compilation failed; refusing to leave an install that recompiles detectors on every scan."
+    if [ -n "$pack_reason" ]; then
+        err "  reason: $pack_reason"
+    fi
+    return 1
+}
+
+# A primed cache is worth nothing unless the next ordinary scan can resolve a
+# route from it. `keyhog doctor` cannot see this: its self-test compiles one
+# bundled detector and scans with an explicit CPU backend, so it passes on an
+# install whose first real scan exits 2 for want of a calibrated decision.
+# Scan a throwaway two-file tree the way an operator would, with no backend
+# override and no calibration flag, and fail the install if routing refuses.
+verify_autoroute_serves_a_scan() {
+    bin="$1"
+    if ! check_dir="$(mktemp -d -t keyhog-postcalibration-XXXXXX)"; then
+        err "Could not create the post-calibration scan workspace with mktemp."
+        return 1
+    fi
+    printf 'first probe file, no credentials here\n' > "$check_dir/one.txt"
+    printf 'second probe file, no credentials here\n' > "$check_dir/two.txt"
+    # Resolve the same configuration the calibration measured: the host
+    # baseline, not whatever .keyhog.toml sits above the operator's cwd.
+    check_cfg=""
+    if "$bin" scan --help 2>/dev/null | grep -q -- '--no-config'; then
+        check_cfg="--no-config"
+    fi
+    check_err="$check_dir/scan.err"
+    check_status=0
+    # shellcheck disable=SC2086
+    "$bin" scan "$check_dir" $check_cfg --format json -o /dev/null >/dev/null 2>"$check_err" || check_status=$?
+    check_reason="$(head -n 1 "$check_err" 2>/dev/null)"
+    rm -rf "$check_dir" 2>/dev/null || true
+    # 0 = clean, 1 = findings. Both mean a route was resolved and the scan ran.
+    if [ "$check_status" = "0" ] || [ "$check_status" = "1" ]; then
+        ok "  A plain scan resolves a route from the calibrated cache."
+        return 0
+    fi
+    err "The freshly calibrated cache cannot serve an ordinary scan (exit $check_status)."
+    if [ -n "$check_reason" ]; then
+        err "  reason: $check_reason"
+    fi
+    err "Refusing to leave an install whose first scan fails; rerun install.sh --calibrate after fixing the cause."
+    return 1
 }
 
 prime_autoroute_cache() {
@@ -1440,7 +1188,19 @@ prime_autoroute_cache() {
         return 1
     fi
     if printf '%s\n' "$top_help" | grep -q -- 'calibrate-autoroute'; then
-        if ! core_output="$("$bin" calibrate-autoroute --quiet)"; then
+        # Calibration measures under the RESOLVED scan configuration. install.sh
+        # runs from whatever directory the operator started it in, which may be
+        # a repository with a `.keyhog.toml` that has nothing to do with the
+        # host baseline being primed, so decline it here. An operator whose
+        # repository carries one reruns `keyhog calibrate-autoroute` inside it.
+        # Binaries that predate the flag calibrate without it, exactly as the
+        # `--no-config` probe above handles older scan surfaces.
+        core_no_config=""
+        if "$bin" calibrate-autoroute --help 2>/dev/null | grep -q -- '--no-config'; then
+            core_no_config="--no-config"
+        fi
+        # shellcheck disable=SC2086
+        if ! core_output="$("$bin" calibrate-autoroute $core_no_config --quiet)"; then
             err "The installed binary's canonical core autoroute calibration failed."
             return 1
         fi
@@ -1536,6 +1296,9 @@ prime_autoroute_cache() {
     byte_sizes="1 2 4 8 16 32 64 128 256 512"
     kib_sizes="1 2 4 8 16 32 64 128 256 512"
     mib_sizes="1 2 4 8 16 32"
+    # decode_admitted is a keyed routing dimension, so the decoding state needs
+    # more than one measured size band or every decoding scan stays uncalibrated.
+    decode_heavy_kib_sizes="4 64 256"
     # Directory scans have a distinct source identity from a direct file scan.
     # Include the one-file bucket used by small repositories and install smoke
     # tests; calibrating a same-sized file path cannot stand in for it.
@@ -1558,7 +1321,9 @@ prime_autoroute_cache() {
         for _mib in $mib_sizes; do
             core_total=$((core_total + 1))
         done
-        core_total=$((core_total + 1)) # decode-heavy 256 KiB
+        for _dkib in $decode_heavy_kib_sizes; do
+            core_total=$((core_total + 1))
+        done
         for _count in $many_file_counts; do
             core_total=$((core_total + 1))
         done
@@ -1660,18 +1425,20 @@ prime_autoroute_cache() {
         fi
     done
 
-    idx=$((idx + 1))
-    probe="$tmpdir/probe-decode-heavy-256kib.txt"
-    out="$tmpdir/out-decode-heavy-256kib.json"
-    err="$tmpdir/err-decode-heavy-256kib.txt"
-    label="decode-heavy 256 KiB workload"
-    if ! make_decode_heavy_calibration_probe_kib "$probe" 256; then
-        printf '  [%s/%s] FAIL %s\n' "$idx" "$total" "$label"
-        err "Could not create decode-heavy autoroute calibration probe at $probe."
-        failed=1
-    elif ! run_autoroute_probe "$idx" "$total" "$label" "$probe" "$out" "$err"; then
-        failed=1
-    fi
+    for dkib in $decode_heavy_kib_sizes; do
+        idx=$((idx + 1))
+        probe="$tmpdir/probe-decode-heavy-${dkib}kib.txt"
+        out="$tmpdir/out-decode-heavy-${dkib}kib.json"
+        err="$tmpdir/err-decode-heavy-${dkib}kib.txt"
+        label="decode-heavy ${dkib} KiB workload"
+        if ! make_decode_heavy_calibration_probe_kib "$probe" "$dkib"; then
+            printf '  [%s/%s] FAIL %s\n' "$idx" "$total" "$label"
+            err "Could not create decode-heavy autoroute calibration probe at $probe."
+            failed=1
+        elif ! run_autoroute_probe "$idx" "$total" "$label" "$probe" "$out" "$err"; then
+            failed=1
+        fi
+    done
 
     for file_count in $many_file_counts; do
         idx=$((idx + 1))
@@ -2258,13 +2025,11 @@ make_calibration_tree_kib() {
 show_summary() {
     info "Host: $OS-$ARCH"
     say  "  GPU note: $GPU_NOTE"
-    say  "  Picked asset:  $ASSET"
+    say  "  Source binary: $ASSET"
     say  "  Install dir:   $INSTALL_DIR"
-    say  "  Release tag:   $(release_tag_label)"
     existing=$(current_version)
     if [ -n "$existing" ]; then
         say  "  Existing:      $existing"
-        show_installed_release_relation "$existing"
     fi
 }
 
@@ -2617,14 +2382,15 @@ remove_installer_owned_integrations() {
 
 do_install() {
     if [ -n "$FROM_FILE" ]; then
-        # Local-binary install: no GitHub release lookup, no network. ASSET/TAG
-        # are populated for show_summary and the verify messages only.
+        # Local-binary install: no release lookup, no network. ASSET is
+        # populated for show_summary and the verify messages only.
         ASSET=$(basename "$FROM_FILE")
-        TAG="(local file)"
         GPU_NOTE="installing local binary: $FROM_FILE"
     else
-        resolve_asset
-        resolve_operator_release_tag
+        err "--from-file=PATH is required."
+        err "This installer does not download release binaries."
+        err "Install the current release with: cargo install keyhog --locked"
+        exit 1
     fi
 
     show_summary
@@ -2663,63 +2429,6 @@ do_install() {
     say "  keyhog --version         # verify"
 }
 
-do_repair() {
-    info "Repair mode."
-    resolve_asset
-    resolve_operator_release_tag
-    bin=$(current_binary)
-    if [ -z "$bin" ]; then
-        warn "No existing keyhog binary found. Installing fresh."
-        stage_and_install
-        if ! backup_gpu_programs_cache_for_install; then
-            rollback_staged_install_after_sidecar_failure "$INSTALL_DIR/keyhog"
-            err "Repair failed while backing up GPU literal cache state."
-            exit 1
-        fi
-        if ! install_verified_gpu_literal_sidecar; then
-            restore_gpu_programs_cache_backup || true
-            rollback_staged_install_after_sidecar_failure "$INSTALL_DIR/keyhog"
-            err "Repair failed while seeding shipped GPU literal artifacts."
-            exit 1
-        fi
-        if ! finalize_install; then
-            restore_gpu_programs_cache_backup || true
-            cleanup_gpu_literal_sidecar_tmp
-            err "Repair failed; see above."
-            exit 1
-        fi
-        clear_gpu_programs_cache_backup
-        ok "Repair complete."
-        return
-    fi
-    say "Found existing binary: $bin"
-    if "$bin" --version >/dev/null 2>&1; then
-        ok "Binary runs cleanly. Repair will download and verify $ASSET before replacing it (--repair)."
-    else
-        warn "Existing binary does not run. Replacing with $ASSET."
-    fi
-    stage_and_install
-    if ! backup_gpu_programs_cache_for_install; then
-        rollback_staged_install_after_sidecar_failure "$INSTALL_DIR/keyhog"
-        err "Repair failed while backing up GPU literal cache state."
-        exit 1
-    fi
-    if ! install_verified_gpu_literal_sidecar; then
-        restore_gpu_programs_cache_backup || true
-        rollback_staged_install_after_sidecar_failure "$INSTALL_DIR/keyhog"
-        err "Repair failed while seeding shipped GPU literal artifacts."
-        exit 1
-    fi
-    if ! finalize_install; then
-        restore_gpu_programs_cache_backup || true
-        cleanup_gpu_literal_sidecar_tmp
-        err "Repair failed; your previous binary state was preserved where possible (see above)."
-        exit 1
-    fi
-    clear_gpu_programs_cache_backup
-    ok "Repair complete."
-}
-
 do_diagnose() {
     # Prefer the binary's own `keyhog doctor` when it runs: it reuses the same
     # hw_probe the scanner uses and runs an end-to-end scan self-test, so it is
@@ -2730,13 +2439,7 @@ do_diagnose() {
     bin=$(current_binary)
     if [ -n "$bin" ] && "$bin" --version >/dev/null 2>&1; then
         "$bin" doctor
-        printf '\n%sLatest release%s\n' "$C_BOLD" "$C_RESET"
-        resolve_asset
-        resolve_operator_release_tag
-        say "  Tag: $(release_tag_label)"
-        existing=$(current_version)
-        show_installed_release_relation "$existing"
-        say "  Would install: $ASSET"
+        say "  Install the current release with: cargo install keyhog --locked"
         return
     fi
 
@@ -2761,19 +2464,19 @@ do_diagnose() {
       *":$INSTALL_DIR:"*) ok "  $INSTALL_DIR is on PATH." ;;
       *) warn "  $INSTALL_DIR is NOT on PATH. Add: export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
     esac
-    printf '\n%sLatest release%s\n' "$C_BOLD" "$C_RESET"
-    resolve_asset
-    resolve_operator_release_tag
-    say "  Tag: $(release_tag_label)"
-    ver=$(current_version)
-    show_installed_release_relation "$ver"
-    say "  Would install: $ASSET"
+    say ""
+    say "  Install the current release with: cargo install keyhog --locked"
 }
 
 do_calibrate() {
     bin=$(current_binary || true)
     if [ -z "$bin" ] || [ ! -x "$bin" ]; then
         err "No installed keyhog binary found to calibrate. Run install first."
+        exit 1
+    fi
+    # Packs first: calibration measures buckets against the resolved detector
+    # and config digests, and an installed generation changes both.
+    if ! publish_execution_packs "$bin"; then
         exit 1
     fi
     if ! prime_autoroute_cache "$bin"; then
@@ -2814,12 +2517,11 @@ banner
 
 if [ "$INTERACTIVE" = "0" ] && [ "$MODE" = "install" ] && [ ! -t 0 ]; then
     dim "Tip: re-run interactively for the post-install wizard:"
-    dim "  verify the tagged release's install.sh.minisig, then run KEYHOG_VERSION=<tag> sh install.sh"
+    dim "  sh install.sh --from-file=./keyhog"
 fi
 
 case "$MODE" in
     install)   do_install ;;
-    repair)    do_repair ;;
     diagnose)  do_diagnose ;;
     calibrate) do_calibrate ;;
     uninstall) do_uninstall ;;

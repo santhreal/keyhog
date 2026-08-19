@@ -199,28 +199,30 @@ fn exit_code_constants_have_documented_numbers() {
     assert_eq!(EXIT_SUCCESS, keyhog::exit_codes::EXIT_SUCCESS);
 }
 
+/// WHY: exit 10 carried two meanings, the second being `update --check` found
+/// a newer release. `update` was retired with the binary-asset release
+/// channel, so 10 now means exactly one thing. A second meaning creeping back
+/// in makes an automation `case 10)` branch ambiguous.
 #[test]
-fn exit_code_definitions_document_both_meanings_of_ten() {
+fn exit_code_ten_means_only_a_live_credential() {
     let live = keyhog::exit_codes::DEFINITIONS
         .iter()
         .find(|d| d.code == 10)
         .expect("exit code 10 must be documented in DEFINITIONS");
-    assert_eq!(live.label, "Live credentials found or update available");
-    assert_eq!(
-        live.help,
-        "Live credentials found under scan --verify, or update available under update --check"
-    );
+    assert_eq!(live.label, "Live credentials found");
+    assert_eq!(live.help, "Live credentials found under scan --verify");
     assert!(
         live.scan_reachable,
         "exit 10 is reachable from a scan run (with --verify)"
     );
-    // The rendered `EXIT CODES:` help block is generated from DEFINITIONS, so
-    // both command-specific meanings must appear verbatim.
+    let help = keyhog::exit_codes::help();
     assert!(
-        keyhog::exit_codes::help().contains(
-            "Live credentials found under scan --verify, or update available under update --check"
-        ),
+        help.contains("Live credentials found under scan --verify"),
         "help text must document the live-credentials exit code"
+    );
+    assert!(
+        !help.contains("update --check"),
+        "exit 10 must not advertise the retired `update --check` meaning: {help}"
     );
 }
 

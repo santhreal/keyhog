@@ -562,7 +562,7 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
             Err(error) => {
                 healthy = false;
                 println!(
-                    "  pack state     {red}INVALID{reset}  {dim}{error:#}; repair: `keyhog repair --force`{reset}"
+                    "  pack state     {red}INVALID{reset}  {dim}{error:#}; rebuild with `keyhog compile-execution-packs`{reset}"
                 );
                 None
             }
@@ -589,8 +589,7 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
         (Some(_), Ok(Some(_))) => {
             healthy = false;
             println!(
-                "  route binding  {red}STALE{reset}  {dim}calibration names a different pack generation; repair: `keyhog calibrate-autoroute --execution-packs {}`{reset}",
-                execution_pack_dir.display(),
+                "  route binding  {red}STALE{reset}  {dim}calibration names a different pack generation; repair: `keyhog calibrate-autoroute`{reset}"
             );
         }
         (Some(_), Ok(None))
@@ -598,8 +597,7 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
         {
             healthy = false;
             println!(
-                "  route binding  {red}MISSING{reset}  {dim}calibration is not bound to installed packs; repair: `keyhog calibrate-autoroute --execution-packs {}`{reset}",
-                execution_pack_dir.display(),
+                "  route binding  {red}MISSING{reset}  {dim}calibration is not bound to installed packs; repair: `keyhog calibrate-autoroute`{reset}"
             );
         }
         (_, Err(error)) => {

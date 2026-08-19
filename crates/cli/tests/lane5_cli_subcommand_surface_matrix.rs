@@ -45,30 +45,40 @@ fn subcommands() -> Vec<String> {
 /// subcommand pass silently, both sides move together. This pin is the other
 /// half: the advertised menu is a compatibility surface, so changing it must
 /// be a deliberate, reviewed diff here.
+///
+/// Compared as a SORTED set, not a sequence. `args::command()` calls
+/// `mut_subcommand` on `scan` and `detectors` to inject runtime help, and clap
+/// re-appends a mutated subcommand at the end, so declaration order in
+/// `args.rs` is not the order the model reports. Pinning the sequence pinned
+/// that side effect instead of the menu: this assertion was red for `triage`
+/// and `guard` because no CI job or gate ran this target.
 #[test]
 fn advertised_subcommand_set_is_exactly_the_shipped_menu() {
+    let mut shipped = subcommands();
+    shipped.sort();
+    let mut expected = [
+        "scan",
+        "config",
+        "hook",
+        "detectors",
+        "explain",
+        "diff",
+        "triage",
+        "calibrate",
+        "calibrate-autoroute",
+        "watch",
+        "completion",
+        "backend",
+        "doctor",
+        "bloom-diagnostic",
+        "uninstall",
+        "scan-system",
+        "daemon",
+        "guard",
+    ];
+    expected.sort_unstable();
     assert_eq!(
-        subcommands(),
-        [
-            "scan",
-            "config",
-            "hook",
-            "detectors",
-            "explain",
-            "diff",
-            "calibrate",
-            "calibrate-autoroute",
-            "watch",
-            "completion",
-            "backend",
-            "doctor",
-            "bloom-diagnostic",
-            "update",
-            "repair",
-            "uninstall",
-            "scan-system",
-            "daemon",
-        ],
+        shipped, expected,
         "the advertised subcommand menu changed; update the docs, completions, \
          and reference pages in the same change"
     );

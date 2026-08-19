@@ -176,6 +176,20 @@ jobs:
         run: cargo test -p keyhog-scanner --test gpu_literal_artifact_writer --no-default-features --features ci-lean --profile ci-test
       - name: scanner adversarial dead corpus
         run: cargo test -p keyhog-scanner --test adversarial_suite --no-default-features --features ci-lean --profile ci-test
+      - name: scanner backend, corpus, and packing contracts
+        run: >
+          cargo test -p keyhog-scanner --no-fail-fast
+          --no-default-features --features ci-lean --profile ci-test
+          --test backend_and_detector_class_api
+          --test decode_budget_streaming
+          --test detector_corpus_backend_parity
+          --test detector_primary_regex_dedup_ratchet
+          --test massive_adversarial_runner
+          --test metal_backend_contract
+          --test packed_simd_native_shards
+          --test packed_simd_phase2_shards
+          --test perf_alloc_evidence_relations
+          --test scan_backend_parity_proptest
       - name: RawMatch total-order gate
         run: cargo test -p keyhog-core --test new_core_finding_dedup --profile ci-test
 
@@ -314,6 +328,99 @@ jobs:
         run: cargo test -p keyhog --test vyre_pin_coherence_lane3 --no-default-features --features ci-lean --profile ci-test
       - name: cli coherence binaries
         run: cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test --test coherence_wiring_lane7 --test lane10_verification_doc_coherence --test coherence_verify_count
+      - name: cli advertised surface pins
+        run: >
+          cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test
+          --test lane5_cli_subcommand_surface_matrix
+          --test regression_cli_version_help
+      - name: cli e2e and heavy spawning suites
+        run: >
+          cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test --no-fail-fast
+          --test action_report_receipt_contract
+          --test config_hermetic
+          --test detector_overlay_modes
+          --test dogfood_all
+          --test e2e_backend
+          --test e2e_calibrate
+          --test e2e_completion
+          --test e2e_diff
+          --test e2e_explain
+          --test e2e_format_and_backend_equivalence
+          --test e2e_hook_install
+          --test e2e_watch
+          --test execution_pack_install
+          --test gap_all
+          --test github_actions_exit_preservation
+          --test lane10_daemon_e2e_lifecycle
+          --test lane5_sarif_schema_and_scale_matrix
+          --test lane5_scan_flag_and_exit_matrix
+          --test live_verify
+          --test profile_process_boundary
+          --test stress_all
+          --test tool_contract
+          --test triage_cli
+      - name: cli audit suites
+        run: >
+          cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test --no-fail-fast
+          --test audit_arch_wiring
+          --test audit_capability
+          --test audit_coherence
+          --test audit_generalization
+          --test audit_insufficiency
+          --test audit_research_innovation
+          --test audit_testing_dogfood
+      - name: cli regression CLI surface suites
+        run: >
+          cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test --no-fail-fast
+          --test regression_cli_aux_subcommands_e2e
+          --test regression_cli_backend_matrix
+          --test regression_cli_baseline_diff
+          --test regression_cli_calibrate_autoroute_e2e
+          --test regression_cli_completion_shells
+          --test regression_cli_config_file_load
+          --test regression_cli_config_init
+          --test regression_cli_config_path
+          --test regression_cli_config_surface
+          --test regression_cli_daemon_status
+          --test regression_cli_diff_baseline_depth
+          --test regression_cli_exclude_glob
+          --test regression_cli_exit_codes
+          --test regression_cli_explain_detectors
+          --test regression_cli_git_toggle
+          --test regression_cli_glob_filters
+          --test regression_cli_guard_massive_diff_simulation
+          --test regression_cli_json_shape
+          --test regression_cli_max_depth
+          --test regression_cli_min_severity
+          --test regression_cli_multiple_paths
+          --test regression_cli_no_color
+          --test regression_cli_output_file
+          --test regression_cli_output_path
+          --test regression_cli_quiet_flag
+          --test regression_cli_redact_flag
+          --test regression_cli_sarif_output_file
+          --test regression_cli_scan_diff_explain_e2e
+          --test regression_cli_scan_format_matrix
+          --test regression_cli_scan_stdin
+          --test regression_cli_scan_summary
+          --test regression_cli_stdin_scan
+          --test regression_cli_threads_determinism
+          --test regression_cli_verbosity_flags
+          --test regression_cli_version_coherence
+          --test regression_daemon_custom_replacement_corpus
+          --test regression_daemon_suppression_parity
+          --test regression_empty_scan_is_not_clean
+          --test regression_error_messages_actionable
+          --test regression_exit_code_contract
+          --test regression_exit_code_matrix
+          --test regression_explain_no_quality_noise
+          --test regression_har_source_parse_gap_visible
+          --test regression_removed_verification_state
+          --test regression_scans_user_detectors_directory
+          --test regression_self_scan_segment_suppression_visible
+          --test regression_uninstall_surfaces_cache
+          --test regression_vendored_minified_finding_reachable
+          --test regression_zip64_duplicate_scan_gap_visible
 
   integration-detector-contracts:
     name: Integration (detector + recall contracts)
@@ -481,11 +588,12 @@ jobs:
         env:
           REQUIRE_INSTALL_LINTERS: '1'
         run: bash scripts/gates/install_static_analysis.sh
-      # No Rust build needed: both harnesses mock curl / uname / nvidia-smi /
-      # ldconfig / ldd and the downloaded binary, so install.sh runs fully
-      # offline. The hosted runner has no CUDA stack, so the CUDA-detection
-      # cases that get skipped on a developer's GPU box all execute here -
-      # full coverage of every mode, flag, detection branch, and failure path.
+      # No Rust build needed: the installers never fetch anything (installs
+      # take a local --from-file bundle), and both harnesses mock uname /
+      # nvidia-smi / ldconfig / ldd plus the installed binary. The hosted
+      # runner has no CUDA stack, so the CUDA-detection cases that get skipped
+      # on a developer's GPU box all execute here - full coverage of every
+      # mode, flag, detection branch, and failure path.
       - name: install.sh syntax
         run: sh -n install.sh
       - name: install.ps1 parse check
@@ -493,8 +601,9 @@ jobs:
         # No Windows runner needed to catch a syntax error: parse the script
         # with the PowerShell language parser on the (pwsh-equipped) Linux
         # runner. Guards the install.ps1 recoverability edits from shipping
-        # un-parseable. Behaviour is smoke-tested on Windows in
-        # integration-smoke.yml.
+        # un-parseable. No CI job executes install.ps1 on Windows; its
+        # behaviour is held to install.sh by the parity gate in
+        # crates/cli/tests/install_script_parity.rs.
         run: |
           $tokens = $null; $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile(
@@ -515,6 +624,31 @@ jobs:
       - name: Integration entry-point gate (pre-commit hook + Action)
         run: bash tests/integration/entrypoints_check.sh
 
+  install-from-build-macos:
+    name: Install from build (macOS)
+    # Release lane only. macOS runners cost ten times a Linux minute, and the
+    # class this catches is BSD userland drift in install.sh (shasum vs
+    # sha256sum, BSD mktemp/sed/tar), which is compile-independent and cannot
+    # regress between a pull request and the push that merges it. Pushes to
+    # main and `v*` tags run it, and those are the refs release.yml turns into
+    # a published crate.
+    #
+    # ci-nightly.yml carried this proof on a 06:30 schedule while its own
+    # comment claimed every push, so a broken macOS install shipped for up to
+    # a day. Required CI owns it now.
+    if: github.event_name != 'pull_request'
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      # The macOS release closure: native Metal and WGPU, no Hyperscan, so the
+      # job needs no Homebrew step to build the binary it installs.
+      - run: cargo build --release -p keyhog --no-default-features --features portable,gpu
+      - name: install-from-build proof (macOS)
+        run: bash tests/install/macos/install_from_local_build.sh target/release/keyhog
+
   ci-verdict:
     name: CI verdict
     if: ${{ always() }}
@@ -530,6 +664,7 @@ jobs:
       - security-fast
       - feature-matrix
       - install-scripts
+      - install-from-build-macos
     runs-on: ubuntu-24.04
     permissions: {}
     env:
@@ -538,7 +673,7 @@ jobs:
       # `skipped`; anywhere else each must report `success`. Both directions are
       # asserted, so a release-lane job that silently stops running on main
       # fails the verdict instead of passing it.
-      KEYHOG_RELEASE_LANE_JOBS: '["feature-matrix"]'
+      KEYHOG_RELEASE_LANE_JOBS: '["feature-matrix", "install-from-build-macos"]'
       KEYHOG_RELEASE_LANE: ${{ github.event_name != 'pull_request' }}
     steps:
       - name: Require every blocking CI job
@@ -546,7 +681,7 @@ jobs:
           jq -e \
             --argjson release_lane "$KEYHOG_RELEASE_LANE" \
             --argjson release_lane_jobs "$KEYHOG_RELEASE_LANE_JOBS" '
-            length == 11 and
+            length == 12 and
             all(to_entries[];
               if ($release_lane | not) and (.key | IN($release_lane_jobs[]))
               then .value.result == "skipped"
