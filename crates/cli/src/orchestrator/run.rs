@@ -843,6 +843,7 @@ impl OperatorProfile {
             causal.caches = cache_effectiveness;
             causal.indexed_counters = indexed_counters;
             causal.retries = retries;
+            causal.compile_surfaces = runtime.compile_surface_reports();
             causal.events = keyhog_profile::EventStreamV2 {
                 version: keyhog_profile::EVENT_SCHEMA_VERSION,
                 availability: keyhog_profile::Evidence::recorded(true),
