@@ -39,6 +39,7 @@
 
 - [CPU, Hyperscan, GPU, and automatic routing](./backends.md)
 - [Performance evidence and comparison](./performance-evidence.md)
+- [Multi-corpus benchmark evaluation](./performance.md)
 - [Autoroute calibration](./reference/autoroute-calibration.md)
 
 # Detection policy and trust
