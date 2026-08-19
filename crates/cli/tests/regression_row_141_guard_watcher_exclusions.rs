@@ -570,3 +570,131 @@ fn mutation_gate_detects_unfiltered_exclusion_regressions() {
     assert!(!watcher.is_path_excluded(&root, &root.join("package.json")));
     assert!(!watcher.is_path_excluded(&root, &root.join("README.md")));
 }
+
+#[test]
+fn dot_keyhog_toml_scan_exclude_applied_on_add_root() {
+    let tmp = tempdir().expect("tempdir");
+    let root = tmp.path().to_path_buf();
+    let config_content = r#"
+[scan]
+exclude = ["custom_excluded/**", "*.secret.txt"]
+"#;
+    fs::write(root.join(".keyhog.toml"), config_content).expect("write .keyhog.toml");
+
+    let config = GuardReconciliationConfig::default();
+    let (mut watcher, tx) = GuardWatcher::new_with_channel(config);
+    watcher.add_root(root.clone()).expect("add root");
+
+    assert_eq!(
+        &watcher.root_ignore_paths(&root).unwrap()[..],
+        &["custom_excluded/**", "*.secret.txt"]
+    );
+
+    assert!(watcher.is_path_excluded(&root, &root.join("custom_excluded/data.json")));
+    assert!(watcher.is_path_excluded(&root, &root.join("test.secret.txt")));
+    assert!(!watcher.is_path_excluded(&root, &root.join("src/lib.rs")));
+
+    let mut event = notify::Event::new(EventKind::Create(CreateKind::File));
+    event.paths.push(root.join("custom_excluded/data.json"));
+    event.paths.push(root.join("src/lib.rs"));
+    tx.send(Ok(event)).expect("send event");
+
+    let polled = watcher.poll_events();
+    let map: HashMap<PathBuf, Vec<GuardEvent>> = polled.into_iter().collect();
+    assert_eq!(map.len(), 1);
+    assert_eq!(
+        map.get(&root).unwrap(),
+        &vec![GuardEvent::Create(root.join("src/lib.rs"))]
+    );
+}
+
+#[test]
+fn ignore_matcher_dynamic_reload_on_gitignore_change() {
+    let tmp = tempdir().expect("tempdir");
+    let root = tmp.path().to_path_buf();
+
+    let config = GuardReconciliationConfig::default();
+    let (mut watcher, tx) = GuardWatcher::new_with_channel(config);
+    watcher.add_root(root.clone()).expect("add root");
+
+    let ignored_target = root.join("dynamically_ignored.txt");
+    assert!(!watcher.is_path_excluded(&root, &ignored_target));
+
+    // Create .gitignore
+    let gitignore_path = root.join(".gitignore");
+    fs::write(&gitignore_path, "dynamically_ignored.txt\n").expect("write .gitignore");
+
+    // Send notify event for .gitignore change
+    let mut gi_event = notify::Event::new(EventKind::Create(CreateKind::File));
+    gi_event.paths.push(gitignore_path.clone());
+    tx.send(Ok(gi_event)).expect("send gitignore create");
+
+    // Poll events so maybe_reload_ignore_matcher executes
+    let _ = watcher.poll_events();
+
+    // Now the path must be excluded!
+    assert!(watcher.is_path_excluded(&root, &ignored_target));
+
+    // Send event on the newly ignored file - must be filtered
+    let mut ign_event = notify::Event::new(EventKind::Modify(ModifyKind::Any));
+    ign_event.paths.push(ignored_target);
+    tx.send(Ok(ign_event)).expect("send ignored event");
+
+    let polled = watcher.poll_events();
+    assert!(
+        polled.is_empty(),
+        "events for newly ignored file must be filtered after dynamic reload"
+    );
+}
+
+#[test]
+fn ignore_matcher_dynamic_reload_on_keyhog_toml_change() {
+    let tmp = tempdir().expect("tempdir");
+    let root = tmp.path().to_path_buf();
+    let config_path = root.join(".keyhog.toml");
+    fs::write(&config_path, "[scan]\nexclude = [\"alpha/**\"]\n").expect("write .keyhog.toml");
+
+    let config = GuardReconciliationConfig::default();
+    let (mut watcher, tx) = GuardWatcher::new_with_channel(config);
+    watcher.add_root(root.clone()).expect("add root");
+
+    assert!(watcher.is_path_excluded(&root, &root.join("alpha/file.txt")));
+    assert!(!watcher.is_path_excluded(&root, &root.join("beta/file.txt")));
+
+    // Update .keyhog.toml to exclude beta instead of alpha
+    fs::write(&config_path, "[scan]\nexclude = [\"beta/**\"]\n").expect("rewrite .keyhog.toml");
+
+    let mut cfg_event = notify::Event::new(EventKind::Modify(ModifyKind::Any));
+    cfg_event.paths.push(config_path.clone());
+    tx.send(Ok(cfg_event)).expect("send config modify");
+
+    let _ = watcher.poll_events();
+
+    assert!(!watcher.is_path_excluded(&root, &root.join("alpha/file.txt")));
+    assert!(watcher.is_path_excluded(&root, &root.join("beta/file.txt")));
+}
+
+#[test]
+fn keyhogignore_toml_is_not_treated_as_gitignore_pattern() {
+    let tmp = tempdir().expect("tempdir");
+    let root = tmp.path().to_path_buf();
+    // Write a .keyhogignore.toml with TOML rule suppressor syntax
+    let toml_rule_content = r#"
+[[rule]]
+id = "suppress-test"
+paths = ["src/**"]
+reason = "test suppression"
+"#;
+    fs::write(root.join(".keyhogignore.toml"), toml_rule_content)
+        .expect("write .keyhogignore.toml");
+
+    let config = GuardReconciliationConfig::default();
+    let (mut watcher, _tx) = GuardWatcher::new_with_channel(config);
+    watcher.add_root(root.clone()).expect("add root");
+
+    // src/main.rs MUST NOT be excluded by the gitignore matcher
+    assert!(
+        !watcher.is_path_excluded(&root, &root.join("src/main.rs")),
+        ".keyhogignore.toml must not be parsed as gitignore pattern syntax"
+    );
+}

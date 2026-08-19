@@ -21,7 +21,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
-- fix(daemon): filter out ignored and excluded paths (.git, target, node_modules, ignore_paths, default excludes) in guard filesystem watcher to prevent unnecessary reconcile transactions (Row 141).
+- fix(daemon): filter out ignored and excluded paths (.git, target, node_modules, [scan].exclude, .gitignore, .keyhogignore, default excludes) in guard filesystem watcher matching scan path semantics with dynamic ignore matcher reloading (Row 141).
 - fix(scanner): clamp decode-through window overlap to enforce strictly advancing window progress across UTF-8 scalar boundaries in release builds.
 - fix(cli): add `parse_decode_size_limit` rejecting empty and sub-4B `--decode-size-limit` inputs with actionable error diagnostic.
 - style: format guard massive diff test and git sources modules.

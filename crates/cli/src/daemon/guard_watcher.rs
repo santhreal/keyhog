@@ -157,7 +157,7 @@ struct WatchedRoot {
     /// Bounded event buffer with monotonic sequence.
     buffer: Arc<Mutex<EventBuffer>>,
     /// Explicit ignore paths / globs configured for this root.
-    ignore_paths: Vec<String>,
+    ignore_paths: parking_lot::RwLock<Vec<String>>,
     /// Gitignore matcher combining root .keyhogignore, .gitignore, and explicit ignore_paths.
     ignore_matcher: parking_lot::RwLock<Option<ignore::gitignore::Gitignore>>,
     /// Whether default excludes (.git, target, node_modules, lockfiles, minified files, binary extensions) are respected.
@@ -176,19 +176,14 @@ impl WatchedRoot {
             parking_lot::RwLock::new(build_root_ignore_matcher(root_path, &ignore_paths));
         Self {
             buffer,
-            ignore_paths,
+            ignore_paths: parking_lot::RwLock::new(ignore_paths),
             ignore_matcher,
             respect_default_excludes,
         }
     }
 
     /// Check whether a path should be excluded/ignored according to scan path semantics.
-    fn is_path_excluded(
-        &self,
-        root: &std::path::Path,
-        path: &std::path::Path,
-        _skip_dirs: &crate::skip_dirs::SkipDirPolicy,
-    ) -> bool {
+    fn is_path_excluded(&self, root: &std::path::Path, path: &std::path::Path) -> bool {
         let Ok(rel_path) = path.strip_prefix(root) else {
             return false;
         };
@@ -202,7 +197,6 @@ impl WatchedRoot {
                     }
                 }
             }
-
             // 2. Default excluded files, suffixes, infixes, filenames.
             #[cfg(unix)]
             {
@@ -219,7 +213,7 @@ impl WatchedRoot {
             }
         }
 
-        // 3. Custom ignore rules (.keyhogignore, .keyhogignore.toml, .gitignore, and explicit ignore_paths).
+        // 3. Custom ignore rules (.keyhogignore, .gitignore, and explicit ignore_paths).
         if let Some(matcher) = &*self.ignore_matcher.read() {
             let is_dir = path.is_dir();
             if matcher
@@ -236,11 +230,15 @@ impl WatchedRoot {
     fn maybe_reload_ignore_matcher(&self, root: &std::path::Path, path: &std::path::Path) {
         if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
             if file_name == ".keyhogignore"
-                || file_name == ".keyhogignore.toml"
                 || file_name == ".gitignore"
                 || file_name == ".keyhog.toml"
             {
-                *self.ignore_matcher.write() = build_root_ignore_matcher(root, &self.ignore_paths);
+                if file_name == ".keyhog.toml" {
+                    let (new_ignore_paths, _) = resolve_root_exclusions(root);
+                    *self.ignore_paths.write() = new_ignore_paths;
+                }
+                let ignore_paths = self.ignore_paths.read();
+                *self.ignore_matcher.write() = build_root_ignore_matcher(root, &ignore_paths);
             }
         }
     }
@@ -255,10 +253,7 @@ fn build_root_ignore_matcher(
     if keyhogignore.is_file() {
         let _ = builder.add(&keyhogignore);
     }
-    let keyhogignore_toml = root.join(".keyhogignore.toml");
-    if keyhogignore_toml.is_file() {
-        let _ = builder.add(&keyhogignore_toml);
-    }
+
     let gitignore = root.join(".gitignore");
     if gitignore.is_file() {
         let _ = builder.add(&gitignore);
@@ -273,23 +268,9 @@ fn resolve_root_exclusions(root: &std::path::Path) -> (Vec<String>, bool) {
     let dot_config = root.join(".keyhog.toml");
     if let Ok(bytes) = std::fs::read(&dot_config) {
         if let Ok(text) = std::str::from_utf8(&bytes) {
-            if let Ok(value) = toml::from_str::<toml::Value>(text) {
-                let ignore_paths = value
-                    .get("scan")
-                    .and_then(|s| s.get("ignore_paths"))
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let respect_default_excludes = value
-                    .get("scan")
-                    .and_then(|s| s.get("respect_default_excludes"))
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
-                return (ignore_paths, respect_default_excludes);
+            if let Ok(config) = toml::from_str::<crate::config::schema::ConfigFile>(text) {
+                let exclude = config.scan.and_then(|s| s.exclude).unwrap_or_default();
+                return (exclude, true);
             }
         }
     }
@@ -318,8 +299,6 @@ pub struct GuardWatcher {
     disabled: bool,
     /// Named reason why the watcher disconnected, if disconnection occurred.
     disconnection_reason: parking_lot::Mutex<Option<String>>,
-    /// Directory skip policy for guard event filtering.
-    skip_dirs: crate::skip_dirs::SkipDirPolicy,
 }
 
 impl GuardWatcher {
@@ -332,7 +311,6 @@ impl GuardWatcher {
         .map_err(|e| format!("failed to create filesystem watcher: {}", e))?;
         let backend_kind = GuardWatcherBackendKind::from_notify_kind(RecommendedWatcher::kind());
         let poll_interval_ms = None;
-        let skip_dirs = crate::skip_dirs::SkipDirPolicy::default();
         Ok(Self {
             watcher: Some(ActiveWatcherHandle::Recommended(watcher)),
             backend_kind,
@@ -342,7 +320,6 @@ impl GuardWatcher {
             config,
             disabled: false,
             disconnection_reason: parking_lot::Mutex::new(None),
-            skip_dirs,
         })
     }
 
@@ -369,7 +346,6 @@ impl GuardWatcher {
             config,
             disabled: false,
             disconnection_reason: parking_lot::Mutex::new(None),
-            skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
         })
     }
 
@@ -385,7 +361,6 @@ impl GuardWatcher {
             config,
             disabled: false,
             disconnection_reason: parking_lot::Mutex::new(None),
-            skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
         })
     }
 
@@ -403,7 +378,6 @@ impl GuardWatcher {
             config: GuardReconciliationConfig::default(),
             disabled: true,
             disconnection_reason: parking_lot::Mutex::new(None),
-            skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
         }
     }
 
@@ -422,7 +396,6 @@ impl GuardWatcher {
             config,
             disabled: false,
             disconnection_reason: parking_lot::Mutex::new(None),
-            skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
         }
     }
     /// Create a guard watcher connected to a custom event channel.
@@ -441,7 +414,6 @@ impl GuardWatcher {
                 config,
                 disabled: false,
                 disconnection_reason: parking_lot::Mutex::new(None),
-                skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
             },
             tx,
         )
@@ -526,13 +498,13 @@ impl GuardWatcher {
     pub fn is_path_excluded(&self, root: &std::path::Path, path: &std::path::Path) -> bool {
         self.roots
             .get(root)
-            .is_some_and(|w| w.is_path_excluded(root, path, &self.skip_dirs))
+            .is_some_and(|w| w.is_path_excluded(root, path))
     }
 
     /// Explicit ignore paths configured for a watched root, if watched.
     #[must_use]
-    pub fn root_ignore_paths(&self, root: &std::path::Path) -> Option<&[String]> {
-        self.roots.get(root).map(|w| w.ignore_paths.as_slice())
+    pub fn root_ignore_paths(&self, root: &std::path::Path) -> Option<Vec<String>> {
+        self.roots.get(root).map(|w| w.ignore_paths.read().clone())
     }
 
     /// Whether default excludes are respected for a watched root, if watched.
@@ -589,7 +561,8 @@ impl GuardWatcher {
                             let roots = self.find_matching_roots_for_path(path);
                             for root in roots {
                                 if let Some(watched) = self.roots.get(&root) {
-                                    if watched.is_path_excluded(&root, path, &self.skip_dirs) {
+                                    watched.maybe_reload_ignore_matcher(&root, path);
+                                    if watched.is_path_excluded(&root, path) {
                                         continue;
                                     }
                                     let guard_event =

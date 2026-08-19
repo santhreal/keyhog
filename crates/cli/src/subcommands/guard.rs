@@ -777,42 +777,8 @@ async fn run_status_online(
                     let req = Request::GuardStatus {
                         root: entry.root.clone(),
                     };
-                    if let Ok(Response::GuardStatusResult {
-                        root,
-                        mode,
-                        state,
-                        filesystem_type,
-                        filesystem_authoritative,
-                        filesystem_unauthoritative_reason,
-                        scrub_interval_secs,
-                        terminal_sequence,
-                        accepted_event_sequence,
-                        completed_event_sequence,
-                        pending_events,
-                        files_scanned,
-                        bytes_scanned,
-                        attestation_hits,
-                        attestation_misses,
-                        findings_count,
-                        coverage_gaps,
-                        initial_reconciliation_time,
-                        last_reconciliation_time,
-                        scanner_residency,
-                        watcher_backend,
-                        watcher_latency_tier,
-                        watcher_poll_interval_ms,
-                        backend_route_label,
-                        build_identity_short,
-                        detector_digest_short,
-                        suppression_digest_short,
-                        config_digest_short,
-                        autoroute_evidence_status,
-                        store_schema_version,
-                        store_path,
-                        repair_command,
-                    }) = conn.round_trip(&req).await
-                    {
-                        views.push(GuardStatusView {
+                    match conn.round_trip(&req).await? {
+                        Response::GuardStatusResult {
                             root,
                             mode,
                             state,
@@ -845,7 +811,52 @@ async fn run_status_online(
                             store_schema_version,
                             store_path,
                             repair_command,
-                        });
+                        } => {
+                            views.push(GuardStatusView {
+                                root,
+                                mode,
+                                state,
+                                filesystem_type,
+                                filesystem_authoritative,
+                                filesystem_unauthoritative_reason,
+                                scrub_interval_secs,
+                                terminal_sequence,
+                                accepted_event_sequence,
+                                completed_event_sequence,
+                                pending_events,
+                                files_scanned,
+                                bytes_scanned,
+                                attestation_hits,
+                                attestation_misses,
+                                findings_count,
+                                coverage_gaps,
+                                initial_reconciliation_time,
+                                last_reconciliation_time,
+                                scanner_residency,
+                                watcher_backend,
+                                watcher_latency_tier,
+                                watcher_poll_interval_ms,
+                                backend_route_label,
+                                build_identity_short,
+                                detector_digest_short,
+                                suppression_digest_short,
+                                config_digest_short,
+                                autoroute_evidence_status,
+                                store_schema_version,
+                                store_path,
+                                repair_command,
+                            });
+                        }
+                        Response::Error { message } => {
+                            anyhow::bail!("guard status for '{}': {}", entry.root, message);
+                        }
+                        other => {
+                            anyhow::bail!(
+                                "guard status for '{}': protocol mismatch (got {})",
+                                entry.root,
+                                response_kind(&other)
+                            );
+                        }
                     }
                 }
 
