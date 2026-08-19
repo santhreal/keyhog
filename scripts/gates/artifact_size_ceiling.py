@@ -2,7 +2,7 @@
 """Artifact size ceiling and release profile stripping gate (Row 49, 51, 97).
 
 Validates that:
-1. Workspace Cargo.toml release profiles enforce `strip = "symbols"` (or `strip = true`)
+1. Workspace Cargo.toml release profiles enforce `strip = "symbols"`
    and `panic = "unwind"` for degradation contracts.
 2. Binary size ceilings per platform are recorded and enforced when release artifacts exist.
 """
@@ -40,7 +40,7 @@ def check_cargo_profiles(cargo_path: pathlib.Path) -> None:
         )
 
     debug_val = release.get("debug")
-    if debug_val is not False:
+    if debug_val is not False and debug_val != 0:
         raise ValueError(
             f"Cargo.toml [profile.release] must specify `debug = false` (got {debug_val!r})"
         )

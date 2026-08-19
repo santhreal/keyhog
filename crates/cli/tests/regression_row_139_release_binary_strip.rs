@@ -183,6 +183,29 @@ fn validate_profile_table(parsed: &toml::Table) -> ProfileValidationResult {
     ProfileValidationResult { errors }
 }
 
+fn check_macho_segments_and_sections(
+    segments: &[goblin::mach::segment::Segment],
+    label: &str,
+    violations: &mut Vec<String>,
+) {
+    for segment in segments {
+        if let Ok(seg_name) = segment.name() {
+            if seg_name == "__DWARF" {
+                violations.push(format!("Unstripped __DWARF segment found in {label}"));
+            }
+        }
+        for (section, _) in segment.into_iter().flatten() {
+            if let Ok(sec_name) = section.name() {
+                if sec_name.starts_with("__debug_") || sec_name.starts_with(".debug_") {
+                    violations.push(format!(
+                        "Unstripped DWARF section found in {label}: {sec_name}"
+                    ));
+                }
+            }
+        }
+    }
+}
+
 /// Validate binary bytes to ensure no DWARF debuginfo sections or unstripped symbol tables exist.
 fn validate_stripped_binary_bytes(bytes: &[u8]) -> Result<(), Vec<String>> {
     let mut violations = Vec::new();
@@ -219,50 +242,29 @@ fn validate_stripped_binary_bytes(bytes: &[u8]) -> Result<(), Vec<String>> {
                 }
             }
         }
-        goblin::Object::Mach(mach) => {
-            match mach {
-                goblin::mach::Mach::Binary(macho) => {
-                    for segment in &macho.segments {
-                        if let Ok(seg_name) = segment.name() {
-                            if seg_name == "__DWARF" {
-                                violations.push(
-                                    "Unstripped __DWARF segment found in Mach-O binary".to_string(),
-                                );
-                            }
-                        }
-                        for result in segment {
-                            if let Ok((section, _)) = result {
-                                if let Ok(sec_name) = section.name() {
-                                    if sec_name.starts_with("__debug_")
-                                        || sec_name.starts_with(".debug_")
-                                    {
-                                        violations.push(format!(
-                                            "Unstripped DWARF section found in Mach-O: {sec_name}"
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                goblin::mach::Mach::Fat(fat) => {
-                    if let Ok(arches) = fat.arches() {
-                        for arch in arches {
-                            let arch_bytes = arch.slice(bytes);
-                            if let Ok(sub_macho) = goblin::mach::MachO::parse(arch_bytes, 0) {
-                                for segment in &sub_macho.segments {
-                                    if let Ok(seg_name) = segment.name() {
-                                        if seg_name == "__DWARF" {
-                                            violations.push("Unstripped __DWARF segment found in Fat Mach-O binary".to_string());
-                                        }
-                                    }
-                                }
-                            }
+        goblin::Object::Mach(mach) => match mach {
+            goblin::mach::Mach::Binary(macho) => {
+                check_macho_segments_and_sections(
+                    &macho.segments,
+                    "Mach-O binary",
+                    &mut violations,
+                );
+            }
+            goblin::mach::Mach::Fat(fat) => {
+                if let Ok(arches) = fat.arches() {
+                    for arch in arches {
+                        let arch_bytes = arch.slice(bytes);
+                        if let Ok(sub_macho) = goblin::mach::MachO::parse(arch_bytes, 0) {
+                            check_macho_segments_and_sections(
+                                &sub_macho.segments,
+                                "Fat Mach-O binary",
+                                &mut violations,
+                            );
                         }
                     }
                 }
             }
-        }
+        },
         goblin::Object::PE(pe) => {
             for section in &pe.sections {
                 if let Ok(name) = section.name() {
@@ -664,7 +666,7 @@ debug-assertions = true
 
     // 7. Mutate codegen-units = 16 in release
     let many_cgu: toml::Table = valid_base
-        .replace("codegen-units = 1", "codegen-units = 16")
+        .replace("\ncodegen-units = 1\n", "\ncodegen-units = 16\n")
         .parse()
         .unwrap();
     let res = validate_profile_table(&many_cgu);
@@ -672,7 +674,6 @@ debug-assertions = true
         .errors
         .iter()
         .any(|e| e.contains("codegen-units must be 1")));
-
     // 8. Novel unclassified profile key fails closed
     let unclassified: toml::Table =
         format!("{valid_base}\nunknown-experimental-profile-key = true\n")
@@ -723,13 +724,18 @@ fn regression_row_139_binary_stripping_and_dwarf_bloat_detection() {
         "Error must name .symtab section, got: {errs:?}"
     );
 
-    // 4. If a compiled release binary exists in local target directories, validate it
-    let candidate_paths = [
+    // 4. If a compiled release binary exists in target directories, validate it
+    let mut candidate_paths = vec![
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/keyhog"),
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/keyhog.exe"),
-        PathBuf::from("/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog"),
-        PathBuf::from("/mnt/FlareTraining/santh-archive/cargo-target/release/keyhog.exe"),
     ];
+    if let Some(target_dir) =
+        std::env::var_os("CARGO_TARGET_DIR").or_else(|| std::env::var_os("CARGO_BUILD_TARGET_DIR"))
+    {
+        let p = PathBuf::from(target_dir).join("release");
+        candidate_paths.push(p.join("keyhog"));
+        candidate_paths.push(p.join("keyhog.exe"));
+    }
 
     for path in &candidate_paths {
         if path.is_file() {
