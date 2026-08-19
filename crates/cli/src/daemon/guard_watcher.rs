@@ -131,7 +131,10 @@ impl GuardWatcherBackendKind {
 enum ActiveWatcherHandle {
     Recommended(RecommendedWatcher),
     Poll(notify::PollWatcher),
-    Null(notify::NullWatcher),
+    Null(
+        notify::NullWatcher,
+        #[allow(dead_code)] mpsc::Sender<notify::Result<notify::Event>>,
+    ),
 }
 
 impl ActiveWatcherHandle {
@@ -139,7 +142,7 @@ impl ActiveWatcherHandle {
         match self {
             Self::Recommended(w) => w.watch(path, mode),
             Self::Poll(w) => w.watch(path, mode),
-            Self::Null(w) => w.watch(path, mode),
+            Self::Null(w, _) => w.watch(path, mode),
         }
     }
 
@@ -147,7 +150,7 @@ impl ActiveWatcherHandle {
         match self {
             Self::Recommended(w) => w.unwatch(path),
             Self::Poll(w) => w.unwatch(path),
-            Self::Null(w) => w.unwatch(path),
+            Self::Null(w, _) => w.unwatch(path),
         }
     }
 }
@@ -375,10 +378,10 @@ impl GuardWatcher {
     }
 
     pub fn new_null(config: GuardReconciliationConfig) -> Result<Self, String> {
-        let (_tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+        let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
         let watcher = notify::NullWatcher;
         Ok(Self {
-            watcher: Some(ActiveWatcherHandle::Null(watcher)),
+            watcher: Some(ActiveWatcherHandle::Null(watcher, tx)),
             backend_kind: GuardWatcherBackendKind::NullWatcher,
             poll_interval_ms: None,
             rx,

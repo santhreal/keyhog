@@ -77,6 +77,7 @@ Finally, dogfood the scanner on the repo itself. Zero new findings
 are expected on a clean tree:
 
 ```bash
+cargo run --release -- install
 cargo run --release -- scan .
 ```
 
@@ -130,8 +131,8 @@ cargo test -p keyhog-scanner                # only the engine
 cargo test -p keyhog-core --test all_tests  # core invariants
 cargo clippy --workspace --all-targets      # advisory lint visibility (not a hard gate)
 cargo build --release -p keyhog             # production binary
+cargo run --release -- install              # prepare execution packs
 cargo run --release -- scan .               # dogfood
-cargo bench -p keyhog-scanner               # microbenchmarks
 ```
 
 For the multi-hour adversarial / corpus suites, see

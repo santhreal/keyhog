@@ -1392,7 +1392,7 @@ impl ScanOrchestrator {
         };
         let (mut loaded_corpus, detector_execution_pack) = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorLoad);
-            if !detectors_path.exists() && requested_detector_mode.is_none() {
+            if !args.detectors_cli_explicit && requested_detector_mode.is_none() {
                 let policy = execution_pack_policy_for_args(&args);
                 let installed = match effective_config.backend_override {
                     Some(backend) => {
@@ -1508,8 +1508,8 @@ impl ScanOrchestrator {
             keyhog_profile::span(keyhog_profile::Stage::DetectorValidate);
 
         // Apply `[detector.<id>] enabled = false` from .keyhog.toml: drop the
-        // disabled detectors from the corpus so they never compile or fire.
-        // (Previously this config key was parsed and silently ignored.)
+        // disabled detectors from the corpus in developer compile mode, and suppress
+        // their matches during postprocess filtering when using precompiled execution packs.
         if !disabled_detectors.is_empty() {
             let before = detectors.len();
             let dropped = filter_disabled_detectors(&mut detectors, &disabled_detectors);

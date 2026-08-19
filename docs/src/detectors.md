@@ -808,7 +808,7 @@ Then select exactly one composition mode:
 
 | Effective mode | Command | Active detectors |
 |---|---|---|
-| `embedded` | `keyhog scan .` | The embedded corpus, but only when default discovery finds no detector directory. Any discovered directory is a complete replacement. |
+| `embedded` | `keyhog scan .` | The installed execution pack prepared from the embedded corpus (via `keyhog install`). |
 | `replace` | `keyhog scan . --detectors "$PWD/.keyhog/detectors" --detectors-mode replace` | Only the named directory. This is also the default when a directory is selected and no mode is configured. |
 | `overlay` | `keyhog scan . --detectors "$PWD/.keyhog/detectors" --detectors-mode overlay` | The embedded corpus plus the named directory. A custom ID may not equal an embedded ID. |
 

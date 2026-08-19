@@ -19,6 +19,7 @@
 - feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).
 - feat(profile): compile surface runtime counters across all 13 compiler surfaces (Row 125).
 - fix(cli): eliminate noisy internal execution-pack fallback warning on clean scan passes and enforce unpolluted structured output (Row 144).
+- feat(cli): fail closed on in-process detector compilation during scan; execution packs must be prepared via keyhog install or update, with --developer-compile-embedded-detectors available as a hidden developer escape hatch (Row 124).
 - feat(gates): validate allowlists across reality and enforce meta-gate audit against unvalidated bypasses (Row 137).
 - feat(profile): directional queue attribution distinguishing producer backpressure from consumer starvation (Row 133).
 - feat(daemon): filesystem authority probe and default periodic scrub for unauthoritative filesystems (Row 132).
