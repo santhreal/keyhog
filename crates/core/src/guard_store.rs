@@ -447,11 +447,20 @@ impl DurableGuardStore {
                         let bytes: &[u8] = guard.value();
                         u32::from_le_bytes(bytes.try_into().unwrap_or([0, 0, 0, 0]))
                     });
-                if let Some(version) = found_version {
-                    check_schema_version(version)?;
+                match found_version {
+                    Some(version) => check_schema_version(version)?,
+                    None => {
+                        return Err(GuardStoreError::Corrupt {
+                            detail: "missing schema_version in meta table".to_string(),
+                        });
+                    }
                 }
             }
-            Err(redb::TableError::TableDoesNotExist(_)) => {}
+            Err(redb::TableError::TableDoesNotExist(_)) => {
+                return Err(GuardStoreError::Corrupt {
+                    detail: "meta table does not exist".to_string(),
+                });
+            }
             Err(e) => return Err(GuardStoreError::Io(format!("open meta table: {e}"))),
         }
         Ok(store)

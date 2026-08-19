@@ -339,11 +339,42 @@ async fn run_remove(
     }
 }
 
+fn is_socket_absent(socket: &std::path::Path) -> bool {
+    if !socket.exists() {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        match std::os::unix::net::UnixStream::connect(socket) {
+            Err(err)
+                if err.kind() == std::io::ErrorKind::ConnectionRefused
+                    || err.kind() == std::io::ErrorKind::NotFound =>
+            {
+                true
+            }
+            _ => false,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
 async fn run_list(socket: Option<std::path::PathBuf>) -> anyhow::Result<ExitCode> {
     let socket = socket.unwrap_or_else(default_socket_path);
     match client::connect(&socket).await {
         Ok(conn) => run_list_online(conn).await,
-        Err(_) => run_list_offline(),
+        Err(err) => {
+            if is_socket_absent(&socket) {
+                run_list_offline()
+            } else {
+                anyhow::bail!(
+                    "guard list: cannot connect to daemon at {}: {err}",
+                    socket.display()
+                );
+            }
+        }
     }
 }
 
@@ -584,6 +615,10 @@ impl GuardStatusView {
             attestation_misses,
             findings_count,
             coverage_gaps,
+            build_identity_short,
+            detector_digest_short,
+            suppression_digest_short,
+            config_digest_short,
         ) = if let Some(receipt) = &record.last_receipt {
             (
                 receipt.objects_scanned,
@@ -594,9 +629,44 @@ impl GuardStatusView {
                     .saturating_sub(receipt.objects_hit + receipt.objects_skipped),
                 receipt.findings_count,
                 receipt.coverage_gaps,
+                receipt
+                    .policy_identity
+                    .build_identity
+                    .chars()
+                    .take(12)
+                    .collect(),
+                receipt
+                    .policy_identity
+                    .detector_digest
+                    .chars()
+                    .take(12)
+                    .collect(),
+                receipt
+                    .policy_identity
+                    .suppression_digest
+                    .chars()
+                    .take(12)
+                    .collect(),
+                receipt
+                    .policy_identity
+                    .config_digest
+                    .chars()
+                    .take(12)
+                    .collect(),
             )
         } else {
-            (0, 0, 0, 0, 0, 0)
+            (
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+            )
         };
         let canonical_str = String::from_utf8_lossy(&record.canonical_path).into_owned();
         Self {
@@ -627,16 +697,31 @@ impl GuardStatusView {
             watcher_latency_tier: "offline".to_string(),
             watcher_poll_interval_ms: None,
             backend_route_label: record.backend_route_label.clone(),
-            build_identity_short: String::new(),
-            detector_digest_short: String::new(),
-            suppression_digest_short: String::new(),
-            config_digest_short: String::new(),
+            build_identity_short,
+            detector_digest_short,
+            suppression_digest_short,
+            config_digest_short,
             autoroute_evidence_status: "unproven (daemon offline)".to_string(),
             store_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
             store_path: store_path.to_string(),
             repair_command: format!("keyhog guard reconcile {canonical_str}"),
         }
     }
+}
+
+fn aggregate_guard_exit_codes(views: &[GuardStatusView]) -> u8 {
+    let mut overall_exit = exit_codes::EXIT_SUCCESS;
+    for view in views {
+        let code = exit_code_for_guard_state(&view.state, view.findings_count);
+        if code == exit_codes::EXIT_FINDINGS {
+            overall_exit = exit_codes::EXIT_FINDINGS;
+        } else if code == exit_codes::EXIT_SOURCE_FAILED
+            && overall_exit != exit_codes::EXIT_FINDINGS
+        {
+            overall_exit = exit_codes::EXIT_SOURCE_FAILED;
+        }
+    }
+    overall_exit
 }
 
 async fn run_status(
@@ -653,7 +738,16 @@ async fn run_status(
     let socket = socket.unwrap_or_else(default_socket_path);
     match client::connect(&socket).await {
         Ok(conn) => run_status_online(conn, root, &format).await,
-        Err(_) => run_status_offline(root, &format),
+        Err(err) => {
+            if is_socket_absent(&socket) {
+                run_status_offline(root, &format)
+            } else {
+                anyhow::bail!(
+                    "guard status: cannot connect to daemon at {}: {err}",
+                    socket.display()
+                );
+            }
+        }
     }
 }
 
@@ -777,42 +871,8 @@ async fn run_status_online(
                     let req = Request::GuardStatus {
                         root: entry.root.clone(),
                     };
-                    if let Ok(Response::GuardStatusResult {
-                        root,
-                        mode,
-                        state,
-                        filesystem_type,
-                        filesystem_authoritative,
-                        filesystem_unauthoritative_reason,
-                        scrub_interval_secs,
-                        terminal_sequence,
-                        accepted_event_sequence,
-                        completed_event_sequence,
-                        pending_events,
-                        files_scanned,
-                        bytes_scanned,
-                        attestation_hits,
-                        attestation_misses,
-                        findings_count,
-                        coverage_gaps,
-                        initial_reconciliation_time,
-                        last_reconciliation_time,
-                        scanner_residency,
-                        watcher_backend,
-                        watcher_latency_tier,
-                        watcher_poll_interval_ms,
-                        backend_route_label,
-                        build_identity_short,
-                        detector_digest_short,
-                        suppression_digest_short,
-                        config_digest_short,
-                        autoroute_evidence_status,
-                        store_schema_version,
-                        store_path,
-                        repair_command,
-                    }) = conn.round_trip(&req).await
-                    {
-                        views.push(GuardStatusView {
+                    match conn.round_trip(&req).await? {
+                        Response::GuardStatusResult {
                             root,
                             mode,
                             state,
@@ -845,21 +905,56 @@ async fn run_status_online(
                             store_schema_version,
                             store_path,
                             repair_command,
-                        });
+                        } => {
+                            views.push(GuardStatusView {
+                                root,
+                                mode,
+                                state,
+                                filesystem_type,
+                                filesystem_authoritative,
+                                filesystem_unauthoritative_reason,
+                                scrub_interval_secs,
+                                terminal_sequence,
+                                accepted_event_sequence,
+                                completed_event_sequence,
+                                pending_events,
+                                files_scanned,
+                                bytes_scanned,
+                                attestation_hits,
+                                attestation_misses,
+                                findings_count,
+                                coverage_gaps,
+                                initial_reconciliation_time,
+                                last_reconciliation_time,
+                                scanner_residency,
+                                watcher_backend,
+                                watcher_latency_tier,
+                                watcher_poll_interval_ms,
+                                backend_route_label,
+                                build_identity_short,
+                                detector_digest_short,
+                                suppression_digest_short,
+                                config_digest_short,
+                                autoroute_evidence_status,
+                                store_schema_version,
+                                store_path,
+                                repair_command,
+                            });
+                        }
+                        Response::Error { message } => {
+                            anyhow::bail!("guard status: root '{}': {message}", entry.root);
+                        }
+                        other => {
+                            anyhow::bail!(
+                                "guard status: protocol mismatch for root '{}' (got {})",
+                                entry.root,
+                                response_kind(&other)
+                            );
+                        }
                     }
                 }
 
-                let mut overall_exit = exit_codes::EXIT_SUCCESS;
-                for view in &views {
-                    let code = exit_code_for_guard_state(&view.state, view.findings_count);
-                    if code == exit_codes::EXIT_FINDINGS {
-                        overall_exit = exit_codes::EXIT_FINDINGS;
-                    } else if code == exit_codes::EXIT_SOURCE_FAILED
-                        && overall_exit != exit_codes::EXIT_FINDINGS
-                    {
-                        overall_exit = exit_codes::EXIT_SOURCE_FAILED;
-                    }
-                }
+                let overall_exit = aggregate_guard_exit_codes(&views);
 
                 if format == "json" {
                     let root_jsons: Vec<_> = views.iter().map(|v| v.to_json()).collect();
@@ -987,17 +1082,7 @@ fn run_status_offline(root: Option<std::path::PathBuf>, format: &str) -> anyhow:
             .map(|r| GuardStatusView::from_record(r, &store_path_str))
             .collect();
 
-        let mut overall_exit = exit_codes::EXIT_SUCCESS;
-        for view in &views {
-            let code = exit_code_for_guard_state(&view.state, view.findings_count);
-            if code == exit_codes::EXIT_FINDINGS {
-                overall_exit = exit_codes::EXIT_FINDINGS;
-            } else if code == exit_codes::EXIT_SOURCE_FAILED
-                && overall_exit != exit_codes::EXIT_FINDINGS
-            {
-                overall_exit = exit_codes::EXIT_SOURCE_FAILED;
-            }
-        }
+        let overall_exit = aggregate_guard_exit_codes(&views);
 
         if format == "json" {
             let root_jsons: Vec<_> = views.iter().map(|v| v.to_json()).collect();
