@@ -119,21 +119,22 @@ fn assert_refused(rows: &[Result<keyhog_core::Chunk, keyhog_core::SourceError>],
 
 #[test]
 fn binary_fifo_target_returns_instead_of_hanging() {
-    let _g = guarded();
     let dir = tempfile::tempdir().unwrap();
     let fifo = dir.path().join("pipe.bin");
     make_fifo(&fifo);
     // A raw blocking open would never return here; within_timeout fails the test
     // if the read hangs.
     let fifo_for_worker = fifo.clone();
-    let rows = within_timeout(10, move || scan_rows(fifo_for_worker));
+    let rows = within_timeout(10, move || {
+        let _g = guarded();
+        scan_rows(fifo_for_worker)
+    });
     assert_refused(&rows, "a FIFO binary target");
     drop(dir);
 }
 
 #[test]
 fn binary_symlink_to_fifo_returns_instead_of_hanging() {
-    let _g = guarded();
     let dir = tempfile::tempdir().unwrap();
     let fifo = dir.path().join("pipe");
     make_fifo(&fifo);
@@ -142,7 +143,10 @@ fn binary_symlink_to_fifo_returns_instead_of_hanging() {
     let link_for_worker = link.clone();
     // O_NOFOLLOW refuses the symlink before O_NONBLOCK is even tested, but either
     // way the read must return rather than block on the pipe behind the link.
-    let rows = within_timeout(10, move || scan_rows(link_for_worker));
+    let rows = within_timeout(10, move || {
+        let _g = guarded();
+        scan_rows(link_for_worker)
+    });
     assert_refused(&rows, "a symlink-to-FIFO binary target");
     drop(dir);
 }
@@ -239,21 +243,22 @@ fn binary_directory_path_is_refused() {
 
 #[test]
 fn binary_fifo_refusal_counts_one_unreadable() {
-    let _g = guarded();
     let dir = tempfile::tempdir().unwrap();
     let fifo = dir.path().join("pipe.bin");
     make_fifo(&fifo);
     let fifo_for_worker = fifo.clone();
-    let rows = within_timeout(10, move || scan_rows(fifo_for_worker));
+    let (rows, unreadable, skip_unreadable) = within_timeout(10, move || {
+        let _g = guarded();
+        let rows = scan_rows(fifo_for_worker);
+        (rows, binary_unreadable(), skip_counts().unreadable)
+    });
     assert_refused(&rows, "a FIFO binary target");
     assert_eq!(
-        binary_unreadable(),
-        1,
+        unreadable, 1,
         "a refused FIFO must count one unreadable drop"
     );
     assert_eq!(
-        skip_counts().unreadable,
-        1,
+        skip_unreadable, 1,
         "and flow through the shared skip snapshot"
     );
     drop(dir);
@@ -293,17 +298,19 @@ fn binary_dev_zero_is_refused_as_unreadable_not_streamed() {
     // file (unreadable), NOT read as an endless zero stream. On the old raw-open
     // path it read cap bytes of zeros and counted a binary GAP, never unreadable
     // so this `binary_unreadable() == 1` assertion is the crisp lock on the fix.
-    let _g = guarded();
     let zero = PathBuf::from("/dev/zero");
     assert!(
         zero.exists(),
         "/dev/zero is missing on this host, cannot validate device refusal"
     );
-    let rows = within_timeout(10, move || scan_rows(zero));
+    let (rows, unreadable) = within_timeout(10, move || {
+        let _g = guarded();
+        let rows = scan_rows(zero);
+        (rows, binary_unreadable())
+    });
     assert_refused(&rows, "the /dev/zero character device");
     assert_eq!(
-        binary_unreadable(),
-        1,
+        unreadable, 1,
         "/dev/zero must be refused as a non-regular file (unreadable), not streamed"
     );
 }
@@ -313,14 +320,16 @@ fn binary_dev_null_is_refused_as_unreadable() {
     // /dev/null is also a char device. The old raw open succeeded and read 0
     // bytes (EOF) → a binary gap, never unreadable; the safe open refuses it as a
     // non-regular file. Distinct device class from /dev/zero (which would stream).
-    let _g = guarded();
     let null = PathBuf::from("/dev/null");
     assert!(null.exists(), "/dev/null is missing on this host");
-    let rows = within_timeout(10, move || scan_rows(null));
+    let (rows, unreadable) = within_timeout(10, move || {
+        let _g = guarded();
+        let rows = scan_rows(null);
+        (rows, binary_unreadable())
+    });
     assert_refused(&rows, "the /dev/null character device");
     assert_eq!(
-        binary_unreadable(),
-        1,
+        unreadable, 1,
         "/dev/null must be refused as a non-regular file, not read as an empty regular file"
     );
 }
@@ -424,15 +433,18 @@ fn empty_regular_binary_is_not_counted_unreadable() {
 
 #[test]
 fn regular_binary_after_fifo_refusal_still_scans() {
-    let _g = guarded();
     // Isolation: refusing a FIFO must not poison a subsequent regular-file scan
     // (no leaked lock / fd / state from the O_NONBLOCK refusal path).
     let dir = tempfile::tempdir().unwrap();
     let fifo = dir.path().join("pipe.bin");
     make_fifo(&fifo);
     let fifo_for_worker = fifo.clone();
-    let _ = within_timeout(10, move || scan_rows(fifo_for_worker));
+    let _ = within_timeout(10, move || {
+        let _g = guarded();
+        scan_rows(fifo_for_worker)
+    });
 
+    let _g = guarded();
     let bin = dir.path().join("after.bin");
     std::fs::write(&bin, format!("post_{SENTINEL}_run").as_bytes()).unwrap();
     let rows = scan_rows(bin);
