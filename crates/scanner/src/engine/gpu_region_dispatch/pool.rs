@@ -35,6 +35,9 @@ pub struct GpuResidentExecutionPermit<'a> {
 
 impl Drop for GpuResidentExecutionPermit<'_> {
     fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.pool.poison();
+        }
         self.pool.release();
     }
 }

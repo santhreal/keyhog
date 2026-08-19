@@ -93,3 +93,29 @@ fn row_118_capacity_derivation_deterministic_across_device_capabilities() {
         }
     }
 }
+
+#[cfg(feature = "gpu")]
+#[test]
+fn row_118_panic_during_permit_hold_poisons_pool_fail_closed() {
+    let pool = Arc::new(GpuResidentExecutionPool::new(2));
+
+    let pool_clone = Arc::clone(&pool);
+    let handle = thread::spawn(move || {
+        let _permit = pool_clone.acquire_permit().expect("acquire permit");
+        panic!("simulated dispatch crash");
+    });
+
+    let _ = handle.join(); // Ignore panic error from join
+
+    // Subsequent acquire must fail closed with poison error
+    let result = pool.acquire_permit();
+    assert!(
+        result.is_err(),
+        "pool must fail closed after thread panics while holding permit"
+    );
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("unavailable after an internal panic"),
+        "error message must describe internal panic: {err}"
+    );
+}
