@@ -519,6 +519,8 @@ pub struct CompiledScanner {
     pub(crate) backend_state: ScannerBackendState,
     #[cfg(feature = "gpu")]
     pub(crate) gpu_resident_execution_pool: gpu_region_dispatch::GpuResidentExecutionPool,
+    #[cfg(feature = "gpu")]
+    pub(crate) direct_gpu_resident_dispatch: parking_lot::Mutex<()>,
     /// True only when a signed GPU execution pack authenticated the exact
     /// quantized feature schema, model artifact, and scoring ABI.
     pub(crate) quantized_confidence_authenticated: bool,

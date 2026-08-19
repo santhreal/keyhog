@@ -93,6 +93,11 @@ impl CompiledScanner {
             });
         }
         let _permit = self.gpu_resident_execution_pool.acquire()?;
+        let _direct_guard = if device.is_none() {
+            Some(self.direct_gpu_resident_dispatch.lock())
+        } else {
+            None
+        };
 
         let dispatch_failure =
             |reason: String| Err(super::gpu_forced::SelectedGpuDispatchError::new(reason));

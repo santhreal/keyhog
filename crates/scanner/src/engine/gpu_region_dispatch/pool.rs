@@ -115,11 +115,7 @@ impl GpuResidentExecutionPool {
             }
             #[cfg(feature = "gpu")]
             ScannerBackendState::Census { peers, .. } => {
-                let cuda_is_cpu = peers
-                    .cuda_runtime_identity
-                    .as_deref()
-                    .is_some_and(|id| id.contains("cpu"));
-                let has_hardware_gpu = (peers.cuda_available && !cuda_is_cpu)
+                let has_hardware_gpu = peers.cuda_available
                     || peers.metal_available
                     || (peers.wgpu_available && !peers.wgpu_is_software);
                 let capability = if has_hardware_gpu {
