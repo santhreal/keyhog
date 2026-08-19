@@ -94,9 +94,9 @@ impl Phase2AlwaysActivePrefilter {
         let [valid_always_active_indices, anchor_residual_indices, localized_residual_indices] =
             canonical_phase2_scope_indices(phase2_patterns, always_active_indices, anchor_index);
         Some(Self {
-            valid_always_active_indices,
-            anchor_residual_indices,
-            localized_residual_indices,
+            valid_always_active_indices: valid_always_active_indices.into_boxed_slice(),
+            anchor_residual_indices: anchor_residual_indices.into_boxed_slice(),
+            localized_residual_indices: localized_residual_indices.into_boxed_slice(),
             portable: std::sync::OnceLock::new(),
             portable_anchor_residual: std::sync::OnceLock::new(),
             portable_localized_residual: std::sync::OnceLock::new(),

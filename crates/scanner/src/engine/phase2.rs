@@ -426,16 +426,16 @@ impl CombinedNoCandidateGate {
 pub(crate) struct Phase2AlwaysActivePrefilter {
     /// Every valid always-active phase-2 index. Used by the legacy whole-chunk
     /// path and the admission proof, where no anchor localizer owns extraction.
-    pub(crate) valid_always_active_indices: Vec<usize>,
+    pub(crate) valid_always_active_indices: Box<[usize]>,
     /// Always-active indices not owned by the main required-prefix localizer.
     /// This is the only prefilter scope needed by the anchored extraction path
     /// when the optional plain-pattern localizer is disabled.
-    pub(crate) anchor_residual_indices: Vec<usize>,
+    pub(crate) anchor_residual_indices: Box<[usize]>,
     /// Anchor residual further restricted to case-insensitive patterns. On an
     /// ASCII chunk with the plain-pattern localizer enabled, every remaining
     /// case-sensitive pattern is extracted by that localizer, so only this set
     /// may be marked by the prefilter.
-    pub(crate) localized_residual_indices: Vec<usize>,
+    pub(crate) localized_residual_indices: Box<[usize]>,
     /// Heavy portable RegexSet batches/gates for the full legacy scope.
     pub(crate) portable: OnceLock<PortablePrefilter>,
     /// Portable batches for the anchor-owned residual scope.

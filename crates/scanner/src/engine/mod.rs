@@ -550,7 +550,7 @@ pub struct CompiledScanner {
     /// unbounded or unparsable by the AST bounder.
     #[cfg(feature = "gpu")]
     pub(crate) ac_match_upper_bounds: Option<Vec<Option<usize>>>,
-    pub(crate) ac_map: Vec<CompiledPattern>,
+    pub(crate) ac_map: Box<[CompiledPattern]>,
     /// Confirmed pattern indices whose exact capture proves a structural password
     /// slot, partitioned by detector for bounded generic-bridge lookup.
     pub(crate) structural_confirmed_patterns: CsrU32,
@@ -562,7 +562,7 @@ pub struct CompiledScanner {
     pub(crate) ac_suffix_gate: CsrU32,
     /// Per-`ac_map` bit for confirmed regexes whose detector-owned
     /// `simdsieve_prefixes` can already emit the same candidate directly.
-    pub(crate) hot_confirmed_by_pattern: Vec<bool>,
+    pub(crate) hot_confirmed_by_pattern: Box<[bool]>,
     /// Shared-anchor localization index over the confirmed `ac_map`. Eligible
     /// triggered patterns are verified at required-prefix candidate positions
     /// instead of each walking the whole scan window; non-eligible patterns keep
@@ -570,7 +570,7 @@ pub struct CompiledScanner {
     pub(crate) confirmed_anchor_index:
         Option<scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex>,
     pub(crate) prefix_propagation: CsrU32,
-    pub(crate) phase2_patterns: Vec<(CompiledPattern, Vec<String>)>,
+    pub(crate) phase2_patterns: Box<[(CompiledPattern, Vec<String>)]>,
     /// Phase-2 pattern indices whose exact capture proves a structural password
     /// slot, partitioned by detector for bounded generic-bridge lookup.
     pub(crate) structural_phase2_patterns: CsrU32,
@@ -590,7 +590,7 @@ pub struct CompiledScanner {
     /// the fused GPU matcher. Their positions replace the CPU stem text walk.
     #[cfg(feature = "gpu")]
     pub(crate) generic_keyword_literal_count: usize,
-    pub(crate) phase2_always_active_indices: Vec<usize>,
+    pub(crate) phase2_always_active_indices: Box<[usize]>,
     /// Always-active prefilter with full, anchor-residual, and
     /// anchor-plus-plain-residual scopes. Each scope has lazy Hyperscan and
     /// portable engines so extraction never scans a pattern already owned by

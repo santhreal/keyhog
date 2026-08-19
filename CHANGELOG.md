@@ -14,6 +14,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- perf(scanner): optimize startup memory floor and scanner structure layouts (Row 153). Pack LazyRegexState flags into a single atomic byte, shrink CsrU32 to exact boxed slices, flatten GenericKeywordStemSet byte buckets, dynamically scale LRU thread-local caches, bound DashMap absence cache shards to 16, and box immutable compiled pattern slices.
 - fix(scanner): clamp decode-through window overlap to enforce strictly advancing window progress across UTF-8 scalar boundaries in release builds.
 - fix(cli): add `parse_decode_size_limit` rejecting empty and sub-4B `--decode-size-limit` inputs with actionable error diagnostic.
 - style: format guard massive diff test and git sources modules.

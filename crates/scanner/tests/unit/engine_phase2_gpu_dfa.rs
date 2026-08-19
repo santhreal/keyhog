@@ -528,9 +528,9 @@ fn generated_coverage_evidence_accounts_for_the_compiled_phase2_universe() {
         )
         .expect("validated artifact-backed catalog");
     assert_eq!(loaded.catalog_digest, catalog.catalog_digest);
-    let mut changed_patterns = scanner.phase2_patterns.clone();
+    let mut changed_patterns = scanner.phase2_patterns.to_vec();
     changed_patterns.push((test_pattern("[A-Z]{7}[0-9]{5}", false), Vec::new()));
-    let mut changed_always_active = scanner.phase2_always_active_indices.clone();
+    let mut changed_always_active = scanner.phase2_always_active_indices.to_vec();
     changed_always_active.push(changed_patterns.len() - 1);
     let changed_error = Phase2GpuDfaCatalogCache::from_artifact(
         &changed_patterns,

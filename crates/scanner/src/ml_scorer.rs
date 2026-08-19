@@ -123,7 +123,7 @@ pub(crate) fn score_with_config(
         // FNV-1a keyed cache - ~100x faster than SHA-256 for cache lookups.
         // 256-entry bounded cache covers batch scoring of one file's matches.
         static SCORE_CACHE: RefCell<std::collections::HashMap<u64, f64>> =
-            RefCell::new(std::collections::HashMap::with_capacity(64));
+            RefCell::new(std::collections::HashMap::new());
     }
 
     // The score depends on the four configured feature vocabularies as well as

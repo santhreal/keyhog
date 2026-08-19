@@ -45,20 +45,27 @@ const COMPANION_ARMS_CACHE_CAP: usize = 1024;
 /// chunks trigger different detectors; a small LRU keeps recent sets hot.
 const COMPANION_DERIVED_CACHE_CAP: usize = 16;
 
+fn grow_for_workload<K: std::cmp::Eq + std::hash::Hash, V>(
+    cache: &mut LruCache<K, V>,
+    max_cap: usize,
+) {
+    let current = cache.cap().get();
+    if cache.len() < current || current >= max_cap {
+        return;
+    }
+    let next = current.saturating_mul(2).min(max_cap);
+    if let Some(next) = NonZeroUsize::new(next) {
+        cache.resize(next);
+    }
+}
+
 thread_local! {
     static COMPANION_ARMS_CACHE: RefCell<LruCache<String, Arc<Vec<Vec<String>>>>> =
-        RefCell::new(LruCache::new(
-            // LAW10: infallible: NonZeroUsize::new never fails for positive CAP constants.
-            NonZeroUsize::new(COMPANION_ARMS_CACHE_CAP).expect("companion arms cache cap is non-zero"),
-        ));
+        RefCell::new(LruCache::new(NonZeroUsize::MIN));
     /// Reuse derived companion gate structures across chunks that share an
     /// active pattern set (multi-window scans and recurring trigger mixes).
     static COMPANION_DERIVED_CACHE: RefCell<LruCache<(u64, Vec<usize>), CompanionDerived>> =
-        RefCell::new(LruCache::new(
-            // LAW10: infallible: NonZeroUsize::new never fails for positive CAP constants.
-            NonZeroUsize::new(COMPANION_DERIVED_CACHE_CAP)
-                .expect("companion derived cache cap is non-zero"),
-        ));
+        RefCell::new(LruCache::new(NonZeroUsize::MIN));
     /// Reusable presence bitset for the companion AC walk.
     static COMPANION_PRESENT_SCRATCH: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
 }
@@ -71,6 +78,7 @@ pub(crate) fn companion_arms(src: &str) -> Arc<Vec<Vec<String>>> {
             return Arc::clone(arms);
         }
         let arms = Arc::new(compute_companion_arms(src));
+        grow_for_workload(&mut cache, COMPANION_ARMS_CACHE_CAP);
         cache.put(src.to_string(), Arc::clone(&arms));
         arms
     })
@@ -180,6 +188,7 @@ pub(crate) fn companions_deny_absent(
                 // Fail-open: keep every pattern allowed.
                 return;
             };
+            grow_for_workload(&mut cache, COMPANION_DERIVED_CACHE_CAP);
             cache.put(
                 cache_key.clone(),
                 CompanionDerived {

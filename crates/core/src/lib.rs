@@ -271,12 +271,17 @@ pub const REASSEMBLED_DETECTOR_SUFFIX: &str = ":reassembled";
 /// corpus, matching every prior consumer's contract.
 pub fn detector_spec_by_id(id: &str) -> Option<&'static DetectorSpec> {
     static BY_ID: std::sync::LazyLock<
-        std::collections::HashMap<&'static str, &'static DetectorSpec>,
+        std::collections::HashMap<&'static str, &'static DetectorSpec, ahash::RandomState>,
     > = std::sync::LazyLock::new(|| {
-        embedded_detector_specs()
-            .iter()
-            .map(|spec| (spec.id.as_str(), spec))
-            .collect()
+        let specs = embedded_detector_specs();
+        let mut map = std::collections::HashMap::with_capacity_and_hasher(
+            specs.len(),
+            ahash::RandomState::new(),
+        );
+        for spec in specs {
+            map.insert(spec.id.as_str(), spec);
+        }
+        map
     });
     BY_ID.get(id).copied()
 }

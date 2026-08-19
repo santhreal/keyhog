@@ -367,7 +367,7 @@ impl CompiledScanner {
     ) -> (f64, f64, usize, usize) {
         use super::phase2::ActivePatternsScratch;
         use super::Phase2HsEngine;
-        let all: Vec<usize> = self.phase2_always_active_indices.clone();
+        let all = &self.phase2_always_active_indices;
         let lean_n = all
             .iter()
             .filter(|&&i| !self.phase2_patterns[i].0.homoglyph_variant)
@@ -421,7 +421,7 @@ impl CompiledScanner {
         use super::phase2::ActivePatternsScratch;
         use super::Phase2HsEngine;
         use std::collections::HashSet;
-        let all: Vec<usize> = self.phase2_always_active_indices.clone();
+        let all = &self.phase2_always_active_indices;
         let engine = Phase2HsEngine::build(&self.phase2_patterns, &all)
             .expect("HS engine build")
             .expect("HS engine");

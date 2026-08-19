@@ -220,11 +220,18 @@ fn byte_pair_count(piece: &[u8]) -> usize {
 /// Bound retained candidate material to at most 64 KiB per scanner worker.
 /// Longer values still tokenize exactly but do not remain resident.
 const TOKEN_CACHE_ENTRIES: usize = 256;
-const TOKEN_CACHE_CAPACITY: NonZeroUsize = match NonZeroUsize::new(TOKEN_CACHE_ENTRIES) {
-    Some(n) => n,
-    None => NonZeroUsize::MIN,
-};
 const TOKEN_CACHE_MAX_VALUE_BYTES: usize = 256;
+
+fn grow_for_workload(cache: &mut LruCache<u64, TokenCountCacheEntry>, max_cap: usize) {
+    let current = cache.cap().get();
+    if cache.len() < current || current >= max_cap {
+        return;
+    }
+    let next = current.saturating_mul(2).min(max_cap);
+    if let Some(next) = NonZeroUsize::new(next) {
+        cache.resize(next);
+    }
+}
 
 struct TokenCountCacheEntry {
     /// Exact bytes make an FNV collision a miss rather than a recall-affecting
@@ -236,7 +243,7 @@ struct TokenCountCacheEntry {
 
 thread_local! {
     static TOKEN_COUNT_CACHE: RefCell<LruCache<u64, TokenCountCacheEntry>> = RefCell::new(
-        LruCache::new(TOKEN_CACHE_CAPACITY)
+        LruCache::new(NonZeroUsize::MIN)
     );
     #[cfg(test)]
     static TOKENIZER_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -272,7 +279,9 @@ fn token_count_with_key(s: &str, key: u64) -> usize {
 
     let tokens = token_count_uncached(s);
     TOKEN_COUNT_CACHE.with(|cache| {
-        cache.borrow_mut().put(
+        let mut cache = cache.borrow_mut();
+        grow_for_workload(&mut cache, TOKEN_CACHE_ENTRIES);
+        cache.put(
             key,
             TokenCountCacheEntry {
                 value: Zeroizing::new(s.as_bytes().to_vec().into_boxed_slice()),

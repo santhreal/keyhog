@@ -7,9 +7,9 @@ use std::sync::LazyLock;
 /// reduced detector corpora from being filtered by the embedded corpus.
 #[derive(Debug)]
 pub(crate) struct GenericKeywordStemSet {
-    stems: Vec<Box<str>>,
-    by_first: [Vec<usize>; 256],
-    has_first: [bool; 256],
+    stems: Box<[Box<str>]>,
+    by_first_offsets: [u16; 257],
+    by_first_data: Box<[u16]>,
 }
 
 impl GenericKeywordStemSet {
@@ -21,25 +21,58 @@ impl GenericKeywordStemSet {
                 stems.push(stem.into());
             }
         }
-        let mut by_first: [Vec<usize>; 256] = std::array::from_fn(|_| Vec::new());
-        let mut has_first = [false; 256];
+        let mut counts = [0u16; 256];
+        for stem in &stems {
+            if let Some(&first) = stem.as_bytes().first() {
+                let lower = first.to_ascii_lowercase();
+                let upper = first.to_ascii_uppercase();
+                counts[lower as usize] = counts[lower as usize].saturating_add(1);
+                if upper != lower {
+                    counts[upper as usize] = counts[upper as usize].saturating_add(1);
+                }
+            }
+        }
+        let mut by_first_offsets = [0u16; 257];
+        let mut total = 0u16;
+        for i in 0..256 {
+            by_first_offsets[i] = total;
+            total = total.saturating_add(counts[i]);
+        }
+        by_first_offsets[256] = total;
+
+        let mut by_first_data = vec![0u16; total as usize];
+        let mut cursors = by_first_offsets;
         for (idx, stem) in stems.iter().enumerate() {
             if let Some(&first) = stem.as_bytes().first() {
                 let lower = first.to_ascii_lowercase();
                 let upper = first.to_ascii_uppercase();
-                by_first[lower as usize].push(idx);
-                has_first[lower as usize] = true;
+                let pos = cursors[lower as usize] as usize;
+                by_first_data[pos] = idx as u16;
+                cursors[lower as usize] += 1;
                 if upper != lower {
-                    by_first[upper as usize].push(idx);
-                    has_first[upper as usize] = true;
+                    let pos = cursors[upper as usize] as usize;
+                    by_first_data[pos] = idx as u16;
+                    cursors[upper as usize] += 1;
                 }
             }
         }
         Self {
-            stems,
-            by_first,
-            has_first,
+            stems: stems.into_boxed_slice(),
+            by_first_offsets,
+            by_first_data: by_first_data.into_boxed_slice(),
         }
+    }
+
+    #[inline]
+    pub(crate) fn stems_for_byte(&self, byte: u8) -> &[u16] {
+        let start = self.by_first_offsets[byte as usize] as usize;
+        let end = self.by_first_offsets[byte as usize + 1] as usize;
+        &self.by_first_data[start..end]
+    }
+
+    #[inline]
+    pub(crate) fn has_first_byte(&self, byte: u8) -> bool {
+        self.by_first_offsets[byte as usize] != self.by_first_offsets[byte as usize + 1]
     }
 
     pub(crate) fn literals(&self) -> impl ExactSizeIterator<Item = &str> {
@@ -49,7 +82,7 @@ impl GenericKeywordStemSet {
     #[inline]
     pub(crate) fn is_match(&self, bytes: &[u8]) -> bool {
         for (index, &byte) in bytes.iter().enumerate() {
-            if self.has_first[byte as usize] && generic_stem_matches_at(bytes, index, self) {
+            if self.has_first_byte(byte) && generic_stem_matches_at(bytes, index, self) {
                 return true;
             }
         }
@@ -252,7 +285,7 @@ fn assignment_stem_before_delimiter(
 ) -> Option<usize> {
     let last_delimiter = memchr::memrchr2(b'=', b':', line)?;
     for (index, &byte) in line[..=last_delimiter].iter().enumerate() {
-        if stem_set.has_first[byte as usize] && generic_stem_matches_at(line, index, stem_set) {
+        if stem_set.has_first_byte(byte) && generic_stem_matches_at(line, index, stem_set) {
             return Some(index);
         }
     }
@@ -261,8 +294,8 @@ fn assignment_stem_before_delimiter(
 
 #[inline]
 fn generic_stem_matches_at(bytes: &[u8], start: usize, stem_set: &GenericKeywordStemSet) -> bool {
-    for &stem_idx in &stem_set.by_first[bytes[start] as usize] {
-        let stem = stem_set.stems[stem_idx].as_bytes();
+    for &stem_idx in stem_set.stems_for_byte(bytes[start]) {
+        let stem = stem_set.stems[stem_idx as usize].as_bytes();
         let end = start + stem.len();
         if end <= bytes.len() && bytes[start..end].eq_ignore_ascii_case(stem) {
             return true;

@@ -132,11 +132,11 @@ pub(crate) struct Phase2AnchorIndex {
     /// `anchor_ac` pattern id -> phase-2 indices that declared this literal.
     literal_patterns: super::CsrU32,
     /// Per phase-2 index: eligible for the anchored fast path.
-    eligible: Vec<bool>,
+    eligible: Box<[bool]>,
     /// Per phase-2 index: eligible AND always-active (no >=4-char keyword).
     /// These are gated+located purely by the shared AC, so they are REMOVED
     /// from the expensive always-active RegexSet prefilter (the main win).
-    always_active_eligible: Vec<bool>,
+    always_active_eligible: Box<[bool]>,
     /// Separate AC over only always-active eligible literals. Sparse
     /// keyword-triggered chunks can use this small index for always-active
     /// semantics and run the few active keyword patterns whole-window instead
@@ -146,14 +146,14 @@ pub(crate) struct Phase2AnchorIndex {
     /// pattern IDs. The GPU producer appends these after detector literals and
     /// phase-2 keywords so an all-zero tail row proves this small AC has no
     /// possible match in that chunk.
-    always_anchor_literals: Vec<String>,
+    always_anchor_literals: Box<[String]>,
     /// First-bigram prescreen for `always_anchor_ac`.
     always_anchor_first_bigram: Option<FirstBigramSet>,
     /// `always_anchor_ac` pattern id -> always-active phase-2 indices.
     always_literal_patterns: super::CsrU32,
     /// Per phase-2 index: the anchored regex (Some iff eligible OR plain
     /// -anchorable (the localized homoglyph path also runs `\A(?:regex)`)).
-    anchored: Vec<Option<AnchoredRegex>>,
+    anchored: Box<[Option<AnchoredRegex>]>,
     /// Count of eligible patterns (diagnostics).
     eligible_count: usize,
 
@@ -168,7 +168,7 @@ pub(crate) struct Phase2AnchorIndex {
     plain_literal_patterns: super::CsrU32,
     /// Plain patterns with NO usable folded literal: run whole-chunk on ASCII
     /// chunks (they are few (homoglyph variants almost always have a prefix)).
-    plain_always_mark: Vec<u32>,
+    plain_always_mark: Box<[u32]>,
 }
 
 pub(crate) fn compile_localization_hint(
@@ -427,18 +427,18 @@ impl Phase2AnchorIndex {
             anchor_ac,
             anchor_first_bigram,
             literal_patterns,
-            eligible,
-            always_active_eligible,
+            eligible: eligible.into_boxed_slice(),
+            always_active_eligible: always_active_eligible.into_boxed_slice(),
             always_anchor_ac,
-            always_anchor_literals: always_literals,
+            always_anchor_literals: always_literals.into_boxed_slice(),
             always_anchor_first_bigram,
             always_literal_patterns,
-            anchored,
+            anchored: anchored.into_boxed_slice(),
             eligible_count,
             plain_anchor_ac,
             plain_anchor_first_bigram,
             plain_literal_patterns,
-            plain_always_mark,
+            plain_always_mark: plain_always_mark.into_boxed_slice(),
         })
     }
 

@@ -3081,7 +3081,37 @@ pub fn csr_from_rows_roundtrip_for_test(rows: Vec<Vec<usize>>) -> Vec<Vec<u32>> 
         .map(|row| csr.get(row).expect("row in range").to_vec())
         .collect()
 }
+#[derive(Clone, Debug, Default)]
+pub struct CsrU32(pub(crate) crate::engine::CsrU32);
+
+impl CsrU32 {
+    pub fn from_pairs(row_count: usize, pairs: impl IntoIterator<Item = (usize, usize)>) -> Self {
+        Self(crate::engine::CsrU32::from_pairs(row_count, pairs))
+    }
+
+    pub fn get(&self, i: usize) -> Option<&[u32]> {
+        self.0.get(i)
+    }
+
+    pub fn storage_lengths(&self) -> (usize, usize) {
+        self.0.storage_lengths()
+    }
+}
+
 pub use crate::pipeline::compute_line_offsets;
+
+#[derive(Default)]
+pub struct ScanState(pub(crate) crate::scan_state::ScanState);
+
+impl ScanState {
+    pub fn accepted_match_events(&self) -> u64 {
+        self.0.accepted_match_events
+    }
+
+    pub fn into_matches(self, detector_digest: u64) -> Vec<keyhog_core::RawMatch> {
+        self.0.into_matches(detector_digest)
+    }
+}
 pub fn generic_keyword_lines_from_positions(text: &str, positions: &[u32]) -> Vec<u32> {
     let index = crate::context::LineContextIndex::try_new(text)
         .expect("scanner test chunks must fit the checked u32 line-index boundary");
@@ -3847,35 +3877,33 @@ pub(crate) fn scan_state_drain_with_static_intern(
 }
 
 #[derive(Clone)]
-#[cfg(test)]
-pub(crate) struct LazyRegexProbe(crate::types::LazyRegex);
+pub struct LazyRegexProbe(crate::types::LazyRegex);
 
-#[cfg(test)]
 impl LazyRegexProbe {
-    pub(crate) fn detector(src: impl Into<std::sync::Arc<str>>) -> Self {
+    pub fn detector(src: impl Into<std::sync::Arc<str>>) -> Self {
         Self(crate::types::LazyRegex::detector(src))
     }
 
-    pub(crate) fn detector_compiled(
+    pub fn detector_compiled(
         src: impl Into<std::sync::Arc<str>>,
         compiled: std::sync::Arc<regex::Regex>,
     ) -> Self {
         Self(crate::types::LazyRegex::detector_compiled(src, compiled))
     }
 
-    pub(crate) fn plain(src: impl Into<std::sync::Arc<str>>) -> Self {
+    pub fn plain(src: impl Into<std::sync::Arc<str>>) -> Self {
         Self(crate::types::LazyRegex::plain(src))
     }
 
-    pub(crate) fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
 
-    pub(crate) fn get(&self) -> &regex::Regex {
+    pub fn get(&self) -> &regex::Regex {
         self.0.get()
     }
 
-    pub(crate) fn has_literal_prefix(&self) -> bool {
+    pub fn has_literal_prefix(&self) -> bool {
         self.0.has_literal_prefix()
     }
 }
