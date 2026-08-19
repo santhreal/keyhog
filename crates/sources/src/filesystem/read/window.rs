@@ -973,21 +973,28 @@ mod sparse_tests {
             .expect("set sparse length");
         let metadata = sparse.as_file().metadata().expect("all-hole metadata");
         assert_eq!(metadata.blocks(), 0, "test fixture allocated data blocks");
-        assert!(
-            discover_sparse_ranges(sparse.as_file(), FILE_LEN, keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES)
-                .expect("query all-hole extents")
-                .is_empty()
-        );
+        assert!(discover_sparse_ranges(
+            sparse.as_file(),
+            FILE_LEN,
+            keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES
+        )
+        .expect("query all-hole extents")
+        .is_empty());
 
         let mut windows = 0usize;
         let mut errors = Vec::new();
-        let outcome = for_each_file_windowed_mmap(sparse.path(), keyhog_core::DEFAULT_WINDOW_SIZE_BYTES, keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES, |row| {
-            match row {
-                Ok(_) => windows += 1,
-                Err(error) => errors.push(error.to_string()),
-            }
-            true
-        });
+        let outcome = for_each_file_windowed_mmap(
+            sparse.path(),
+            keyhog_core::DEFAULT_WINDOW_SIZE_BYTES,
+            keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES,
+            |row| {
+                match row {
+                    Ok(_) => windows += 1,
+                    Err(error) => errors.push(error.to_string()),
+                }
+                true
+            },
+        );
 
         assert!(matches!(outcome, WindowedMmapOutcome::Consumed));
         assert_eq!(windows, 0);

@@ -28,7 +28,8 @@ fn multi_path_events_attributed_to_distinct_roots() {
     let from_path = root_a.join("src/secrets_alpha.rs");
     let to_path = root_b.join("src/secrets_beta.rs");
 
-    let mut rename_event = notify::Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)));
+    let mut rename_event =
+        notify::Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)));
     rename_event.paths.push(from_path.clone());
     rename_event.paths.push(to_path.clone());
 
@@ -118,8 +119,14 @@ fn multi_path_events_with_unwatched_paths_safely_ignored() {
     let results: HashMap<PathBuf, Vec<GuardEvent>> = polled.into_iter().collect();
 
     assert_eq!(results.len(), 2, "only watched roots should be present");
-    assert_eq!(results.get(&root_a).unwrap(), &vec![GuardEvent::Modify(file_a)]);
-    assert_eq!(results.get(&root_b).unwrap(), &vec![GuardEvent::Modify(file_b)]);
+    assert_eq!(
+        results.get(&root_a).unwrap(),
+        &vec![GuardEvent::Modify(file_a)]
+    );
+    assert_eq!(
+        results.get(&root_b).unwrap(),
+        &vec![GuardEvent::Modify(file_b)]
+    );
 }
 
 #[test]
@@ -226,8 +233,12 @@ fn nested_roots_multi_prefix_attribution() {
     let parent_root = PathBuf::from("/srv/workspace");
     let nested_root = PathBuf::from("/srv/workspace/sub_project");
 
-    watcher.add_root(parent_root.clone()).expect("add parent root");
-    watcher.add_root(nested_root.clone()).expect("add nested root");
+    watcher
+        .add_root(parent_root.clone())
+        .expect("add parent root");
+    watcher
+        .add_root(nested_root.clone())
+        .expect("add nested root");
 
     let parent_file = parent_root.join("root_file.rs");
     let nested_file = nested_root.join("nested_file.rs");
@@ -245,7 +256,10 @@ fn nested_roots_multi_prefix_attribution() {
     // Parent root receives events for both parent_file and nested_file
     assert_eq!(
         results.get(&parent_root).unwrap(),
-        &vec![GuardEvent::Modify(parent_file), GuardEvent::Modify(nested_file.clone())]
+        &vec![
+            GuardEvent::Modify(parent_file),
+            GuardEvent::Modify(nested_file.clone())
+        ]
     );
     // Nested root receives event for nested_file
     assert_eq!(

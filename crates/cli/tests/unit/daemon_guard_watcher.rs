@@ -90,8 +90,14 @@ fn normalize_multi_path_event() {
     event.paths.push(PathBuf::from("/c/d.txt"));
     let guard_events = normalize_notify_event(&event);
     assert_eq!(guard_events.len(), 2);
-    assert_eq!(guard_events[0], GuardEvent::Create(PathBuf::from("/a/b.txt")));
-    assert_eq!(guard_events[1], GuardEvent::Create(PathBuf::from("/c/d.txt")));
+    assert_eq!(
+        guard_events[0],
+        GuardEvent::Create(PathBuf::from("/a/b.txt"))
+    );
+    assert_eq!(
+        guard_events[1],
+        GuardEvent::Create(PathBuf::from("/c/d.txt"))
+    );
 }
 
 #[test]

@@ -834,10 +834,9 @@ impl HardwareSession {
             &self.utilization_samples,
             self.dropped_utilization_samples,
             wall_ns,
-            self.topology.as_ref().map_or_else(
-                crate::host_parallelism::logical_cpus,
-                |t| t.logical_cpus,
-            ),
+            self.topology
+                .as_ref()
+                .map_or_else(crate::host_parallelism::logical_cpus, |t| t.logical_cpus),
             std::mem::take(&mut self.frequency_samples),
             self.dropped_frequency_samples,
         );

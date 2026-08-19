@@ -139,10 +139,19 @@ impl GuardWatcher {
         loop {
             match self.rx.try_recv() {
                 Ok(Ok(event)) => {
-                    if event.paths.is_empty() {
-                        // Empty paths vector indicates fidelity loss or unresolvable
-                        // bulk event: trigger subtree reconciliation across all roots.
-                        for root in self.roots.keys() {
+                    if event.need_rescan() || event.paths.is_empty() {
+                        // Rescan flag or empty paths vector indicates fidelity loss or unresolvable
+                        // bulk event: trigger subtree reconciliation across matching roots (or all roots if none match / pathless).
+                        let mut triggered_roots = Vec::new();
+                        for path in &event.paths {
+                            triggered_roots.extend(self.find_matching_roots_for_path(path));
+                        }
+                        if triggered_roots.is_empty() {
+                            triggered_roots.extend(self.roots.keys().cloned());
+                        }
+                        triggered_roots.sort();
+                        triggered_roots.dedup();
+                        for root in triggered_roots {
                             results
                                 .entry(root.clone())
                                 .or_default()
@@ -154,8 +163,7 @@ impl GuardWatcher {
                         for path in &event.paths {
                             let roots = self.find_matching_roots_for_path(path);
                             for root in roots {
-                                let guard_event =
-                                    normalize_notify_path_event(&event.kind, path);
+                                let guard_event = normalize_notify_path_event(&event.kind, path);
                                 if let Some(buffer) = self.roots.get(&root) {
                                     let mut buf = buffer.buffer.lock();
                                     buf.push(guard_event);
@@ -188,8 +196,7 @@ impl GuardWatcher {
                     .push(GuardEvent::ReconcileSubtree(root.clone()));
                 buf.drain_and_reset();
             } else {
-                let buffered: Vec<GuardEvent> =
-                    buf.drain().into_iter().map(|(_, ge)| ge).collect();
+                let buffered: Vec<GuardEvent> = buf.drain().into_iter().map(|(_, ge)| ge).collect();
                 if !buffered.is_empty() {
                     results.entry(root.clone()).or_default().extend(buffered);
                 }

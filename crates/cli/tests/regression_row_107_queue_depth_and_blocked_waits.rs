@@ -40,10 +40,7 @@ fn row_107_profile_artifact_populates_queue_depths_and_blocked_waits() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    assert!(
-        profile_out_path.exists(),
-        "profile.json should be written"
-    );
+    assert!(profile_out_path.exists(), "profile.json should be written");
     let profile_content = fs::read_to_string(&profile_out_path).expect("read profile");
     let profile: serde_json::Value =
         serde_json::from_str(&profile_content).expect("parse profile json");
