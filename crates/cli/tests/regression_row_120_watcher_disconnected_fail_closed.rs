@@ -30,6 +30,9 @@ fn test_fs_identity() -> FilesystemIdentity {
         inode: 42,
     }
 }
+fn test_fs_authority() -> keyhog_core::guard_state::FilesystemAuthority {
+    keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4")
+}
 
 #[test]
 fn disabled_watcher_reports_unmonitored_not_quiet() {
@@ -125,8 +128,13 @@ fn watcher_disconnection_transitions_current_roots_to_degraded() {
     let rt = GuardRuntime::new();
     let root_path = b"/test/guarded/repo".to_vec();
 
-    rt.add_root(root_path.clone(), test_fs_identity(), GuardRootMode::Repo)
-        .unwrap();
+    rt.add_root(
+        root_path.clone(),
+        test_fs_identity(),
+        test_fs_authority(),
+        GuardRootMode::Repo,
+    )
+    .unwrap();
 
     // Transition Stopped -> Indexing -> Current
     rt.transition_root(&root_path, &GuardTransition::ReconciliationStarted)
@@ -217,8 +225,13 @@ fn watcher_disconnection_during_indexing_forces_degraded_baseline_completion() {
     let rt = GuardRuntime::new();
     let root_path = b"/test/indexing/repo".to_vec();
 
-    rt.add_root(root_path.clone(), test_fs_identity(), GuardRootMode::Repo)
-        .unwrap();
+    rt.add_root(
+        root_path.clone(),
+        test_fs_identity(),
+        test_fs_authority(),
+        GuardRootMode::Repo,
+    )
+    .unwrap();
 
     rt.transition_root(&root_path, &GuardTransition::ReconciliationStarted)
         .unwrap();

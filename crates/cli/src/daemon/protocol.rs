@@ -483,6 +483,14 @@ pub(crate) enum Response {
         mode: String,
         /// Current state label.
         state: String,
+        /// Backing filesystem type (Row 132).
+        filesystem_type: String,
+        /// Whether the filesystem is authoritative for change events (Row 132).
+        filesystem_authoritative: bool,
+        /// Reason if unauthoritative (Row 132).
+        filesystem_unauthoritative_reason: Option<String>,
+        /// Effective periodic scrub interval in seconds (Row 132).
+        scrub_interval_secs: u64,
         /// Terminal event sequence.
         terminal_sequence: u64,
         /// Accepted event sequence (events received from the watcher).

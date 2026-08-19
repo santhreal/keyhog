@@ -265,11 +265,13 @@ impl RootRegistry {
         &mut self,
         canonical_path: Vec<u8>,
         filesystem_identity: crate::guard_state::FilesystemIdentity,
+        filesystem_authority: crate::guard_state::FilesystemAuthority,
         mode: crate::guard_state::GuardRootMode,
     ) -> GuardRootRecord {
         let record = GuardRootRecord {
             canonical_path: canonical_path.clone(),
             filesystem_identity,
+            filesystem_authority,
             mode,
             state: GuardRootState::Stopped,
             terminal_sequence: 0,

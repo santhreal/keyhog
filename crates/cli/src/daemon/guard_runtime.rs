@@ -13,8 +13,8 @@
 //! dispatch function talks to when a guard request arrives.
 
 use keyhog_core::guard_state::{
-    FilesystemIdentity, GitCleanAttestation, GitHashAlgorithm, GuardPolicyIdentity, GuardRootMode,
-    GuardRootRecord, GuardRootState, GuardTransition,
+    FilesystemAuthority, FilesystemIdentity, GitCleanAttestation, GitHashAlgorithm,
+    GuardPolicyIdentity, GuardRootMode, GuardRootRecord, GuardRootState, GuardTransition,
 };
 use keyhog_core::guard_store::{HotAttestationIndex, RootRegistry};
 use keyhog_core::RawMatch;
@@ -202,6 +202,7 @@ impl GuardRuntime {
         &self,
         canonical_path: Vec<u8>,
         filesystem_identity: FilesystemIdentity,
+        filesystem_authority: FilesystemAuthority,
         mode: GuardRootMode,
     ) -> Result<GuardRootRecord, String> {
         let mut roots = self.roots.write();
@@ -211,7 +212,12 @@ impl GuardRuntime {
                 String::from_utf8_lossy(&canonical_path)
             ));
         }
-        let record = roots.register(canonical_path, filesystem_identity, mode);
+        let record = roots.register(
+            canonical_path,
+            filesystem_identity,
+            filesystem_authority,
+            mode,
+        );
         self.touch_activity();
         Ok(record)
     }

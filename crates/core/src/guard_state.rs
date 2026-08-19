@@ -467,6 +467,51 @@ pub enum ReceiptError {
 
 // ── Root registration ────────────────────────────────────────────────────
 
+/// Backing filesystem authority assessment for guard root event delivery.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct FilesystemAuthority {
+    /// Filesystem type name (e.g. "ext4", "btrfs", "apfs", "ntfs", "nfs", "fuse", "unknown").
+    pub filesystem_type: String,
+    /// Whether the filesystem reliably generates kernel-level change events for all modifications.
+    pub authoritative: bool,
+    /// Reason if unauthoritative (e.g. "network filesystem does not propagate remote change events").
+    pub unauthoritative_reason: Option<String>,
+}
+
+impl Default for FilesystemAuthority {
+    fn default() -> Self {
+        Self {
+            filesystem_type: "unknown".to_string(),
+            authoritative: false,
+            unauthoritative_reason: Some(
+                "unprobed filesystem defaults to unauthoritative".to_string(),
+            ),
+        }
+    }
+}
+
+impl FilesystemAuthority {
+    /// Authoritative local filesystem.
+    #[must_use]
+    pub fn authoritative(filesystem_type: impl Into<String>) -> Self {
+        Self {
+            filesystem_type: filesystem_type.into(),
+            authoritative: true,
+            unauthoritative_reason: None,
+        }
+    }
+
+    /// Unauthoritative filesystem requiring periodic scrubbing.
+    #[must_use]
+    pub fn unauthoritative(filesystem_type: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self {
+            filesystem_type: filesystem_type.into(),
+            authoritative: false,
+            unauthoritative_reason: Some(reason.into()),
+        }
+    }
+}
+
 /// Persistent record for one registered guard root.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GuardRootRecord {
@@ -474,6 +519,9 @@ pub struct GuardRootRecord {
     pub canonical_path: Vec<u8>,
     /// Filesystem identity (device + inode on Unix, volume serial on Windows).
     pub filesystem_identity: FilesystemIdentity,
+    /// Filesystem authority assessment (Row 132).
+    #[serde(default)]
+    pub filesystem_authority: FilesystemAuthority,
     /// Repository or filesystem mode.
     pub mode: GuardRootMode,
     /// Current root state.

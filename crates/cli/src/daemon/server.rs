@@ -299,7 +299,8 @@ impl ServerState {
             None => crate::daemon::guard_runtime::GuardRuntime::new(),
         });
         let watcher_instance = crate::daemon::guard_watcher::GuardWatcher::new(guard_recon_config)
-            .unwrap_or_else(|e| { // LAW10: explicit warn logged on failed watcher initialization before falling back to disabled mode
+            .unwrap_or_else(|e| {
+                // LAW10: explicit warn logged on failed watcher initialization before falling back to disabled mode
                 tracing::warn!(
                     "daemon: guard watcher disabled: unmonitored (not watching): {}",
                     e
@@ -795,11 +796,11 @@ fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<
     tokio::spawn(async move {
         let coalesce_window =
             std::time::Duration::from_millis(state.guard_watcher.lock().coalesce_window_ms());
-        // Periodic scrub: re-scan all Current roots on a configured
-        // interval to catch changes that filesystem events missed.
-        // None disables scrubbing.
-        let scrub_interval = state.guard_scrub_interval;
-        let mut last_scrub = std::time::Instant::now();
+        // Periodic scrub (Row 132): tracks per-root scrub timing.
+        // Unauthoritative roots default to 60s periodic scrub when no operator
+        // scrub interval is configured.
+        let mut last_scrub_times: std::collections::HashMap<Vec<u8>, std::time::Instant> =
+            std::collections::HashMap::new();
         loop {
             tokio::select! {
                 _ = state.shutdown.notified() => return,
@@ -820,47 +821,74 @@ fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<
                     // Sweep abandoned transactions each cycle.
                     state.guard.sweep_stale_transactions();
 
-                    // Periodic scrub: if the interval has elapsed,
-                    // trigger reconciliation for all Current roots.
-                    // This catches changes that filesystem events
-                    // missed (NFS, bind mounts, external edits).
-                    if let Some(interval) = scrub_interval {
-                        if last_scrub.elapsed() >= interval {
-                            scrub_guard_roots(&state);
-                            last_scrub = std::time::Instant::now();
-                        }
-                    }
+                    // Periodic scrub: check all Current roots against their
+                    // configured or default unauthoritative scrub interval.
+                    scrub_guard_roots(&state, &mut last_scrub_times);
                 }
             }
         }
     })
 }
 
-/// Trigger reconciliation for all Current roots. Called periodically
-/// by the watcher loop when a scrub interval is configured. This
-/// catches changes that filesystem events missed (NFS, bind mounts,
-/// external edits that bypass inotify).
-fn scrub_guard_roots(state: &ServerState) {
+/// Trigger reconciliation for Current roots whose scrub interval has elapsed (Row 132).
+///
+/// If an operator scrub interval is configured, roots are scrubbed on that schedule.
+/// If no operator scrub interval is configured, unauthoritative roots (NFS, SMB/CIFS, FUSE, 9P)
+/// are automatically scrubbed on a default 60-second schedule to detect changes that kernel
+/// filesystem events missed.
+fn scrub_guard_roots(
+    state: &ServerState,
+    last_scrub_times: &mut std::collections::HashMap<Vec<u8>, std::time::Instant>,
+) {
     use keyhog_core::guard_state::{GuardRootState, GuardTransition};
     let roots = state.guard.list_roots();
     let mut scrubbed = 0;
+    let now = std::time::Instant::now();
     for record in roots {
         if record.state == GuardRootState::Current {
-            let path_str = String::from_utf8_lossy(&record.canonical_path);
-            match state.guard.transition_root(
-                &record.canonical_path,
-                &GuardTransition::ReconciliationStarted,
-            ) {
-                Ok(_) => {
-                    tracing::info!("daemon: scrub: re-reconciling root {}", path_str);
-                    scrubbed += 1;
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "daemon: scrub: failed to start reconciliation for {}: {}",
-                        path_str,
-                        e
-                    );
+            let interval = if let Some(configured) = state.guard_scrub_interval {
+                Some(configured)
+            } else if !record.filesystem_authority.authoritative {
+                Some(std::time::Duration::from_secs(
+                    crate::daemon::fs_probe::DEFAULT_UNAUTHORITATIVE_SCRUB_INTERVAL_SECS,
+                ))
+            } else {
+                None
+            };
+
+            if let Some(interval) = interval {
+                let last_time = last_scrub_times.get(&record.canonical_path).copied();
+                let should_scrub = match last_time {
+                    Some(t) => now.duration_since(t) >= interval,
+                    None => {
+                        // Record baseline time on first observation in Current
+                        last_scrub_times.insert(record.canonical_path.clone(), now);
+                        false
+                    }
+                };
+
+                if should_scrub {
+                    let path_str = String::from_utf8_lossy(&record.canonical_path);
+                    let _ = state
+                        .guard
+                        .transition_root(&record.canonical_path, &GuardTransition::Stopped);
+                    match state.guard.transition_root(
+                        &record.canonical_path,
+                        &GuardTransition::ReconciliationStarted,
+                    ) {
+                        Ok(_) => {
+                            tracing::info!("daemon: scrub: re-reconciling root {}", path_str);
+                            scrubbed += 1;
+                            last_scrub_times.insert(record.canonical_path.clone(), now);
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "daemon: scrub: failed to start reconciliation for {}: {}",
+                                path_str,
+                                e
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -2666,10 +2694,13 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 };
             }
             let fs_identity = filesystem_identity(&canonical_path);
-            match state
-                .guard
-                .add_root(canonical.as_bytes().to_vec(), fs_identity, guard_mode)
-            {
+            let fs_authority = crate::daemon::fs_probe::probe_filesystem_authority(&canonical_path);
+            match state.guard.add_root(
+                canonical.as_bytes().to_vec(),
+                fs_identity,
+                fs_authority,
+                guard_mode,
+            ) {
                 Ok(record) => {
                     // Register the root with the filesystem watcher.
                     // Subscribe-first: the watcher starts before any
@@ -2778,10 +2809,24 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                         watcher.poll_interval_ms(),
                     )
                 };
+                let scrub_interval_secs = if let Some(interval) = state.guard_scrub_interval {
+                    interval.as_secs()
+                } else if !record.filesystem_authority.authoritative {
+                    crate::daemon::fs_probe::DEFAULT_UNAUTHORITATIVE_SCRUB_INTERVAL_SECS
+                } else {
+                    0
+                };
                 Response::GuardStatusResult {
                     root: root.clone(),
                     mode: record.mode.label().to_string(),
                     state: record.state.label().to_string(),
+                    filesystem_type: record.filesystem_authority.filesystem_type.clone(),
+                    filesystem_authoritative: record.filesystem_authority.authoritative,
+                    filesystem_unauthoritative_reason: record
+                        .filesystem_authority
+                        .unauthoritative_reason
+                        .clone(),
+                    scrub_interval_secs,
                     terminal_sequence: record.terminal_sequence,
                     accepted_event_sequence: record.accepted_event_sequence,
                     completed_event_sequence: record.completed_event_sequence,

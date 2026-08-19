@@ -386,11 +386,23 @@ repositories:
 scrub_interval = "24h"
 ```
 
-Scrubbing detects modifications made outside standard filesystem events (such as
+Scrubbing detects modifications made outside standard kernel filesystem events (such as
 NFS mounts, container volume mutations, or out-of-band Git object manipulation).
-When the interval elapses, each `current` root automatically transitions to
-`indexing` for a full reconciliation.
 
+### Unauthoritative filesystems
+
+When registering a root, KeyHog automatically probes the backing filesystem type.
+Local filesystems (such as `ext4`, `btrfs`, `xfs`, `apfs`, and `ntfs`) generate kernel change
+events reliably and are classified as authoritative.
+
+Network filesystems (`nfs`, `cifs`/`smb`, `9p`, `afs`, `ceph`), userspace/virtual filesystems
+(`fuse`, `overlay`), and unrecognized filesystem types do not reliably generate real-time local
+kernel notifications. When an unauthoritative filesystem is registered and no operator
+`scrub_interval` is configured, KeyHog enforces a default 60-second periodic scrub interval
+to guarantee that remote modifications are caught.
+
+When the scrub interval elapses, each `current` root automatically transitions to
+`indexing` for a full reconciliation.
 ## Recovering corrupted roots
 
 If a repository's durable state becomes corrupt or desynchronized, rebuild it:

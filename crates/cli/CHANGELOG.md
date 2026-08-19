@@ -2,6 +2,7 @@
 
 ## 0.5.80 - 2026-08-17
 
+- feat(daemon): filesystem authority probe and default periodic scrub for unauthoritative filesystems (Row 132).
 - feat(config): add guard configuration section to example TOML and docs truth (Row 131).
 - feat(daemon): report active watcher backend, latency tier, and polling interval in guard status (Row 123).
 - fix(daemon): attribute multi-path watcher events across all enclosing roots and trigger subtree reconciliation on pathless events (Row 121).

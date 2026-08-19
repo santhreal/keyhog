@@ -53,6 +53,7 @@ pub mod regression_row_121_watcher_multi_path_events;
 #[path = "regression_row_123_watcher_backend_status.rs"]
 pub mod regression_row_123_watcher_backend_status;
 pub mod regression_row_131_config_example_guard_section;
+pub mod regression_row_132_guard_scrub_unauthoritative_probe;
 pub mod regression_scan_system_mount_filters_tier_b;
 pub mod regression_value_parser_fix_guidance;
 pub mod release_floating_tag_predicate_single_owner;
