@@ -297,6 +297,7 @@ fn symbolic_special_shape_candidate(
                 | b'^'
                 | b'&'
                 | b'*'
+                | b'~'
         ) {
             symbols += 1;
             has_non_underscore_symbol |= byte != b'_';
@@ -802,8 +803,9 @@ fn isolated_bare_candidate(
                         | b'$'
                         | b'%'
                         | b'^'
-                        | b'&'
-                        | b'*'
+                    | b'&'
+                    | b'*'
+                    | b'~'
                 )
         });
     let bang_led_symbolic_token = has_assignment_equals

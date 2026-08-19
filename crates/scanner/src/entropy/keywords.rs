@@ -306,7 +306,7 @@ fn extract_candidates_internal(
         push_candidate(&line[sep_pos + 1..], false, true);
     }
 
-    for quote in ['"', '\''] {
+    for quote in ['"', '\'', '`'] {
         let mut start = None;
         for (index, ch) in line.char_indices() {
             if ch == quote {
@@ -611,14 +611,21 @@ fn compact_normalized_keyword_ends_with(normalized: &str, suffix: &[u8]) -> bool
 }
 
 fn clean_candidate_value(raw: &str) -> &str {
-    let trimmed = raw
-        .trim()
-        .trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == ';' || c == ',');
-    let end = match trimmed.find(|c: char| c.is_whitespace() || c == '&' || c == '<') {
+    let trimmed = raw.trim();
+    let is_quoted = trimmed.starts_with('"') || trimmed.starts_with('\'') || trimmed.starts_with('`');
+    let unquoted = trimmed.trim_matches(|c: char| {
+        matches!(c, '"' | '\'' | '`' | ';' | ',' | '{' | '}' | '(' | ')' | '[' | ']')
+    });
+    if is_quoted {
+        return unquoted.trim_matches(|c: char| matches!(c, '"' | '\'' | '`' | ';' | ','));
+    }
+    let end = match unquoted.find(|c: char| c.is_whitespace() || c == '<') {
         Some(index) => index,
-        None => trimmed.len(),
+        None => unquoted.len(),
     };
-    trimmed[..end].trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == ';' || c == ',')
+    unquoted[..end].trim_matches(|c: char| {
+        matches!(c, '"' | '\'' | '`' | ';' | ',' | '{' | '}' | '(' | ')' | '[' | ']')
+    })
 }
 
 pub(crate) fn authorization_header_value(line: &str) -> Option<&str> {
