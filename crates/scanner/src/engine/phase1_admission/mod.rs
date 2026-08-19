@@ -692,27 +692,6 @@ impl Phase1AdmissionSummary {
             }
         }
     }
-
-    #[allow(dead_code)]
-    #[inline]
-    fn merge(self, other: Self) -> Self {
-        Self {
-            alphabet_rejected_chunks: self
-                .alphabet_rejected_chunks
-                .saturating_add(other.alphabet_rejected_chunks),
-            alphabet_rejected_bytes: self
-                .alphabet_rejected_bytes
-                .saturating_add(other.alphabet_rejected_bytes),
-            bigram_rejected_chunks: self
-                .bigram_rejected_chunks
-                .saturating_add(other.bigram_rejected_chunks),
-            bigram_rejected_bytes: self
-                .bigram_rejected_bytes
-                .saturating_add(other.bigram_rejected_bytes),
-            admitted_chunks: self.admitted_chunks.saturating_add(other.admitted_chunks),
-            admitted_bytes: self.admitted_bytes.saturating_add(other.admitted_bytes),
-        }
-    }
 }
 
 pub(super) fn phase1_payload_fingerprint(data: &[u8]) -> [u8; 32] {
