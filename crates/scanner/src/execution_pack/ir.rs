@@ -4,6 +4,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 
+static EMBEDDED_CANONICAL_IR: std::sync::LazyLock<
+    Result<CanonicalDetectorExecutionIr, ExecutionPackError>,
+> = std::sync::LazyLock::new(|| {
+    let specs = keyhog_core::embedded_detector_specs();
+    CanonicalDetectorExecutionIr::compile(specs)
+});
+
 pub const DETECTOR_EXECUTION_IR_VERSION: u16 = 1;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -90,6 +97,26 @@ impl CanonicalDetectorExecutionIr {
             detectors: normalized,
         };
         Self::from_envelope(envelope)
+    }
+    /// Return the canonical execution IR compiled from the embedded detector corpus.
+    ///
+    /// Parsed and compiled at most once across the entire process lifetime.
+    pub fn embedded() -> Result<&'static Self, ExecutionPackError> {
+        EMBEDDED_CANONICAL_IR.as_ref().map_err(|err| err.clone())
+    }
+
+    /// Return the exact 32-byte BLAKE3 digest of the canonical embedded detector execution IR.
+    pub fn embedded_digest() -> Result<[u8; 32], ExecutionPackError> {
+        Self::embedded().map(|ir| ir.digest())
+    }
+
+    pub(crate) fn is_embedded_corpus(detectors: &[DetectorSpec]) -> bool {
+        std::ptr::eq(detectors, keyhog_core::embedded_detector_specs())
+            || (detectors.len() == keyhog_core::embedded_detector_count()
+                && detectors
+                    .iter()
+                    .zip(keyhog_core::embedded_detector_specs().iter())
+                    .all(|(a, b)| a.id == b.id))
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, ExecutionPackError> {

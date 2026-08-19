@@ -399,12 +399,27 @@ pub fn current_binary_digest() -> Result<[u8; 32]> {
         if read == 0 {
             break;
         }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(*hasher.finalize().as_bytes())
+        let mut file =
+            File::open(&path).map_err(|error| format!("opening {}: {error}", path.display()))?;
+        let mut hasher = blake3::Hasher::new();
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let read = file
+                .read(&mut buffer)
+                .map_err(|error| format!("hashing {}: {error}", path.display()))?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+        }
+        Ok(*hasher.finalize().as_bytes())
+    });
+
+pub(crate) fn current_binary_digest() -> Result<[u8; 32]> {
+    CURRENT_BINARY_DIGEST.clone().map_err(anyhow::Error::msg)
 }
 
-pub(crate) fn current_target_digest() -> [u8; 32] {
+static CURRENT_TARGET_DIGEST: std::sync::LazyLock<[u8; 32]> = std::sync::LazyLock::new(|| {
     let hardware = keyhog_scanner::hw_probe::probe_host_hardware();
     let physical_cores = hardware.physical_cores.to_le_bytes();
     let logical_cores = hardware.logical_cores.to_le_bytes();
@@ -438,9 +453,13 @@ pub(crate) fn current_target_digest() -> [u8; 32] {
             .unwrap_or_default() // LAW10: absent optional runtime identity is disambiguated by the adjacent presence flag in this hardware digest.
             .as_bytes(),
     ])
+});
+
+pub(crate) fn current_target_digest() -> [u8; 32] {
+    *CURRENT_TARGET_DIGEST
 }
 
-pub(crate) fn current_feature_digest() -> [u8; 32] {
+static CURRENT_FEATURE_DIGEST: std::sync::LazyLock<[u8; 32]> = std::sync::LazyLock::new(|| {
     digest_parts(&[
         if cfg!(feature = "simd") {
             b"simd=1"
@@ -454,6 +473,10 @@ pub(crate) fn current_feature_digest() -> [u8; 32] {
         },
         env!("CARGO_PKG_VERSION").as_bytes(),
     ])
+});
+
+pub(crate) fn current_feature_digest() -> [u8; 32] {
+    *CURRENT_FEATURE_DIGEST
 }
 
 fn digest_parts(parts: &[&[u8]]) -> [u8; 32] {

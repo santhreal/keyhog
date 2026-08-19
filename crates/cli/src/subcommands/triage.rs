@@ -82,8 +82,7 @@ pub(crate) fn run(args: TriageArgs) -> Result<ExitCode> {
 
 #[cfg(unix)]
 fn active_detector_digest() -> Result<String> {
-    let detectors = keyhog_core::load_embedded_detectors_or_fail()
-        .map_err(|_| anyhow!("active detector corpus could not be loaded"))?;
+    let detectors = keyhog_core::embedded_detector_specs().to_vec();
     let scanner = keyhog_scanner::CompiledScanner::compile_with_gpu_policy(
         detectors,
         keyhog_scanner::GpuInitPolicy::ForceDisabled,

@@ -990,7 +990,12 @@ pub fn compile_shared_with_matcher_artifact_cache(
     // route-matcher section compile + eager CompileState construction. The
     // normalized detector list is also required to hydrate companions against
     // the live corpus, so this work is not optional bookkeeping.
-    let ir = match CanonicalDetectorExecutionIr::compile(detectors.as_ref()) {
+    let ir_result = if CanonicalDetectorExecutionIr::is_embedded_corpus(detectors.as_ref()) {
+        CanonicalDetectorExecutionIr::embedded().map(|ir| ir.clone())
+    } else {
+        CanonicalDetectorExecutionIr::compile(detectors.as_ref())
+    };
+    let ir = match ir_result {
         Ok(ir) => ir,
         Err(error) => {
             tracing::warn!(
@@ -1217,9 +1222,16 @@ fn compile_without_matcher_artifact_cache(
     tuning_config: &ScannerTuningConfig,
     reason: MatcherArtifactCacheDisableReason,
 ) -> Result<(CompiledScanner, MatcherArtifactCacheOutcome)> {
-    let sorted = match CanonicalDetectorExecutionIr::compile(detectors.as_ref()) {
-        Ok(ir) => Arc::from(ir.detectors().to_vec()),
-        Err(_) => normalize_detectors_for_matcher_compile(detectors), // LAW10: fallback normalization if canonical IR compilation fails; recall-preserving
+    let sorted = if CanonicalDetectorExecutionIr::is_embedded_corpus(detectors.as_ref()) {
+        match CanonicalDetectorExecutionIr::embedded() {
+            Ok(ir) => Arc::from(ir.detectors().to_vec()),
+            Err(_) => normalize_detectors_for_matcher_compile(detectors), // LAW10: fallback normalization if canonical IR compilation fails; recall-preserving
+        }
+    } else {
+        match CanonicalDetectorExecutionIr::compile(detectors.as_ref()) {
+            Ok(ir) => Arc::from(ir.detectors().to_vec()),
+            Err(_) => normalize_detectors_for_matcher_compile(detectors), // LAW10: fallback normalization if canonical IR compilation fails; recall-preserving
+        }
     };
     compile_with_matcher_artifact_outcome(
         sorted,

@@ -50,9 +50,8 @@ struct InstallBackendInput<'a> {
 pub(crate) fn run(args: CompileExecutionPacksArgs) -> Result<()> {
     keyhog_profile::set_compile_phase(keyhog_profile::CompilePhase::Install);
     let signing_key = read_signing_key(&args.signing_key)?;
-    let detectors = keyhog_core::load_embedded_detectors_or_fail()
-        .context("loading embedded detectors for execution-pack compilation")?;
-    let ir = CanonicalDetectorExecutionIr::compile(&detectors)
+    let detectors = keyhog_core::embedded_detector_specs();
+    let ir = CanonicalDetectorExecutionIr::embedded()
         .map_err(anyhow::Error::msg)
         .context("compiling canonical detector execution IR")?;
     let native = CompiledNativeBackendPrograms::compile(&ir)
