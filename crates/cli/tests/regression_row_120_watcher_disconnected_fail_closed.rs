@@ -290,20 +290,21 @@ fn add_root_fails_closed_when_watcher_is_disconnected() {
 }
 
 #[test]
-fn disabled_watcher_rejects_add_root() {
+fn disabled_watcher_allows_unmonitored_root_and_polls_empty() {
     let mut watcher = GuardWatcher::new_disabled();
     assert!(watcher.is_disabled());
 
     let dir = tempdir().unwrap();
     let result = watcher.add_root(dir.path().to_path_buf());
     assert!(
-        result.is_err(),
-        "add_root must fail when watcher backend is disabled"
+        result.is_ok(),
+        "add_root must succeed on disabled watcher for unmonitored commit transaction tracking"
     );
-    let err_msg = result.unwrap_err();
+    assert_eq!(watcher.watcher_status(), "unmonitored");
+    let events = watcher.poll_events();
     assert!(
-        err_msg.contains("watcher backend disabled"),
-        "error message must name the disabled watcher condition: got '{err_msg}'"
+        events.is_empty(),
+        "disabled watcher must never produce events"
     );
 }
 
