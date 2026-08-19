@@ -256,7 +256,8 @@ fn install_scripts_share_common_flags() {
         "install.sh must document common flags"
     );
     assert_eq!(
-        sh_flags, ps1_flags,
+        sh_flags,
+        ps1_flags,
         "install.sh and install.ps1 must document identical common flags\n  \
          only in install.sh: {:?}\n  only in install.ps1: {:?}",
         sh_flags.difference(&ps1_flags).collect::<Vec<_>>(),
