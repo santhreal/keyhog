@@ -168,7 +168,9 @@ impl GuardRuntime {
         let existing = root_map.get(root_path);
         if let Some(existing) = existing {
             if !existing.is_compatible_with(&identity) {
-                self.attestations.invalidate_for_policy(&identity);
+                if let Ok(old_short) = existing.short_digest() {
+                    self.attestations.invalidate_policy_digest(&old_short);
+                }
                 let mut roots = self.roots.write();
                 if let Some(r) = roots.get_mut(root_path) {
                     if r.state != GuardRootState::Stopped && r.state != GuardRootState::Indexing {

@@ -149,6 +149,31 @@ impl HotAttestationIndex {
         removed
     }
 
+    /// Invalidate all attestations matching a specific policy short digest.
+    /// Returns the count removed.
+    pub fn invalidate_policy_digest(&self, stale_digest: &str) -> usize {
+        if stale_digest.is_empty() {
+            return 0;
+        }
+        let mut removed = 0;
+        let mut to_remove = Vec::new();
+        {
+            let cache = self.cache.lock();
+            for (key, _) in cache.iter() {
+                if key.policy_short_digest == stale_digest {
+                    to_remove.push(key.clone());
+                }
+            }
+        }
+        let mut cache = self.cache.lock();
+        for key in to_remove {
+            if cache.pop(&key).is_some() {
+                removed += 1;
+            }
+        }
+        removed
+    }
+
     /// Current number of entries in the hot index.
     pub fn len(&self) -> usize {
         self.cache.lock().len()

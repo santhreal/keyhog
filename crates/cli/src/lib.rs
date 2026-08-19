@@ -499,10 +499,6 @@ pub fn cli_main() -> ExitCode {
     }
 
     match cli.command {
-        Some(args::Command::Completion(args)) => {
-            subcommands::completion::run(args);
-            ExitCode::SUCCESS
-        }
         None => {
             let mut cmd = args::command();
             let _ = cmd.print_help(); // LAW10: unused-binding marker; no runtime effect, not a fallback
