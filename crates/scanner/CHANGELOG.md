@@ -2,6 +2,7 @@
 
 
 ## 0.5.80 - 2026-08-17
+- perf(scanner): proportional scrub cost bounded to populated content bytes rather than reserved slot capacity (Row 115).
 - feat(scanner): single canonical owner of window overlap and size constants shared across reader, stdin, and scanner (Row 111).
 - feat(gpu): record positive upload and readback durations across all GPU dispatch modes to populate GpuUploadNs and GpuReadbackNs profile metrics.
 - feat(gpu): migrate GPU region dispatch timing from ad-hoc `Instant` stderr `perf-trace` lines into `keyhog_profile` typed metrics and render structured dispatch split during profile dumps.

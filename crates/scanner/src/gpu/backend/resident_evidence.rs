@@ -182,11 +182,10 @@ impl GpuBorrowedLiteralState {
     }
 
     fn clear_host_buffers(&mut self) {
-        self.output.as_mut_slice().zeroize();
-        self.output.clear();
+        GpuResidentLiteralState::zero_output_contents(&mut self.output);
         self.matches.clear();
-        self.scratch.haystack_bytes.zeroize();
-        self.scratch.hit_bytes.zeroize();
+        GpuResidentLiteralState::zero_scratch_allocation(&mut self.scratch.haystack_bytes);
+        GpuResidentLiteralState::zero_scratch_allocation(&mut self.scratch.hit_bytes);
     }
 }
 
@@ -400,13 +399,30 @@ impl Drop for ZeroResidentHostBuffers<'_> {
 }
 
 impl GpuResidentLiteralState {
-    fn zero_scratch_allocation(buffer: &mut Vec<u8>) {
-        buffer.zeroize();
+    pub(crate) fn zero_scratch_allocation(buffer: &mut Vec<u8>) {
+        let scrub_len = buffer.len();
+        if scrub_len > 0 {
+            #[cfg(feature = "gpu")]
+            crate::gpu::evidence::record_host_byte_scrub(
+                crate::gpu::evidence::GpuHostDataMovementSite::RegionPresenceScratchScrub,
+                scrub_len,
+            );
+            buffer.as_mut_slice().zeroize();
+            buffer.clear();
+        }
     }
 
-    fn zero_output_contents(buffer: &mut Vec<u32>) {
-        buffer.as_mut_slice().zeroize();
-        buffer.clear();
+    pub(crate) fn zero_output_contents(buffer: &mut Vec<u32>) {
+        let scrub_len = buffer.len().saturating_mul(std::mem::size_of::<u32>());
+        if scrub_len > 0 {
+            #[cfg(feature = "gpu")]
+            crate::gpu::evidence::record_host_byte_scrub(
+                crate::gpu::evidence::GpuHostDataMovementSite::RegionPresenceScratchScrub,
+                scrub_len,
+            );
+            buffer.as_mut_slice().zeroize();
+            buffer.clear();
+        }
     }
 
     fn clear_host_buffers(&mut self) {
