@@ -9,6 +9,7 @@
 use crate::engine::gpu_forced::SelectedGpuDispatchError;
 use crate::engine::ScannerBackendState;
 
+/// Concurrency pool bounding simultaneous GPU region dispatches to hardware capacity.
 #[derive(Debug)]
 pub struct GpuResidentExecutionPool {
     capacity: usize,
@@ -25,6 +26,7 @@ struct GpuResidentExecutionPoolState {
     poisoned: bool,
 }
 
+/// An acquired execution permit holding a slot in the GPU resident pool.
 #[derive(Debug)]
 pub struct GpuResidentExecutionPermit<'a> {
     pool: &'a GpuResidentExecutionPool,
@@ -38,12 +40,14 @@ impl Drop for GpuResidentExecutionPermit<'_> {
 }
 
 impl GpuResidentExecutionPermit<'_> {
+    /// Instant when this permit was granted by the execution pool.
     #[inline]
     #[must_use]
     pub fn acquired_at(&self) -> std::time::Instant {
         self.acquired_at
     }
 
+    /// Elapsed duration since this permit was acquired.
     #[inline]
     #[must_use]
     pub fn elapsed(&self) -> std::time::Duration {
@@ -52,6 +56,7 @@ impl GpuResidentExecutionPermit<'_> {
 }
 
 impl GpuResidentExecutionPool {
+    /// Construct a new execution pool with the given capacity bound.
     #[must_use]
     pub fn new(capacity: usize) -> Self {
         let capacity = capacity.max(1);
@@ -133,36 +138,40 @@ impl GpuResidentExecutionPool {
         Self::new(capacity)
     }
 
+    /// Maximum simultaneous dispatches permitted by this pool.
     #[inline]
     #[must_use]
     pub fn capacity(&self) -> usize {
         self.capacity
     }
 
+    /// Current number of dispatches actively holding a permit.
     #[inline]
     #[must_use]
     pub fn in_flight(&self) -> usize {
         self.state.lock().in_flight
     }
 
+    /// Highest concurrent in-flight dispatch count observed by this pool.
     #[inline]
     #[must_use]
     pub fn peak_concurrency(&self) -> usize {
         self.state.lock().peak_concurrency
     }
 
+    /// Number of unused permits currently available for acquisition.
     #[inline]
     #[must_use]
     pub fn available_permits(&self) -> usize {
         self.state.lock().available_permits
     }
 
+    /// Monotonic counter of all permits issued across the pool's lifetime.
     #[inline]
     #[must_use]
     pub fn total_dispatches(&self) -> u64 {
         self.state.lock().total_dispatches
     }
-
     pub(crate) fn acquire(&self) -> Result<GpuResidentExecutionPermit<'_>, SelectedGpuDispatchError> {
         let mut state = self.state.lock();
         loop {
@@ -229,6 +238,7 @@ impl GpuResidentExecutionPool {
         self.available_cvar.notify_one();
     }
 
+    /// Poison the execution pool, waking all waiters and causing future acquisitions to fail.
     pub fn poison(&self) {
         let mut state = self.state.lock();
         state.poisoned = true;
