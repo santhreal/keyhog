@@ -119,7 +119,7 @@ pub(crate) fn install_execution_generation(
 
     let supports_execution_packs = match &probe {
         Ok(output) => output.status.success(),
-        Err(_) => false,
+        Err(_) => false, // LAW10: candidate probe failure indicates a legacy binary or non-executable candidate; warning surfaced loudly via tracing and stale artifacts are cleared below
     };
 
     if !supports_execution_packs {
