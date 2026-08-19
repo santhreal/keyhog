@@ -50,17 +50,29 @@ fn registry_bidirectional_set_equality_derived_at_runtime() {
     // 4. Invariant: Every class has non-empty identity inputs, file pattern, and descriptive name
     for &class in InstalledArtifactClass::ALL {
         let name = class.name();
-        assert!(!name.trim().is_empty(), "class {class:?} must have a non-empty name");
+        assert!(
+            !name.trim().is_empty(),
+            "class {class:?} must have a non-empty name"
+        );
 
         let pattern = class.file_pattern();
-        assert!(!pattern.trim().is_empty(), "class {class:?} must have a non-empty file pattern");
+        assert!(
+            !pattern.trim().is_empty(),
+            "class {class:?} must have a non-empty file pattern"
+        );
 
         let inputs = class.identity_inputs();
-        assert!(!inputs.is_empty(), "class {class:?} must record non-empty identity inputs");
+        assert!(
+            !inputs.is_empty(),
+            "class {class:?} must record non-empty identity inputs"
+        );
 
         for &input in inputs {
             let input_name = input.name();
-            assert!(!input_name.trim().is_empty(), "input {input:?} must have a non-empty name");
+            assert!(
+                !input_name.trim().is_empty(),
+                "input {input:?} must have a non-empty name"
+            );
         }
     }
 }
@@ -94,7 +106,10 @@ fn registry_is_single_source_for_installer_updater_and_scan_loader_loops() {
         produced_classes.insert(class);
         Ok(())
     });
-    assert!(result_produced.is_ok(), "installer producer loop must succeed");
+    assert!(
+        result_produced.is_ok(),
+        "installer producer loop must succeed"
+    );
     assert_eq!(
         produced_classes, target_class_set,
         "installer producer loop must iterate every registered class"
@@ -102,11 +117,15 @@ fn registry_is_single_source_for_installer_updater_and_scan_loader_loops() {
 
     // 2. Updater regeneration loop
     let mut regenerated_classes = BTreeSet::new();
-    let result_regenerated = InstalledArtifactRegistry::execute_updater_regeneration_loop(|class| {
-        regenerated_classes.insert(class);
-        Ok(())
-    });
-    assert!(result_regenerated.is_ok(), "updater regeneration loop must succeed");
+    let result_regenerated =
+        InstalledArtifactRegistry::execute_updater_regeneration_loop(|class| {
+            regenerated_classes.insert(class);
+            Ok(())
+        });
+    assert!(
+        result_regenerated.is_ok(),
+        "updater regeneration loop must succeed"
+    );
     assert_eq!(
         regenerated_classes, target_class_set,
         "updater regeneration loop must iterate every registered class"
@@ -239,11 +258,23 @@ fn fresh_installation_yields_scan_with_zero_runtime_compilations() {
         serde_json::from_str(&profile_content).expect("parse profile json");
 
     // Check compile surface records in profile json
-    if let Some(compile_records) = profile_json.get("compile_surfaces").and_then(|v| v.as_array()) {
+    if let Some(compile_records) = profile_json
+        .get("compile_surfaces")
+        .and_then(|v| v.as_array())
+    {
         for record in compile_records {
-            let phase = record.get("phase").and_then(|p| p.as_str()).unwrap_or_default();
-            let surface = record.get("surface").and_then(|s| s.as_str()).unwrap_or_default();
-            let count = record.get("invocation_count").and_then(|c| c.as_u64()).unwrap_or(0);
+            let phase = record
+                .get("phase")
+                .and_then(|p| p.as_str())
+                .unwrap_or_default();
+            let surface = record
+                .get("surface")
+                .and_then(|s| s.as_str())
+                .unwrap_or_default();
+            let count = record
+                .get("invocation_count")
+                .and_then(|c| c.as_u64())
+                .unwrap_or(0);
             assert_ne!(
                 phase, "Scan",
                 "Scan phase must have ZERO compile surface invocations for surface {surface}; found count {count}"

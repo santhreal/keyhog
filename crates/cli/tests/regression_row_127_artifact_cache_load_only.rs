@@ -13,9 +13,7 @@
 //! Does not catch external OS signal terminations (SIGKILL) mid-scan.
 
 use keyhog::exit_codes::{EXIT_SUCCESS, EXIT_USER_ERROR};
-use keyhog_scanner::{
-    MatcherArtifactCacheDisableReason, MatcherArtifactCacheOutcome,
-};
+use keyhog_scanner::{MatcherArtifactCacheDisableReason, MatcherArtifactCacheOutcome};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -126,11 +124,23 @@ fn warm_scan_performs_only_loads_and_zero_compiles() {
     let profile_json: serde_json::Value =
         serde_json::from_str(&profile_content).expect("parse profile json");
 
-    if let Some(compile_records) = profile_json.get("compile_surfaces").and_then(|v| v.as_array()) {
+    if let Some(compile_records) = profile_json
+        .get("compile_surfaces")
+        .and_then(|v| v.as_array())
+    {
         for record in compile_records {
-            let phase = record.get("phase").and_then(|p| p.as_str()).unwrap_or_default();
-            let surface = record.get("surface").and_then(|s| s.as_str()).unwrap_or_default();
-            let count = record.get("invocation_count").and_then(|c| c.as_u64()).unwrap_or(0);
+            let phase = record
+                .get("phase")
+                .and_then(|p| p.as_str())
+                .unwrap_or_default();
+            let surface = record
+                .get("surface")
+                .and_then(|s| s.as_str())
+                .unwrap_or_default();
+            let count = record
+                .get("invocation_count")
+                .and_then(|c| c.as_u64())
+                .unwrap_or(0);
             assert_ne!(
                 phase, "Scan",
                 "Scan phase must perform ZERO runtime compilations for surface {surface}; found {count}"
