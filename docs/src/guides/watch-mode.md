@@ -11,7 +11,7 @@ already in the tree, and then prints each finding as it happens:
 
 ```text
 🔍 stripe-secret-key /home/you/project/src/b.env:1 CRITICAL (1.00)  sk_l...EaNn
-👁  keyhog watch (☰ 926 detectors compiled)
+👁  keyhog watch (☰ 927 detectors compiled)
     workers: 16
     watching: /home/you/project/src
     Ctrl-C to exit
