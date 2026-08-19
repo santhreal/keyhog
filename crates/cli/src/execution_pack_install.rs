@@ -348,8 +348,12 @@ fn authenticate_manifest_pack(
     validate_filename(&row.signature_file)?;
     let pack_path = directory.join(&row.file);
     let signature_path = directory.join(&row.signature_file);
-    let metadata = fs::symlink_metadata(&pack_path)
-        .with_context(|| format!("inspecting execution pack {}. Fix: run `keyhog install` or `keyhog update`", pack_path.display()))?;
+    let metadata = fs::symlink_metadata(&pack_path).with_context(|| {
+        format!(
+            "inspecting execution pack {}. Fix: run `keyhog install` or `keyhog update`",
+            pack_path.display()
+        )
+    })?;
     if !metadata.file_type().is_file() || metadata.len() != row.bytes as u64 {
         bail!(
             "execution pack {} has {} bytes, manifest requires {}. Fix: run `keyhog install` or `keyhog update`",
@@ -372,7 +376,12 @@ fn authenticate_manifest_pack(
     }
     let pack = ExecutionPack::open_authenticated_discover(&pack_path, &signature_path, signing_key)
         .map_err(anyhow::Error::msg)
-        .with_context(|| format!("authenticating execution pack {}. Fix: run `keyhog install` or `keyhog update`", pack_path.display()))?;
+        .with_context(|| {
+            format!(
+                "authenticating execution pack {}. Fix: run `keyhog install` or `keyhog update`",
+                pack_path.display()
+            )
+        })?;
     let identity = pack.identity();
     for (name, actual, expected) in [
         (

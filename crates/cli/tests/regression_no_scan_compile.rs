@@ -16,33 +16,34 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
 
-static PREPARED_INSTALLATION: LazyLock<(tempfile::TempDir, PathBuf, PathBuf)> = LazyLock::new(|| {
-    let directory = tempfile::tempdir().expect("temporary install root");
-    let cache_home = directory.path().join("cache");
-    let pack_root = cache_home.join("keyhog/execution-packs");
-    fs::create_dir_all(&pack_root).expect("execution-pack root");
-    let key_path = pack_root.join("signing.key");
-    let key_bytes = [0x4d; 32];
-    fs::write(&key_path, key_bytes).expect("write signing key");
-    fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
-        .expect("protect signing key");
-    let output = pack_root.join("current");
+static PREPARED_INSTALLATION: LazyLock<(tempfile::TempDir, PathBuf, PathBuf)> =
+    LazyLock::new(|| {
+        let directory = tempfile::tempdir().expect("temporary install root");
+        let cache_home = directory.path().join("cache");
+        let pack_root = cache_home.join("keyhog/execution-packs");
+        fs::create_dir_all(&pack_root).expect("execution-pack root");
+        let key_path = pack_root.join("signing.key");
+        let key_bytes = [0x4d; 32];
+        fs::write(&key_path, key_bytes).expect("write signing key");
+        fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
+            .expect("protect signing key");
+        let output = pack_root.join("current");
 
-    let result = Command::new(env!("CARGO_BIN_EXE_keyhog"))
-        .arg("compile-execution-packs")
-        .arg("--output-dir")
-        .arg(&output)
-        .arg("--signing-key")
-        .arg(&key_path)
-        .output()
-        .expect("run install pack compiler");
-    assert!(
-        result.status.success(),
-        "install pack compiler failed: {}",
-        String::from_utf8_lossy(&result.stderr)
-    );
-    (directory, pack_root, output)
-});
+        let result = Command::new(env!("CARGO_BIN_EXE_keyhog"))
+            .arg("compile-execution-packs")
+            .arg("--output-dir")
+            .arg(&output)
+            .arg("--signing-key")
+            .arg(&key_path)
+            .output()
+            .expect("run install pack compiler");
+        assert!(
+            result.status.success(),
+            "install pack compiler failed: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        (directory, pack_root, output)
+    });
 
 fn copy_dir_all(src: &Path, dst: &Path) {
     fs::create_dir_all(dst).expect("create dst dir");
@@ -113,7 +114,11 @@ fn removing_each_artifact_class_from_prepared_installation_refuses_scan_fail_clo
             InstalledArtifactClass::ExecutionPack => {
                 for entry in fs::read_dir(&output_dir).expect("read output dir") {
                     let entry = entry.expect("entry");
-                    let ext = entry.path().extension().and_then(|ext| ext.to_str()).map(str::to_string);
+                    let ext = entry
+                        .path()
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(str::to_string);
                     if ext == Some("khpack".to_string()) || ext == Some("pack".to_string()) {
                         fs::remove_file(entry.path()).expect("remove pack file");
                     }
@@ -122,7 +127,11 @@ fn removing_each_artifact_class_from_prepared_installation_refuses_scan_fail_clo
             InstalledArtifactClass::Signature => {
                 for entry in fs::read_dir(&output_dir).expect("read output dir") {
                     let entry = entry.expect("entry");
-                    let ext = entry.path().extension().and_then(|ext| ext.to_str()).map(str::to_string);
+                    let ext = entry
+                        .path()
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(str::to_string);
                     if ext == Some("sig".to_string()) || ext == Some("khsig".to_string()) {
                         fs::remove_file(entry.path()).expect("remove sig file");
                     }

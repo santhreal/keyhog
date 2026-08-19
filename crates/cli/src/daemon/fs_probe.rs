@@ -126,7 +126,6 @@ pub fn probe_filesystem_authority(path: &Path) -> FilesystemAuthority {
     )
 }
 
-
 #[cfg(target_os = "linux")]
 fn probe_linux(path: &Path) -> Option<FilesystemAuthority> {
     if let Ok(mounts) = std::fs::read_to_string("/proc/mounts") {

@@ -873,10 +873,10 @@ fn scrub_guard_roots(
 
                 if should_scrub {
                     let path_str = String::from_utf8_lossy(&record.canonical_path);
-                    match state.guard.transition_root(
-                        &record.canonical_path,
-                        &GuardTransition::EventAccepted,
-                    ) {
+                    match state
+                        .guard
+                        .transition_root(&record.canonical_path, &GuardTransition::EventAccepted)
+                    {
                         Ok(_) => {
                             tracing::info!(
                                 "daemon: scrub: mark root dirty for re-reconciliation: {}",

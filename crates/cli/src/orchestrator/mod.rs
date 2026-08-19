@@ -1414,7 +1414,9 @@ impl ScanOrchestrator {
                     }
                     Err(error) => {
                         if args.developer_compile_embedded_detectors {
-                            keyhog_profile::record_cache_miss(keyhog_profile::CacheId::DetectorPlan);
+                            keyhog_profile::record_cache_miss(
+                                keyhog_profile::CacheId::DetectorPlan,
+                            );
                             eprintln!(
                                 "keyhog: developer mode active: in-process detector compilation (--developer-compile-embedded-detectors)"
                             );
@@ -1432,7 +1434,9 @@ impl ScanOrchestrator {
                             };
                             let mut corpus = embedded()?;
                             corpus.provenance.mode = "developer-embedded";
-                            corpus.provenance.source = "developer escape hatch (--developer-compile-embedded-detectors)".to_string();
+                            corpus.provenance.source =
+                                "developer escape hatch (--developer-compile-embedded-detectors)"
+                                    .to_string();
                             (Some(corpus), None)
                         } else {
                             return Err(error).context(
@@ -1454,7 +1458,8 @@ impl ScanOrchestrator {
                 )
                 .context("loading effective detector corpus")?;
                 corpus.provenance.mode = "developer-custom";
-                corpus.provenance.source = format!("developer custom corpus ({})", detectors_path.display());
+                corpus.provenance.source =
+                    format!("developer custom corpus ({})", detectors_path.display());
                 (Some(corpus), None)
             } else {
                 anyhow::bail!(
@@ -1627,8 +1632,7 @@ impl ScanOrchestrator {
         let scanner = {
             let compiled = match detector_execution_pack.as_ref() {
                 Some(pack) => {
-                    let _pack_span =
-                        keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
+                    let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
                     scanner_materialization = Some(ScannerMaterialization::MappedPack {
                         generation: pack.path().display().to_string(),
                     });
@@ -1646,11 +1650,10 @@ impl ScanOrchestrator {
                              or pass `--developer-compile-embedded-detectors` for developer/debug builds."
                         );
                     }
-                    let _compile_span =
-                        keyhog_profile::span(keyhog_profile::Stage::ScannerCompile);
-                    let detectors = detectors.as_ref().context(
-                        "embedded/debug scanner construction requires detector schemas",
-                    )?;
+                    let _compile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerCompile);
+                    let detectors = detectors
+                        .as_ref()
+                        .context("embedded/debug scanner construction requires detector schemas")?;
                     keyhog_scanner::compile_shared_with_matcher_artifact_cache(
                         Arc::clone(detectors),
                         gpu_init_policy,
