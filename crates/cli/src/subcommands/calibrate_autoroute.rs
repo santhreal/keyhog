@@ -665,7 +665,7 @@ fn resolve_execution_pack_binding(
     if !installed.exists() {
         return Ok(None);
     }
-    Ok(crate::execution_pack_install::load_authenticated_binding(&installed).ok())
+    Ok(crate::execution_pack_install::load_authenticated_binding(&installed).ok()) // LAW10: optional execution pack binding probe; unauthenticated/missing generation returns None
 }
 
 pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {

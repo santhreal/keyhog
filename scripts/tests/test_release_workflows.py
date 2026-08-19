@@ -93,8 +93,8 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("release-integrity.json", RELEASE)
 
     def test_ci_verdict_required_job_contracts(self) -> None:
-        """Successful CI verdict enforces all 11 required test/verification jobs."""
-        self.assertIn("length == 11", CI)
+        """Successful CI verdict enforces all 12 required test/verification jobs."""
+        self.assertIn("length == 12", CI)
 
     def test_release_dogfood_build_includes_the_simd_backend_it_exercises(self) -> None:
         """The release dogfood matrix must not request SIMD from a portable-only binary."""
@@ -121,14 +121,13 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
             "tag publication must overlay the current registry preflight",
         )
 
-    def test_publisher_prefers_oidc_trusted_identity_with_token_fallback(self) -> None:
-        """Publishing must try OIDC first; repo token is only the fallback while TP is rebuilt."""
+    def test_publisher_uses_oidc_trusted_identity(self) -> None:
+        """Publishing requires OIDC Trusted Publishing with no token fallback."""
         self.assertIn("id-token: write", RELEASE)
         self.assertIn("rust-lang/crates-io-auth-action@", RELEASE)
         self.assertIn("steps.crates-io-auth.outputs.token", RELEASE)
-        self.assertIn("continue-on-error: true", RELEASE)
-        self.assertIn(
-            "steps.crates-io-auth.outputs.token || secrets.CARGO_REGISTRY_TOKEN",
+        self.assertNotIn(
+            "secrets.CARGO_REGISTRY_TOKEN",
             RELEASE,
         )
         self.assertRegex(
