@@ -885,7 +885,6 @@ impl CliTestApi for TestApi {
         crate::installer::current_binary()
     }
 
-
     fn rewrite_detector_braces(&self, s: &str) -> (String, usize) {
         crate::subcommands::detectors::testing::rewrite_braces(s)
     }
