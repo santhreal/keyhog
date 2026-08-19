@@ -91,6 +91,7 @@ fn make_fifo(path: &Path) {
 /// Collect the binary source's emitted rows for `path` (strings-only, so the
 /// read always reaches `read_binary_capped`).
 fn scan_rows(path: PathBuf) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
+    let _scope = TestApi.skip_counter_guard();
     TestApi.binary_strings_only(path).chunks().collect()
 }
 
