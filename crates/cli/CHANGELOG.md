@@ -2,6 +2,7 @@
 
 ## 0.5.80 - 2026-08-17
 
+- feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).
 - feat(profile): compile surface runtime counters across all 13 compiler surfaces (Row 125).
 - feat(gates): validate allowlists across reality and enforce meta-gate audit against unvalidated bypasses (Row 137).
 - feat(profile): directional queue attribution distinguishing producer backpressure from consumer starvation (Row 133).

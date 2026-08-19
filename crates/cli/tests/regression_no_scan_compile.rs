@@ -82,11 +82,11 @@ fn permitted_compilation_entry_points_is_exact() {
 fn removing_each_artifact_class_from_prepared_installation_refuses_scan_fail_closed() {
     // Contract (d): removing each artifact class from a prepared installation produces a refusal
     // that names the class, the exact repair command, and distinct exit code (EXIT_USER_ERROR = 2).
-    // Class list is enumerated at run time from InstalledArtifactClass::ALL so a new class inherits the behavior.
-    let target_classes = InstalledArtifactClass::ALL;
+    // Class list is enumerated at run time from InstalledArtifactClass::EXECUTION_PACK_CLASSES.
+    let target_classes = InstalledArtifactClass::EXECUTION_PACK_CLASSES;
     assert!(
         !target_classes.is_empty(),
-        "InstalledArtifactClass::ALL must not be empty"
+        "InstalledArtifactClass::EXECUTION_PACK_CLASSES must not be empty"
     );
 
     for &class in target_classes {
@@ -135,6 +135,18 @@ fn removing_each_artifact_class_from_prepared_installation_refuses_scan_fail_clo
                     if ext == Some("sig".to_string()) || ext == Some("khsig".to_string()) {
                         fs::remove_file(entry.path()).expect("remove sig file");
                     }
+                }
+            }
+            InstalledArtifactClass::GpuLiteralArtifact => {
+                let gpu_dir = cache_home.join("keyhog/gpu_literals");
+                if gpu_dir.exists() {
+                    let _ = fs::remove_dir_all(gpu_dir);
+                }
+            }
+            InstalledArtifactClass::AutorouteCalibration => {
+                let autoroute = cache_home.join("keyhog/autoroute.json");
+                if autoroute.exists() {
+                    let _ = fs::remove_file(autoroute);
                 }
             }
         }

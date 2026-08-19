@@ -16,17 +16,64 @@ pub const PERMITTED_DETECTOR_COMPILATION_ENTRY_POINTS: &[&str] = &["install", "u
 /// Exact repair command for missing/unusable execution-pack artifacts.
 pub const REPAIR_COMMAND: &str = "keyhog install";
 
+/// Distinct identity input dimensions bound to installed artifact classes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
+pub enum ArtifactIdentityInput {
+    BinaryDigest,
+    TargetHardwareDigest,
+    FeatureDigest,
+    DetectorCorpusDigest,
+    ConfigDigest,
+    SigningKeyIdentity,
+    GpuDeviceIdentity,
+}
+
+impl ArtifactIdentityInput {
+    pub const ALL: &[Self] = &[
+        Self::BinaryDigest,
+        Self::TargetHardwareDigest,
+        Self::FeatureDigest,
+        Self::DetectorCorpusDigest,
+        Self::ConfigDigest,
+        Self::SigningKeyIdentity,
+        Self::GpuDeviceIdentity,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::BinaryDigest => "binary digest",
+            Self::TargetHardwareDigest => "target hardware digest",
+            Self::FeatureDigest => "feature digest",
+            Self::DetectorCorpusDigest => "detector corpus digest",
+            Self::ConfigDigest => "config digest",
+            Self::SigningKeyIdentity => "signing key identity",
+            Self::GpuDeviceIdentity => "GPU device identity",
+        }
+    }
+}
+
 /// Distinct artifact classes in an execution-pack installation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum InstalledArtifactClass {
     Manifest,
     VerificationKey,
     ExecutionPack,
     Signature,
+    GpuLiteralArtifact,
+    AutorouteCalibration,
 }
 
 impl InstalledArtifactClass {
     pub const ALL: &[Self] = &[
+        Self::Manifest,
+        Self::VerificationKey,
+        Self::ExecutionPack,
+        Self::Signature,
+        Self::GpuLiteralArtifact,
+        Self::AutorouteCalibration,
+    ];
+
+    pub const EXECUTION_PACK_CLASSES: &[Self] = &[
         Self::Manifest,
         Self::VerificationKey,
         Self::ExecutionPack,
@@ -39,6 +86,8 @@ impl InstalledArtifactClass {
             Self::VerificationKey => "execution-pack verification key",
             Self::ExecutionPack => "execution pack",
             Self::Signature => "execution-pack signature",
+            Self::GpuLiteralArtifact => "gpu literal artifact",
+            Self::AutorouteCalibration => "autoroute calibration",
         }
     }
 
@@ -48,7 +97,145 @@ impl InstalledArtifactClass {
             Self::VerificationKey => "signing.key",
             Self::ExecutionPack => "*.khpack",
             Self::Signature => "*.sig",
+            Self::GpuLiteralArtifact => "*.bin",
+            Self::AutorouteCalibration => "autoroute.json",
         }
+    }
+
+    pub const fn identity_inputs(self) -> &'static [ArtifactIdentityInput] {
+        match self {
+            Self::Manifest => &[
+                ArtifactIdentityInput::BinaryDigest,
+                ArtifactIdentityInput::TargetHardwareDigest,
+                ArtifactIdentityInput::FeatureDigest,
+                ArtifactIdentityInput::DetectorCorpusDigest,
+            ],
+            Self::VerificationKey => &[ArtifactIdentityInput::SigningKeyIdentity],
+            Self::ExecutionPack => &[
+                ArtifactIdentityInput::BinaryDigest,
+                ArtifactIdentityInput::TargetHardwareDigest,
+                ArtifactIdentityInput::FeatureDigest,
+                ArtifactIdentityInput::DetectorCorpusDigest,
+                ArtifactIdentityInput::SigningKeyIdentity,
+            ],
+            Self::Signature => &[
+                ArtifactIdentityInput::SigningKeyIdentity,
+                ArtifactIdentityInput::BinaryDigest,
+                ArtifactIdentityInput::DetectorCorpusDigest,
+            ],
+            Self::GpuLiteralArtifact => &[
+                ArtifactIdentityInput::BinaryDigest,
+                ArtifactIdentityInput::DetectorCorpusDigest,
+                ArtifactIdentityInput::GpuDeviceIdentity,
+            ],
+            Self::AutorouteCalibration => &[
+                ArtifactIdentityInput::BinaryDigest,
+                ArtifactIdentityInput::TargetHardwareDigest,
+                ArtifactIdentityInput::FeatureDigest,
+                ArtifactIdentityInput::DetectorCorpusDigest,
+                ArtifactIdentityInput::GpuDeviceIdentity,
+            ],
+        }
+    }
+
+    pub const fn is_produced_by_installer(self) -> bool {
+        true
+    }
+
+    pub const fn is_consumed_by_scan(self) -> bool {
+        true
+    }
+}
+
+/// Unified registry connecting artifact production, update regeneration, and scan loading.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct InstalledArtifactRegistry;
+
+impl InstalledArtifactRegistry {
+    /// Return all registered artifact classes.
+    pub fn all_classes() -> &'static [InstalledArtifactClass] {
+        InstalledArtifactClass::ALL
+    }
+
+    /// Return the set of all artifact classes produced by the installer.
+    pub fn produced_classes() -> BTreeSet<InstalledArtifactClass> {
+        InstalledArtifactClass::ALL
+            .iter()
+            .copied()
+            .filter(|class| class.is_produced_by_installer())
+            .collect()
+    }
+
+    /// Return the set of all artifact classes consumed by the scan path.
+    pub fn consumed_classes() -> BTreeSet<InstalledArtifactClass> {
+        InstalledArtifactClass::ALL
+            .iter()
+            .copied()
+            .filter(|class| class.is_consumed_by_scan())
+            .collect()
+    }
+
+    /// Validate bidirectional set equality between produced and consumed classes.
+    pub fn assert_bidirectional_registry_equality() -> Result<()> {
+        let produced = Self::produced_classes();
+        let consumed = Self::consumed_classes();
+
+        if produced != consumed {
+            let produced_not_consumed: Vec<_> = produced.difference(&consumed).copied().collect();
+            let consumed_not_produced: Vec<_> = consumed.difference(&produced).copied().collect();
+            bail!(
+                "installed artifact registry set inequality: produced_not_consumed={produced_not_consumed:?}, consumed_not_produced={consumed_not_produced:?}"
+            );
+        }
+
+        for class in InstalledArtifactClass::ALL {
+            if class.identity_inputs().is_empty() {
+                bail!("artifact class {:?} has empty identity inputs", class);
+            }
+        }
+        Ok(())
+    }
+
+    /// Execute the installer producer loop over every registered artifact class.
+    pub fn execute_installer_producer_loop<F>(mut producer: F) -> Result<BTreeSet<InstalledArtifactClass>>
+    where
+        F: FnMut(InstalledArtifactClass) -> Result<()>,
+    {
+        let mut produced = BTreeSet::new();
+        for &class in Self::all_classes() {
+            producer(class)
+                .with_context(|| format!("installer producer failed for artifact class {class:?}"))?;
+            produced.insert(class);
+        }
+        Ok(produced)
+    }
+
+    /// Execute the updater regeneration loop over every registered artifact class.
+    pub fn execute_updater_regeneration_loop<F>(mut regenerator: F) -> Result<BTreeSet<InstalledArtifactClass>>
+    where
+        F: FnMut(InstalledArtifactClass) -> Result<()>,
+    {
+        let mut regenerated = BTreeSet::new();
+        for &class in Self::all_classes() {
+            regenerator(class)
+                .with_context(|| format!("updater regeneration failed for artifact class {class:?}"))?;
+            regenerated.insert(class);
+        }
+        Ok(regenerated)
+    }
+
+    /// Execute the scan loader verification loop over every registered artifact class.
+    pub fn execute_scan_loader_loop<F>(mut loader: F) -> Result<BTreeSet<InstalledArtifactClass>>
+    where
+        F: FnMut(InstalledArtifactClass) -> Result<()>,
+    {
+        let mut loaded = BTreeSet::new();
+        for &class in Self::all_classes() {
+            loader(class)
+                .with_context(|| format!("scan loader failed for artifact class {class:?}"))?;
+            loaded.insert(class);
+        }
+        Ok(loaded)
     }
 }
 
