@@ -15,9 +15,9 @@
 //! Does not catch filesystem bit flips occurring mid-read after initial authentication.
 
 use keyhog::execution_pack_install::{
-    check_installed_artifacts_freshness_at, current_embedded_detector_digest,
-    invalidate_installed_artifacts_at, ArtifactFreshnessStatus, ArtifactIdentityInput,
-    InstalledArtifactClass, InstalledArtifactRegistry,
+    check_installed_artifacts_freshness_at, current_binary_digest,
+    current_embedded_detector_digest, invalidate_installed_artifacts_at, ArtifactFreshnessStatus,
+    ArtifactIdentityInput, InstalledArtifactClass, InstalledArtifactRegistry,
 };
 use keyhog::exit_codes::EXIT_USER_ERROR;
 use std::collections::BTreeSet;
@@ -27,22 +27,14 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn create_test_temp_dir(prefix: &str) -> tempfile::TempDir {
-    let base_tmp = PathBuf::from("/mnt/FlareTraining/santh-archive/tmp");
-    if base_tmp.exists() {
-        tempfile::Builder::new()
-            .prefix(prefix)
-            .tempdir_in(&base_tmp)
-            .expect("tempdir in base_tmp")
-    } else {
-        tempfile::tempdir().expect("tempdir")
-    }
+    tempfile::Builder::new()
+        .prefix(prefix)
+        .tempdir()
+        .expect("tempdir")
 }
 
-fn isolate_test_binary(dir: &Path) -> PathBuf {
-    let test_exe = dir.join("keyhog");
-    fs::copy(env!("CARGO_BIN_EXE_keyhog"), &test_exe).expect("copy keyhog binary");
-    fs::set_permissions(&test_exe, fs::Permissions::from_mode(0o755)).expect("chmod keyhog binary");
-    test_exe
+fn isolate_test_binary(_dir: &Path) -> PathBuf {
+    PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
 fn prepare_fresh_installation(test_exe: &Path, cache_home: &Path) -> (PathBuf, PathBuf) {
@@ -67,6 +59,21 @@ fn prepare_fresh_installation(test_exe: &Path, cache_home: &Path) -> (PathBuf, P
         result.status.success(),
         "install pack compiler failed: {}",
         String::from_utf8_lossy(&result.stderr)
+    );
+
+    let autoroute_cache = cache_home.join("keyhog/autoroute.json");
+    let cal_result = Command::new(test_exe)
+        .arg("calibrate-autoroute")
+        .arg("--quiet")
+        .arg("--autoroute-cache")
+        .arg(&autoroute_cache)
+        .env("XDG_CACHE_HOME", cache_home)
+        .output()
+        .expect("run calibrate autoroute");
+    assert!(
+        cal_result.status.success(),
+        "calibrate autoroute failed: {}",
+        String::from_utf8_lossy(&cal_result.stderr)
     );
     (pack_root, output)
 }
@@ -253,18 +260,26 @@ fn multi_dimensional_freshness_status_derived_at_runtime() {
     let test_exe = isolate_test_binary(temp_dir.path());
     let cache_home = temp_dir.path().join("cache");
     let (_pack_root, output_dir) = prepare_fresh_installation(&test_exe, &cache_home);
+    // Align the manifest binary_digest with the test process's binary digest
+    let manifest_path = output_dir.join("manifest.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&manifest_path).expect("read manifest"))
+            .expect("parse manifest");
+    manifest["binary_digest"] =
+        serde_json::json!(keyhog_core::hex_encode(&current_binary_digest().unwrap()));
+    fs::write(
+        &manifest_path,
+        serde_json::to_string_pretty(&manifest).unwrap(),
+    )
+    .expect("write updated manifest");
 
     // Test Fresh
     let freshness =
         check_installed_artifacts_freshness_at(Some(&cache_home)).expect("check freshness");
     assert!(
-        matches!(
-            freshness,
-            ArtifactFreshnessStatus::Fresh | ArtifactFreshnessStatus::Stale { .. }
-        ),
-        "freshness check must evaluate cleanly"
+        matches!(freshness, ArtifactFreshnessStatus::Fresh),
+        "freshness check must evaluate as Fresh on aligned binary: {freshness:?}"
     );
-
     // Test Missing when manifest is removed
     let manifest_path = output_dir.join("manifest.json");
     fs::remove_file(&manifest_path).expect("remove manifest");
