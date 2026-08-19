@@ -65,6 +65,25 @@ if [ -z "$sha_tool" ]; then
     echo "no sha256sum/shasum found; install.sh requires checksum proof unless --insecure is explicit" >&2
     exit 1
 fi
+
+# The explicit `--backend` below must name a backend THIS build carries.
+# `--features simd` builds and the shipped `portable` default are both real
+# install targets, and a portable binary refuses `--backend simd` (correctly,
+# since substituting a backend behind an explicit request is what fail-closed
+# routing forbids). Ask the binary instead of assuming: the capability report
+# is the same surface `keyhog doctor` reads.
+capabilities="$("$BIN" backend 2>/dev/null)"
+case "$capabilities" in
+  *"simd_backend:      compiled-in"*) DIAG_BACKEND=simd ;;
+  *"simd_backend:      disabled"*)    DIAG_BACKEND=cpu ;;
+  *)
+    echo "could not read compiled capabilities from '$BIN backend'; refusing to" >&2
+    echo "guess a diagnostic backend, because guessing wrong reports a routing" >&2
+    echo "refusal as a detection failure." >&2
+    exit 1
+    ;;
+esac
+echo "diagnostic backend for this build: $DIAG_BACKEND"
 ARTIFACT_DIR="$WORK/artifact"
 ARTIFACT="$ARTIFACT_DIR/keyhog"
 mkdir -p "$ARTIFACT_DIR"
@@ -85,7 +104,7 @@ if command -v base64 >/dev/null 2>&1; then
     printf '%s' "$SEED" | base64 -d > "$WORK/scanme/seeded.env" 2>/dev/null || \
     printf '%s' "$SEED" | base64 --decode > "$WORK/scanme/seeded.env"
 else
-    python3 -c "import base64,sys;sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))" <<<"$SEED" > "$WORK/scanme/seeded.env"
+    printf '%s' "$SEED" | python3 -c "import base64,sys;sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))" > "$WORK/scanme/seeded.env"
 fi
 
 run_install() {  # args... -> install.sh; output captured to $OUT, status to $RC
@@ -117,20 +136,20 @@ if [ -x "$KEYHOG" ]; then
     fi
 
     # Seeded scan: must find the planted secrets and exit 1.
-    # Install used --no-calibrate, so there is no autoroute cache. Explicit
-    # --backend is the documented diagnostic override (same contract as the
-    # CI smoke test); auto scan must fail closed without a calibrated route.
-    scan_output=$("$KEYHOG" scan --daemon=off --backend simd --evidence-policy paranoid "$WORK/scanme" 2>&1); sc=$?
+    # Install used --no-calibrate, so there is no autoroute cache and an auto
+    # scan must fail closed without a calibrated route. $DIAG_BACKEND is the
+    # documented diagnostic override, resolved above from this build.
+    scan_output=$("$KEYHOG" scan --daemon=off --backend "$DIAG_BACKEND" --evidence-policy paranoid "$WORK/scanme" 2>&1); sc=$?
     [ "$sc" = "1" ] && ok_ "A.6 seeded scan exits 1 (findings)" || \
         bad_ "A.6 seeded scan exits 1 (findings)" "exit=$sc; $(printf '%s' "$scan_output" | tail -4)"
 
     # Empty input is not a clean bill of health: no bytes were examined.
     mkdir -p "$WORK/empty"
-    "$KEYHOG" scan --backend simd "$WORK/empty" >/dev/null 2>&1; ec=$?
+    "$KEYHOG" scan --backend "$DIAG_BACKEND" "$WORK/empty" >/dev/null 2>&1; ec=$?
     [ "$ec" = "13" ] && ok_ "A.7 empty scan fails closed" || bad_ "A.7 empty scan fails closed" "exit=$ec"
 
     # SARIF emission is well-formed and carries results.
-    sarif_output=$("$KEYHOG" scan --backend simd "$WORK/scanme" --format sarif --output "$WORK/out.sarif" 2>&1); sarif_rc=$?
+    sarif_output=$("$KEYHOG" scan --backend "$DIAG_BACKEND" "$WORK/scanme" --format sarif --output "$WORK/out.sarif" 2>&1); sarif_rc=$?
     if [ -s "$WORK/out.sarif" ] && grep -q '2.1.0' "$WORK/out.sarif" && grep -q '"results"' "$WORK/out.sarif"; then
         ok_ "A.8 SARIF output well-formed with results"
     else

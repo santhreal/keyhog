@@ -54,6 +54,120 @@ const fn backend_route_complexity(backend: ScanBackend) -> u8 {
     }
 }
 
+/// Reconcile every measured point of a workload class into one route.
+///
+/// The plan on top of a backend was already reconciled rather than required to
+/// match, because points that agreed on the backend and split on the plan were
+/// splitting on noise, and discarding the class made every later scan of that
+/// workload pay scalar recovery forever.
+///
+/// The backend used to demand unanimity, and that reintroduced the same bug one
+/// level up. Two backends whose 95% intervals overlap have no measured winner,
+/// so which of them a given point happens to pick is a coin flip. On a 16-core
+/// AVX-512 host the 4 MiB through 32 MiB buckets landed exactly there: the
+/// one-shot route was stable at cpu-fallback while the daemon route flipped
+/// between simd-regex and cpu-fallback, and across three retries of the SAME
+/// bucket the two backends swapped which side of the comparison they were on,
+/// which is the signature of overlap and not of a crossover. Refusing the class
+/// discarded it, refusing any class refused the whole generation, and the
+/// installer could not complete: no cache was written, so every later scan
+/// failed closed with exit 2.
+///
+/// Disagreement is therefore resolved the way the documented contract already
+/// promises for overlapping timings: to the lowest-complexity NON-INFERIOR
+/// route. A backend is non-inferior when no point proves a peer faster than it,
+/// by the same 95% separation the point-level selector uses. When some point
+/// does prove a peer faster, the disagreement is a real crossover, nothing is
+/// non-inferior everywhere, and the class is still refused.
+fn resolve_route_across_points(
+    points: &[&AutorouteCalibrationPoint],
+    persistent_runtime: bool,
+    excluded_backend: Option<ScanBackend>,
+) -> Option<MeasuredRoute> {
+    let first = *points.first()?;
+    let resolved: Vec<MeasuredRoute> = points
+        .iter()
+        .map(|point| point.resolve_selected_route_excluding(persistent_runtime, excluded_backend))
+        .collect::<Option<Vec<_>>>()?;
+    let selected = *resolved.first()?;
+
+    let backend = if resolved
+        .iter()
+        .all(|route| route.backend == selected.backend)
+    {
+        if resolved.iter().all(|route| *route == selected) {
+            return Some(selected);
+        }
+        selected.backend
+    } else {
+        // Every backend the points disagree over, cheapest first, keeping only
+        // those measured at every point and proved worse at none.
+        let mut contenders: Vec<ScanBackend> = resolved.iter().map(|route| route.backend).collect();
+        contenders.sort_unstable_by_key(|backend| backend_route_complexity(*backend));
+        contenders.dedup();
+        contenders.into_iter().find(|backend| {
+            points.iter().all(|point| {
+                point
+                    .measured_routes()
+                    .iter()
+                    .any(|route| route.backend == *backend)
+                    && !point.backend_is_separated_loser(*backend, persistent_runtime)
+            })
+        })?
+    };
+
+    // One backend, but the points split on the plan. Fall back to the plan the
+    // binary was compiled with: it certainly exists and certainly runs, and
+    // every point must have measured that exact route.
+    let default_plan = MeasuredRoute {
+        backend,
+        phase2_plain_localizer: first.compiled_default_phase2_plain_localizer,
+        phase2_keyword_localizer: first.compiled_default_phase2_keyword_localizer,
+        gpu_pipeline_depth: resolved
+            .iter()
+            .find(|route| route.backend == backend)
+            .map_or(selected.gpu_pipeline_depth, |route| {
+                route.gpu_pipeline_depth
+            }),
+    };
+    points
+        .iter()
+        .all(|point| {
+            point.compiled_default_phase2_plain_localizer == default_plan.phase2_plain_localizer
+                && point.compiled_default_phase2_keyword_localizer
+                    == default_plan.phase2_keyword_localizer
+                && point.measured_routes().contains(&default_plan)
+        })
+        .then_some(default_plan)
+}
+
+/// Reconcile every measured band of one workload family into one route.
+///
+/// A family shares the detector corpus, decode state and set of source classes
+/// and differs only in size band. Reconciling it pools the bands' calibration
+/// points through [`resolve_route_across_points`], so a family is resolved by
+/// exactly the rule a single class is: a backend must be measured at every
+/// pooled point and proved slower at none, and points that agree on the backend
+/// while splitting on the plan resolve to the compiled default plan.
+///
+/// Demanding full-route unanimity across bands instead reproduced, one level
+/// up, the bug that rule was written for. On a 16-core AVX-512 host the six
+/// measured decode-admitted bands of the default policy all selected
+/// cpu-fallback and split three ways on the phase-2 localizer plan, which is a
+/// sub-plan coin flip between routes within a millisecond of each other. Every
+/// unmeasured band of that family then failed closed with exit 2 even though
+/// nothing about the backend was ever in doubt.
+pub(super) fn reconcile_route_across_decisions(
+    members: &[&AutorouteDecision],
+    persistent_runtime: bool,
+) -> Option<MeasuredRoute> {
+    let points: Vec<&AutorouteCalibrationPoint> = members
+        .iter()
+        .flat_map(|decision| decision.calibration_points.iter())
+        .collect();
+    resolve_route_across_points(&points, persistent_runtime, None)
+}
+
 fn paired_route_trials_are_faster(selected: &[u128], competitor: &[u128]) -> bool {
     if selected.len() != competitor.len() || selected.is_empty() {
         return false;
@@ -435,6 +549,39 @@ impl AutorouteCalibrationPoint {
         self.route_is_confidence_winner(selected, persistent_runtime, None)
     }
 
+    /// Does this point PROVE some other backend faster than `candidate`?
+    ///
+    /// Proof is the same 95% separation the point-level selector demands: a
+    /// peer route whose whole interval lies below every `candidate` route's
+    /// interval. Anything less is overlap, and under overlap which backend
+    /// posts the lower median is a coin flip that changes from run to run.
+    ///
+    /// This is the cross-point counterpart to
+    /// [`Self::selected_route_has_confidence_for`]. That one asks "is this the
+    /// route this point picks", which two indistinguishable backends answer
+    /// differently at random. This one asks "is this route measurably wrong
+    /// here", which they both answer no, and that is the question a class
+    /// spanning several points can actually act on.
+    pub(super) fn backend_is_separated_loser(
+        &self,
+        candidate: ScanBackend,
+        persistent_runtime: bool,
+    ) -> bool {
+        let intervals = self.route_confidence_intervals_for(persistent_runtime);
+        let Some(candidate_low) = intervals
+            .iter()
+            .filter(|(route, _)| route.backend == candidate)
+            .map(|(_, interval)| interval.low_ns)
+            .min()
+        else {
+            return false;
+        };
+        intervals
+            .iter()
+            .filter(|(route, _)| route.backend != candidate)
+            .any(|(_, interval)| interval.high_ns < candidate_low)
+    }
+
     pub(super) fn resolve_measured_route(&self, persistent_runtime: bool) -> Option<MeasuredRoute> {
         self.resolve_measured_route_excluding(persistent_runtime, None)
     }
@@ -613,6 +760,28 @@ impl AutorouteCalibrationPoint {
             .map(|(route, _, _)| *route)
     }
 
+    /// One-shot cost of an accelerator route, per trial.
+    ///
+    /// An accelerator pays a fixed setup cost once (Hyperscan database load,
+    /// GPU context and buffer creation) and then scans. Calibration measures
+    /// setup+scan exactly ONCE, as trial zero, and the scan alone six more
+    /// times. The one-shot cost of trial `i` is therefore that single measured
+    /// setup plus the scan time of trial `i`.
+    ///
+    /// This used to be `cold_ns.max(warm_ns)`. Because setup dominates for
+    /// SIMD, every trial collapsed to the identical `cold_ns`, which turned a
+    /// distribution into a constant: measured across a real 158-class
+    /// calibration, 929 of 940 SIMD one-shot intervals had zero width. A
+    /// zero-width interval never overlaps a peer, so SIMD was declared a
+    /// *separated* loser against cpu-fallback on every one-shot route of every
+    /// host, even where its own warm trials were faster than cpu's.
+    ///
+    /// The median is unchanged: `setup + warm_median` is `cold_ns` whenever
+    /// setup is positive, which is what `route_ns` already reported.
+    fn accelerator_setup_ns(cold_ns: u128, warm_timing: &BackendTimingEvidence) -> u128 {
+        cold_ns.saturating_sub(warm_timing.median_ns())
+    }
+
     fn route_trial_ns_for(
         &self,
         route: MeasuredRoute,
@@ -620,17 +789,15 @@ impl AutorouteCalibrationPoint {
     ) -> Option<Vec<u128>> {
         if route.backend == ScanBackend::SimdCpu || route.backend.is_gpu() {
             let (cold_ns, warm_timing, _) = self.accelerator_cold_warm_route_for_measured(route)?;
+            if persistent_runtime {
+                return Some(warm_timing.trials_ns);
+            }
+            let setup_ns = Self::accelerator_setup_ns(cold_ns, &warm_timing);
             Some(
                 warm_timing
                     .trials_ns
                     .into_iter()
-                    .map(|warm_ns| {
-                        if persistent_runtime {
-                            warm_ns
-                        } else {
-                            cold_ns.max(warm_ns)
-                        }
-                    })
+                    .map(|warm_ns| warm_ns.saturating_add(setup_ns))
                     .collect(),
             )
         } else {
@@ -756,9 +923,12 @@ impl AutorouteCalibrationPoint {
                     if persistent_runtime {
                         warm_interval
                     } else {
+                        // Setup was measured once, so it contributes a shift,
+                        // not certainty. The width stays the warm width.
+                        let setup_ns = Self::accelerator_setup_ns(cold_ns, &warm_timing);
                         TimingConfidenceInterval {
-                            low_ns: cold_ns.max(warm_interval.low_ns),
-                            high_ns: cold_ns.max(warm_interval.high_ns),
+                            low_ns: warm_interval.low_ns.saturating_add(setup_ns),
+                            high_ns: warm_interval.high_ns.saturating_add(setup_ns),
                         }
                     },
                 ));
@@ -1062,18 +1232,23 @@ impl AutorouteDecision {
         let measured_daemon = point
             .resolve_selected_route(true)
             .ok_or_else(|| "new workload point does not resolve one daemon route".to_string())?;
-        // The backend is what autoroute selects, so a class whose points
-        // disagree about it is genuinely unresolved and must stay refused. The
-        // execution plan on top of it is reconciled by `resolve_class_route`
-        // instead: points that split on the plan alone used to discard the
-        // class, and in the field that split was noise, so a workload whose
-        // backend was never once in doubt ended up with no decision and left
-        // every later automatic scan unroutable.
-        if expected_one_shot.backend != measured_one_shot.backend
-            || expected_daemon.backend != measured_daemon.backend
-        {
+        // A backend disagreement between points is only a crossover when the
+        // measurements PROVE it. Ask whether the class including this point
+        // still resolves: `resolve_route_across_points` reconciles a
+        // disagreement whose backends overlap to the lowest-complexity
+        // non-inferior route, and answers None only when some point proves a
+        // peer faster, which is the genuine crossover this error describes.
+        //
+        // Comparing the backends directly here refused the reconcilable case
+        // before the resolver ever saw it, and one refused class refused the
+        // whole generation, so the installer could not finish.
+        let mut merged: Vec<&AutorouteCalibrationPoint> = self.calibration_points.iter().collect();
+        merged.push(&point);
+        let reconciled_one_shot = resolve_route_across_points(&merged, false, None);
+        let reconciled_daemon = resolve_route_across_points(&merged, true, None);
+        if reconciled_one_shot.is_none() || reconciled_daemon.is_none() {
             return Err(format!(
-                "workload class changes its confidence-supported backend across measured points: existing one-shot={} daemon={}, new {}-byte/{}-chunk point one-shot={} daemon={}; split the workload identity at this crossover and recalibrate",
+                "workload class changes its confidence-supported backend across measured points: existing one-shot={} daemon={}, new {}-byte/{}-chunk point one-shot={} daemon={}; the disagreeing backends are separated by measurement, so this is a real crossover: split the workload identity here and recalibrate",
                 render_measured_route(expected_one_shot),
                 render_measured_route(expected_daemon),
                 point.sample_bytes,
@@ -1082,6 +1257,8 @@ impl AutorouteDecision {
                 render_measured_route(measured_daemon),
             ));
         }
+        let expected_one_shot = reconciled_one_shot.unwrap_or(expected_one_shot);
+        let expected_daemon = reconciled_daemon.unwrap_or(expected_daemon);
         for (runtime_label, persistent_runtime, expected_route) in [
             ("one-shot", false, expected_one_shot),
             ("daemon", true, expected_daemon),
@@ -1105,9 +1282,18 @@ impl AutorouteDecision {
                         expected_route.backend.label()
                     )
                 })?;
-            if existing_recovery.backend != measured_recovery.backend {
+            // Same rule as the primary route above: a recovery disagreement
+            // that the merged evidence can still reconcile is overlap, not a
+            // crossover. Only refuse when nothing is non-inferior everywhere.
+            if resolve_route_across_points(
+                &merged,
+                persistent_runtime,
+                Some(expected_route.backend),
+            )
+            .is_none()
+            {
                 return Err(format!(
-                    "workload class changes its confidence-supported remaining {runtime_label} recovery backend after {}: existing={}, new {}-byte/{}-chunk point={}; split the workload identity at this recovery crossover and recalibrate",
+                    "workload class changes its confidence-supported remaining {runtime_label} recovery backend after {}: existing={}, new {}-byte/{}-chunk point={}; the disagreeing recovery backends are separated by measurement, so this is a real crossover: split the workload identity here and recalibrate",
                     expected_route.backend.label(),
                     render_measured_route(existing_recovery),
                     point.sample_bytes,
@@ -1352,6 +1538,14 @@ impl AutorouteDecision {
         self.selected_route_has_confidence_for(route, false)
     }
 
+    /// Strict separated proof: every point must pick `selected` outright.
+    ///
+    /// This deliberately does NOT accept a merely non-inferior route. It backs
+    /// `has_confidence_supported_route`, whose meaning is "the measurements
+    /// separate", and a class can legitimately hold a resolved route without
+    /// holding that proof. Reconciliation under overlap belongs in
+    /// [`resolve_route_across_points`], which decides the route; this decides
+    /// whether the evidence for it separated.
     fn selected_route_has_confidence_for(
         &self,
         selected: MeasuredRoute,
@@ -1379,8 +1573,9 @@ impl AutorouteDecision {
 
     /// Reconcile every measured point in the class into one route.
     ///
-    /// The backend needs unanimity: that is the thing autoroute selects, and a
-    /// class whose points disagree about it is genuinely unresolved.
+    /// Points that disagree about the backend resolve to the lowest-complexity
+    /// backend measured at every point and proved slower at none. A real
+    /// crossover leaves nothing non-inferior everywhere and stays unresolved.
     ///
     /// The execution plan on top of that backend is reconciled rather than
     /// required to match. Points that agree on the backend but split on the
@@ -1397,39 +1592,8 @@ impl AutorouteDecision {
     /// with, which is a plan that certainly exists and certainly runs, instead
     /// of to no decision at all.
     fn resolve_class_route(&self, persistent_runtime: bool) -> Option<MeasuredRoute> {
-        let resolve =
-            |point: &AutorouteCalibrationPoint| point.resolve_selected_route(persistent_runtime);
-        let first = self.calibration_points.first()?;
-        let selected = resolve(first)?;
-        let resolved: Vec<MeasuredRoute> = self
-            .calibration_points
-            .iter()
-            .map(resolve)
-            .collect::<Option<Vec<_>>>()?;
-        if resolved
-            .iter()
-            .any(|route| route.backend != selected.backend)
-        {
-            return None;
-        }
-        if resolved.iter().all(|route| *route == selected) {
-            return Some(selected);
-        }
-        let default_plan = MeasuredRoute {
-            backend: selected.backend,
-            phase2_plain_localizer: first.compiled_default_phase2_plain_localizer,
-            phase2_keyword_localizer: first.compiled_default_phase2_keyword_localizer,
-            gpu_pipeline_depth: selected.gpu_pipeline_depth,
-        };
-        self.calibration_points
-            .iter()
-            .all(|point| {
-                point.compiled_default_phase2_plain_localizer == default_plan.phase2_plain_localizer
-                    && point.compiled_default_phase2_keyword_localizer
-                        == default_plan.phase2_keyword_localizer
-                    && point.measured_routes().contains(&default_plan)
-            })
-            .then_some(default_plan)
+        let points: Vec<&AutorouteCalibrationPoint> = self.calibration_points.iter().collect();
+        resolve_route_across_points(&points, persistent_runtime, None)
     }
 
     #[cfg(test)]
@@ -1463,17 +1627,8 @@ impl AutorouteDecision {
         failed_backend: ScanBackend,
         persistent_runtime: bool,
     ) -> Option<MeasuredRoute> {
-        let selected = self
-            .calibration_points
-            .first()?
-            .resolve_selected_route_excluding(persistent_runtime, Some(failed_backend))?;
-        self.calibration_points
-            .iter()
-            .all(|point| {
-                point.resolve_selected_route_excluding(persistent_runtime, Some(failed_backend))
-                    == Some(selected)
-            })
-            .then_some(selected)
+        let points: Vec<&AutorouteCalibrationPoint> = self.calibration_points.iter().collect();
+        resolve_route_across_points(&points, persistent_runtime, Some(failed_backend))
     }
 
     /// True when evidence resolves one execution route. Exact paired timing

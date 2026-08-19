@@ -84,10 +84,10 @@ fn build_hs(patterns: &[(usize, String)]) -> (BlockDatabase, BTreeSet<usize>) {
 fn hs_vs_regexset_throughput_and_parity() {
     let detectors = match keyhog_core::load_detectors(&detector_dir()) {
         Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors unavailable: {e}");
-            return;
-        }
+        Err(e) => panic!(
+            "detector corpus failed to load, which is the exact state this \
+             guard exists to catch, so it fails instead of skipping: {e}"
+        ),
     };
     let Some(root) = corpus_dir() else {
         eprintln!("SKIP: mirror corpus absent");
