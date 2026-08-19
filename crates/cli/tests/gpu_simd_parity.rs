@@ -52,6 +52,7 @@ fn findings(
         "--evidence-policy",
         "paranoid",
         "--daemon=off",
+        "--developer-compile-embedded-detectors",
         "--backend",
         backend,
         "--developer-compile-embedded-detectors",
