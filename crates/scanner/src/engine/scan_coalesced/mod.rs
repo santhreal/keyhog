@@ -768,8 +768,7 @@ impl CompiledScanner {
         };
 
         let threshold = self.tuning.chunk_lane_threshold();
-        let workers = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZeroUsize::get);
+        let workers = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
 
         let triggers =
             if chunks.len() <= workers || chunks.iter().all(|chunk| chunk.data.len() > threshold) {
@@ -1107,7 +1106,6 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
-
         let triggers = self.normalize_coalesced_phase2_triggers(chunks, triggers, route);
         // No stopwatch here. The phase-2 region below is the profiler's phase-2
         // leaves, and the seam rescan that follows is `Stage::BoundaryScan`,

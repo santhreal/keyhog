@@ -376,7 +376,6 @@ impl HsScanner {
         patterns: &[(usize, usize, &str, bool)],
         opts: HsCompileOpts<'_>,
     ) -> PreparedPatterns {
-
         enum PrepResult {
             Pattern {
                 input_index: usize,

@@ -12,7 +12,6 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
-
         if crate::deadline::expired(deadline) {
             return Ok(Vec::new());
         }
@@ -80,7 +79,6 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
-
         let chunk_text = &chunk.data;
         if reject_oversized_window_chunk(chunk, chunk_text) {
             return Ok(Vec::new());

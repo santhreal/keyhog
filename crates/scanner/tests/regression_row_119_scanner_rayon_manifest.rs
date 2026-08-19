@@ -7,8 +7,8 @@
 #[test]
 fn row_119_scanner_manifest_declares_rayon_only_in_dev_dependencies() {
     let manifest_str = include_str!("../Cargo.toml");
-    let manifest: toml::Table = toml::from_str(manifest_str)
-        .expect("crates/scanner/Cargo.toml must parse as valid TOML");
+    let manifest: toml::Table =
+        toml::from_str(manifest_str).expect("crates/scanner/Cargo.toml must parse as valid TOML");
 
     if let Some(deps) = manifest.get("dependencies").and_then(|d| d.as_table()) {
         assert!(
