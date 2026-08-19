@@ -24,7 +24,7 @@ pub(crate) struct ExecutionGenerationInstallTransaction {
     current_cache: PathBuf,
     old_packs: PathBuf,
     old_cache: PathBuf,
-    _stage: tempfile::TempDir,
+    _stage: Option<tempfile::TempDir>,
     packs_published: bool,
     cache_published: bool,
     had_old_packs: bool,
@@ -80,6 +80,28 @@ impl Drop for ExecutionGenerationInstallTransaction {
 pub(crate) fn install_execution_generation(
     candidate: &Path,
 ) -> Result<ExecutionGenerationInstallTransaction> {
+    let supports_execution_packs = Command::new(candidate)
+        .arg("compile-execution-packs")
+        .arg("--help")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false);
+    if !supports_execution_packs {
+        return Ok(ExecutionGenerationInstallTransaction {
+            current_packs: PathBuf::new(),
+            current_cache: PathBuf::new(),
+            old_packs: PathBuf::new(),
+            old_cache: PathBuf::new(),
+            _stage: None,
+            packs_published: false,
+            cache_published: false,
+            had_old_packs: false,
+            had_old_cache: false,
+            created_signing_key: None,
+            committed: true,
+        });
+    }
+
     let cache_root = dirs::cache_dir()
         .context("platform cache directory is unavailable; cannot publish execution packs")?
         .join("keyhog");
@@ -103,7 +125,6 @@ pub(crate) fn install_execution_generation(
         })?;
     let staged_packs = stage.path().join("packs");
     let staged_cache = stage.path().join("autoroute.json");
-
     run_candidate(
         candidate,
         &[
@@ -146,7 +167,7 @@ pub(crate) fn install_execution_generation(
         current_cache,
         old_packs,
         old_cache,
-        _stage: stage,
+        _stage: Some(stage),
         packs_published: false,
         cache_published: false,
         had_old_packs,
