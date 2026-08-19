@@ -445,9 +445,7 @@ pub(crate) fn warm_route_error(status: &WarmBackendStatus) -> Option<Response> {
             )
         }
         (None, Some(repair)) => {
-            format!(
-                "daemon warm route is not ready. Repair with `{repair}`."
-            )
+            format!("daemon warm route is not ready. Repair with `{repair}`.")
         }
         (None, None) => format!(
             "daemon warm route is not ready and its exact status is internally inconsistent. Repair with `{}`.",
@@ -2601,7 +2599,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                             "daemon: invalid guard mode '{}': expected 'repo' or 'filesystem'",
                             other
                         ),
-                    }
+                    };
                 }
             };
             // Canonicalize the path server-side. The client sends
@@ -2759,6 +2757,9 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                         .lock()
                         .pending_event_count(std::path::Path::new(&root))
                         as u64,
+                    watcher_backend: state.guard_watcher.lock().backend_label().to_string(),
+                    watcher_latency_tier: state.guard_watcher.lock().latency_tier().to_string(),
+                    watcher_poll_interval_ms: state.guard_watcher.lock().poll_interval_ms(),
                     files_scanned,
                     bytes_scanned,
                     attestation_hits,

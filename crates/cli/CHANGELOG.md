@@ -2,6 +2,7 @@
 
 ## 0.5.80 - 2026-08-17
 
+- feat(daemon): report active watcher backend, latency tier, and polling interval in guard status (Row 123).
 - feat(cli): 3-layer configuration governance and runtime metadata enumeration for Tier-A operational performance constants (Row 113).
 - feat(cli): single canonical owner of byte size parsing across CLI, daemon, and config (Row 112).
 - fix(profile): wire queue depth tracking, blocked wait attribution, and per-worker blocked time across fused and coalesced dispatch pipelines (Row 107).

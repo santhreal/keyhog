@@ -125,6 +125,9 @@ fn allowed_env_read(rel: &str, name: &str) -> bool {
         | "KEYHOG_GITLAB_TOKEN"
         | "KEYHOG_BITBUCKET_USERNAME"
         | "KEYHOG_BITBUCKET_TOKEN" => rel == "crates/cli/src/sources.rs",
+        "GHIDRA_INSTALL_DIR" => rel == "crates/sources/src/binary/analyzers/ghidra.rs",
+        "KEYHOG_TEST_INJECT_SCANNER_PANIC" => rel == "crates/cli/src/orchestrator/dispatch.rs",
+        "KEYHOG_TEST_GPU_UNAVAILABLE" => rel == "crates/scanner/src/gpu/self_test.rs",
         _ => false,
     }
 }

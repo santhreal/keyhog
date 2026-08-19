@@ -509,9 +509,14 @@ pub(crate) enum Response {
         last_reconciliation_time: Option<u64>,
         /// Scanner residency label.
         scanner_residency: String,
+        /// Watcher backend identifier label (Row 123).
+        watcher_backend: String,
+        /// Watcher backend latency tier classification (Row 123).
+        watcher_latency_tier: String,
+        /// Watcher polling interval in milliseconds, if polling (Row 123).
+        watcher_poll_interval_ms: Option<u64>,
         /// Backend route label used for the last scan.
         backend_route_label: String,
-        /// Build identity short digest (first 12 hex chars).
         build_identity_short: String,
         /// Detector digest short (first 12 hex chars).
         detector_digest_short: String,

@@ -25,6 +25,133 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::Arc;
 
+/// Active watcher backend kind classified with performance characteristics (Row 123).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum GuardWatcherBackendKind {
+    /// Linux inotify (kernel event driven).
+    Inotify,
+    /// macOS FSEvents (event stream).
+    Fsevent,
+    /// BSD/macOS kqueue (kernel queue event driven).
+    Kqueue,
+    /// Windows ReadDirectoryChangesW (asynchronous directory change port).
+    ReadDirectoryChangesWatcher,
+    /// Polling fallback watcher.
+    PollWatcher,
+    /// Null/no-op watcher (for tests or unsupported environments).
+    NullWatcher,
+    /// Explicitly disabled watcher.
+    Disabled,
+    /// Test channel simulation watcher.
+    CustomTest,
+}
+
+impl GuardWatcherBackendKind {
+    /// Human-readable label for daemon status and telemetry.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Inotify => "inotify",
+            Self::Fsevent => "fsevent",
+            Self::Kqueue => "kqueue",
+            Self::ReadDirectoryChangesWatcher => "read-directory-changes",
+            Self::PollWatcher => "poll",
+            Self::NullWatcher => "null",
+            Self::Disabled => "disabled",
+            Self::CustomTest => "channel-test",
+        }
+    }
+
+    /// Whether this backend uses native OS event notifications rather than interval polling.
+    #[must_use]
+    pub const fn is_native(self) -> bool {
+        match self {
+            Self::Inotify | Self::Fsevent | Self::Kqueue | Self::ReadDirectoryChangesWatcher => {
+                true
+            }
+            Self::PollWatcher | Self::NullWatcher | Self::Disabled | Self::CustomTest => false,
+        }
+    }
+
+    /// Latency tier classification.
+    #[must_use]
+    pub const fn latency_tier(self) -> &'static str {
+        match self {
+            Self::Inotify | Self::Kqueue => "sub-millisecond",
+            Self::Fsevent | Self::ReadDirectoryChangesWatcher => "event-driven",
+            Self::PollWatcher => "polling",
+            Self::NullWatcher | Self::Disabled => "unmonitored",
+            Self::CustomTest => "in-memory",
+        }
+    }
+
+    /// Declared expected latency bound in milliseconds for totality testing.
+    #[must_use]
+    pub const fn expected_latency_bound_ms(self) -> u64 {
+        match self {
+            Self::Inotify | Self::Kqueue => 50,
+            Self::Fsevent | Self::ReadDirectoryChangesWatcher => 250,
+            Self::PollWatcher => 30_000,
+            Self::NullWatcher | Self::Disabled => 0,
+            Self::CustomTest => 10,
+        }
+    }
+
+    /// Map from `notify::WatcherKind` to classified `GuardWatcherBackendKind`.
+    #[must_use]
+    pub fn from_notify_kind(kind: notify::WatcherKind) -> Self {
+        match kind {
+            notify::WatcherKind::Inotify => Self::Inotify,
+            notify::WatcherKind::Fsevent => Self::Fsevent,
+            notify::WatcherKind::Kqueue => Self::Kqueue,
+            notify::WatcherKind::ReadDirectoryChangesWatcher => Self::ReadDirectoryChangesWatcher,
+            notify::WatcherKind::PollWatcher => Self::PollWatcher,
+            notify::WatcherKind::NullWatcher => Self::NullWatcher,
+            _ => Self::PollWatcher,
+        }
+    }
+
+    /// Enumerate all known backend kinds for exhaustive runtime classification assertions.
+    #[must_use]
+    pub const fn all_kinds() -> &'static [Self] {
+        &[
+            Self::Inotify,
+            Self::Fsevent,
+            Self::Kqueue,
+            Self::ReadDirectoryChangesWatcher,
+            Self::PollWatcher,
+            Self::NullWatcher,
+            Self::Disabled,
+            Self::CustomTest,
+        ]
+    }
+}
+
+/// Unified wrapper over native recommended, polling, or null watchers.
+enum ActiveWatcherHandle {
+    Recommended(RecommendedWatcher),
+    Poll(notify::PollWatcher),
+    Null(notify::NullWatcher),
+}
+
+impl ActiveWatcherHandle {
+    fn watch(&mut self, path: &std::path::Path, mode: RecursiveMode) -> notify::Result<()> {
+        match self {
+            Self::Recommended(w) => w.watch(path, mode),
+            Self::Poll(w) => w.watch(path, mode),
+            Self::Null(w) => w.watch(path, mode),
+        }
+    }
+
+    fn unwatch(&mut self, path: &std::path::Path) -> notify::Result<()> {
+        match self {
+            Self::Recommended(w) => w.unwatch(path),
+            Self::Poll(w) => w.unwatch(path),
+            Self::Null(w) => w.unwatch(path),
+        }
+    }
+}
+
 /// One watched root and its event buffer.
 struct WatchedRoot {
     /// Bounded event buffer with monotonic sequence.
@@ -34,8 +161,12 @@ struct WatchedRoot {
 /// Manages filesystem watchers for all guard roots.
 pub struct GuardWatcher {
     /// The native watcher handle. One watcher serves all roots.
-    /// `None` when the platform watcher could not be created.
-    watcher: Option<RecommendedWatcher>,
+    /// `None` when the platform watcher could not be created or is disabled.
+    watcher: Option<ActiveWatcherHandle>,
+    /// Classified active watcher backend kind.
+    backend_kind: GuardWatcherBackendKind,
+    /// Polling interval in milliseconds if using a polling watcher.
+    poll_interval_ms: Option<u64>,
     /// Channel receiver for events from the native watcher.
     rx: mpsc::Receiver<notify::Result<notify::Event>>,
     /// Tracked roots: canonical path -> watched root state.
@@ -52,8 +183,54 @@ impl GuardWatcher {
             let _ = tx.send(res);
         })
         .map_err(|e| format!("failed to create filesystem watcher: {}", e))?;
+        let backend_kind = GuardWatcherBackendKind::from_notify_kind(RecommendedWatcher::kind());
+        let poll_interval_ms = if backend_kind == GuardWatcherBackendKind::PollWatcher {
+            Some(2000)
+        } else {
+            None
+        };
         Ok(Self {
-            watcher: Some(watcher),
+            watcher: Some(ActiveWatcherHandle::Recommended(watcher)),
+            backend_kind,
+            poll_interval_ms,
+            rx,
+            roots: HashMap::new(),
+            config,
+        })
+    }
+
+    /// Create a polling watcher with an explicit interval.
+    pub fn new_polling(
+        config: GuardReconciliationConfig,
+        poll_interval: std::time::Duration,
+    ) -> Result<Self, String> {
+        let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+        let notify_config = notify::Config::default().with_poll_interval(poll_interval);
+        let watcher = notify::PollWatcher::new(
+            move |res: notify::Result<notify::Event>| {
+                let _ = tx.send(res);
+            },
+            notify_config,
+        )
+        .map_err(|e| format!("failed to create polling filesystem watcher: {e}"))?;
+        Ok(Self {
+            watcher: Some(ActiveWatcherHandle::Poll(watcher)),
+            backend_kind: GuardWatcherBackendKind::PollWatcher,
+            poll_interval_ms: Some(poll_interval.as_millis() as u64),
+            rx,
+            roots: HashMap::new(),
+            config,
+        })
+    }
+
+    /// Create a null/no-op watcher.
+    pub fn new_null(config: GuardReconciliationConfig) -> Result<Self, String> {
+        let (_tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+        let watcher = notify::NullWatcher;
+        Ok(Self {
+            watcher: Some(ActiveWatcherHandle::Null(watcher)),
+            backend_kind: GuardWatcherBackendKind::NullWatcher,
+            poll_interval_ms: None,
             rx,
             roots: HashMap::new(),
             config,
@@ -67,10 +244,55 @@ impl GuardWatcher {
         let (_tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
         Self {
             watcher: None,
+            backend_kind: GuardWatcherBackendKind::Disabled,
+            poll_interval_ms: None,
             rx,
             roots: HashMap::new(),
             config: GuardReconciliationConfig::default(),
         }
+    }
+
+    /// Create a guard watcher connected to a custom event channel.
+    /// Used for deterministic simulation and tests without native watcher hooks.
+    pub fn new_with_channel(
+        config: GuardReconciliationConfig,
+    ) -> (Self, mpsc::Sender<notify::Result<notify::Event>>) {
+        let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+        (
+            Self {
+                watcher: None,
+                backend_kind: GuardWatcherBackendKind::CustomTest,
+                poll_interval_ms: None,
+                rx,
+                roots: HashMap::new(),
+                config,
+            },
+            tx,
+        )
+    }
+
+    /// Returns the active watcher backend kind.
+    #[must_use]
+    pub fn backend_kind(&self) -> GuardWatcherBackendKind {
+        self.backend_kind
+    }
+
+    /// Returns the active watcher backend label.
+    #[must_use]
+    pub fn backend_label(&self) -> &'static str {
+        self.backend_kind.label()
+    }
+
+    /// Returns the active watcher latency tier.
+    #[must_use]
+    pub fn latency_tier(&self) -> &'static str {
+        self.backend_kind.latency_tier()
+    }
+
+    /// Returns the polling interval in milliseconds if using a polling watcher.
+    #[must_use]
+    pub fn poll_interval_ms(&self) -> Option<u64> {
+        self.poll_interval_ms
     }
 
     /// Returns the configured coalesce window in milliseconds.
