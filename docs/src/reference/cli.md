@@ -890,6 +890,14 @@ keyhog completion elvish > ~/.config/elvish/lib/keyhog.elv
 
 ## Install maintenance
 
+### `keyhog install`
+
+<!-- keyhog-generated: cli-reference command="install" -->
+| Argument | Value | Default | Description |
+|----------|-------|---------|-------------|
+| `--force` |  |  | Reinstall even if execution packs are already present and valid |
+<!-- /keyhog-generated: cli-reference command="install" -->
+
 ### `keyhog doctor`
 
 <!-- keyhog-generated: cli-reference command="doctor" -->
