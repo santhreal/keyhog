@@ -26,7 +26,7 @@ fn parallel_scan_subprocesses_emit_valid_json() {
                     "scan",
                     "--daemon=off",
                     "--backend",
-                    "simd",
+                    crate::support::DIAGNOSTIC_BACKEND,
                     "--format",
                     "json",
                 ])

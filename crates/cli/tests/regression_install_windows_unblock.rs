@@ -210,123 +210,34 @@ fn powershell_uninstall_helpers_clean_user_path_and_completion_files() {
     );
 }
 
+/// WHY: the sidecar seeds the compiled-matcher cache, so an unverified or
+/// hostile archive plants files outside it, and a half-seeded cache is worse
+/// than none. Ordering IS the contract: verify -> validate -> backup -> seed
+/// -> finalize, with a cache restore on every failure edge.
 #[test]
-fn powershell_default_install_resolves_concrete_latest_before_download() {
+fn powershell_installer_verifies_and_seeds_the_local_gpu_literal_sidecar() {
     let script = include_str!("../../../install.ps1");
-    let resolve_tag = ps_function(script, "Resolve-Tag");
-    let resolve_tag_from_api = ps_function(script, "Resolve-TagFromApi");
-    let resolve_redirect = ps_function(script, "Resolve-TagFromLatestRedirect");
-    let resolve_operator_tag = ps_function(script, "Resolve-OperatorReleaseTag");
-    let release_label = ps_function(script, "Get-ReleaseTagLabel");
-    let show_summary = ps_function(script, "Show-Summary");
-    let asset_url = ps_function(script, "Get-ReleaseAssetUrl");
-    let download_asset = ps_function(script, "Download-Asset");
-    let verify_checksum = ps_function(script, "Verify-Checksum");
-    let stage_install = ps_function(script, "Stage-Install");
-    let do_install = ps_function(script, "Do-Install");
-    let do_repair = ps_function(script, "Do-Repair");
-    let do_diagnose = ps_function(script, "Do-Diagnose");
-    let github_api = ps_function(script, "Invoke-GitHubApi");
-
-    assert!(
-        resolve_tag.contains("$Script:Tag = 'latest'") && !resolve_tag.contains("api.github.com"),
-        "Resolve-Tag should only normalize the requested tag; operator paths own concrete latest resolution"
-    );
-    assert_in_order(
-        resolve_operator_tag,
-        &[
-            "Resolve-Tag",
-            "$Script:Tag -eq 'latest'",
-            "Resolve-TagFromLatestRedirect",
-            "$Script:LatestReleaseAlias = $true",
-            "return",
-            "checking recent stable releases",
-            "Resolve-TagFromApi",
-            "$Script:LatestReleaseAlias = $true",
-        ],
-    );
-    assert!(
-        resolve_redirect.contains("Invoke-WebRequest")
-            && resolve_redirect.contains("-Method Head")
-            && resolve_redirect.contains("-MaximumRedirection 0")
-            && resolve_redirect.contains("Headers.Location")
-            && resolve_redirect.contains("releases/latest/download")
-            && resolve_redirect.contains("/releases/download/([^/]+)/"),
-        "PowerShell latest resolution must read the first non-API redirect before the GitHub releases API"
-    );
-    assert!(
-        release_label.contains("$($Script:Tag) (latest)")
-            && show_summary.contains("Get-ReleaseTagLabel")
-            && show_summary.contains("Show-InstalledReleaseRelation"),
-        "PowerShell summaries must display the concrete tag while preserving that it came from latest"
-    );
-    assert!(
-        asset_url.contains("releases/latest/download/$Name")
-            && asset_url.contains("releases/download/$($Script:Tag)/$Name"),
-        "PowerShell release asset URL owner must support latest redirects and pinned tags"
-    );
-    assert!(
-        download_asset.contains("$url = Get-ReleaseAssetUrl -Name $Name")
-            && verify_checksum.contains("Get-ReleaseAssetUrl -Name \"$AssetName.sha256\""),
-        "asset, signature, and checksum downloads must share the release URL owner"
-    );
-    assert!(
-        !stage_install.contains("Latest release asset redirect did not provide")
-            && !stage_install.contains("Resolve-TagFromApi"),
-        "Stage-Install must not own a second late latest-resolution route"
-    );
-    assert_in_order(
-        do_install,
-        &[
-            "Resolve-Asset",
-            "Resolve-OperatorReleaseTag",
-            "Show-Summary",
-        ],
-    );
-    assert_in_order(do_repair, &["Resolve-Asset", "Resolve-OperatorReleaseTag"]);
-    assert_in_order(
-        do_diagnose,
-        &[
-            "Resolve-Asset",
-            "Resolve-OperatorReleaseTag",
-            "Would install",
-        ],
-    );
-    assert!(
-        resolve_tag_from_api.contains("api.github.com/repos/$Repo/releases?per_page=10"),
-        "PowerShell API release walk must choose the newest release with assets when the latest redirect cannot prove a tag"
-    );
-    assert!(
-        github_api.contains("$env:GITHUB_TOKEN")
-            && github_api.contains("Authorization")
-            && github_api.contains("Bearer $env:GITHUB_TOKEN"),
-        "PowerShell release-resolution API request must honor optional GITHUB_TOKEN"
-    );
-}
-
-#[test]
-fn powershell_installer_downloads_and_seeds_gpu_literal_sidecar() {
-    let script = include_str!("../../../install.ps1");
-    let sidecar_download = ps_function(script, "Download-VerifiedGpuLiteralSidecar");
+    let sidecar_stage = ps_function(script, "Stage-LocalGpuLiteralSidecar");
     let sidecar_check = ps_function(script, "Test-GpuLiteralSidecarArchive");
     let sidecar_install = ps_function(script, "Install-VerifiedGpuLiteralSidecar");
     let cache_backup = ps_function(script, "Backup-GpuProgramsCacheForInstall");
     let cache_restore = ps_function(script, "Restore-GpuProgramsCacheBackup");
     let stage_install = ps_function(script, "Stage-Install");
     let do_install = ps_function(script, "Do-Install");
-    let do_repair = ps_function(script, "Do-Repair");
 
-    assert!(
-        sidecar_download.contains("$($Script:Asset).gpu-literals.tar.gz")
-            && sidecar_download.contains("$FromFile.gpu-literals.tar.gz")
-            && sidecar_download.contains("No local checksum file found beside -FromFile GPU literal sidecar")
-            && !sidecar_download.contains("if ($FromFile) { return $true }")
-            && sidecar_download.contains("Verify-ReleaseSignature -BinaryPath $sidecarPath -AssetName $sidecarName")
-            && sidecar_download
-                .contains("Verify-Checksum -BinaryPath $sidecarPath -AssetName $sidecarName")
-            && sidecar_download.contains("Test-GpuLiteralSidecarArchive -ArchivePath $sidecarPath")
-            && sidecar_download.contains("Refusing to install a release that would recompile shipped detector matchers at runtime."),
-        "PowerShell installer must verify the GPU literal sidecar before any cache install"
+    assert_in_order(
+        sidecar_stage,
+        &[
+            "$FromFile.gpu-literals.tar.gz",
+            // A missing sidecar is no longer fatal: nothing ships one, so the
+            // installer compiles the matchers from the installed binary. Order
+            // still matters for a sidecar that IS supplied.
+            "$Script:GpuLiteralsFromBinary = $true",
+            "Verify-LocalSignature",
+            "Verify-LocalChecksum",
+            "No local checksum file found beside -FromFile GPU literal sidecar",
+            "Test-GpuLiteralSidecarArchive -ArchivePath $sidecarPath",
+        ],
     );
     assert!(
         sidecar_check.contains("tar.exe")
@@ -359,9 +270,9 @@ fn powershell_installer_downloads_and_seeds_gpu_literal_sidecar() {
     assert_in_order(
         stage_install,
         &[
-            "Verify-ReleaseSignature -BinaryPath $tmp -AssetName $Script:Asset",
-            "Verify-Checksum -BinaryPath $tmp -AssetName $Script:Asset",
-            "Download-VerifiedGpuLiteralSidecar",
+            "Verify-LocalSignature",
+            "Verify-LocalChecksum -BinaryPath $tmp -SumFile $localSum",
+            "Stage-LocalGpuLiteralSidecar",
             "Remove-Item -Force $tmp -ErrorAction SilentlyContinue",
             "Clear-GpuLiteralSidecarTemp",
             "exit 1",
@@ -385,32 +296,30 @@ fn powershell_installer_downloads_and_seeds_gpu_literal_sidecar() {
             "Ensure-OnPath",
         ],
     );
-    assert_in_order(
-        do_repair,
-        &[
-            "$bin = Stage-Install",
-            "Backup-GpuProgramsCacheForInstall",
-            "Install-VerifiedGpuLiteralSidecar",
-            "Restore-GpuProgramsCacheBackup",
-            "Rollback-StagedInstallAfterSidecarFailure -BinPath $bin",
-            "Repair failed while seeding shipped GPU literal artifacts.",
-            "Finalize-Install -BinPath $bin",
-            "Restore-GpuProgramsCacheBackup",
-            "Clear-GpuLiteralSidecarTemp",
-            "Repair failed; see above.",
-            "Clear-GpuProgramsCacheBackup",
-            "return",
-            "$newBin = Stage-Install",
-            "Backup-GpuProgramsCacheForInstall",
-            "Install-VerifiedGpuLiteralSidecar",
-            "Restore-GpuProgramsCacheBackup",
-            "Rollback-StagedInstallAfterSidecarFailure -BinPath $newBin",
-            "Repair failed while seeding shipped GPU literal artifacts.",
-            "Finalize-Install -BinPath $newBin",
-            "Restore-GpuProgramsCacheBackup",
-            "Clear-GpuLiteralSidecarTemp",
-            "Repair failed; your previous binary was preserved where possible (see above).",
-            "Clear-GpuProgramsCacheBackup",
-        ],
+}
+
+/// WHY: install.sh verifies a sibling `.minisig` against the pinned key before
+/// it overwrites anything. install.ps1 must do the same, or Windows silently
+/// gets a weaker install path than Linux and macOS for the identical bundle.
+/// Does not catch a correct signature over the wrong artifact; the checksum
+/// binding covers that.
+#[test]
+fn powershell_installer_verifies_a_local_signature_with_the_pinned_key() {
+    let script = include_str!("../../../install.ps1");
+    let verify = ps_function(script, "Verify-LocalSignature");
+
+    assert!(
+        verify.contains("-P $Script:ReleasePublicKey"),
+        "local signature verification must use the pinned release key"
+    );
+    assert!(
+        verify.contains(
+            "Refusing to install an artifact signed by the wrong key or modified after signing."
+        ),
+        "a failed signature must refuse the install, not warn"
+    );
+    assert!(
+        verify.contains("minisign is required to verify the supplied local signature"),
+        "a missing minisign must fail closed with remediation, not skip verification"
     );
 }

@@ -55,13 +55,22 @@ while each workload decision retains its own authenticated weights, budgets,
 pipeline depths, detector/config digests, and correctness receipt. Normal scans
 never retime or rebalance the set.
 
-The workload key preserves the canonical source execution mixture, not only the
-top-level source families. Each sorted, raw-label-free BLAKE3 identity and size-provenance
-entry records exact reduced chunk and payload proportions plus the maximum
-source-span band. Reordering chunks keeps the same complete workload key.
-Scaling every class equally keeps only the source-mixture component stable;
-size, admission, and decoder bands can still change. Any different reduced
-mixture, including 31:1 versus 1:31, requires its own measured route.
+A route class must be something calibration can enumerate ahead of any scan.
+The workload key is therefore the shape of the work, not a measurement of the
+bytes: logarithmic byte, chunk, maximum-file, and pattern bands, one boolean
+recording whether any decoder was admitted, and the canonical set of source
+execution classes with each class's size provenance. Reordering chunks keeps
+the same key. Changing the proportion between two source classes, which
+decoder families ran, the phase-one admission outcome, the phase-two keyword
+density, or the number of decode candidates does not: those are properties of
+the input, and a key that contained them made every scan an uncalibrated class.
+
+Calibration still observes those statistics. It logs the phase-2 keyword
+trigger counts for each measured decision on the `keyhog::routing` tracing
+target, and every persisted point records its exact sample byte count, chunk
+count, and measurement shape digest. They describe a measurement; they do not
+select one.
+
 Noncanonical, duplicate, inconsistent, or oversized persisted mixtures
 invalidate the cache instead of being normalized silently.
 Each persisted decision also carries a digest of the complete workload key.
@@ -136,9 +145,9 @@ keyhog backend --autoroute
 keyhog scan .
 ```
 
-The scan uses `auto` by default. It performs an exact lookup in the persisted
-table and never benchmarks during the scan. Use an explicit backend only for a
-deliberate diagnostic or benchmark.
+The scan uses `auto` by default. It reads the persisted table and never
+benchmarks during the scan. Use an explicit backend only for a deliberate
+diagnostic or benchmark.
 
 Before calibration:
 
@@ -188,14 +197,39 @@ publishes only after every workload in the selected policy succeeds. Use the
 default all-policy sweep for a new installation. Use a focused policy to repair
 or refresh only the preset you run.
 
+### Which configuration the run measures
+
+Route decisions are stored under the resolved scan configuration, and a
+`.keyhog.toml` found on the walk-up from the working directory is part of it.
+Run `keyhog calibrate-autoroute` from the repository whose scans it serves.
+Running it elsewhere primes the compiled-in defaults, and a scan inside a
+repository that carries a `.keyhog.toml` then reports `none matching config
+digest` and exits 2.
+
+```sh
+keyhog calibrate-autoroute                 # measures ./.keyhog.toml if present
+keyhog calibrate-autoroute --no-config     # measures the compiled-in defaults
+```
+
+`install.sh` and `install.ps1` pass `--no-config`. An install runs from an
+arbitrary directory, so it primes the host baseline; calibrate again inside a
+repository that overrides scan policy. The all-policy sweep measures in four
+isolated child processes, and each child inherits the mode: asking for the
+baseline measures the baseline in all four.
+
 
 This drives the core stdin + filesystem workload ladder across every scan
 preset. Plain single-file probes cover every power-of-two size band from 1 byte
 through 32 MiB, with additional 4 MiB + 1, 8 MiB - 1, 8 MiB + 1, and
 16 MiB - 1 probes retaining raw evidence on both sides of the required 8 MiB
-crossover. A coarse size class is reusable only when every retained point
-selects the same fastest-correct one-shot and daemon backends; disagreement
-rejects calibration and requires the class to be split. File-tree probes cover
+crossover. A coarse size class holds its points together when they agree, and
+also when they disagree without proving anything: the class keeps the
+lowest-complexity backend that is measured at every point and measurably
+slower at none. A disagreement that measurement does prove, where one point's
+whole 95% interval for the selected backend sits above a peer's, is a real
+crossover; it rejects calibration and requires the class to be split. Such a
+class reports `confidence_separated: false`, because the route is permitted by
+the evidence rather than proved by it. File-tree probes cover
 every chunk-count band through the default 32-chunk fused batch. Tar-member
 probes cover the same count ladder for payload-derived extracted filesystem
 chunks. Decode-heavy probes cover the decoder path. Empty input has no routing
@@ -427,28 +461,40 @@ even when the stored identity still parses as compatible.
 `keyhog backend --autoroute --json` to verify that a routing-relevant setting
 change produced a new `config_digest` row.
 
-Every lookup is exact at the complete workload-key level. Size, chunk-count,
-and maximum-file dimensions use one-power-of-two logarithmic ranges; decode
-density uses paired logarithmic ranges to resist content-sample jitter. The
-key also records how many chunks and bytes the detector-specific phase-one
-alphabet and bigram screens reject or admit. A phase-one rejection suppresses
-only the direct-literal pass. It does not skip normalization, decoding,
-fragment, boundary, or phase-two work, so these classes describe measured cost
-without changing detection semantics. The decision proves correctness and
-timing for the representative that was
-measured under that key. It does **not** prove that the same backend is fastest
-for every individual byte length inside the numeric range. A neighbouring range
-is not evidence for this one. Uncalibrated keys never interpolate or clamp to
-an unauthenticated route. A normal scan selects no backend for the affected
-batch, leaves that batch unscanned, records incomplete coverage, and exits
-nonzero with recalibration guidance. Calibration and explicit backend contracts
-also fail when their requested evidence or route cannot be produced.
+A lookup first tries the complete workload key. Size, chunk-count, and
+maximum-file dimensions use one-power-of-two logarithmic ranges. A decision
+proves correctness and timing for the representative measured under that key.
+It does **not** prove that the same backend is fastest for every individual
+byte length inside the numeric range.
+
+A size band nobody measured is served only by measured invariance. KeyHog
+collects every calibrated decision that shares this workload's pattern band,
+decode state, and source-class set. Two such bands are the minimum: one band
+says nothing about whether the winner depends on size. Their measurements are
+then reconciled by the rule that reconciles the repeated points inside a single
+band. The served backend is the lowest-complexity backend measured at every one
+of those bands and proved slower at none. Bands that agree on the backend and
+disagree on the phase-2 localizer plan resolve to the compiled default plan,
+which each of them must have measured. A band whose own evidence resolves no
+route, a backend crossover where one band proves a peer faster and another
+proves the reverse, and any GPU route all withdraw the reuse. Nothing is
+benchmarked, guessed, or substituted at scan time; the served route is one
+calibration measured, repeatedly, for this exact class.
+
+GPU routes are never reused for an unmeasured band. GPU correctness, not only
+GPU speed, varies with input size: batch input caps and per-slot capacities
+bind to the measured shape, and a parity receipt proves that shape and no
+other.
+
+When neither an exact key nor an invariant family covers the batch, a normal
+scan selects no backend for it, leaves it unscanned, records incomplete
+coverage, and exits nonzero with recalibration guidance. Calibration and
+explicit backend contracts also fail when their requested evidence or route
+cannot be produced.
 
 Large directory and multi-source scans run in process and produce multiple real
-batches. Each batch needs an exact key in the cache; one calibrated single-file
-key does not authorize every later tree shape. The core calibration command
-includes file-tree probes, while Git, Docker, and web fixtures require installer
-calibration.
+batches. The core calibration command includes file-tree probes, while Git,
+Docker, and web fixtures require installer calibration.
 
 ## One-shot scans and the daemon
 

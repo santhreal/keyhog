@@ -123,7 +123,18 @@ printf 'nothing secret here, just prose\n' > "$t/clean.txt"
 version_out="$("$KH" --version 2>"$t/version.err")"; version_rc=$?
 expect_version "$version_out" "$version_rc" "$t/version.err"
 
-"$KH" scan "$t/leak.env" --backend simd --format json --output "$t/leak.json" >"$t/leak.out" 2>"$t/leak.err"
+# The `--backend` overrides below must name a backend this build carries. The
+# macOS and Windows ships are `portable,gpu` with no Hyperscan, and a portable
+# binary refuses `--backend simd` with exit 2, which reads as a detection
+# failure when it is a routing refusal. Ask the binary.
+caps="$("$KH" backend 2>/dev/null)"
+case "$caps" in
+  *"simd_backend:      compiled-in"*) B=simd ;;
+  *"simd_backend:      disabled"*)    B=cpu ;;
+  *) fail_check "compiled capabilities readable" "'$KH backend' printed no simd_backend line"; exit 1 ;;
+esac
+
+"$KH" scan "$t/leak.env" --backend "$B" --format json --output "$t/leak.json" >"$t/leak.out" 2>"$t/leak.err"
 rc=$?
 expect_rc "planted secret -> exit 1" "$rc" 1 "$t/leak.err"
 if expect_aws_json "$t/leak.json" 2>"$t/leak.parse.err"; then
@@ -132,13 +143,13 @@ else
   fail_check "planted secret -> aws-access-key detector" "$(cat "$t/leak.parse.err")"
 fi
 
-"$KH" scan "$t/clean.txt" --backend simd >"$t/clean.out" 2>"$t/clean.err"
+"$KH" scan "$t/clean.txt" --backend "$B" >"$t/clean.out" 2>"$t/clean.err"
 expect_rc "clean tree -> exit 0" "$?" 0 "$t/clean.err"
 
-"$KH" scan --git-history "$t" --backend simd >"$t/history.out" 2>"$t/history.err"
+"$KH" scan --git-history "$t" --backend "$B" >"$t/history.out" 2>"$t/history.err"
 expect_rc "git-history non-repo -> exit 2 (fail-closed)" "$?" 2 "$t/history.err"
 
-printf '\x00\x01aws_access_key_id = AKIAZ4RNVT5QW3MXK7PD\n' | "$KH" scan --stdin --backend simd >"$t/stdin.out" 2>"$t/stdin.err"
+printf '\x00\x01aws_access_key_id = AKIAZ4RNVT5QW3MXK7PD\n' | "$KH" scan --stdin --backend "$B" >"$t/stdin.out" 2>"$t/stdin.err"
 expect_rc "binary stdin (lossy) -> exit 1" "$?" 1 "$t/stdin.err"
 exit $fail
 PAYLOAD

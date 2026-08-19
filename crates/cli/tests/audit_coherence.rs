@@ -125,26 +125,16 @@ fn detectors_help_count_matches_embedded_json_count() {
 
 /// AUD-coherence-2: `--help` EXIT CODES omits a documented exit-4 producer.
 ///
-/// FINDING: The committed exit-code contract in
-/// docs/src/reference/exit-codes.md defines exit `4` as a *Health/self-test
-/// failure* covering THREE producers:
-///   "`keyhog doctor` unhealthy, `keyhog repair` could not restore a working
-///    binary, `keyhog backend` self-test failed."
-/// The source agrees through `crates/cli/src/exit_codes.rs`: exit 4 has multiple
-/// producers (doctor, repair, backend self-test). The help text must not
-/// describe it as backend-only.
-/// An operator who reads `keyhog --help` is given an incomplete exit-4 contract
-/// that does not match the documentation they are pointed at (README.md:83).
+/// The committed exit-code contract in docs/src/reference/exit-codes.md
+/// defines exit `4` as a *Health/self-test failure*. `crates/cli/src/
+/// exit_codes.rs` agrees: it has more than one producer. `keyhog repair` was
+/// one of them until the binary-asset release channel it drove was retired;
+/// `keyhog doctor` and `keyhog backend --self-test` remain. The help text must
+/// not describe exit 4 as backend-only, or an operator reading `keyhog --help`
+/// gets an exit-4 contract that contradicts the documentation it points at.
 ///
-/// This test is drift-proof against the docs: it reads the live `--help` exit-4
-/// line and asserts it acknowledges the `repair` producer that
-/// docs/src/reference/exit-codes.md documents. It fails today (the help line
-/// mentions only `backend`/self-test) and passes once the help text is widened
-/// to match the documented contract.
-///
-/// EXPECTED FIX: keep the exit-4 line in `exit_codes::HELP` aligned with the
-/// full exit-4 contract (doctor / repair / backend self-test), matching
-/// docs/src/reference/exit-codes.md.
+/// Drift-proof against the docs: it reads the live `--help` exit-4 line rather
+/// than a copy of the prose.
 #[test]
 fn help_exit_codes_describe_full_exit4_contract() {
     let (help, _e, _c) = run(&["--help"]);
@@ -167,14 +157,15 @@ fn help_exit_codes_describe_full_exit4_contract() {
         })
         .to_lowercase();
 
-    // The committed contract (docs/src/reference/exit-codes.md) lists `repair`
-    // as an exit-4 producer alongside backend self-test. The help text must not
-    // present exit 4 as backend-only.
+    // The committed contract (docs/src/reference/exit-codes.md) lists doctor
+    // and backend self-test as the exit-4 producers. `repair` was retired with
+    // the binary-asset release channel; the help text must name what remains
+    // and must not present exit 4 as backend-only.
     assert!(
-        exit4_line.contains("repair"),
-        "`keyhog --help` exit-code 4 line ({exit4_line:?}) omits the `keyhog repair` \
+        exit4_line.contains("doctor"),
+        "`keyhog --help` exit-code 4 line ({exit4_line:?}) omits the `keyhog doctor` \
          producer that docs/src/reference/exit-codes.md documents and that \
-         crates/cli/src/exit_codes.rs (EXIT_REPAIR_FAILED = 4) emits. \
+         crates/cli/src/exit_codes.rs (EXIT_DOCTOR_UNHEALTHY = 4) emits. \
          The help exit-code contract drifted from the documented contract."
     );
 }

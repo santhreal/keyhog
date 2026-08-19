@@ -92,12 +92,11 @@ on the runner's home-directory conventions.
 
 ## Installer script environment
 
-The installer scripts are separate programs from the KeyHog binary.
+The installer scripts are separate programs from the KeyHog binary. They
+install a bundle supplied with `--from-file` and never contact the network.
 
 | Variable | Script | Effect |
 |---|---|---|
-| `KEYHOG_VERSION` | both | Selects an exact release tag instead of the latest release. The `--version` argument is the explicit alternative. |
-| `GITHUB_TOKEN` | both | Authenticates GitHub API requests when present. |
 | `NO_COLOR` | both | A non-empty value disables installer styling. |
 | `HOME` | `install.sh` | Supplies the default install root `$HOME/.local/bin`. |
 | `LOCALAPPDATA` | `install.ps1` | Supplies the default install directory and cache roots. | <!-- keyhog:ignore detector=entropy-token -->

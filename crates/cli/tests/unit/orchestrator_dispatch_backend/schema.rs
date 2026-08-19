@@ -123,17 +123,32 @@ fn workload_key_distinguishes_decoder_work_for_same_size_batches() {
     assert_eq!(plain_key.pattern_bucket, encoded_key.pattern_bucket);
     assert_eq!(plain_key.source_mixture, encoded_key.source_mixture);
     assert!(
-        encoded_key.decode_candidate_bytes_bucket > plain_key.decode_candidate_bytes_bucket
-            && encoded_key.decode_kind_mask & keyhog_scanner::decode::DecodeAdmissionSketch::BASE64
-                != 0,
+        encoded_key.decode_admitted,
         "autoroute workload keys must separate decode-heavy inputs from same-size plain text"
+    );
+    assert!(
+        !plain_key.decode_admitted,
+        "plain text must not claim decoder work"
     );
 }
 
-/// Locks workload identity to scanner-observed phase-1 outcomes at the same
-/// payload size, including a complete selected anchor in the admitted class.
+/// WHY: this used to assert the opposite, that equal-size batches with
+/// different phase-1 admission are DIFFERENT route classes. That is what broke
+/// the product. Admission counts are a measurement of the bytes being scanned,
+/// so calibration could never enumerate them: a probe ladder measures the
+/// content it generates, a user scans different content, the exact-match
+/// lookup missed, and the scan failed closed with exit 2. Adding one file to a
+/// directory moved the counts and broke a directory that had just worked.
+///
+/// Equal layout must now be ONE class. Phase-1 and phase-2 statistics stay in
+/// each measured point's recorded evidence, where they describe what was
+/// measured; they no longer decide which measurement applies.
+///
+/// WHAT IT DOES NOT CATCH: whether one route is right for every admission mix
+/// inside the class. Nothing can measure that ahead of a scan, which is why
+/// the class must be enumerable instead.
 #[test]
-fn workload_key_distinguishes_equal_8mib_phase1_admission_classes() {
+fn workload_key_groups_equal_layout_across_phase1_admission_classes() {
     const BYTES: usize = 8 * 1024 * 1024;
     let scanner = phase1_test_scanner();
     let decode_disabled = keyhog_scanner::decode::DecodeWorkloadPlan::from_limits(0, usize::MAX);
@@ -141,48 +156,37 @@ fn workload_key_distinguishes_equal_8mib_phase1_admission_classes() {
     let bigram_batch = vec![test_chunk("g".repeat(BYTES))];
     let admitted_batch = vec![test_chunk(repeated_to_len("ghp_ABCDEFGH ", BYTES))];
 
+    // The scanner still observes three genuinely different admission outcomes.
     let alphabet_admission = scanner.phase1_admission_plan(&alphabet_batch);
     let bigram_admission = scanner.phase1_admission_plan(&bigram_batch);
     let admitted_admission = scanner.phase1_admission_plan(&admitted_batch);
-    let alphabet_key = workload_key_with_plan(
-        &alphabet_batch,
-        scanner.runtime_status().pattern_count,
-        alphabet_admission.summary(),
-        alphabet_admission.phase2_keyword_triggers(),
-        decode_disabled.clone(),
-    )
-    .expect("alphabet-rejected workload classifies");
-    let bigram_key = workload_key_with_plan(
-        &bigram_batch,
-        scanner.runtime_status().pattern_count,
-        bigram_admission.summary(),
-        bigram_admission.phase2_keyword_triggers(),
-        decode_disabled.clone(),
-    )
-    .expect("bigram-rejected workload classifies");
-    let admitted_key = workload_key_with_plan(
-        &admitted_batch,
-        scanner.runtime_status().pattern_count,
-        admitted_admission.summary(),
-        admitted_admission.phase2_keyword_triggers(),
-        decode_disabled,
-    )
-    .expect("admitted workload classifies");
+    assert_ne!(alphabet_admission.summary(), bigram_admission.summary());
+    assert_ne!(alphabet_admission.summary(), admitted_admission.summary());
+    assert_ne!(bigram_admission.summary(), admitted_admission.summary());
 
-    assert_ne!(alphabet_key.phase1, bigram_key.phase1);
-    assert_ne!(alphabet_key.phase1, admitted_key.phase1);
-    assert_ne!(bigram_key.phase1, admitted_key.phase1);
-    for mut legacy_key in [alphabet_key, bigram_key] {
-        legacy_key.phase1 = admitted_key.phase1;
-        assert_eq!(
-            legacy_key, admitted_key,
-            "the equal-layout classes must differ only by scanner-owned phase-1 admission"
-        );
-    }
+    let patterns = scanner.runtime_status().pattern_count;
+    let alphabet_key = workload_key_with_plan(&alphabet_batch, patterns, decode_disabled.clone())
+        .expect("alphabet-rejected workload classifies");
+    let bigram_key = workload_key_with_plan(&bigram_batch, patterns, decode_disabled.clone())
+        .expect("bigram-rejected workload classifies");
+    let admitted_key = workload_key_with_plan(&admitted_batch, patterns, decode_disabled)
+        .expect("admitted workload classifies");
+
+    assert_eq!(
+        alphabet_key, bigram_key,
+        "equal-layout batches must share one route class whatever phase-1 admits"
+    );
+    assert_eq!(
+        alphabet_key, admitted_key,
+        "equal-layout batches must share one route class whatever phase-1 admits"
+    );
 }
 
+/// WHY: same class of defect as the phase-1 test above. Keyword trigger COUNT
+/// is a property of the bytes, so making it part of the route identity meant a
+/// denser copy of the same file was an uncalibrated class and failed closed.
 #[test]
-fn workload_key_distinguishes_equal_size_phase2_keyword_trigger_density() {
+fn workload_key_groups_equal_size_across_phase2_keyword_trigger_density() {
     const BYTES: usize = 64 * 1024;
     const TRIGGER: &str = "ghp_ABCDEFGH";
 
@@ -192,27 +196,14 @@ fn workload_key_distinguishes_equal_size_phase2_keyword_trigger_density() {
     sparse.push_str(&"x".repeat(BYTES - sparse.len()));
     let sparse_batch = vec![test_chunk(sparse)];
     let dense_batch = vec![test_chunk(repeated_to_len(TRIGGER, BYTES))];
-    let sparse_admission = scanner.phase1_admission_plan(&sparse_batch);
-    let dense_admission = scanner.phase1_admission_plan(&dense_batch);
 
-    assert_eq!(
-        sparse_admission.summary(),
-        dense_admission.summary(),
-        "the regression pair must have identical direct-literal admission"
-    );
-    let sparse_triggers = sparse_admission.phase2_keyword_triggers();
-    let dense_triggers = dense_admission.phase2_keyword_triggers();
-    assert_eq!(
-        (
-            sparse_triggers.keyword_trigger_chunks,
-            sparse_triggers.keyword_trigger_bytes,
-        ),
-        (
-            dense_triggers.keyword_trigger_chunks,
-            dense_triggers.keyword_trigger_bytes,
-        ),
-        "both one-chunk batches contain phase-2 keywords across the same byte count"
-    );
+    // The density difference is real and still observable to the scanner.
+    let sparse_triggers = scanner
+        .phase1_admission_plan(&sparse_batch)
+        .phase2_keyword_triggers();
+    let dense_triggers = scanner
+        .phase1_admission_plan(&dense_batch)
+        .phase2_keyword_triggers();
     assert!(
         dense_triggers.keyword_trigger_count > sparse_triggers.keyword_trigger_count,
         "the dense payload must exercise more keyword-localized phase-2 work; sparse={}, dense={}",
@@ -220,58 +211,41 @@ fn workload_key_distinguishes_equal_size_phase2_keyword_trigger_density() {
         dense_triggers.keyword_trigger_count
     );
 
-    let sparse_key = workload_key_with_plan(
-        &sparse_batch,
-        scanner.runtime_status().pattern_count,
-        sparse_admission.summary(),
-        sparse_triggers,
-        decode_disabled.clone(),
-    )
-    .expect("sparse phase-2 workload classifies");
-    let dense_key = workload_key_with_plan(
-        &dense_batch,
-        scanner.runtime_status().pattern_count,
-        dense_admission.summary(),
-        dense_triggers,
-        decode_disabled,
-    )
-    .expect("dense phase-2 workload classifies");
+    let patterns = scanner.runtime_status().pattern_count;
+    let sparse_key = workload_key_with_plan(&sparse_batch, patterns, decode_disabled.clone())
+        .expect("sparse phase-2 workload classifies");
+    let dense_key = workload_key_with_plan(&dense_batch, patterns, decode_disabled)
+        .expect("dense phase-2 workload classifies");
 
-    assert_eq!(sparse_key.bytes_bucket, dense_key.bytes_bucket);
-    assert_eq!(sparse_key.chunks_bucket, dense_key.chunks_bucket);
-    assert_eq!(sparse_key.max_file_bucket, dense_key.max_file_bucket);
-    assert_eq!(sparse_key.pattern_bucket, dense_key.pattern_bucket);
-    assert_eq!(sparse_key.phase1, dense_key.phase1);
-    assert_eq!(sparse_key.source_mixture, dense_key.source_mixture);
-    assert_ne!(
-        sparse_key.phase2_keyword_triggers.count_bucket,
-        dense_key.phase2_keyword_triggers.count_bucket,
-        "autoroute must not reuse sparse phase-2 timing evidence for trigger-dense input"
+    assert_eq!(
+        sparse_key, dense_key,
+        "trigger density must not fork the route class: it is content, not layout"
     );
 }
 
+/// WHY: decoder-family coverage is a property of the scanner's admission
+/// sketch, so it is asserted against the sketch. The workload KEY only records
+/// whether decoder work happens at all: which families a caller's bytes happen
+/// to contain is not something a probe ladder can enumerate, and keying on the
+/// 14-bit mask made a 117-byte `.env` (mask 0x00000401) an uncalibrated class.
 #[test]
 fn workload_key_projects_scanner_owned_decoder_families() {
     use keyhog_scanner::decode::DecodeAdmissionSketch as Sketch;
 
-    let plain = workload_key(&[test_chunk("ordinary prose. short words.".into())], 902)
-        .expect("plain workload classified");
-    assert_eq!(plain.decode_kind_mask, 0);
-    assert_eq!(plain.decode_candidate_count_bucket, 0);
-    assert_eq!(plain.decode_candidate_bytes_bucket, 0);
-    assert!(!plain.decode_unknown);
+    let plain_batch = [test_chunk("ordinary prose. short words.".into())];
+    let plain = workload_key(&plain_batch, 902).expect("plain workload classified");
+    assert_eq!(decode_workload_sketch(&plain_batch).kind_mask(), 0);
+    assert!(!plain.decode_admitted);
 
-    let sparse = workload_key(
-        &[test_chunk(
-            "token = \"::%41::!@#$^*()_-+[]{};,./?~|\"".into(),
-        )],
-        902,
-    )
-    .expect("sparse URL workload classified");
-    assert_eq!(sparse.decode_kind_mask, Sketch::URL);
-    assert_eq!(sparse.decode_candidate_count_bucket, 1);
-    assert_eq!(sparse.decode_candidate_bytes_bucket, 1);
-    assert!(!sparse.decode_unknown);
+    let sparse_batch = [test_chunk(
+        "token = \"::%41::!@#$^*()_-+[]{};,./?~|\"".into(),
+    )];
+    let sparse = workload_key(&sparse_batch, 902).expect("sparse URL workload classified");
+    assert_eq!(
+        decode_workload_sketch(&sparse_batch).kind_mask(),
+        Sketch::URL
+    );
+    assert!(sparse.decode_admitted);
 
     let fixtures = [
         (
@@ -321,32 +295,20 @@ fn workload_key_projects_scanner_owned_decoder_families() {
         ),
     ];
 
-    let mut projections = std::collections::BTreeSet::new();
-    projections.insert((
-        plain.decode_kind_mask,
-        plain.decode_candidate_count_bucket,
-        plain.decode_candidate_bytes_bucket,
-        plain.decode_unknown,
-    ));
     for (name, input, required_kind) in fixtures {
-        let key = workload_key(&[test_chunk(input.to_string())], 902)
-            .unwrap_or_else(|error| panic!("{name} workload failed: {error}")); // LAW10: test-only oracle has no runtime effect and prints the exact error
+        let batch = [test_chunk(input.to_string())];
+        let sketch = decode_workload_sketch(&batch);
         assert_ne!(
-            key.decode_kind_mask & required_kind,
+            sketch.kind_mask() & required_kind,
             0,
-            "{name} workload key omitted scanner decoder kind: {key:?}"
+            "{name} decode sketch omitted scanner decoder kind: {sketch:?}"
         );
-        assert!(key.decode_candidate_count_bucket > 0, "{name}: {key:?}");
-        assert!(key.decode_candidate_bytes_bucket > 0, "{name}: {key:?}");
-        assert!(!key.decode_unknown, "built-in {name} became unknown");
+        assert!(!sketch.has_unknown(), "built-in {name} became unknown");
+        let key = workload_key(&batch, 902)
+            .unwrap_or_else(|error| panic!("{name} workload failed: {error}")); // LAW10: test-only oracle has no runtime effect and prints the exact error
         assert!(
-            projections.insert((
-                key.decode_kind_mask,
-                key.decode_candidate_count_bucket,
-                key.decode_candidate_bytes_bucket,
-                key.decode_unknown,
-            )),
-            "{name} must have a distinct decode workload projection: {key:?}"
+            key.decode_admitted,
+            "{name} does decoder work, so its route class must say so"
         );
     }
 }
@@ -421,8 +383,8 @@ fn workload_decode_sketch_samples_late_chunks_and_file_tails() {
         workload_key(&[test_chunk(same_size_plain)], 902).expect("plain workload classifies");
     let tail_key =
         workload_key(&[test_chunk(tail_heavy)], 902).expect("tail-heavy workload classifies");
-    assert!(
-        tail_key.decode_candidate_bytes_bucket > plain_key.decode_candidate_bytes_bucket,
+    assert_ne!(
+        tail_key.decode_admitted, plain_key.decode_admitted,
         "encoded data beyond the old 64 KiB prefix must affect workload identity"
     );
 
@@ -526,11 +488,6 @@ fn workload_key_coalesces_parallel_reader_adjacent_bucket_jitter() {
         autoroute_stable_bucket(1_u64 << 26),
         autoroute_stable_bucket(1_u64 << 27),
         "the next power-of-two scan band needs distinct autoroute evidence"
-    );
-    assert_eq!(
-        autoroute_stable_decode_bucket(7),
-        autoroute_stable_decode_bucket(8),
-        "adjacent decode-work sample jitter must not invalidate calibration"
     );
 }
 
@@ -648,8 +605,18 @@ fn source_mixture_associates_size_provenance_with_each_source_class() {
     );
 }
 
+/// WHY: this test used to require that every different proportion of the same
+/// source classes be a different route class. Proportions are a property of
+/// the bytes a caller happens to hand over, so calibration could not enumerate
+/// them and every real scan missed the cache. Mixture identity is now the SET
+/// of source classes present plus whether each carried a full source size,
+/// which is enumerable from the source registry.
+///
+/// WHAT IT DOES NOT CATCH: a workload whose best backend genuinely depends on
+/// the ratio between two source classes. Size still separates classes through
+/// bytes_bucket and max_file_bucket.
 #[test]
-fn source_mixture_separates_inverse_shares_and_ignores_chunk_order() {
+fn source_mixture_groups_inverse_shares_and_ignores_chunk_order() {
     let mixture = |total: usize, filesystem_chunks: usize| {
         (0..total)
             .map(|index| {
@@ -668,7 +635,10 @@ fn source_mixture_separates_inverse_shares_and_ignores_chunk_order() {
     let dominant_web = mixture(32, 1);
     let filesystem_key = source_mixture_key(&dominant_filesystem).expect("31:1 classifies");
     let web_key = source_mixture_key(&dominant_web).expect("1:31 classifies");
-    assert_ne!(filesystem_key, web_key, "inverse mixtures must not alias");
+    assert_eq!(
+        filesystem_key, web_key,
+        "the same two source classes are one route class whatever the share"
+    );
 
     let mut permuted = dominant_filesystem.clone();
     permuted.reverse();
@@ -677,27 +647,19 @@ fn source_mixture_separates_inverse_shares_and_ignores_chunk_order() {
         filesystem_key,
         "source mixture identity must be permutation invariant"
     );
-    assert_ne!(
-        source_mixture_key(&mixture(32, 30)).expect("30:2 classifies"),
-        filesystem_key,
-        "every different source proportion must change identity"
-    );
 
-    let formerly_aliased_17 = source_mixture_key(&mixture(1024, 17)).expect("17:1007 classifies");
-    let formerly_aliased_18 = source_mixture_key(&mixture(1024, 18)).expect("18:1006 classifies");
+    let filesystem_only =
+        source_mixture_key(&mixture(32, 32)).expect("single-class mixture classifies");
     assert_ne!(
-        formerly_aliased_17, formerly_aliased_18,
-        "exact mixture identity must not alias proportions within an old 1/64 share bin"
+        filesystem_only, filesystem_key,
+        "dropping a source class entirely must change identity"
     );
 
     let full_filesystem_key = workload_key(&dominant_filesystem, 902).expect("31:1 key classifies");
     let full_web_key = workload_key(&dominant_web, 902).expect("1:31 key classifies");
-    assert_ne!(full_filesystem_key, full_web_key);
-    let mut without_mixture = full_filesystem_key.clone();
-    without_mixture.source_mixture = full_web_key.source_mixture.clone();
     assert_eq!(
-        without_mixture, full_web_key,
-        "equal-layout inverse batches must differ only in their exact source mixture"
+        full_filesystem_key, full_web_key,
+        "equal-layout inverse batches must resolve to one calibrated class"
     );
 }
 
@@ -721,44 +683,22 @@ fn source_mixture_validation_rejects_noncanonical_persisted_entries() {
     key.entries.reverse();
     assert!(validate_source_mixture_key(&key).is_err());
     key.entries.sort();
-    key.entries[0].chunk_ratio = 0;
-    assert!(validate_source_mixture_key(&key).is_err());
+    assert!(validate_source_mixture_key(&key).is_ok());
 
-    let mut unreduced = test_source_mixture("filesystem");
-    unreduced.entries[0].chunk_ratio = 2;
-    unreduced.entries[0].payload_ratio = 2;
-    assert!(validate_source_mixture_key(&unreduced).is_err());
+    let mut duplicated = test_source_mixture("filesystem");
+    let entry = duplicated.entries[0].clone();
+    duplicated.entries.push(entry);
+    assert!(validate_source_mixture_key(&duplicated).is_err());
 
-    let mut zero_payload = test_workload_key();
-    zero_payload.source_mixture.entries[0].payload_ratio = 0;
-    zero_payload.source_mixture.entries[0].max_span_bucket = 0;
-    zero_payload.max_file_bucket = 0;
-    assert!(validate_workload_source_mixture(&zero_payload).is_err());
+    let mut empty = test_source_mixture("filesystem");
+    empty.entries.clear();
+    assert!(validate_source_mixture_key(&empty).is_err());
 
-    let mut impossible_payload_span = test_workload_key();
-    impossible_payload_span.source_mixture.entries[0].has_full_size = false;
-    impossible_payload_span.source_mixture.entries[0].max_span_bucket = 25;
-    impossible_payload_span.max_file_bucket = 25;
-    assert!(validate_workload_source_mixture(&impossible_payload_span).is_err());
-
-    let mut mixed_impossible_span = test_workload_key();
-    let mut payload_entry = test_source_mixture("web").entries.remove(0);
-    payload_entry.has_full_size = false;
-    payload_entry.max_span_bucket = 25;
-    mixed_impossible_span
-        .source_mixture
-        .entries
-        .push(payload_entry);
-    mixed_impossible_span.source_mixture.entries.sort();
-    mixed_impossible_span.max_file_bucket = 25;
-    assert!(validate_workload_source_mixture(&mixed_impossible_span).is_err());
-
-    let mut parent_mismatch = test_workload_key();
-    parent_mismatch.source_mixture.entries[0].max_span_bucket = 23;
-    assert!(validate_workload_source_mixture(&parent_mismatch).is_err());
+    let mut empty_bytes = test_workload_key();
+    empty_bytes.bytes_bucket = 0;
+    assert!(validate_workload_source_mixture(&empty_bytes).is_err());
 
     assert!(source_mixture_key(&[]).is_err());
-    assert!(source_mixture_key(&[test_chunk(String::new())]).is_err());
     let source_classes = |count: usize| {
         (0..count)
             .map(|index| test_chunk_with_source("x".into(), &format!("source-{index}")))
@@ -768,24 +708,28 @@ fn source_mixture_validation_rejects_noncanonical_persisted_entries() {
     assert!(source_mixture_key(&source_classes(65)).is_err());
 }
 
+/// WHY: inverse shares of the same two source classes used to be two route
+/// classes; they are now one, because a share is a property of the bytes.
+/// What must still survive a save/load round trip is the SET of source classes
+/// and its binding to the decision, so a cache cannot serve one mixture's
+/// measurement under another mixture's name.
 #[test]
 fn exact_source_mixtures_survive_cache_replay_and_inspection() {
-    let mixture = |filesystem_chunks: usize| {
+    let mixture = |classes: &[&str]| {
         (0..32)
-            .map(|index| {
-                test_chunk_with_source(
-                    "x".repeat(64),
-                    if index < filesystem_chunks {
-                        "filesystem/windowed"
-                    } else {
-                        "web:js"
-                    },
-                )
-            })
+            .map(|index| test_chunk_with_source("x".repeat(64), classes[index % classes.len()]))
             .collect::<Vec<_>>()
     };
-    let filesystem_key = workload_key(&mixture(31), 902).expect("31:1 workload classifies");
-    let web_key = workload_key(&mixture(1), 902).expect("1:31 workload classifies");
+    let mixed_batch = mixture(&["filesystem/windowed", "web:js"]);
+    let filesystem_batch = mixture(&["filesystem/windowed"]);
+    let mixed_key = workload_key(&mixed_batch, 902).expect("two-class workload classifies");
+    let filesystem_key =
+        workload_key(&filesystem_batch, 902).expect("single-class workload classifies");
+    assert_ne!(
+        mixed_key, filesystem_key,
+        "the set of source classes must still separate route classes"
+    );
+
     let dir = tempfile::TempDir::new().expect("tempdir for exact mixture replay");
     let path = dir.path().join("mixtures.json");
     let digest = 0x1234_5678_9ABC_DEF0u64;
@@ -793,11 +737,11 @@ fn exact_source_mixtures_survive_cache_replay_and_inspection() {
     let host = test_host(None);
     let mut decisions = HashMap::new();
     decisions.insert(
-        filesystem_key.clone(),
+        mixed_key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 2_048, 32, 12, None, None),
     );
     decisions.insert(
-        web_key.clone(),
+        filesystem_key.clone(),
         AutorouteDecision::new(ScanBackend::CpuFallback, 2_048, 32, 13, Some(7), None),
     );
 
@@ -809,21 +753,24 @@ fn exact_source_mixtures_survive_cache_replay_and_inspection() {
         &host,
         &decisions,
     )
-    .expect("inverse source mixtures persist");
+    .expect("distinct source mixtures persist");
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
-        .expect("inverse source mixtures reload");
+        .expect("distinct source mixtures reload");
     assert_eq!(loaded, decisions);
+    assert_eq!(
+        loaded.get(&mixed_key).and_then(AutorouteDecision::backend),
+        Some(ScanBackend::SimdCpu)
+    );
     assert_eq!(
         loaded
             .get(&filesystem_key)
             .and_then(AutorouteDecision::backend),
-        Some(ScanBackend::SimdCpu)
-    );
-    assert_eq!(
-        loaded.get(&web_key).and_then(AutorouteDecision::backend),
         Some(ScanBackend::CpuFallback)
     );
-    let unmeasured_key = workload_key(&mixture(30), 902).expect("30:2 workload classifies");
+
+    // A source class nobody calibrated is still an uncalibrated route class.
+    let unmeasured_key =
+        workload_key(&mixture(&["docker"]), 902).expect("docker workload classifies");
     assert!(
         resolve_persisted_route(
             &loaded,
@@ -833,7 +780,7 @@ fn exact_source_mixtures_survive_cache_replay_and_inspection() {
             &None,
         )
         .is_err(),
-        "an unmeasured neighboring mixture must fail closed"
+        "an uncalibrated source class must fail closed"
     );
 
     let inspection = inspect_autoroute_cache(Some(&path));
@@ -845,34 +792,33 @@ fn exact_source_mixtures_survive_cache_replay_and_inspection() {
     let rows = &inspection.configs[0].decisions;
     assert_eq!(rows.len(), 2);
     assert_ne!(rows[0].workload, rows[1].workload);
-    assert!(rows.iter().all(|row| {
-        row.workload.contains("filesystem/windowed@") && row.workload.contains("web:js@")
-    }));
     for row in rows {
-        assert_eq!(row.source_mixture.len(), 2);
         let source_classes = row
             .source_mixture
             .iter()
             .filter_map(|entry| entry.source_class.as_deref())
             .collect::<BTreeSet<_>>();
-        assert_eq!(
-            source_classes,
-            BTreeSet::from(["filesystem/windowed", "web:js"])
+        assert!(
+            source_classes == BTreeSet::from(["filesystem/windowed"])
+                || source_classes == BTreeSet::from(["filesystem/windowed", "web:js"]),
+            "inspection lost the source-class set: {source_classes:?}"
         );
         assert!(row
             .source_mixture
             .iter()
             .all(|entry| entry.source_class_digest.len() == 64));
-        assert!(row
-            .source_mixture
-            .iter()
-            .all(|entry| entry.chunk_ratio > 0 && entry.payload_ratio > 0));
+        assert!(row.source_mixture.iter().any(|entry| entry.has_full_size));
     }
+    assert_ne!(
+        rows[0].source_mixture.len(),
+        rows[1].source_mixture.len(),
+        "the one-class and two-class mixtures must stay distinguishable in inspection"
+    );
+
     let inspection_json = serde_json::to_value(&inspection).expect("inspection serializes");
     let json_entries = inspection_json["configs"][0]["decisions"][0]["source_mixture"]
         .as_array()
         .expect("JSON inspection exposes source-mixture entries");
-    assert_eq!(json_entries.len(), 2);
     assert!(json_entries[0]["source_class_digest"]
         .as_str()
         .is_some_and(|digest| {

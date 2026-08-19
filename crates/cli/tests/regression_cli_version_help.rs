@@ -35,32 +35,23 @@ fn run(args: &[&str]) -> (Option<i32>, String, String) {
     )
 }
 
-/// The exact, complete set of user-typed subcommand names declared on
-/// `Command` in `crates/cli/src/args.rs` (clap kebab-cases the enum variants).
-/// This is the source-of-truth list the top-level `--help` `Commands:` block must
-/// enumerate. `help` (clap's auto-generated subcommand) is asserted separately.
-const REAL_SUBCOMMANDS: &[&str] = &[
-    "scan",
-    "config",
-    "hook",
-    "detectors",
-    "explain",
-    "diff",
-    "triage",
-    "calibrate",
-    "calibrate-autoroute",
-    "watch",
-    "completion",
-    "backend",
-    "doctor",
-    "bloom-diagnostic",
-    "update",
-    "repair",
-    "uninstall",
-    "scan-system",
-    "daemon",
-    "guard",
-];
+/// Every user-typed subcommand name the binary advertises, read from the
+/// compiled clap model rather than a hand-kept copy.
+///
+/// This file checks that the RENDERED `--help` block agrees with the model, so
+/// the model is the right source. A second hand-kept list here would only
+/// restate the reviewed pin in `lane5_cli_subcommand_surface_matrix.rs`, and
+/// it did go stale: it never gained `triage` or `guard`, and the test that
+/// counted against it was red until this was derived. Hidden subcommands
+/// (`action-report`, `compile-execution-packs`) are excluded because the
+/// `Commands:` block does not list them.
+fn real_subcommands() -> Vec<String> {
+    keyhog::args::command()
+        .get_subcommands()
+        .filter(|sub| !sub.is_hide_set())
+        .map(|sub| sub.get_name().to_owned())
+        .collect()
+}
 
 /// Extract the first token of every entry line inside the `Commands:` block of a
 /// `--help` stdout. The block begins at the `Commands:` header and ends at the
@@ -201,40 +192,41 @@ fn help_usage_line_is_exact() {
     );
 }
 
-/// The `Commands:` block enumerates EVERY real subcommand declared on `Command`
-/// in `args.rs`, each as its own entry (kebab-cased, e.g. `scan-system`,
-/// `calibrate-autoroute`). A dropped or renamed subcommand fails here.
+/// The `Commands:` block enumerates EVERY advertised subcommand, each as its
+/// own entry (kebab-cased, e.g. `scan-system`, `calibrate-autoroute`). A
+/// dropped or renamed subcommand fails here.
 #[test]
 fn help_lists_every_real_subcommand() {
     let (code, stdout, _e) = run(&["--help"]);
     assert_eq!(code, Some(0), "--help must exit 0");
     let names = command_names(&stdout);
-    for sub in REAL_SUBCOMMANDS {
+    for sub in real_subcommands() {
         assert!(
-            names.iter().any(|n| n == sub),
+            names.iter().any(|n| *n == sub),
             "`--help` Commands block must list `{sub}`; listed: {names:?}"
         );
     }
 }
 
-/// clap's auto-generated `help` subcommand is present in the `Commands:` block,
-/// and the block lists exactly the real subcommands plus `help`, no more and no
-/// fewer. A silently-added or hidden-then-unhidden subcommand fails.
+/// The block lists exactly the advertised subcommands plus clap's generated
+/// `help`, no more and no fewer.
+///
+/// Compared as sorted sets rather than by length: a rename that keeps the
+/// count, or one subcommand hidden while another is unhidden, passes a count
+/// check and is exactly the drift this is here to catch.
 #[test]
 fn help_lists_exactly_real_subcommands_plus_help() {
     let (code, stdout, _e) = run(&["--help"]);
     assert_eq!(code, Some(0), "--help must exit 0");
-    let names = command_names(&stdout);
-    assert!(
-        names.iter().any(|n| n == "help"),
-        "Commands block must include clap's `help` subcommand; listed: {names:?}"
-    );
+    let mut names = command_names(&stdout);
+    names.sort();
+    let mut expected = real_subcommands();
+    expected.push("help".to_owned());
+    expected.sort();
     assert_eq!(
-        names.len(),
-        REAL_SUBCOMMANDS.len() + 1,
-        "Commands block must list exactly {} real subcommands + `help`; listed {}: {names:?}",
-        REAL_SUBCOMMANDS.len(),
-        names.len()
+        names, expected,
+        "the `Commands:` block must list exactly the advertised subcommands \
+         plus `help`"
     );
 }
 

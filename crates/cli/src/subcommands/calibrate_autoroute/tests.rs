@@ -7,6 +7,8 @@
 
 use super::*;
 use keyhog_core::Source;
+use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsStr;
 
 #[test]
 fn scan_policy_plan_covers_every_digest_changing_preset() {
@@ -24,6 +26,89 @@ fn isolated_policy_children_use_stable_cli_values() {
     assert_eq!(
         policy_cli_value(AutorouteCalibrationPolicy::Precision),
         "precision"
+    );
+}
+
+/// WHY: the all-policy parent measures nothing itself; four child processes do.
+/// A flag that reaches the parent and not the child changes what was measured
+/// against what was asked for. `--no-config` was dropped exactly there, so an
+/// `install.sh` that asked for the compiled-in baseline published 629 decisions
+/// under the `.keyhog.toml` the install directory happened to carry, and the
+/// first ordinary scan after a clean 40-minute install exited 2.
+///
+/// WHAT IT DOES NOT CATCH: a flag the child parses but ignores.
+#[test]
+fn isolated_policy_children_inherit_the_parents_measurement_flags() {
+    let staged = Path::new("/tmp/staged-autoroute.json");
+    let receipts = Path::new("/tmp/receipts.json");
+    for no_config in [true, false] {
+        for quiet in [true, false] {
+            for packs in [None, Some(PathBuf::from("/opt/keyhog/packs"))] {
+                let parent = CalibrateAutorouteArgs {
+                    autoroute_cache: Some("/home/user/.cache/keyhog/autoroute.json".to_string()),
+                    execution_packs: packs.clone(),
+                    measurement_receipts: None,
+                    policy: AutorouteCalibrationPolicy::All,
+                    no_config,
+                    quiet,
+                };
+                let argv = isolated_policy_argv(&parent, "fast", staged, receipts);
+                assert_eq!(
+                    argv.first().map(OsString::as_os_str),
+                    Some(OsStr::new("calibrate-autoroute")),
+                    "the child re-enters this subcommand"
+                );
+                let child = CalibrateAutorouteArgs::try_parse_from(
+                    std::iter::once(OsString::from("keyhog")).chain(argv.into_iter().skip(1)),
+                )
+                .expect("the child argv the parent spawns must parse");
+
+                assert_eq!(
+                    child.no_config, parent.no_config,
+                    "the child measures under the configuration the parent was asked for"
+                );
+                assert_eq!(child.quiet, parent.quiet);
+                assert_eq!(child.execution_packs, parent.execution_packs);
+                // Parent-owned: one policy per child, the parent's staged
+                // transaction rather than the live cache, one receipt sink.
+                assert_eq!(child.policy, AutorouteCalibrationPolicy::Fast);
+                assert_eq!(child.autoroute_cache.as_deref(), staged.to_str());
+                assert_eq!(child.measurement_receipts.as_deref(), Some(receipts));
+            }
+        }
+    }
+}
+
+/// WHY: the forwarding above is a decision per flag, and a flag added later
+/// gets no decision at all unless something demands one. The flag set is read
+/// out of clap at run time, so a new `#[arg]` on `CalibrateAutorouteArgs` turns
+/// this red until it is either forwarded or recorded as parent-owned.
+#[test]
+fn every_calibration_flag_has_a_forwarding_decision() {
+    use clap::CommandFactory;
+
+    // Forwarded to every child: these change what gets measured or printed.
+    let forwarded = ["no-config", "quiet", "execution-packs"];
+    // Owned by the parent: the child gets a different value by construction.
+    let parent_owned = ["policy", "autoroute-cache", "measurement-receipts"];
+
+    let declared: BTreeSet<String> = CalibrateAutorouteArgs::command()
+        .get_arguments()
+        .filter_map(|arg| arg.get_long().map(str::to_string))
+        .filter(|long| long != "help")
+        .collect();
+    let decided: BTreeSet<String> = forwarded
+        .iter()
+        .chain(parent_owned.iter())
+        .map(|flag| (*flag).to_string())
+        .collect();
+    assert_eq!(
+        declared,
+        decided,
+        "every calibrate-autoroute flag must be forwarded to the isolated policy \
+         children or explicitly owned by the parent\n  undecided: {:?}\n  stale: {:?}",
+        declared.difference(&decided).collect::<Vec<_>>(),
+        decided.difference(&declared).collect::<Vec<_>>(),
     );
 }
 
@@ -58,18 +143,93 @@ fn only_inconclusive_timing_failures_are_retryable() {
     )));
 }
 
+/// Calibration persists its decisions under the config digest its own argv
+/// resolves, and a later scan looks them up under the digest ITS argv resolves.
+/// Any flag calibration adds that the digest hashes therefore hides the whole
+/// generation from every scan.
+///
+/// `--no-gpu` was such a flag. On a host with no eligible GPU every one of the
+/// four calibrated policies was written under a `gpu_runtime_policy = Disabled`
+/// digest, and the ordinary scan that followed reported "7 calibrated
+/// config(s), none matching config digest" and exited 2.
+///
+/// `--no-config` is the same class, reached from the other side. Calibration
+/// used to pass it unconditionally, so calibrating inside a repository that
+/// carries a `.keyhog.toml` published every decision under the compiled-in
+/// baseline digest while the scans in that repository asked for the resolved
+/// one. It is now a caller decision, and BOTH modes are pinned here: the digest
+/// must match the scan that resolves configuration the same way.
+///
+/// The preset list is read from `SCAN_POLICY_PRESETS` at run time, so a new
+/// preset is covered without editing this test.
 #[test]
-fn calibration_runtime_explicitly_disables_gpu_when_no_physical_adapter_exists() {
-    let args = calibration_scan_args(None, None, false).expect("internal scan args");
-    assert!(args.no_gpu);
-    assert!(!args.autoroute_gpu);
+fn calibration_argv_resolves_the_config_digest_a_plain_scan_requests() {
+    let digest_of = |args: &mut crate::args::ScanArgs| {
+        let resolved = crate::orchestrator_config::resolve_scan_config(args)
+            .expect("calibration and scan argv both resolve");
+        crate::orchestrator_config::autoroute_config_digest(&resolved)
+    };
+    for policy in std::iter::once(None).chain(SCAN_POLICY_PRESETS.iter().copied().map(Some)) {
+        for no_config in [true, false] {
+            let mut plain_argv = vec![OsString::from("keyhog-scan")];
+            if no_config {
+                plain_argv.push(OsString::from("--no-config"));
+            }
+            if let Some(policy) = policy {
+                plain_argv.push(OsString::from(policy));
+            }
+            let mut plain = crate::args::ScanArgs::try_parse_from(plain_argv)
+                .expect("a documented preset parses as a plain scan");
+            let scanned = digest_of(&mut plain);
+            for include_gpu in [true, false] {
+                let mut calibration = calibration_scan_args(None, policy, include_gpu, no_config)
+                    .expect("internal calibration scan args");
+                assert_eq!(
+                    digest_of(&mut calibration),
+                    scanned,
+                    "calibration for {} with include_gpu={include_gpu} no_config={no_config} must \
+                     persist under the digest the same scan requests",
+                    policy.unwrap_or("the default policy"),
+                );
+            }
+        }
+    }
 }
 
 #[test]
 fn calibration_runtime_admits_gpu_only_when_requested() {
-    let args = calibration_scan_args(None, None, true).expect("internal scan args");
-    assert!(!args.no_gpu);
-    assert!(args.autoroute_gpu);
+    let without = calibration_scan_args(None, None, false, false).expect("internal scan args");
+    assert!(!without.autoroute_gpu);
+    assert!(
+        !without.no_gpu,
+        "declining GPU candidates must not change the scan's resolved GPU policy"
+    );
+    let with = calibration_scan_args(None, None, true, false).expect("internal scan args");
+    assert!(with.autoroute_gpu);
+    assert!(!with.no_gpu);
+}
+
+/// Which configuration calibration measures under is a caller decision, and
+/// the default is the one an operator's scans use. `resolve_scan_config`
+/// short-circuits to the compiled-in baseline the moment `no_config` is set
+/// (`config.rs`), so this bit alone decides whether a repository
+/// `.keyhog.toml` is inside the persisted digest. The unit-test process has no
+/// discovered config, which is exactly why the digest gate above cannot see a
+/// mode mix-up: assert the bit itself.
+#[test]
+fn calibration_resolves_repository_config_unless_the_caller_declines_it() {
+    let resolving = calibration_scan_args(None, None, false, false).expect("internal scan args");
+    assert!(
+        !resolving.no_config,
+        "a bare `keyhog calibrate-autoroute` must measure the configuration the \
+         scans in this directory resolve"
+    );
+    let baseline = calibration_scan_args(None, None, false, true).expect("internal scan args");
+    assert!(
+        baseline.no_config,
+        "an installer priming a host baseline must be able to decline the \
+         repository configuration it happens to be standing in"
+    );
 }
 
 #[test]
@@ -215,11 +375,12 @@ fn bounded_e2e_workload_fixture_keeps_verified_buckets() {
 #[test]
 fn workload_plan_matches_the_installer_ladder() {
     let plan = core_workload_plan();
-    // 1 stdin + 31 single-file + both edges of every fused count bucket for
-    // full-size and extracted payloads + two metadata shapes per source class.
+    // 1 stdin + 30 plain single-file + 3 decode-heavy single-file + both edges
+    // of every fused count bucket for full-size and extracted payloads + two
+    // metadata shapes per source class.
     assert_eq!(
         plan.len(),
-        32 + 2 * crate::orchestrator_config::fused_batch_calibration_counts().len()
+        34 + 2 * crate::orchestrator_config::fused_batch_calibration_counts().len()
             + 2 * crate::orchestrator::canonical_source_classes().len()
     );
     let labels: Vec<&str> = plan.iter().map(Workload::label).collect();
@@ -229,6 +390,8 @@ fn workload_plan_matches_the_installer_ladder() {
     assert!(labels.contains(&"16 KiB workload"));
     assert!(labels.contains(&"256 KiB workload"));
     assert!(labels.contains(&"4 MiB workload"));
+    assert!(labels.contains(&"decode-heavy 4 KiB workload"));
+    assert!(labels.contains(&"decode-heavy 64 KiB workload"));
     assert!(labels.contains(&"decode-heavy 256 KiB workload"));
     assert!(labels.contains(&"32 MiB workload"));
     assert!(labels.contains(&"1 x 4 KiB files workload"));
@@ -439,4 +602,47 @@ fn measurement_receipts_round_trip_exact_route_identity() {
         read_measurement_receipts(&path).expect("read receipts"),
         receipts
     );
+}
+
+/// `decode_admitted` is a keyed workload dimension, and a routing family is
+/// only reusable evidence when at least two of its size bands were measured.
+/// A ladder that probes one decode state at a single size therefore leaves
+/// every decoding scan uncalibrated, whatever else it measures.
+///
+/// The band set is derived from the plan at run time, so shrinking or
+/// relabelling the decode-heavy probes turns this test red instead of
+/// silently reintroducing a single-band family.
+///
+/// WHAT IT DOES NOT CATCH: whether the measured bands bracket a real
+/// production workload. It proves invariance is measurable, not that any
+/// particular scan is covered.
+#[test]
+fn workload_plan_measures_both_decode_states_across_multiple_size_bands() {
+    let mut bands: BTreeMap<bool, BTreeSet<u32>> = BTreeMap::new();
+    for workload in core_workload_plan() {
+        if let Workload::File {
+            bytes,
+            decode_heavy,
+            ..
+        } = workload
+        {
+            bands
+                .entry(decode_heavy)
+                .or_default()
+                .insert(u64::from(bytes as u64).next_power_of_two().trailing_zeros());
+        }
+    }
+    assert_eq!(
+        bands.keys().copied().collect::<Vec<_>>(),
+        vec![false, true],
+        "the ladder must probe both decode states"
+    );
+    for (decode_heavy, measured) in &bands {
+        assert!(
+            measured.len() >= 2,
+            "decode_heavy={decode_heavy} is measured at {} size band(s); a single-band \
+             family is never reusable evidence, so every decoding scan would fail closed",
+            measured.len()
+        );
+    }
 }
