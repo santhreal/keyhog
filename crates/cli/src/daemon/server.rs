@@ -299,7 +299,7 @@ impl ServerState {
             None => crate::daemon::guard_runtime::GuardRuntime::new(),
         });
         let watcher_instance = crate::daemon::guard_watcher::GuardWatcher::new(guard_recon_config)
-            .unwrap_or_else(|e| {
+            .unwrap_or_else(|e| { // LAW10: explicit warn logged on failed watcher initialization before falling back to disabled mode
                 tracing::warn!(
                     "daemon: guard watcher disabled: unmonitored (not watching): {}",
                     e
