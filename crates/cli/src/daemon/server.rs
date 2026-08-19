@@ -1232,6 +1232,8 @@ enum MassFilesystemMessage {
         source_coverage_gaps: SourceCoverageGaps,
         skipped_unchanged: usize,
     },
+    #[allow(dead_code)]
+    Error(String),
 }
 
 fn spawn_mass_filesystem_source(
