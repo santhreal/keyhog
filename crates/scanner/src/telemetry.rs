@@ -406,9 +406,11 @@ pub struct ScanTelemetrySnapshot {
     pub static_recovery_status: StaticRecoveryStatus,
 }
 
+static GLOBAL_SCAN_TELEMETRY: std::sync::LazyLock<Arc<ScanTelemetry>> =
+    std::sync::LazyLock::new(|| Arc::new(ScanTelemetry::new()));
+
 thread_local! {
     static CURRENT_SCAN_TELEMETRY: RefCell<Option<Arc<ScanTelemetry>>> = const { RefCell::new(None) };
-    static DEFAULT_THREAD_TELEMETRY: Arc<ScanTelemetry> = Arc::new(ScanTelemetry::new());
 }
 
 pub struct ScanTelemetryRestore {
@@ -441,13 +443,12 @@ pub fn with_scan_telemetry<R>(telemetry: &Arc<ScanTelemetry>, f: impl FnOnce() -
     f()
 }
 
-/// Return the currently active scan telemetry handle for this thread.
 pub fn current_scan_telemetry() -> Arc<ScanTelemetry> {
     CURRENT_SCAN_TELEMETRY.with(|slot| {
         if let Some(current) = &*slot.borrow() {
             Arc::clone(current)
         } else {
-            DEFAULT_THREAD_TELEMETRY.with(|default| Arc::clone(default))
+            Arc::clone(&GLOBAL_SCAN_TELEMETRY)
         }
     })
 }

@@ -98,7 +98,6 @@ sha2 = { workspace = true }
 blake3 = { workspace = true }
 memmap2 = { workspace = true }
 memchr = { workspace = true }
-rayon = { workspace = true }
 lru = { workspace = true }
 dirs = { workspace = true }
 libc = { workspace = true }
@@ -170,6 +169,7 @@ chrono = { workspace = true }
 criterion = { workspace = true }
 keyhog-verifier = { workspace = true }
 proptest = { workspace = true }
+rayon = { workspace = true }
 rusty-fork = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tempfile = { workspace = true }
