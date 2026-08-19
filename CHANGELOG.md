@@ -144,6 +144,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- Raw JSON reporting (`--format json`) leaves stdout empty rather than emitting `[]` on total source failure (oversized stdin or unreadable source) with no findings, preserving fail-closed exit semantics and preventing automated consumers from mistaking uncompleted scans for clean runs. Structured envelope formats record `scan_status: "failed"` and document the coverage gap.
 - Credential-anchored entropy now rejects dotted source/property identifiers through the shared shape gate while retaining exact structured dotted-token recall.
 - Action autoroute calibration applies the same published-scanner evidence-policy compatibility rule as the scan runner: legacy scanners may omit the unsupported flag only for explicit `paranoid`. Scanner panics mark report metadata partial so exit-11 Action receipts remain valid.
 - Build-time model calibration artifacts now retain LF bytes on Windows checkouts, keeping the model-card SHA-256 receipt portable.
