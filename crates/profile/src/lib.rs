@@ -93,7 +93,7 @@ mod comparison;
 mod config;
 mod detail;
 mod hardware;
-mod host_parallelism;
+pub mod host_parallelism;
 mod identity;
 pub mod insight;
 mod metrics;

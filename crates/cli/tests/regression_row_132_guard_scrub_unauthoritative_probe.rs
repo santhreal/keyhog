@@ -5,11 +5,11 @@
 //!
 //! What this does NOT catch: physical block-device corruptions or hardware controller failures.
 
-use keyhog::daemon::fs_probe::{
+use keyhog::testing::daemon::fs_probe::{
     classify_filesystem_type, probe_filesystem_authority,
     DEFAULT_UNAUTHORITATIVE_SCRUB_INTERVAL_SECS, TEST_FORCE_FS_AUTHORITY_ENV,
 };
-use keyhog::daemon::guard_runtime::GuardRuntime;
+use keyhog::testing::daemon::guard_runtime::GuardRuntime;
 use keyhog_core::guard_state::{
     FilesystemAuthority, FilesystemIdentity, GuardRootMode, GuardRootState, GuardTransition,
 };

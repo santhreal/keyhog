@@ -92,10 +92,13 @@ pub fn classify_filesystem_type(fs_type: &str) -> FilesystemAuthority {
 /// Probe the filesystem authority for a given path.
 #[must_use]
 pub fn probe_filesystem_authority(path: &Path) -> FilesystemAuthority {
-    if let Ok(val) = std::env::var(TEST_FORCE_FS_AUTHORITY_ENV) {
-        // LAW10: test-only environment variable override for deterministic test fixtures
-        if let Some(auth) = parse_test_force_fs_authority(&val) {
-            return auth;
+    #[cfg(any(test, debug_assertions))]
+    {
+        if let Ok(val) = std::env::var(TEST_FORCE_FS_AUTHORITY_ENV) {
+            // LAW10: test-only environment variable override for deterministic test fixtures
+            if let Some(auth) = parse_test_force_fs_authority(&val) {
+                return auth;
+            }
         }
     }
 

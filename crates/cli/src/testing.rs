@@ -1888,3 +1888,23 @@ impl StableHashProbe {
         self.inner.finish_u64()
     }
 }
+
+#[cfg(unix)]
+pub mod daemon {
+    pub mod fs_probe {
+        pub use crate::daemon::fs_probe::*;
+    }
+    pub mod guard_runtime {
+        pub use crate::daemon::guard_runtime::*;
+    }
+    pub mod guard_watcher {
+        pub use crate::daemon::guard_watcher::*;
+    }
+    pub mod protocol {
+        pub use crate::daemon::protocol::*;
+    }
+    pub mod server {
+        pub use crate::daemon::server::*;
+    }
+}
+
