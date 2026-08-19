@@ -665,6 +665,7 @@ fn resolve_execution_pack_binding(
     if !installed.exists() {
         return Ok(None);
     }
+    // LAW10: no runtime effect: unauthenticated or missing installed pack leaves evidence unbound
     Ok(crate::execution_pack_install::load_authenticated_binding(&installed).ok())
 }
 

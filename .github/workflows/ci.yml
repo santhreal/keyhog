@@ -106,7 +106,8 @@ jobs:
           if printf 'API_KEY="%s_%s"\n' "$prefix" "$body" \
             | ./target/release-fast/keyhog scan --stdin --no-config \
                 --backend cpu --daemon=off --min-confidence 0.0 \
-                --evidence-policy paranoid --no-suppress-test-fixtures; then
+                --evidence-policy paranoid --no-suppress-test-fixtures \
+                --developer-compile-embedded-detectors; then
             dogfood_status=0
           else
             dogfood_status=$?

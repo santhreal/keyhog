@@ -1244,9 +1244,10 @@ impl AutorouteDecision {
         // whole generation, so the installer could not finish.
         let mut merged: Vec<&AutorouteCalibrationPoint> = self.calibration_points.iter().collect();
         merged.push(&point);
-        let reconciled_one_shot = resolve_route_across_points(&merged, false, None);
-        let reconciled_daemon = resolve_route_across_points(&merged, true, None);
-        if reconciled_one_shot.is_none() || reconciled_daemon.is_none() {
+        let (Some(expected_one_shot), Some(expected_daemon)) = (
+            resolve_route_across_points(&merged, false, None),
+            resolve_route_across_points(&merged, true, None),
+        ) else {
             return Err(format!(
                 "workload class changes its confidence-supported backend across measured points: existing one-shot={} daemon={}, new {}-byte/{}-chunk point one-shot={} daemon={}; the disagreeing backends are separated by measurement, so this is a real crossover: split the workload identity here and recalibrate",
                 render_measured_route(expected_one_shot),
@@ -1256,9 +1257,7 @@ impl AutorouteDecision {
                 render_measured_route(measured_one_shot),
                 render_measured_route(measured_daemon),
             ));
-        }
-        let expected_one_shot = reconciled_one_shot.unwrap_or(expected_one_shot);
-        let expected_daemon = reconciled_daemon.unwrap_or(expected_daemon);
+        };
         for (runtime_label, persistent_runtime, expected_route) in [
             ("one-shot", false, expected_one_shot),
             ("daemon", true, expected_daemon),

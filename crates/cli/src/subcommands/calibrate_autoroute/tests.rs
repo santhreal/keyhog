@@ -189,7 +189,7 @@ fn calibration_argv_resolves_the_config_digest_a_plain_scan_requests() {
                     scanned,
                     "calibration for {} with include_gpu={include_gpu} no_config={no_config} must \
                      persist under the digest the same scan requests",
-                    policy.unwrap_or("the default policy"),
+                    policy.unwrap_or("the default policy"), // LAW10: reporting-only: assertion message label
                 );
             }
         }

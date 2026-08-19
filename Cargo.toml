@@ -218,8 +218,7 @@ status = "alpha"
 # - codegen-units = 1        worse compile times, better runtime (consistent
 #                            with Hyperscan + ICU + serde_json being heavy)
 # - panic = "unwind"         unwinding support for isolation boundaries and catch_unwind
-# - strip = "symbols"        smaller binary on disk; backtraces unchanged at
-#                            runtime (panic_abort + Rust std lookups)
+# - strip = "symbols"        strip symbols to eliminate DWARF and symbol table bloat
 [profile.release]
 opt-level = 3
 lto = "fat"
