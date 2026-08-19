@@ -1,9 +1,9 @@
 """Unit tests for `scripts/gates/no_silent_fallbacks.py` shrink-only ratchet (Row 136).
 
-//! WHY: Closes defect class where baseline updater allowed arbitrary candidate
-//! set growth instead of enforcing a true shrink-only ratchet (Row 136).
-//! Catches candidate set expansion when running `--update-baseline` and verifies
-//! that baseline debt can only shrink or remain equal, never grow.
+WHY: Closes defect class where baseline updater allowed arbitrary candidate
+set growth instead of enforcing a true shrink-only ratchet (Row 136).
+Catches candidate set expansion when running `--update-baseline` and verifies
+that baseline debt can only shrink or remain equal, never grow.
 """
 
 from __future__ import annotations

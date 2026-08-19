@@ -229,13 +229,13 @@ def check_baseline_growth(
     """Check whether candidate set would expand the baseline.
 
     Returns (is_growth, added_entries).
-    Growth occurs when len(current) > len(baseline).
+    Growth occurs when the candidate count exceeds the baseline count OR the
+    candidate set contains any entry not already in the baseline.
     """
-    if len(current) > len(baseline):
-        added = sorted(current - baseline)
+    added = sorted(current - baseline)
+    if added or len(current) > len(baseline):
         return True, added
     return False, []
-
 
 def update_baseline_ratchet(
     current: set[str],
