@@ -188,12 +188,15 @@ fn row_142_editing_keyhog_toml_changes_config_digest_and_breaks_compatibility() 
     assert_ne!(id_created.config_digest, id_modified.config_digest);
     assert!(!id_created.is_compatible_with(&id_modified));
 
-    // Bare keyhog.toml also accepted
+    // Parent directory .keyhog.toml is discovered and hashed when walking up from child
     fs::remove_file(&config_path).expect("remove .keyhog.toml");
-    let bare_config = root.join("keyhog.toml");
-    fs::write(&bare_config, "[scan]\nmin_confidence = 0.90\n").expect("write keyhog.toml");
-    let id_bare = compute_root_policy_identity(root, KEYHOG_VERSION, "det-1");
-    assert_ne!(id_initial.config_digest, id_bare.config_digest);
+    let sub_dir = root.join("child");
+    fs::create_dir(&sub_dir).expect("create child dir");
+    let parent_config = root.join(".keyhog.toml");
+    fs::write(&parent_config, "[scan]\nmin_confidence = 0.90\n")
+        .expect("write parent .keyhog.toml");
+    let id_child = compute_root_policy_identity(&sub_dir, KEYHOG_VERSION, "det-1");
+    assert_ne!(id_initial.config_digest, id_child.config_digest);
 }
 
 #[test]
@@ -238,7 +241,6 @@ fn row_142_is_policy_path_classification_total() {
         Path::new(".keyhogignore"),
         Path::new(".keyhogignore.toml"),
         Path::new(".keyhog.toml"),
-        Path::new("keyhog.toml"),
         Path::new("test-fixtures.toml"),
         Path::new("suppressions.toml"),
         Path::new("custom.suppressions.toml"),
@@ -260,8 +262,8 @@ fn row_142_is_policy_path_classification_total() {
 
     let non_policy_paths = [
         Path::new("src/main.rs"),
+        Path::new("keyhog.toml"),
         Path::new("Cargo.toml"),
-        Path::new("README.md"),
         Path::new("lib/scanner.c"),
         Path::new("data/input.txt"),
     ];

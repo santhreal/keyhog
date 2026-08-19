@@ -563,23 +563,21 @@ pub(crate) async fn run_with_backend_override(
         guard_scrub_interval.map(std::time::Duration::from_secs),
     ));
 
-    // Set the guard policy identity from the daemon's scanner and build
-    // identity. This binds clean attestations to the exact detector corpus,
-    // suppression, and configuration the daemon was started with.
+    // Set the initial default guard policy identity from the daemon's build and detector digest.
     state
         .guard
         .set_policy_identity(keyhog_core::guard_state::GuardPolicyIdentity {
             build_identity: KEYHOG_VERSION.to_string(),
             detector_digest: detector_rules_digest.clone(),
-            suppression_digest: compute_suppression_digest(Path::new(".")),
-            keyhogignore_digest: compute_keyhogignore_digest(Path::new(".")),
-            config_digest: compute_config_digest(Path::new(".")),
+            suppression_digest: String::new(),
+            keyhogignore_digest:
+                keyhog_core::guard_state::GuardPolicyIdentity::default_keyhogignore_digest(),
+            config_digest: crate::orchestrator::autoroute_default_config_identity(),
             decode_policy_version: keyhog_core::guard_state::GUARD_DECODE_POLICY_VERSION,
-            source_policy_digest: compute_source_policy_digest(Path::new(".")),
+            source_policy_digest: String::new(),
             guard_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
             report_semantics_version: keyhog_core::guard_state::GUARD_REPORT_SEMANTICS_VERSION,
         });
-
     // Apply configured scanner idle timeout to the guard runtime.
     if let Some(secs) = guard_scanner_idle_timeout {
         state.guard.set_scanner_idle_timeout(secs);
@@ -925,7 +923,6 @@ pub fn is_policy_path(path: &Path) -> bool {
     if file_name == ".keyhogignore"
         || file_name == ".keyhogignore.toml"
         || file_name == ".keyhog.toml"
-        || file_name == "keyhog.toml"
         || file_name == "test-fixtures.toml"
         || file_name.ends_with(".suppressions.toml")
         || file_name.ends_with("_suppressions.toml")
@@ -974,12 +971,8 @@ pub fn compute_keyhogignore_digest(root: &Path) -> String {
 
 /// Compute `.keyhog.toml` scan configuration digest for a guard root.
 pub fn compute_config_digest(root: &Path) -> String {
-    let dot_config = root.join(".keyhog.toml");
-    let bare_config = root.join("keyhog.toml");
-    let config_bytes = std::fs::read(&dot_config)
-        .ok()
-        .or_else(|| std::fs::read(&bare_config).ok());
-    match config_bytes {
+    let resolved_config = crate::config::find_config_file(Some(root));
+    match resolved_config.and_then(|p| std::fs::read(&p).ok()) {
         Some(bytes) => {
             let mut hasher = blake3::Hasher::new();
             hasher.update(b"keyhog-config-v1:");
@@ -1061,7 +1054,9 @@ fn process_guard_events(
     if has_policy_change {
         let new_identity =
             compute_root_policy_identity(root, KEYHOG_VERSION, &state.detector_rules_digest);
-        state.guard.set_policy_identity(new_identity);
+        state
+            .guard
+            .set_root_policy_identity(root_bytes, new_identity);
     }
 
     match guard_event_action_with_policy(current_state, has_overflow, has_policy_change) {
@@ -1109,7 +1104,7 @@ pub fn guard_event_action_with_policy(
         match current_state {
             Some(GuardRootState::Stopped) | None => GuardEventAction::Ignore,
             Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
-                coverage_lost: false,
+                coverage_lost: has_overflow,
             },
             Some(GuardRootState::Degraded) => GuardEventAction::Ignore,
             Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
@@ -2855,7 +2850,9 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                         KEYHOG_VERSION,
                         &state.detector_rules_digest,
                     );
-                    state.guard.set_policy_identity(root_policy);
+                    state
+                        .guard
+                        .set_root_policy_identity(canonical.as_bytes(), root_policy);
                     // Register the root with the filesystem watcher.
                     // Subscribe-first: the watcher starts before any
                     // baseline walk so events during the walk are
@@ -3062,7 +3059,9 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 KEYHOG_VERSION,
                 &state.detector_rules_digest,
             );
-            state.guard.set_policy_identity(root_policy);
+            state
+                .guard
+                .set_root_policy_identity(root.as_bytes(), root_policy);
             // Choose the correct transition based on current state.
             // Stopped -> ReconciliationStarted -> Indexing.
             // Degraded/StalePolicy -> RepairStarted -> Indexing.
