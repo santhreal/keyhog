@@ -568,7 +568,7 @@ runtime. See [Guard workflow](../workflows/guard.md) for operational details.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `hot_index_memory` | string | unlimited | Memory budget for the clean attestation cache index (for example 64 megabytes). |
+| `hot_index_memory` | string | 64MB | Memory budget for the clean attestation cache index (for example 64 megabytes). |
 | `max_pending_events_per_root` | integer | 8192 | Maximum queued filesystem events per root. |
 | `max_pending_events_total` | integer | 65536 | Maximum total queued filesystem events across all roots. |
 | `coalesce_window` | string | 100ms | Event coalescing window before applying state transitions. |

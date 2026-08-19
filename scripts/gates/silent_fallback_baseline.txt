@@ -6,7 +6,6 @@ crates/cli/src/daemon/guard_runtime.rs::Err(_) => {
 crates/cli/src/daemon/guard_watcher.rs::.unwrap_or(0)
 crates/cli/src/daemon/guard_watcher.rs::let _ = tx.send(res);
 crates/cli/src/daemon/guard_watcher.rs::let _ = watcher.unwatch(path);
-crates/cli/src/daemon/guard_watcher.rs::let path = event.paths.first().cloned().unwrap_or_default();
 crates/cli/src/daemon/server.rs::.and_then(|id| id.short_digest().ok())
 crates/cli/src/daemon/server.rs::.unwrap_or(&id.config_digest)
 crates/cli/src/daemon/server.rs::.unwrap_or(&id.detector_digest)
@@ -18,7 +17,6 @@ crates/cli/src/daemon/server.rs::Err(_) => std::path::PathBuf::from(&txn.repo_pa
 crates/cli/src/daemon/server.rs::Err(_) => {
 crates/cli/src/daemon/server.rs::chunk.metadata.mtime_ns.unwrap_or(0),
 crates/cli/src/daemon/server.rs::chunk.metadata.size_bytes.unwrap_or(0),
-crates/cli/src/daemon/server.rs::crate::daemon::guard_watcher::GuardWatcher::new(guard_recon_config).unwrap_or_else(
 crates/cli/src/daemon/server.rs::if let Ok(home) = std::env::var("HOME") {
 crates/cli/src/daemon/server.rs::let _ = sender.blocking_send(MassFilesystemMessage::Complete {
 crates/cli/src/daemon/server.rs::let _ = state.guard.remove_root(canonical.as_bytes());

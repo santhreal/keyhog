@@ -509,7 +509,7 @@ fn load_guard_config() -> (
             .unwrap_or(defaults.max_pending_events_per_root),
         max_pending_events_total: guard
             .max_pending_events_total
-            .unwrap_or(defaults.max_pending_events_total),
+            .unwrap_or(defaults.max_pending_events_total), // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
         coalesce_window_ms: guard
             .coalesce_window
             .as_deref()

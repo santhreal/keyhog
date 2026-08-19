@@ -340,7 +340,7 @@ impl GuardWatcher {
                 "failed to watch {}: watcher backend disconnected ({})",
                 path.display(),
                 self.disconnection_reason()
-                    .unwrap_or_else(|| "channel closed".to_string())
+                    .unwrap_or_else(|| "channel closed".to_string()) // LAW10: error message formatting fallback when disconnected reason not yet set
             ));
         }
         if let Some(watcher) = &mut self.watcher {
@@ -378,7 +378,7 @@ impl GuardWatcher {
     /// the overflow flag is cleared.
     pub fn poll_events(&self) -> Vec<(PathBuf, Vec<GuardEvent>)> {
         let mut results: HashMap<PathBuf, Vec<GuardEvent>> = HashMap::new();
-        if self.disabled {
+        if self.disabled || self.backend_kind == GuardWatcherBackendKind::NullWatcher {
             return Vec::new();
         }
         loop {
@@ -531,7 +531,7 @@ impl GuardWatcher {
     pub fn watcher_status(&self) -> &'static str {
         if self.is_disconnected() {
             "disconnected"
-        } else if self.disabled {
+        } else if self.disabled || self.backend_kind == GuardWatcherBackendKind::NullWatcher {
             "unmonitored"
         } else {
             "watching"
@@ -540,7 +540,10 @@ impl GuardWatcher {
 
     /// Whether the watcher is actively monitoring filesystem events.
     pub fn is_watching(&self) -> bool {
-        !self.disabled && !self.is_disconnected() && self.watcher.is_some()
+        !self.disabled
+            && !self.is_disconnected()
+            && self.backend_kind != GuardWatcherBackendKind::NullWatcher
+            && self.watcher.is_some()
     }
 }
 
