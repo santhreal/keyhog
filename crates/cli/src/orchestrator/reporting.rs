@@ -500,14 +500,7 @@ pub(crate) fn report_compiled_cache_summary(
                 let count = dir.as_deref().map_or(0, |d| {
                     keyhog_scanner::cache_eviction::count_matching_entries(d, *kind)
                 });
-                let hits = keyhog_profile::cache_hits(keyhog_profile::CacheId::DetectorPlan);
-                let state = if hits > 0 {
-                    "hit"
-                } else if count > 0 {
-                    "cached"
-                } else {
-                    "compiled"
-                };
+                let state = if count > 0 { "hit" } else { "compiled" };
                 (state, count)
             }
             keyhog_core::CacheKind::LockFiles => {
