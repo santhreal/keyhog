@@ -1307,7 +1307,9 @@ impl CompiledScanner {
         // index has consumed it; the lazy SIMD plan then shares one Arc owner
         // instead of cloning the complete table until first backend use.
         #[cfg(feature = "simd")]
-        let simd_compile_plan = if !selected_backend.is_some_and(|backend| backend.is_gpu()) {
+        let simd_compile_plan = if selected_backend.is_none()
+            || selected_backend == Some(crate::hw_probe::ScanBackend::SimdCpu)
+        {
             let ac_literals: std::sync::Arc<[String]> =
                 std::mem::take(&mut state.ac_literals).into();
             match packed_simd_program {

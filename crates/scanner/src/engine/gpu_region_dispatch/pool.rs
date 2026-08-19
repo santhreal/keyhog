@@ -115,12 +115,11 @@ impl GpuResidentExecutionPool {
             }
             #[cfg(feature = "gpu")]
             ScannerBackendState::Census { peers, .. } => {
-                let has_hardware_gpu = (peers.cuda_available
-                    && !peers
-                        .cuda_runtime_identity
-                        .as_deref()
-                        .unwrap_or("")
-                        .contains("cpu"))
+                let cuda_is_cpu = peers
+                    .cuda_runtime_identity
+                    .as_deref()
+                    .is_some_and(|id| id.contains("cpu"));
+                let has_hardware_gpu = (peers.cuda_available && !cuda_is_cpu)
                     || peers.metal_available
                     || (peers.wgpu_available && !peers.wgpu_is_software);
                 let capability = if has_hardware_gpu {
@@ -137,8 +136,7 @@ impl GpuResidentExecutionPool {
     /// Construct pool for the active scanner backend state.
     #[must_use]
     pub(crate) fn for_backend_state(backend_state: &ScannerBackendState) -> Self {
-        let host_concurrency =
-            std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get);
+        let host_concurrency = keyhog_profile::logical_cpu_count();
         let capacity = Self::derive_capacity(backend_state, host_concurrency);
         Self::new(capacity)
     }
