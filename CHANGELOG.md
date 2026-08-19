@@ -5,6 +5,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ## [0.5.80] - 2026-08-17
 ### Added
 
+- bench(product): add product-level criterion benchmarks for CLI startup, hook execution, guard status, core evaluation, and verifier evaluation (Row 147).
 - feat(compiler): install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata (Row 128).
 - feat(cache): load-only scan execution and zero compilation fallback on prepared artifact caches (Row 127).
 - feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).

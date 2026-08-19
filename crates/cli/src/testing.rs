@@ -1907,3 +1907,11 @@ pub mod daemon {
         pub use crate::daemon::server::*;
     }
 }
+
+pub mod hook {
+    pub use crate::subcommands::hook::*;
+}
+
+pub mod config {
+    pub use crate::config::*;
+}
