@@ -491,6 +491,7 @@ pub async fn cli_main() -> ExitCode {
         Some(args::Command::Backend(args)) => subcommands::backend::run(args),
         Some(args::Command::Doctor(args)) => subcommands::doctor::run(args),
         Some(args::Command::BloomDiagnostic(args)) => bloom_diagnostic::run(args),
+        Some(args::Command::Install(args)) => subcommands::install::run(args),
         Some(args::Command::Update(args)) => subcommands::update::run(args).await,
         Some(args::Command::Repair(args)) => subcommands::repair::run(args).await,
         Some(args::Command::Uninstall(args)) => subcommands::uninstall::run(args),

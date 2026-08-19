@@ -31,8 +31,8 @@ pub use guard::{GuardAction, GuardArgs};
 pub use hook::HookCommand;
 pub use limits::SourceLimitArgs;
 pub use maintenance::{
-    BackendArgs, CompileExecutionPacksArgs, CompletionArgs, DoctorArgs, RepairArgs, UninstallArgs,
-    UpdateArgs,
+    BackendArgs, CompileExecutionPacksArgs, CompletionArgs, DoctorArgs, InstallArgs, RepairArgs,
+    UninstallArgs, UpdateArgs,
 };
 pub use scan::{
     CliDedupScope, DaemonMode, DetectorMode, EvidencePolicy, OutputFormat, ScanArgs, SeverityFilter,
@@ -147,6 +147,10 @@ pub enum Command {
     /// Measure Bloom rejection and prove enabled-versus-bypassed finding parity
     #[command(verbatim_doc_comment)]
     BloomDiagnostic(BloomDiagnosticArgs),
+
+    /// Compile, authenticate, calibrate, and install execution packs for the local host
+    #[command(verbatim_doc_comment)]
+    Install(InstallArgs),
 
     /// Update from the GitHub binary-asset channel: verified download + self-replace
     #[command(verbatim_doc_comment)]

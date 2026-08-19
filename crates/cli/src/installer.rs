@@ -53,13 +53,8 @@ fn remove_installer_artifact_best_effort(path: &Path, context: &str) {
 
 /// Resolve the running binary, following symlinks so we replace the real file.
 pub(crate) fn current_binary() -> Result<std::path::PathBuf> {
-    let exe = std::env::current_exe().context("locate current executable")?;
-    std::fs::canonicalize(&exe).with_context(|| {
-        format!(
-            "resolve current executable symlink target for {} before self-update",
-            exe.display()
-        )
-    })
+    let exe = keyhog_core::current_executable_path().map_err(anyhow::Error::msg)?;
+    std::fs::canonicalize(&exe).or(Ok(exe))
 }
 
 #[cfg(unix)]

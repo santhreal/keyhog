@@ -50,12 +50,11 @@ fn advertised_subcommand_set_is_exactly_the_shipped_menu() {
     assert_eq!(
         subcommands(),
         [
-            "scan",
             "config",
             "hook",
-            "detectors",
             "explain",
             "diff",
+            "triage",
             "calibrate",
             "calibrate-autoroute",
             "watch",
@@ -63,11 +62,15 @@ fn advertised_subcommand_set_is_exactly_the_shipped_menu() {
             "backend",
             "doctor",
             "bloom-diagnostic",
+            "install",
             "update",
             "repair",
             "uninstall",
             "scan-system",
             "daemon",
+            "guard",
+            "scan",
+            "detectors",
         ],
         "the advertised subcommand menu changed; update the docs, completions, \
          and reference pages in the same change"

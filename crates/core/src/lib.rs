@@ -293,6 +293,23 @@ pub fn git_hash() -> &'static str {
     env!("GIT_HASH")
 }
 
+/// Path of the currently running executable, cleaned of Linux ` (deleted)` suffix if relinked.
+pub fn current_executable_path() -> Result<std::path::PathBuf, String> {
+    let path =
+        std::env::current_exe().map_err(|error| format!("locate running executable: {error}"))?;
+    if !path.exists() {
+        if let Some(path_str) = path.to_str() {
+            if let Some(stripped) = path_str.strip_suffix(" (deleted)") {
+                let candidate = std::path::PathBuf::from(stripped);
+                if candidate.exists() {
+                    return Ok(candidate);
+                }
+            }
+        }
+    }
+    Ok(path)
+}
+
 /// SHA-256 hex digest of the currently running executable, memoized once per process.
 ///
 /// Shared by MatcherArtifact identity and autoroute calibration so a scan does
@@ -300,35 +317,32 @@ pub fn git_hash() -> &'static str {
 pub fn current_executable_sha256() -> Result<String, String> {
     use sha2::{Digest, Sha256};
     use std::io::Read;
-    use std::sync::OnceLock;
-    static DIGEST: OnceLock<Result<String, String>> = OnceLock::new();
-    DIGEST
-        .get_or_init(|| {
-            let path = std::env::current_exe()
-                .map_err(|error| format!("locate running executable: {error}"))?;
-            let mut file = std::fs::File::open(&path).map_err(|error| {
+    use std::sync::LazyLock;
+    static DIGEST: LazyLock<Result<String, String>> = LazyLock::new(|| {
+        let path = current_executable_path()?;
+        let mut file = std::fs::File::open(&path).map_err(|error| {
+            format!(
+                "open running executable {} for identity: {error}",
+                path.display()
+            )
+        })?;
+        let mut hasher = Sha256::new();
+        let mut buffer = [0u8; 128 * 1024];
+        loop {
+            let read = file.read(&mut buffer).map_err(|error| {
                 format!(
-                    "open running executable {} for identity: {error}",
+                    "read running executable {} for identity: {error}",
                     path.display()
                 )
             })?;
-            let mut hasher = Sha256::new();
-            let mut buffer = [0u8; 128 * 1024];
-            loop {
-                let read = file.read(&mut buffer).map_err(|error| {
-                    format!(
-                        "read running executable {} for identity: {error}",
-                        path.display()
-                    )
-                })?;
-                if read == 0 {
-                    break;
-                }
-                hasher.update(&buffer[..read]);
+            if read == 0 {
+                break;
             }
-            Ok(format!("{:x}", hasher.finalize()))
-        })
-        .clone()
+            hasher.update(&buffer[..read]);
+        }
+        Ok(format!("{:x}", hasher.finalize()))
+    });
+    DIGEST.clone()
 }
 
 /// Effective digest identifying the EXACT embedded detector set and the

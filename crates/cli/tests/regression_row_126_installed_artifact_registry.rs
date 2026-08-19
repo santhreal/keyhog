@@ -207,8 +207,11 @@ fn fresh_installation_yields_scan_with_zero_runtime_compilations() {
     fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600)).expect("protect key");
     let output_dir = pack_root.join("current");
 
+    let isolated_exe = temp_dir.path().join("keyhog");
+    fs::copy(env!("CARGO_BIN_EXE_keyhog"), &isolated_exe).expect("copy keyhog binary");
+
     // 1. Run installer compile-execution-packs
-    let compile_output = Command::new(env!("CARGO_BIN_EXE_keyhog"))
+    let compile_output = Command::new(&isolated_exe)
         .arg("compile-execution-packs")
         .arg("--output-dir")
         .arg(&output_dir)
@@ -230,7 +233,7 @@ fn fresh_installation_yields_scan_with_zero_runtime_compilations() {
     fs::write(&scan_file, "clean sample text for fresh install scan\n").expect("write sample");
     let profile_output_path = temp_dir.path().join("profile.json");
 
-    let scan_output = Command::new(env!("CARGO_BIN_EXE_keyhog"))
+    let scan_output = Command::new(&isolated_exe)
         .arg("scan")
         .arg("--daemon=off")
         .arg(&scan_file)

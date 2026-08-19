@@ -103,7 +103,9 @@ pub(crate) fn install_execution_generation(
         })?;
     let staged_packs = stage.path().join("packs");
     let staged_cache = stage.path().join("autoroute.json");
-
+    let staged_key = stage.path().join("signing.key");
+    fs::copy(&signing_key, &staged_key)
+        .with_context(|| format!("staging signing key in {}", staged_key.display()))?;
     run_candidate(
         candidate,
         &[
