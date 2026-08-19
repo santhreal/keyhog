@@ -281,11 +281,16 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
         {
             return true;
         }
+        let special_min_len = context
+            .entropy_shape
+            .as_ref()
+            .map(|s| s.special_min_length)
+            .unwrap_or(context.mixed_alnum_min_len);
         if !has_symbol
             && has_upper
             && has_lower
             && has_digit
-            && value.len() >= 16
+            && value.len() >= special_min_len
             && entropy >= context.isolated_mixed_entropy_floor
         {
             return true;
