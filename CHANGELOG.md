@@ -4,6 +4,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [0.5.80] - 2026-08-17
 
+### Added
+
+- feat(daemon): report active watcher backend, latency tier, and polling interval in guard status (Row 123).
+
 ### Changed
 
 - fix(scanner): clamp decode-through window overlap to enforce strictly advancing window progress across UTF-8 scalar boundaries in release builds.
