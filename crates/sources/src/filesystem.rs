@@ -144,30 +144,23 @@ pub(crate) fn read_file_safe(path: &std::path::Path, cap: u64) -> std::io::Resul
     read::read_file_safe(path, cap)
 }
 
-/// Default directory names excluded by the filesystem scanner (`.git`, `target`, `node_modules`, ...).
-pub fn default_exclude_dirs() -> &'static [String] {
+pub(crate) fn default_exclude_dirs() -> &'static [String] {
     filter::default_exclude_dirs()
 }
 
-/// Returns `true` if `path` matches any default exclusion rule (directory, file pattern, or suffix).
-pub fn is_default_excluded_path(path: &str) -> bool {
+#[cfg(any(feature = "docker", feature = "git"))]
+pub(crate) fn is_default_excluded_path(path: &str) -> bool {
     filter::is_default_excluded(path)
 }
 
-/// Returns `true` if raw UTF-8 `path` matches any default exclusion rule.
-/// Returns `true` if path bytes match default exclude rules.
-pub fn is_default_excluded_path_bytes(path: &[u8]) -> bool {
+#[cfg(feature = "git")]
+pub(crate) fn is_default_excluded_path_bytes(path: &[u8]) -> bool {
     filter::is_default_excluded_bytes(path)
 }
 
-/// Returns `true` if file extension `ext` is in the default skip extensions list.
-pub fn is_default_skip_extension(ext: &str) -> bool {
+#[cfg(any(feature = "docker", feature = "azure", feature = "s3", feature = "gcs"))]
+pub(crate) fn is_default_skip_extension(ext: &str) -> bool {
     filter::is_skip_extension(ext)
-}
-
-/// Returns `true` if a single directory name `name` is a default excluded directory name.
-pub fn is_default_excluded_dir_name(name: &std::ffi::OsStr) -> bool {
-    filter::is_default_excluded_dir_name(name)
 }
 
 pub(crate) fn reader_pool_thread_count_for_test(scanner_threads: usize) -> usize {

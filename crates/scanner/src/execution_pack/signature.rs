@@ -79,7 +79,7 @@ impl ExecutionPackSigningKey {
 impl Drop for ExecutionPackSigningKey {
     fn drop(&mut self) {
         for byte in &mut self.0 {
-            // SAFETY: byte is a valid mutable reference to a key byte. Volatile write prevents dead-store elimination.
+            // Prevent the compiler from proving the key wipe dead.
             unsafe { std::ptr::write_volatile(byte, 0) };
         }
     }

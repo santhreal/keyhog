@@ -3,7 +3,10 @@ use keyhog_core::{
     PatternSpec, Severity,
 };
 use keyhog_scanner::resolution::resolve_matches;
-use keyhog_scanner::{CompiledScanner, MAX_SCAN_CHUNK_BYTES, WINDOW_OVERLAP_BYTES};
+use keyhog_scanner::CompiledScanner;
+
+const MAX_SCAN_CHUNK_BYTES: usize = 1024 * 1024;
+const WINDOW_OVERLAP_BYTES: usize = 128 * 1024;
 const TOKEN_START: usize = 950_000;
 
 fn detector() -> DetectorSpec {

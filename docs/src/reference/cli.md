@@ -165,7 +165,6 @@ or incomplete coverage.
 | `--verify-concurrency` | `N` |  | Maximum in-flight verification requests per service (default: 5) |
 | `--verify-oob` |  |  | Enable out-of-band callback verification via an embedded interactsh client. For webhook- and callback-shaped credentials, OOB verification proves the credential is exfil-capable: we mint a per-finding subdomain on the configured collector, embed it in the verification probe, and confirm the service actually called back. Off by default. See docs/src/reference/oob-verification.md for the threat model and self-hosting guidance |
 | `--verify-rate` | `RPS` | `5.0` | Steady-state cap for verification calls *per service*, in requests-per-second. Default 5.0. Drop this to be polite to upstream APIs when scanning a tree with hundreds of legitimate findings (test fixtures, examples); every finding produces a live verify call and most public APIs throttle aggressively. The limiter applies even with `--verify-batch` (which adds per-service serialisation on top) |
-| `--window-overlap` | `SIZE` |  | Streaming window overlap size in bytes (default: 128KB) |
 <!-- /keyhog-generated: cli-reference command="scan" -->
 
 Hyperscan database cache location is explicit scan configuration: use
@@ -352,7 +351,6 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--verify-concurrency` | `N` |  | Maximum in-flight verification requests per service (default: 5) |
 | `--verify-oob` |  |  | Enable out-of-band callback verification via an embedded interactsh client. For webhook- and callback-shaped credentials, OOB verification proves the credential is exfil-capable: we mint a per-finding subdomain on the configured collector, embed it in the verification probe, and confirm the service actually called back. Off by default. See docs/src/reference/oob-verification.md for the threat model and self-hosting guidance |
 | `--verify-rate` | `RPS` | `5.0` | Steady-state cap for verification calls *per service*, in requests-per-second. Default 5.0. Drop this to be polite to upstream APIs when scanning a tree with hundreds of legitimate findings (test fixtures, examples); every finding produces a live verify call and most public APIs throttle aggressively. The limiter applies even with `--verify-batch` (which adds per-service serialisation on top) |
-| `--window-overlap` | `SIZE` |  | Streaming window overlap size in bytes (default: 128KB) |
 <!-- /keyhog-generated: cli-reference command="config" -->
 
 ## `keyhog detectors`
@@ -410,7 +408,7 @@ keyhog explain stripe-secret-key
 | `-d`, `--detectors` | `DETECTORS` | `detectors` | Detector TOML directory. When omitted, KeyHog discovers an installed corpus or uses the embedded corpus. An explicitly named missing path is an error |
 <!-- /keyhog-generated: cli-reference command="explain" -->
 
-## `keyhog guard <add|remove|up|down|list|status|reconcile|rebuild|feed>`
+## `keyhog guard <add|remove|up|down|list|status|reconcile|rebuild>`
 
 Manages perpetual repository and filesystem guard protection. Connects to
 the daemon and sends guard control frames. When no daemon is available,
@@ -422,7 +420,6 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 |------------|---------|-------------|
 | `add` |  | Register a repository or filesystem root for continuous guard protection. Waits for initial reconciliation to complete before returning. When guarding a Git repository in `repo` mode, also attempts to install the managed pre-commit hook (skipped if a foreign hook already exists, or if `--no-hook` is passed) |
 | `down` |  | Stop the background guard daemon cleanly. Persisted root registrations and durable indexes remain on disk and resume on the next `guard up` |
-| `feed` | `events`, `log`, `transitions` | Expose continuous transition feed and event log with causes across guarded roots |
 | `help` |  | Print this message or the help of the given subcommand(s) |
 | `list` |  | List all registered guard roots and their current states |
 | `rebuild` |  | Delete and recreate the durable guard store for a root. Use after store corruption or when the persisted state is irrecoverably stale. The root is re-registered and a full reconciliation is triggered |
@@ -444,15 +441,6 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 
 | Argument | Value | Default | Description |
 |----------|-------|---------|-------------|
-| `--socket` | `PATH` |  | Override the socket path |
-
-### `keyhog guard feed`
-
-| Argument | Value | Default | Description |
-|----------|-------|---------|-------------|
-| `--format` | `FORMAT` | `human` | Output format: `human` or `json` |
-| `--limit` | `LIMIT` | `50` | Maximum number of recent transitions to display (default 50) |
-| `--root` | `ROOT` |  | Filter feed to a specific root path |
 | `--socket` | `PATH` |  | Override the socket path |
 
 ### `keyhog guard help`
@@ -492,7 +480,7 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 
 | Argument | Value | Default | Description |
 |----------|-------|---------|-------------|
-| `[ROOT]` | `ROOT` |  | Root path to inspect (optional; inspects all roots when omitted) |
+| `<ROOT>` *(required)* | `ROOT` |  | Root path to inspect |
 | `--format` | `FORMAT` | `human` | Output format: `human` or `json` |
 | `--socket` | `PATH` |  | Override the socket path |
 

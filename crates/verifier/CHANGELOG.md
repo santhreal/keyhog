@@ -2,7 +2,7 @@
 
 ## 0.5.80 - 2026-08-17
 
-- bench(verifier): add criterion benchmarks for template interpolation, response classification, verification cache operations, SSRF/domain policy checks, and SigV4 canonicalization (Row 147).
+- bench(verifier): add criterion benchmarks for template interpolation, SigV4 signing, and SSRF verification evaluation (Row 147).
 - style: format guard massive diff test and git sources modules.
 
 ## 0.5.79 - 2026-08-16

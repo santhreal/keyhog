@@ -73,15 +73,11 @@ pub enum Stage {
     BackendInit,
     /// Releasing scanner plans, backend resources, and retained buffers.
     Teardown,
-    /// Top-level pipeline container wrapping full source scanning.
-    ScanPipeline,
-    /// In-process compilation and construction of scanner matchers.
-    ScannerCompile,
 }
 
 impl Stage {
     /// Every stage in stable wire order.
-    pub const ALL: [Self; 36] = [
+    pub const ALL: [Self; 34] = [
         Self::SourceAcquire,
         Self::SourceWalk,
         Self::SourceRead,
@@ -116,8 +112,6 @@ impl Stage {
         Self::BackendAcquire,
         Self::BackendInit,
         Self::Teardown,
-        Self::ScanPipeline,
-        Self::ScannerCompile,
     ];
 
     #[inline]
@@ -165,15 +159,7 @@ impl Stage {
             Self::BackendAcquire => MetricId::BackendAcquire,
             Self::BackendInit => MetricId::BackendInit,
             Self::Teardown => MetricId::Teardown,
-            Self::ScanPipeline => MetricId::ScanPipeline,
-            Self::ScannerCompile => MetricId::ScannerCompile,
         }
-    }
-
-    /// Whether this stage is an outer container rather than a leaf stage.
-    #[inline]
-    pub const fn is_container(self) -> bool {
-        matches!(self, Self::ScanPipeline)
     }
 
     /// Stable text label used by human reports.
@@ -212,9 +198,7 @@ impl Stage {
             | Self::ExecutionPackMap
             | Self::BackendAcquire
             | Self::BackendInit
-            | Self::Teardown
-            | Self::ScanPipeline
-            | Self::ScannerCompile => MacroStageId::Scan,
+            | Self::Teardown => MacroStageId::Scan,
             Self::Suppression | Self::ResultMerge => MacroStageId::Resolve,
             Self::LiveVerification => MacroStageId::Verify,
             Self::Reporting => MacroStageId::Report,
@@ -318,7 +302,7 @@ impl RunIdentity {
             daemon_state: DaemonState::Off,
             scanner_threads: 0,
             reader_threads: None,
-            logical_cpus: crate::host_parallelism::logical_cpu_count(),
+            logical_cpus: std::thread::available_parallelism().map_or(1, usize::from),
         }
     }
 }
@@ -573,7 +557,7 @@ impl RunProfile {
         if let Some(stage) = self
             .stages
             .iter()
-            .filter(|stage| !stage.stage.is_container())
+            .filter(|stage| stage.stage != Stage::BackendDispatch)
             .max_by_key(|stage| stage.elapsed_ns)
         {
             output.push_str(&format!(
@@ -609,11 +593,6 @@ impl RunProfile {
             output.push('\n');
         }
         output
-    }
-
-    /// Render a clean tabular Markdown report for terminal and browser inspection (Row 108).
-    pub fn render_markdown(&self) -> String {
-        crate::CausalProfileV2::from_v1(self.clone()).render_markdown()
     }
 }
 

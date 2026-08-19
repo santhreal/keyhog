@@ -124,7 +124,6 @@ fn thread_ids() -> Vec<u32> {
     if snapshot == 0 || snapshot == INVALID_HANDLE {
         return ids;
     }
-    // SAFETY: GetCurrentProcessId has no preconditions and cannot fail.
     let owner = unsafe { GetCurrentProcessId() };
     let mut entry = ThreadEntry32 {
         size: std::mem::size_of::<ThreadEntry32>() as u32,
@@ -135,16 +134,13 @@ fn thread_ids() -> Vec<u32> {
         delta_priority: 0,
         flags: 0,
     };
-    // SAFETY: snapshot is a valid Toolhelp32 handle and entry is valid mutable memory.
     let mut ok = unsafe { Thread32First(snapshot, &mut entry) };
     while ok != 0 {
         if entry.owner_process_id == owner {
             ids.push(entry.thread_id);
         }
-        // SAFETY: snapshot is valid and entry is valid mutable memory.
         ok = unsafe { Thread32Next(snapshot, &mut entry) };
     }
-    // SAFETY: snapshot is a valid live Toolhelp32 snapshot handle.
     unsafe {
         CloseHandle(snapshot);
     }
@@ -161,9 +157,7 @@ fn thread_cpu_ns(thread_id: u32) -> Option<u64> {
     let mut exit = FileTime { low: 0, high: 0 };
     let mut kernel = FileTime { low: 0, high: 0 };
     let mut user = FileTime { low: 0, high: 0 };
-    // SAFETY: handle is valid non-null process handle and filetime pointers are valid memory.
     let ok = unsafe { GetThreadTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) };
-    // SAFETY: handle is valid live OpenThread handle.
     unsafe {
         CloseHandle(handle);
     }
@@ -287,7 +281,6 @@ pub(super) fn frequency_availability() -> Evidence<HardwareFieldSourceV2> {
 }
 
 pub(super) fn capture_topology() -> TopologyEvidenceV2 {
-    // SAFETY: SystemInfo is a POD struct safely initialized with all zeroes.
     let mut info: SystemInfo = unsafe { std::mem::zeroed() };
     // SAFETY: info references a live stack value of the right size.
     unsafe { GetSystemInfo(&mut info) };

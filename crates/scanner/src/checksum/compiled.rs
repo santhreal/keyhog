@@ -243,9 +243,6 @@ impl CompiledValidatorIndex {
     pub(crate) fn compile<'a>(
         validator_sets: impl IntoIterator<Item = &'a CompiledDetectorValidators>,
     ) -> Self {
-        keyhog_profile::record_compile_surface_invocation(
-            keyhog_profile::CompileSurfaceId::ValidatorCatalog,
-        );
         let mut refs: [Vec<ValidatorRef>; 256] = std::array::from_fn(|_| Vec::new());
         for (owner_index, set) in validator_sets.into_iter().enumerate() {
             for (validator_index, prefix) in set.indexed_prefixes() {
@@ -319,9 +316,6 @@ pub(crate) struct CompiledValidatorCatalog {
 
 impl CompiledValidatorCatalog {
     pub(crate) fn compile(detectors: &[keyhog_core::DetectorSpec]) -> Result<Self, String> {
-        keyhog_profile::record_compile_surface_invocation(
-            keyhog_profile::CompileSurfaceId::ValidatorCatalog,
-        );
         let validators: Box<[_]> = detectors
             .iter()
             .map(CompiledDetectorValidators::compile)
@@ -368,18 +362,12 @@ impl CompiledValidatorCatalog {
 
 impl CompiledDetectorValidators {
     pub(crate) fn compile(detector: &keyhog_core::DetectorSpec) -> Result<Self, String> {
-        keyhog_profile::record_compile_surface_invocation(
-            keyhog_profile::CompileSurfaceId::ValidatorCatalog,
-        );
         Self::hydrate_parts(&detector.id, &detector.patterns, &detector.validators)
     }
 
     pub(crate) fn hydrate(
         detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
     ) -> Result<Self, String> {
-        keyhog_profile::record_compile_surface_load(
-            keyhog_profile::CompileSurfaceId::ValidatorCatalog,
-        );
         Self::hydrate_parts(&detector.id, &detector.patterns, &detector.validators)
     }
 

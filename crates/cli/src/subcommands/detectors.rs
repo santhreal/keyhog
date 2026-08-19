@@ -293,17 +293,6 @@ fn run_fix(args: &DetectorArgs) -> Result<ExitCode> {
         }
     }
 
-    if files_changed > 0 && !args.dry_run {
-        if let Err(error) = crate::execution_pack_install::invalidate_installed_artifacts(
-            "detector definitions updated by keyhog detectors --fix",
-        ) {
-            tracing::warn!(
-                error = %error,
-                "failed to invalidate stale execution packs after detector fix"
-            );
-        }
-    }
-
     if args.dry_run {
         println!(
             "\nDry-run complete: {} file(s) inspected, {} would change, {} total rewrite(s).",

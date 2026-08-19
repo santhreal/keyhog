@@ -82,13 +82,11 @@ pub(crate) async fn run_guard_commit(
         }
     }
 
-    match run_guard_commit_on_connection(&mut conn, &repo_path, detector_rules_digest).await {
+    match run_guard_commit_on_connection(&mut conn, &repo_path).await {
         Ok(result) if result.fingerprint_changed => {
             // Retry once: the index changed during the first transaction.
             // The second pass re-acquires the manifest with the current state.
-            let retry =
-                run_guard_commit_on_connection(&mut conn, &repo_path, detector_rules_digest)
-                    .await?;
+            let retry = run_guard_commit_on_connection(&mut conn, &repo_path).await?;
             Ok(retry)
         }
         other => other,
@@ -100,7 +98,6 @@ pub(crate) async fn run_guard_commit(
 async fn run_guard_commit_on_connection(
     conn: &mut Client,
     repo_path: &Path,
-    detector_rules_digest: &str,
 ) -> Result<GuardCommitResult> {
     // 1. Acquire the staged manifest.
     let manifest = StagedManifest::acquire(repo_path)
@@ -227,11 +224,17 @@ async fn run_guard_commit_on_connection(
                 findings_count,
                 coverage_gaps,
                 terminal_state: keyhog_core::guard_state::GuardRootState::Indexing,
-                policy_identity: crate::daemon::server::compute_root_policy_identity(
-                    repo_path,
-                    crate::daemon::server::KEYHOG_VERSION,
-                    detector_rules_digest,
-                ),
+                policy_identity: keyhog_core::guard_state::GuardPolicyIdentity {
+                    build_identity: String::new(),
+                    detector_digest: String::new(),
+                    suppression_digest: String::new(),
+                    keyhogignore_digest: String::new(),
+                    config_digest: String::new(),
+                    decode_policy_version: 0,
+                    source_policy_digest: String::new(),
+                    guard_schema_version: 0,
+                    report_semantics_version: 0,
+                },
                 terminal_sequence: 0,
             };
             (r, label, blocking_findings_count, findings)

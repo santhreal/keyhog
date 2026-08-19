@@ -160,20 +160,6 @@ impl PathGlobIndex {
     }
 }
 
-pub(super) fn pattern_matches_path(pattern: &str, normalized_path: &str) -> bool {
-    let directory_pattern = pattern.replace('\\', "/").ends_with('/');
-    let mut normalized_pattern = normalize_path(pattern);
-    if directory_pattern && !normalized_pattern.is_empty() {
-        normalized_pattern.push_str("/**");
-    }
-    let p_segs = split_segments(&normalized_pattern);
-    let path_segs = split_segments(normalized_path);
-    if segments_oversize(&p_segs) || segments_oversize(&path_segs) {
-        return false;
-    }
-    glob_match_segments(&p_segs, &path_segs)
-}
-
 pub(super) fn split_segments(path: &str) -> Vec<&str> {
     if path.is_empty() {
         Vec::new()

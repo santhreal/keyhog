@@ -46,12 +46,6 @@ struct SubstringEntry {
 const BUNDLED_TOML: &str = include_str!("../data/suppressions/test-fixtures.toml");
 
 impl TestFixtureSuppressions {
-    /// Raw bundled TOML content for policy identity digests.
-    #[must_use]
-    pub(crate) fn bundled_raw() -> &'static str {
-        BUNDLED_TOML
-    }
-
     /// Load the bundled suppression list. A malformed bundled TOML is a broken
     /// build; do not continue with test-fixture suppression weakened.
     #[must_use]

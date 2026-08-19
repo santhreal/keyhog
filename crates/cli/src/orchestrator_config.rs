@@ -70,8 +70,6 @@ pub(crate) struct ResolvedScanConfig {
     /// Fused filesystem pipeline channel depth. `None` means derive from the
     /// configured worker pool at scan time.
     pub(crate) fused_depth: Option<usize>,
-    /// Streaming window overlap in bytes (Row 113).
-    pub(crate) window_overlap: usize,
     /// Resolved GPU runtime policy for probe/init/degrade behavior.
     pub(crate) gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy,
     /// Whether autoroute calibration may include GPU candidates.
@@ -237,7 +235,6 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         reader_threads: runtime_input.reader_threads,
         fused_batch: runtime_input.fused_batch,
         fused_depth: runtime_input.fused_depth,
-        window_overlap: runtime_input.window_overlap,
         gpu_runtime_policy: runtime_input.gpu_runtime_policy,
         autoroute_gpu: runtime_input.autoroute_gpu,
         autoroute_calibration: runtime_input.autoroute_calibration,
@@ -286,7 +283,6 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
         reader_threads: None,
         fused_batch: FUSED_BATCH_DEFAULT,
         fused_depth: None,
-        window_overlap: keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES,
         gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy::Auto,
         autoroute_gpu: false,
         autoroute_calibration: false,

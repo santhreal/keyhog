@@ -83,10 +83,7 @@ use std::collections::BTreeMap;
 ///   receipts carry exact protected findings and the default-policy blocking
 ///   count so daemon, staged-guard, and one-shot scans preserve finding output
 ///   and evidence-policy exits.
-/// * v16 - continuous guard transition feed and event log wire frames
-///   (`GuardFeed`, `GuardFeedResult`) expose recent state transitions with
-///   causal attribution across registered roots.
-pub(crate) const WIRE_VERSION: u32 = 16;
+pub(crate) const WIRE_VERSION: u32 = 15;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -291,14 +288,6 @@ pub enum Request {
     },
     /// List all registered guard roots.
     GuardList,
-    // ── Guard transition feed ──────────────────────────────────────────
-    /// Query the continuous transition feed / event log across roots.
-    GuardFeed {
-        /// Optional root filter (canonical path).
-        root: Option<String>,
-        /// Maximum transitions to return (bounded, default 50).
-        limit: Option<usize>,
-    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -494,14 +483,6 @@ pub enum Response {
         mode: String,
         /// Current state label.
         state: String,
-        /// Backing filesystem type (Row 132).
-        filesystem_type: String,
-        /// Whether the filesystem is authoritative for change events (Row 132).
-        filesystem_authoritative: bool,
-        /// Reason if unauthoritative (Row 132).
-        filesystem_unauthoritative_reason: Option<String>,
-        /// Effective periodic scrub interval in seconds (Row 132).
-        scrub_interval_secs: u64,
         /// Terminal event sequence.
         terminal_sequence: u64,
         /// Accepted event sequence (events received from the watcher).
@@ -528,12 +509,6 @@ pub enum Response {
         last_reconciliation_time: Option<u64>,
         /// Scanner residency label.
         scanner_residency: String,
-        /// Watcher backend identifier label (Row 123).
-        watcher_backend: String,
-        /// Watcher backend latency tier classification (Row 123).
-        watcher_latency_tier: String,
-        /// Watcher polling interval in milliseconds, if polling (Row 123).
-        watcher_poll_interval_ms: Option<u64>,
         /// Backend route label used for the last scan.
         backend_route_label: String,
         /// Build identity short digest (first 12 hex chars).
@@ -552,14 +527,6 @@ pub enum Response {
         store_path: String,
         /// Exact repair command.
         repair_command: String,
-        /// Recent state transitions with causes for this root.
-        #[serde(default)]
-        recent_transitions: Vec<GuardTransitionWireEntry>,
-    },
-    /// Continuous transition feed result with causal attribution.
-    GuardFeedResult {
-        /// Recent state transitions in chronological order.
-        transitions: Vec<GuardTransitionWireEntry>,
     },
     /// Reconciliation started for a guarded root.
     GuardReconcileStarted {
@@ -673,25 +640,6 @@ pub struct GuardWireManifestEntry {
     pub raw_mode: u32,
 }
 
-/// One state transition entry in a guard transition feed or status result.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct GuardTransitionWireEntry {
-    /// Canonical root path.
-    pub root: String,
-    /// Global transition sequence.
-    pub sequence: u64,
-    /// Unix timestamp (seconds) when the transition occurred.
-    pub timestamp: u64,
-    /// State before transition.
-    pub from_state: String,
-    /// State after transition.
-    pub to_state: String,
-    /// Transition event label.
-    pub event: String,
-    /// Causal attribution / reason for the transition.
-    pub cause: String,
-}
 /// One root entry in a `GuardListResult`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1074,102 +1022,6 @@ pub(crate) fn request_kind(request: &Request) -> &'static str {
         Request::GuardStatus { .. } => "GuardStatus",
         Request::GuardReconcile { .. } => "GuardReconcile",
         Request::GuardList => "GuardList",
-        Request::GuardFeed { .. } => "GuardFeed",
-    }
-}
-
-/// All 18 daemon request kinds.
-pub(crate) const ALL_REQUEST_KINDS: &[&str] = &[
-    "Hello",
-    "ScanText",
-    "ScanPath",
-    "MassBegin",
-    "MassBatch",
-    "MassFilesystemBegin",
-    "MassFilesystemDrain",
-    "MassEnd",
-    "Health",
-    "Shutdown",
-    "GuardCommitBegin",
-    "GuardCommitBlob",
-    "GuardCommitFinish",
-    "GuardAdd",
-    "GuardRemove",
-    "GuardStatus",
-    "GuardReconcile",
-    "GuardList",
-    "GuardFeed",
-];
-
-/// Sample request instance for every known request kind.
-pub(crate) fn sample_request_for_kind(kind: &str) -> Option<Request> {
-    match kind {
-        "Hello" => Some(Request::Hello),
-        "ScanText" => Some(Request::ScanText {
-            path: None,
-            text: "test sample content".to_string(),
-            dogfood: false,
-            profile: false,
-        }),
-        "ScanPath" => Some(Request::ScanPath {
-            path: "/dev/null".to_string(),
-            working_dir: None,
-            dogfood: false,
-            profile: false,
-        }),
-        "MassBegin" => Some(Request::MassBegin {
-            dogfood: false,
-            profile: false,
-        }),
-        "MassBatch" => Some(Request::MassBatch { chunks: vec![] }),
-        "MassFilesystemBegin" => Some(Request::MassFilesystemBegin {
-            root: "/tmp".to_string(),
-            max_file_size: 1024 * 1024,
-            ignore_paths: vec![],
-            respect_default_excludes: true,
-            reader_threads: None,
-            incremental_cache: None,
-        }),
-        "MassFilesystemDrain" => Some(Request::MassFilesystemDrain),
-        "MassEnd" => Some(Request::MassEnd),
-        "Health" => Some(Request::Health),
-        "Shutdown" => Some(Request::Shutdown),
-        "GuardCommitBegin" => Some(Request::GuardCommitBegin {
-            repo_path: "/tmp".to_string(),
-            index_fingerprint: "0".repeat(64),
-            hash_algorithm: "sha1".to_string(),
-            entries: vec![],
-        }),
-        "GuardCommitBlob" => Some(Request::GuardCommitBlob {
-            transaction_id: 1,
-            blob_oid: "0".repeat(40),
-            object_size: 0,
-            payload: vec![],
-        }),
-        "GuardCommitFinish" => Some(Request::GuardCommitFinish {
-            transaction_id: 1,
-            client_objects_streamed: 0,
-            client_bytes_streamed: 0,
-        }),
-        "GuardAdd" => Some(Request::GuardAdd {
-            root: "/tmp".to_string(),
-            mode: "audit".to_string(),
-        }),
-        "GuardRemove" => Some(Request::GuardRemove {
-            root: "/tmp".to_string(),
-        }),
-        "GuardStatus" => Some(Request::GuardStatus {
-            root: "/tmp".to_string(),
-        }),
-        "GuardReconcile" => Some(Request::GuardReconcile {
-            root: "/tmp".to_string(),
-        }),
-        "GuardList" => Some(Request::GuardList),
-        "GuardFeed" => Some(Request::GuardFeed {
-            root: None,
-            limit: Some(50),
-        }),
-        _ => None,
     }
 }
 /// One-word kind label for a daemon [`Response`]. Use this in user-facing
@@ -1195,6 +1047,5 @@ pub fn response_kind(response: &Response) -> &'static str {
         Response::GuardStatusResult { .. } => "GuardStatusResult",
         Response::GuardReconcileStarted { .. } => "GuardReconcileStarted",
         Response::GuardListResult { .. } => "GuardListResult",
-        Response::GuardFeedResult { .. } => "GuardFeedResult",
     }
 }

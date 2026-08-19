@@ -3,30 +3,10 @@
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [0.5.80] - 2026-08-17
-### Added
-- feat(guard): populate GuardPolicyIdentity digests for ignore file, suppressions, configuration, and source policy, triggering state transition to StalePolicy and attestation invalidation on policy file modifications (Row 142).
-
-- bench(product): add product-level criterion benchmarks for CLI startup, hook execution, guard status, core evaluation, and verifier evaluation (Row 147).
-- feat(guard): continuous guard transition feed and event log surface with causal attribution across registered roots (Row 146).
-- feat(cli): enhance pass-gate terminal output craft with structured volume, blob counts, bytes scanned, and execution timing (Row 143).
-- feat(guard): offline guard status and list inspectability reading durable store from disk with optional root summary (Row 140).
-- feat(cli): optimize startup execution path for informational commands with fast zero-allocation dispatch, deferred runtime initialization, and zero detector corpus parsing (Row 138).
-- feat(installer): multi-dimensional artifact invalidation and regeneration across detector corpus changes, configuration updates, and calibration changes (Row 135).
-- feat(installer): update recommendation parity and complete artifact generation on binary replacement (Row 134).
-- feat(build): audit and enforce release binary symbol stripping and zero DWARF debuginfo bloat via Cargo.toml [profile.release] and profile divergence gates (Row 139).
-- feat(artifacts): fail closed with EXIT_USER_ERROR and actionable repair instructions on stale or mismatched execution-pack artifact identity inputs (Row 129).
-- feat(compiler): install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata (Row 128).
-- feat(cache): load-only scan execution and zero compilation fallback on prepared artifact caches (Row 127).
-- feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).
-- feat(profile): instrument runtime compile surface counters across all 13 compiler surfaces and 4 phases (Row 125).
-- fix(cli): eliminate noisy internal execution-pack fallback warning on clean scan passes and enforce unpolluted structured output (Row 144).
-- feat(gates): single authoritative structural gate architecture consolidating `no_inline_tests_in_src` and `no_cwd_relative_source_reads` workspace-wide and eliminating redundant per-crate gap tests (Row 149).
-- feat(benchmarks): publish honest multi-corpus benchmark data across mirror and competitor corpora with transparent F1, precision, recall, runtime metrics, and drift-prevention gate coverage (Row 151).
-
 
 ### Changed
+- bench(product): add criterion benchmarks for CLI startup, hook execution, guard status, core evaluation, and verifier evaluation (Row 147).
 
-- fix(daemon): filter out ignored and excluded paths (.git, target, node_modules, ignore_paths, default excludes) in guard filesystem watcher to prevent unnecessary reconcile transactions (Row 141).
 - **The isolated policy children of an all-policy calibration now inherit the parent's configuration mode.** `calibrate-autoroute` runs the four scan policies in four child processes, and the argv it built for them carried `--policy`, `--autoroute-cache` and `--measurement-receipts` but not `--no-config`. `install.sh` asks for the host baseline, the parent honored it, and every child resolved whatever `.keyhog.toml` the install directory happened to carry: a 40 minute install published 629 decisions across four digests no ordinary scan requests, while a plain scan resolved a fifth digest holding four decisions, and the first scan after the install exited 2 with `none matching config digest`. The child argv is now built in one place that forwards `--no-config`, `--quiet` and `--execution-packs`. A second test reads the flag list off the clap command at run time and fails on any flag with no recorded forward-or-own decision, so a new calibration flag cannot be added without deciding whether it crosses the process boundary.
 - **Both installers now prove the calibrated cache can serve an ordinary scan before reporting success.** An install could finish clean and be unusable: `keyhog doctor` compiles one bundled detector and scans with an explicit `ScanBackend::CpuFallback`, so it passes on a host whose next auto-routed scan exits 2 for want of a matching decision, which is exactly what the child-argv defect above produced. After calibration each installer scans a throwaway two-file directory with no backend override and no calibration flag, asking for the same baseline configuration calibration measured, and fails the install (rolling back, as with a failed doctor) unless the scan runs. Edge case 8.7 drives an installer through a binary that calibrates and then refuses to route, and the parity gate pins the check on both platforms.
 - **`keyhog calibrate-autoroute` now measures the configuration the scans it serves resolve.** Calibration passed `--no-config` to its own probes, so a run inside a repository with a `.keyhog.toml` published every decision under the compiled-in baseline digest while the scans in that repository asked for the resolved one, and the documented remedy for `autoroute calibration required` produced a cache those scans could never hit. Configuration is now resolved by the same `.keyhog.toml` walk-up a scan performs. `install.sh` and `install.ps1` pass the new `--no-config` flag, because an install runs from an arbitrary directory and primes a host baseline; both probe `calibrate-autoroute --help` first, so a binary that predates the flag still calibrates. The digest gate now pins both modes.

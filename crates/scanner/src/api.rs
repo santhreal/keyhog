@@ -30,9 +30,8 @@ pub use crate::matcher_artifact_cache::{
     default_matcher_artifact_cache_dir, default_matcher_artifact_cache_dir_from_base,
     execution_pack_backend_for_scan_backend, load_matcher_artifact, load_matcher_artifact_with_ir,
     matcher_backend_for_gpu_policy, store_matcher_artifact, LoadedMatcherArtifact,
-    MatcherArtifactCacheDisableReason, MatcherArtifactCacheOutcome, MatcherArtifactIdentity,
-    MATCHER_ARTIFACT_FILE_BYTES, MATCHER_ARTIFACT_MAGIC, MATCHER_ARTIFACT_SUFFIX,
-    MATCHER_ARTIFACT_VERSION,
+    MatcherArtifactCacheOutcome, MatcherArtifactIdentity, MATCHER_ARTIFACT_FILE_BYTES,
+    MATCHER_ARTIFACT_MAGIC, MATCHER_ARTIFACT_SUFFIX, MATCHER_ARTIFACT_VERSION,
 };
 // The measurement switch is the profiler's, re-exported so a `keyhog-scanner`
 // consumer never has to reach past the scanner for it, and never gets a second
@@ -40,7 +39,7 @@ pub use crate::matcher_artifact_cache::{
 pub use crate::scan_profile::{dump as profile_dump, reset as profile_reset};
 pub use crate::types::{
     regex_dfa_limit_default, set_regex_dfa_limit, ScanExecutionRoute, ScannerConfig,
-    ScannerTuningConfig, MAX_SCAN_CHUNK_BYTES, WINDOW_OVERLAP_BYTES,
+    ScannerTuningConfig,
 };
 pub use crate::util_hash::{FNV_OFFSET_BASIS, FNV_PRIME};
 pub use keyhog_profile::{detail as profile_detail, set_detail as set_profile_detail, Detail};

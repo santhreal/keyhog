@@ -285,7 +285,7 @@ def _qualification(snapshot: dict[str, Any], scanner: dict[str, Any]) -> str:
 
 
 def render_accuracy(snapshot: dict[str, Any]) -> str:
-    """Render the default-policy accuracy panel for mirror and competitor corpora."""
+    """Render the default-policy accuracy panel from the bound mirror row."""
     rows = _rows_by_config(snapshot["configuration_rows"])
     row = rows.get("simd-nocache-nodaemon-full")
     if row is None:
@@ -295,12 +295,18 @@ def render_accuracy(snapshot: dict[str, Any]) -> str:
     detection = row["detection"]
     return "\n".join(
         [
-            f"KeyHog `{scanner['version'].splitlines()[0]}` evaluated on both the synthetic **mirror** corpus and competitor **homefield** rule ground-truth on **{host['cpu']}** with the explicit Hyperscan/SIMD default route. The answer-key manifest was excluded from the scan tree.",
+            f"KeyHog `{scanner['version'].splitlines()[0]}` scanned the **{corpus['name']}** "
+            f"corpus: {corpus['fixture_count']:,} fixtures, "
+            f"{corpus['labeled_positives']:,} labeled positives, and "
+            f"{corpus['bytes']:,} input bytes. The answer-key manifest was excluded from "
+            "the scan tree. The row uses the default policy on the explicit "
+            f"Hyperscan/SIMD route on **{host['cpu']}**.",
             "",
-            "| Corpus | Fixtures | Positives | Input size | Precision | Recall | F1 | True positives | False positives | False negatives |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
-            f"| **{corpus['name']}** | {corpus['fixture_count']:,} | {corpus['labeled_positives']:,} | {corpus['bytes'] / (1024 * 1024):.2f} MB | {detection['precision']:.4f} | {detection['recall']:.4f} | {detection['f1']:.4f} | {detection['tp']:,} | {detection['fp']:,} | {detection['fn']:,} |",
-            "| **homefield** | 2,399 | 1,057 | 773 KB | 0.9582 | 0.8874 | 0.9214 | 938 | 41 | 119 |",
+            "| Precision | Recall | F1 | True positives | False positives | False negatives |",
+            "|---:|---:|---:|---:|---:|---:|",
+            f"| {detection['precision']:.4f} | {detection['recall']:.4f} | "
+            f"{detection['f1']:.4f} | {detection['tp']:,} | {detection['fp']:,} | "
+            f"{detection['fn']:,} |",
             "",
             _qualification(snapshot, scanner),
         ]

@@ -11,21 +11,20 @@ use keyhog::args::{Cli, Command, ScanArgs};
 use keyhog::testing::hook::{find_hooks_dir_for_repo, install_at_repo, CANONICAL_SCAN_ARGS};
 use keyhog::testing::{CliTestApi, API};
 use keyhog_core::guard_state::{
-    FilesystemAuthority, FilesystemIdentity, GuardPolicyIdentity, GuardRootMode, GuardRootState,
-    GuardTransition,
+    FilesystemIdentity, GuardPolicyIdentity, GuardRootMode, GuardRootState, GuardTransition,
 };
 use keyhog_core::json_selector;
 use keyhog_core::suppression::RuleSuppressor;
 use keyhog_core::{
-    compute_detector_corpus_digest, correlate_findings, dedup_matches, load_detectors,
-    sha256_hash, validate_detector, DedupScope, MatchLocation, MerkleIndex, RawMatch,
-    SensitiveString, Severity, VerificationResult, VerifiedFinding,
+    compute_detector_corpus_digest, correlate_findings, dedup_matches, load_detectors, sha256_hash,
+    validate_detector, DedupScope, MatchLocation, MerkleIndex, RawMatch, SensitiveString, Severity,
+    VerificationResult, VerifiedFinding,
 };
 use keyhog_sources::StagedManifest;
+use keyhog_verifier::sigv4::{aws_uri_encode, canonical_query_string};
 use keyhog_verifier::ssrf::{is_private_ip_addr, is_private_url};
 use keyhog_verifier::testing::{
-    aws_uri_encode, canonical_query_string, TestApi, TestVerificationCache, VerifierTestApi,
-    VerifierTestCache,
+    TestApi, TestVerificationCache, VerifierTestApi, VerifierTestCache,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -95,10 +94,26 @@ fn row_147_benchmark_manifest_targets_and_files_exist() {
         .to_path_buf();
 
     let expected_benches = [
-        ("crates/cli/Cargo.toml", "crates/cli/benches/cli_startup.rs", "cli_startup"),
-        ("crates/cli/Cargo.toml", "crates/cli/benches/hook_execution.rs", "hook_execution"),
-        ("crates/cli/Cargo.toml", "crates/cli/benches/guard_status.rs", "guard_status"),
-        ("crates/core/Cargo.toml", "crates/core/benches/core_evaluation.rs", "core_evaluation"),
+        (
+            "crates/cli/Cargo.toml",
+            "crates/cli/benches/cli_startup.rs",
+            "cli_startup",
+        ),
+        (
+            "crates/cli/Cargo.toml",
+            "crates/cli/benches/hook_execution.rs",
+            "hook_execution",
+        ),
+        (
+            "crates/cli/Cargo.toml",
+            "crates/cli/benches/guard_status.rs",
+            "guard_status",
+        ),
+        (
+            "crates/core/Cargo.toml",
+            "crates/core/benches/core_evaluation.rs",
+            "core_evaluation",
+        ),
         (
             "crates/verifier/Cargo.toml",
             "crates/verifier/benches/verifier_evaluation.rs",
@@ -145,7 +160,14 @@ fn row_147_cli_startup_arg_parsing_and_config_resolution() {
         ("scan_dot", &["keyhog", "scan", "."]),
         (
             "scan_hook_canonical",
-            &["keyhog", "scan", "--fast", "--git-staged", "--backend", "cpu"],
+            &[
+                "keyhog",
+                "scan",
+                "--fast",
+                "--git-staged",
+                "--backend",
+                "cpu",
+            ],
         ),
         (
             "scan_flags_matrix",
@@ -205,7 +227,10 @@ coalesce_window = "100ms"
     std::fs::write(&config_path, sample_config).expect("write sample config");
 
     let parse_res = API.parse_config_file_from_str(sample_config);
-    assert!(parse_res.is_ok(), "config parsing must succeed: {parse_res:?}");
+    assert!(
+        parse_res.is_ok(),
+        "config parsing must succeed: {parse_res:?}"
+    );
 
     let found = API.find_config_file(Some(dir.path()));
     assert_eq!(
@@ -240,7 +265,10 @@ fn row_147_hook_execution_lifecycle_and_staged_scan_flow() {
         .collect();
     let parsed = Cli::try_parse_from(&raw_tokens).expect("parse canonical scan args");
     if let Some(Command::Scan(scan_args)) = parsed.command {
-        assert!(scan_args.fast, "canonical hook scan args must have fast=true");
+        assert!(
+            scan_args.fast,
+            "canonical hook scan args must have fast=true"
+        );
         assert!(
             scan_args.git_staged,
             "canonical hook scan args must have git_staged=true"
@@ -310,7 +338,6 @@ fn row_147_hook_execution_lifecycle_and_staged_scan_flow() {
 fn row_147_guard_status_protocol_and_state_transitions() {
     #[cfg(unix)]
     {
-        use keyhog::testing::daemon::fs_probe::probe_filesystem_authority;
         use keyhog::testing::daemon::guard_runtime::GuardRuntime;
         use keyhog::testing::daemon::protocol::{response_kind, Request, Response};
 
@@ -328,10 +355,6 @@ fn row_147_guard_status_protocol_and_state_transitions() {
             root: "/srv/repo".to_string(),
             mode: "repo".to_string(),
             state: "current".to_string(),
-            filesystem_type: "ext4".to_string(),
-            filesystem_authoritative: true,
-            filesystem_unauthoritative_reason: None,
-            scrub_interval_secs: 60,
             terminal_sequence: 1,
             accepted_event_sequence: 1,
             completed_event_sequence: 1,
@@ -345,9 +368,6 @@ fn row_147_guard_status_protocol_and_state_transitions() {
             initial_reconciliation_time: Some(1787140800),
             last_reconciliation_time: Some(1787140800),
             scanner_residency: "resident".to_string(),
-            watcher_backend: "inotify".to_string(),
-            watcher_latency_tier: "instant".to_string(),
-            watcher_poll_interval_ms: None,
             backend_route_label: "cpu".to_string(),
             build_identity_short: "abc123456789".to_string(),
             detector_digest_short: "def123456789".to_string(),
@@ -380,7 +400,6 @@ fn row_147_guard_status_protocol_and_state_transitions() {
                 device: 1,
                 inode: 42,
             },
-            FilesystemAuthority::authoritative("ext4"),
             GuardRootMode::Repo,
         )
         .expect("add root");
@@ -395,10 +414,6 @@ fn row_147_guard_status_protocol_and_state_transitions() {
         rt.transition_root(&root_bytes, &GuardTransition::ReconciliationClean)
             .expect("transition clean");
         assert_eq!(rt.root_state(&root_bytes), Some(GuardRootState::Current));
-
-        let dir = tempdir().expect("tempdir");
-        let auth = probe_filesystem_authority(dir.path());
-        assert!(!auth.filesystem_type.is_empty());
     }
 
     // Policy identity
@@ -445,7 +460,11 @@ fn row_147_core_evaluation_suppression_and_merkle_operations() {
     let all_detectors = load_detectors(&detectors_path).expect("load detectors");
     for spec in all_detectors.iter().take(20) {
         let issues = validate_detector(spec);
-        assert!(issues.is_empty(), "detector {} must validate cleanly", spec.id);
+        assert!(
+            issues.is_empty(),
+            "detector {} must validate cleanly",
+            spec.id
+        );
     }
     let digest = compute_detector_corpus_digest(&all_detectors).expect("compute corpus digest");
     assert_ne!(digest, [0u8; 32], "corpus digest must not be zero");
@@ -512,7 +531,10 @@ credential_hash = "{suppressed_hash_hex}"
         1024,
         content_hash.as_bytes(),
     );
-    assert!(second_check, "second encounter with identical metadata must be unchanged");
+    assert!(
+        second_check,
+        "second encounter with identical metadata must be unchanged"
+    );
 
     assert!(index.metadata_unchanged(&sample_path, 1_700_000_000, 1024));
     assert!(!index.metadata_unchanged(&sample_path, 1_700_000_001, 1024));
@@ -558,7 +580,11 @@ credential_hash = "{suppressed_hash_hex}"
         "AKIAIOSFODNN7EXAMPLE",
     );
     let correlated = correlate_findings(&[f_reuse_1, f_reuse_2]);
-    assert_eq!(correlated.len(), 1, "identical credentials across paths must form 1 reuse correlation");
+    assert_eq!(
+        correlated.len(),
+        1,
+        "identical credentials across paths must form 1 reuse correlation"
+    );
 }
 
 #[test]
@@ -577,11 +603,8 @@ fn row_147_verifier_evaluation_interpolation_ssrf_and_cache() {
         "https://api.corp.example.com/users/usr%5F123/keys/token%5Fxyz%5F456"
     );
 
-    let interpolated_header = TestApi.interpolate_http_value(
-        "Bearer {{match}}",
-        "token_xyz_456",
-        &companions,
-    );
+    let interpolated_header =
+        TestApi.interpolate_http_value("Bearer {{match}}", "token_xyz_456", &companions);
     assert_eq!(interpolated_header, "Bearer token_xyz_456");
 
     // 2. Response selector
@@ -596,7 +619,10 @@ fn row_147_verifier_evaluation_interpolation_ssrf_and_cache() {
     let selected = json_selector::select(&json_data, "$.data.account.id")
         .expect("select")
         .cloned();
-    assert_eq!(selected, Some(serde_json::Value::String("acc_789".to_string())));
+    assert_eq!(
+        selected,
+        Some(serde_json::Value::String("acc_789".to_string()))
+    );
 
     // 3. Verification Cache
     let cache = TestVerificationCache::new(std::time::Duration::from_secs(60));

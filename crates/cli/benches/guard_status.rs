@@ -1,16 +1,12 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 #[cfg(unix)]
-use keyhog::testing::daemon::fs_probe::probe_filesystem_authority;
-#[cfg(unix)]
 use keyhog::testing::daemon::guard_runtime::GuardRuntime;
 #[cfg(unix)]
 use keyhog::testing::daemon::protocol::{Request, Response};
 use keyhog_core::guard_state::{
-    FilesystemAuthority, FilesystemIdentity, GuardPolicyIdentity, GuardRootMode, GuardRootState,
-    GuardTransition,
+    FilesystemIdentity, GuardPolicyIdentity, GuardRootMode, GuardRootState, GuardTransition,
 };
 use std::hint::black_box;
-use tempfile::tempdir;
 
 fn sample_fs_identity(dev: u64, ino: u64) -> FilesystemIdentity {
     FilesystemIdentity {
@@ -34,10 +30,6 @@ fn bench_guard_protocol_framing(c: &mut Criterion) {
         root: "/var/repos/service-backend".to_string(),
         mode: "repo".to_string(),
         state: "current".to_string(),
-        filesystem_type: "ext4".to_string(),
-        filesystem_authoritative: true,
-        filesystem_unauthoritative_reason: None,
-        scrub_interval_secs: 60,
         terminal_sequence: 42,
         accepted_event_sequence: 42,
         completed_event_sequence: 42,
@@ -51,9 +43,6 @@ fn bench_guard_protocol_framing(c: &mut Criterion) {
         initial_reconciliation_time: Some(1787140800),
         last_reconciliation_time: Some(1787140800),
         scanner_residency: "resident".to_string(),
-        watcher_backend: "inotify".to_string(),
-        watcher_latency_tier: "instant".to_string(),
-        watcher_poll_interval_ms: None,
         backend_route_label: "cpu".to_string(),
         build_identity_short: "abc123456789".to_string(),
         detector_digest_short: "def123456789".to_string(),
@@ -118,7 +107,6 @@ fn bench_guard_runtime_status_lookup(c: &mut Criterion) {
             rt.add_root(
                 root_path.clone(),
                 sample_fs_identity(1, i as u64 + 1),
-                FilesystemAuthority::authoritative("ext4"),
                 GuardRootMode::Repo,
             )
             .expect("add root");
@@ -171,14 +159,12 @@ fn bench_guard_state_transitions(c: &mut Criterion) {
                 .transition(&GuardTransition::ReconciliationClean)
                 .expect("reconcile clean");
             state = state
-                .transition(&GuardTransition::FsEventReceived)
+                .transition(&GuardTransition::EventAccepted)
                 .expect("fs event");
             state = state
-                .transition(&GuardTransition::ReconciliationClean)
+                .transition(&GuardTransition::EventsClean)
                 .expect("reconcile clean");
-            state = state
-                .transition(&GuardTransition::Stopped)
-                .expect("stop");
+            state = state.transition(&GuardTransition::Stopped).expect("stop");
             let _ = black_box(state);
         });
     });
@@ -207,29 +193,12 @@ fn bench_guard_state_transitions(c: &mut Criterion) {
     group.finish();
 }
 
-/// WHY: Measures filesystem authority probing latency on directory roots.
-#[cfg(unix)]
-fn bench_filesystem_authority_probing(c: &mut Criterion) {
-    let mut group = c.benchmark_group("filesystem_authority_probing");
-    let dir = tempdir().expect("tempdir");
-
-    group.bench_function("probe_local_tempdir_authority", |b| {
-        b.iter(|| {
-            let auth = probe_filesystem_authority(black_box(dir.path()));
-            let _ = black_box(auth);
-        });
-    });
-
-    group.finish();
-}
-
 #[cfg(unix)]
 criterion_group!(
     benches,
     bench_guard_protocol_framing,
     bench_guard_runtime_status_lookup,
     bench_guard_state_transitions,
-    bench_filesystem_authority_probing,
 );
 
 #[cfg(not(unix))]

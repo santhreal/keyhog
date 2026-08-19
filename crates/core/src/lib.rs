@@ -37,10 +37,6 @@ pub mod ascii_ci;
 /// of truth shared by the scanner's finding metadata and the verifier's
 /// suppress-live-verification-for-canaries gate).
 mod aws;
-/// Unified cache layout classification and eviction policy contracts.
-pub mod cache_layout;
-/// Compiled-artifact class model and canonical identity contracts.
-pub mod compiled_artifact;
 /// Configuration system for KeyHog scanning options.
 mod config;
 /// Cross-file credential correlation over an already-reported finding set.
@@ -86,17 +82,13 @@ pub mod triage;
 /// verifier.
 pub mod verification_domain;
 pub mod winpath;
-pub use cache_layout::{CacheEvictionPolicy, CacheKind};
 use std::borrow::Cow;
 
 pub use api::*;
-pub use compiled_artifact::{CompiledArtifactClass, CompiledArtifactIdentity};
 pub use detector_corpus::{
     compose_detector_corpus, compute_detector_corpus_digest,
     compute_detector_corpus_digest_for_schema, DetectorCorpusError, DetectorCorpusMode,
 };
-pub use guard_state::{GuardRootState, GuardTransition, ReceiptError, TransitionError};
-pub use guard_store::GuardStoreError;
 /// Auto-fix suggestion logic for SARIF output.
 mod auto_fix;
 /// Bayesian confidence calibration for detectors.
@@ -183,40 +175,7 @@ pub fn keyhog_matcher_artifacts_root() -> Option<std::path::PathBuf> {
 /// [`SpecError::EmbeddedCorpusCorrupt`] naming each, making a corrupt corpus a
 /// hard error rather than a buried log line. Each embedded TOML holds exactly one
 /// detector, so on success `result.len() == embedded_detector_count()`.
-static DETECTOR_CORPUS_LOAD_COUNT: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
-
-/// Return the number of times the embedded detector TOML corpus has been parsed.
-#[inline]
-pub fn detector_corpus_load_count() -> usize {
-    DETECTOR_CORPUS_LOAD_COUNT.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Reset the detector corpus load count for testing assertions.
-#[doc(hidden)]
-pub fn reset_detector_corpus_load_count_for_test() {
-    DETECTOR_CORPUS_LOAD_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
-}
-
-/// Parse the embedded detector corpus, FAILING CLOSED on any malformed TOML.
-///
-/// This is the SINGLE loader every entrypoint shares (the `scan` orchestrator
-/// via `cli::orchestrator_config`, and every other scan entry point) so the
-/// fail-closed contract holds uniformly, there is exactly one way to turn the
-/// compiled-in corpus into `DetectorSpec`s.
-///
-/// Law 10 (NO SILENT FALLBACKS): the embedded set is baked into the binary by
-/// `build.rs`; a TOML that fails to parse is a BUILD/SOURCE bug, never a runtime
-/// condition the operator can act on (the user cannot have edited a compiled-in
-/// string). The old per-callsite `tracing::debug!`-then-`continue` shape silently
-/// dropped the offender, exactly how the dead `discord-bot-token` detector (a
-/// single-quoted TOML literal that broke parsing) reached a benched release as an
-/// invisible recall hole. So this collects every offender and returns
-/// [`SpecError::EmbeddedCorpusCorrupt`] naming each, making a corrupt corpus a
-/// hard error rather than a buried log line. Each embedded TOML holds exactly one
-/// detector, so on success `result.len() == embedded_detector_count()`.
 pub fn load_embedded_detectors_or_fail() -> Result<Vec<DetectorSpec>, SpecError> {
-    DETECTOR_CORPUS_LOAD_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let embedded = embedded_detector_tomls();
     let mut detectors = Vec::with_capacity(embedded.len());
     let mut failed = Vec::new();
