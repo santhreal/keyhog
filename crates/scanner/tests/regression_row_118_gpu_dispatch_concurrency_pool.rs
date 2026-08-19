@@ -7,10 +7,12 @@
 
 #[cfg(feature = "gpu")]
 use keyhog_scanner::testing::GpuResidentExecutionPool;
+#[cfg(feature = "gpu")]
 use std::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(feature = "gpu")]
 use std::sync::Arc;
+#[cfg(feature = "gpu")]
 use std::thread;
-
 #[cfg(feature = "gpu")]
 #[test]
 fn row_118_pool_concurrency_scales_with_capacity_under_contention() {
