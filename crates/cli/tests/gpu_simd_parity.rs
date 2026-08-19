@@ -50,6 +50,7 @@ fn findings(path: &str, backend: &str, no_gpu: bool) -> BTreeSet<(String, String
         "--daemon=off",
         "--backend",
         backend,
+        "--developer-compile-embedded-detectors",
     ]);
     if no_gpu {
         cmd.arg("--no-gpu");

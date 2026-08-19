@@ -261,6 +261,8 @@ fn bisect_gpu_ac_recall_by_window_size() {
     let needle_off = require_stackblitz_token(bytes);
 
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors load");
+    let ref_scanner =
+        CompiledScanner::compile(detectors.clone()).expect("reference scanner compile");
     let scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::GpuWgpu)
         .expect("scanner compile");
     if !wgpu_device_available_or_policy_allows_absence("bisect_gpu_ac_recall_by_window_size") {
@@ -309,7 +311,7 @@ fn bisect_gpu_ac_recall_by_window_size() {
             .filter(|m| m.detector_id.as_ref() == "stackblitz-credentials")
             .count();
 
-        let simd_matches = scanner
+        let simd_matches = ref_scanner
             .scan(&chunk)
             .expect("SIMD bisection scan should succeed");
         let simd_hit = finds_stackblitz(&simd_matches);

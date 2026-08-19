@@ -443,6 +443,27 @@ pub(crate) fn current_feature_digest() -> [u8; 32] {
     ])
 }
 
+static EMBEDDED_DETECTOR_DIGEST: std::sync::LazyLock<Result<String, String>> =
+    std::sync::LazyLock::new(|| {
+        let embedded_detectors = keyhog_core::load_embedded_detectors_or_fail()
+            .context("loading embedded detectors for execution-pack verification")
+            .map_err(|e| format!("{e:#}"))?;
+        let embedded_ir = keyhog_scanner::execution_pack::CanonicalDetectorExecutionIr::compile(
+            &embedded_detectors,
+        )
+        .map_err(anyhow::Error::msg)
+        .context("compiling canonical detector execution IR for verification")
+        .map_err(|e| format!("{e:#}"))?;
+        Ok(keyhog_core::hex_encode(&embedded_ir.digest()))
+    });
+
+pub(crate) fn current_embedded_detector_digest() -> Result<&'static str> {
+    EMBEDDED_DETECTOR_DIGEST
+        .as_ref()
+        .map(|s| s.as_str())
+        .map_err(|e| anyhow::anyhow!("{e}"))
+}
+
 fn digest_parts(parts: &[&[u8]]) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
     for part in parts {
@@ -733,13 +754,7 @@ fn load_manifest(
     if manifest.packs.is_empty() {
         bail!("execution-pack manifest contains no packs. Fix: run `keyhog install` or `keyhog update`");
     }
-    let embedded_detectors = keyhog_core::load_embedded_detectors_or_fail()
-        .context("loading embedded detectors for execution-pack verification")?;
-    let embedded_ir =
-        keyhog_scanner::execution_pack::CanonicalDetectorExecutionIr::compile(&embedded_detectors)
-            .map_err(anyhow::Error::msg)
-            .context("compiling canonical detector execution IR for verification")?;
-    let expected_detector_digest = keyhog_core::hex_encode(&embedded_ir.digest());
+    let expected_detector_digest = current_embedded_detector_digest()?;
     let current_binary = keyhog_core::hex_encode(&current_binary_digest()?);
     let current_target = keyhog_core::hex_encode(&current_target_digest());
     let current_feature = keyhog_core::hex_encode(&current_feature_digest());
@@ -748,7 +763,7 @@ fn load_manifest(
         (
             "detector",
             manifest.detector_digest.as_str(),
-            expected_detector_digest.as_str(),
+            expected_detector_digest,
         ),
         (
             "binary",

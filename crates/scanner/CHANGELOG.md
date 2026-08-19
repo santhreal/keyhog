@@ -5,6 +5,7 @@
 - perf(scanner): optimize startup memory floor and scanner structure layouts (Row 153). Pack LazyRegexState flags into a single atomic byte, shrink CsrU32 to exact boxed slices, flatten GenericKeywordStemSet byte buckets, dynamically scale LRU thread-local caches, scale DashMap absence cache shards dynamically with host parallelism, and box immutable compiled pattern slices.
 - feat(scanner): instrument dynamic anchored regex compilation paths with `LAZY_REGEX_COMPILE_EVENTS` runtime counters to prevent invisible un-cached compilations (Row 150).
 - refactor(scanner): route matcher artifact storage through keyhog_core::state_file atomic durable write (Row 148).
+- feat(scanner): install-time compilation and scan-time loading for entropy policy, assignment keyword matcher, and detector plan metadata surfaces (Row 128).
 - feat(scanner): instrument compile surface invocations and prepared artifact loads across 13 compile entrypoints (Row 125).
 - feat(parallelism): unify scanner execution width with keyhog_profile host parallelism (Row 110/137).
 - refactor(scanner): move rayon to dev-dependencies and replace internal usages with standard iterators (Row 119).

@@ -14,6 +14,7 @@
 - feat(installer): update recommendation parity and complete artifact generation on binary replacement (Row 134).
 - feat(build): audit and enforce release binary symbol stripping and zero DWARF debuginfo bloat via Cargo.toml [profile.release] and profile divergence gates (Row 139).
 - feat(installer): acceptance gate for clean install on empty cache with zero runtime compilations across all surfaces (Row 130).
+- feat(artifacts): fail closed with EXIT_USER_ERROR and repair command on stale execution-pack identity inputs (Row 129).
 - feat(compiler): install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata (Row 128).
 - feat(cache): load-only scan execution and zero compilation fallback on prepared artifact caches (Row 127).
 - feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).
