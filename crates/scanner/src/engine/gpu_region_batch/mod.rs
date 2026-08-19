@@ -55,6 +55,7 @@ pub(crate) enum RegionPresenceBatchMode {
 }
 
 impl RegionPresenceBatchMode {
+    #[allow(dead_code)]
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::BorrowedSingleChunk => "borrowed-single-chunk",

@@ -76,3 +76,25 @@ fn test_compile_surface_recording_and_profile_integration() {
     let rendered = insight.render_summary();
     assert!(!rendered.is_empty());
 }
+
+#[test]
+fn test_compile_surface_reset_clears_all_counters_and_phase() {
+    let runtime = keyhog_profile::Runtime::new();
+    let _guard = runtime.enter();
+    set_compile_phase(CompilePhase::Developer);
+    record_compile_surface_invocation(CompileSurfaceId::GpuLiterals);
+    record_compile_surface_load(CompileSurfaceId::SimdProgram);
+    assert_eq!(active_compile_phase(), CompilePhase::Developer);
+
+    keyhog_profile::reset();
+
+    assert_eq!(active_compile_phase(), CompilePhase::Scan);
+    let reports = compile_surface_reports();
+    for report in reports {
+        assert_eq!(report.install_compiles, 0);
+        assert_eq!(report.update_compiles, 0);
+        assert_eq!(report.developer_compiles, 0);
+        assert_eq!(report.runtime_compiles, 0);
+        assert_eq!(report.loads, 0);
+    }
+}
