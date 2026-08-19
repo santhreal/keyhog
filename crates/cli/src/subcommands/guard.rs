@@ -475,6 +475,7 @@ struct GuardStatusView {
     store_schema_version: u32,
     store_path: String,
     repair_command: String,
+    recent_transitions: Vec<crate::daemon::protocol::GuardTransitionWireEntry>,
 }
 
 impl GuardStatusView {
@@ -512,6 +513,7 @@ impl GuardStatusView {
             "store_schema_version": self.store_schema_version,
             "store_path": self.store_path,
             "repair_command": self.repair_command,
+            "recent_transitions": self.recent_transitions,
         })
     }
 
@@ -748,7 +750,10 @@ async fn run_status_online(
                 } else {
                     view.print_human();
                 }
-                Ok(exit_code_for_guard_state(&view.state, view.findings_count))
+                Ok(ExitCode::from(exit_code_for_guard_state(
+                    &view.state,
+                    view.findings_count,
+                )))
             }
             Response::Error { message } => {
                 anyhow::bail!("{message}");
@@ -782,46 +787,13 @@ async fn run_status_online(
                 }
 
                 let mut views = Vec::with_capacity(roots.len());
+                let mut failed_roots = Vec::new();
                 for entry in &roots {
                     let req = Request::GuardStatus {
                         root: entry.root.clone(),
                     };
-                    if let Ok(Response::GuardStatusResult {
-                        root,
-                        mode,
-                        state,
-                        filesystem_type,
-                        filesystem_authoritative,
-                        filesystem_unauthoritative_reason,
-                        scrub_interval_secs,
-                        terminal_sequence,
-                        accepted_event_sequence,
-                        completed_event_sequence,
-                        pending_events,
-                        files_scanned,
-                        bytes_scanned,
-                        attestation_hits,
-                        attestation_misses,
-                        findings_count,
-                        coverage_gaps,
-                        initial_reconciliation_time,
-                        last_reconciliation_time,
-                        scanner_residency,
-                        watcher_backend,
-                        watcher_latency_tier,
-                        watcher_poll_interval_ms,
-                        backend_route_label,
-                        build_identity_short,
-                        detector_digest_short,
-                        suppression_digest_short,
-                        config_digest_short,
-                        autoroute_evidence_status,
-                        store_schema_version,
-                        store_path,
-                        repair_command,
-                    }) = conn.round_trip(&req).await
-                    {
-                        views.push(GuardStatusView {
+                    match conn.round_trip(&req).await {
+                        Ok(Response::GuardStatusResult {
                             root,
                             mode,
                             state,
@@ -854,11 +826,70 @@ async fn run_status_online(
                             store_schema_version,
                             store_path,
                             repair_command,
-                        });
+                            recent_transitions,
+                        }) => {
+                            views.push(GuardStatusView {
+                                root,
+                                mode,
+                                state,
+                                filesystem_type,
+                                filesystem_authoritative,
+                                filesystem_unauthoritative_reason,
+                                scrub_interval_secs,
+                                terminal_sequence,
+                                accepted_event_sequence,
+                                completed_event_sequence,
+                                pending_events,
+                                files_scanned,
+                                bytes_scanned,
+                                attestation_hits,
+                                attestation_misses,
+                                findings_count,
+                                coverage_gaps,
+                                initial_reconciliation_time,
+                                last_reconciliation_time,
+                                scanner_residency,
+                                watcher_backend,
+                                watcher_latency_tier,
+                                watcher_poll_interval_ms,
+                                backend_route_label,
+                                build_identity_short,
+                                detector_digest_short,
+                                suppression_digest_short,
+                                config_digest_short,
+                                autoroute_evidence_status,
+                                store_schema_version,
+                                store_path,
+                                repair_command,
+                                recent_transitions,
+                            });
+                        }
+                        Ok(Response::Error { message, .. }) => {
+                            eprintln!(
+                                "error: failed to query guard status for root {}: {}",
+                                entry.root, message
+                            );
+                            failed_roots.push(entry.root.clone());
+                        }
+                        Ok(resp) => {
+                            eprintln!("error: unexpected response querying guard status for root {}: {:?}", entry.root, resp);
+                            failed_roots.push(entry.root.clone());
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "error: transport failure querying guard status for root {}: {}",
+                                entry.root, e
+                            );
+                            failed_roots.push(entry.root.clone());
+                        }
                     }
                 }
 
-                let mut overall_exit = exit_codes::EXIT_SUCCESS;
+                let mut overall_exit = if failed_roots.is_empty() {
+                    exit_codes::EXIT_SUCCESS
+                } else {
+                    exit_codes::EXIT_SOURCE_FAILED
+                };
                 for view in &views {
                     let code = exit_code_for_guard_state(&view.state, view.findings_count);
                     if code == exit_codes::EXIT_FINDINGS {
@@ -1240,6 +1271,12 @@ async fn run_feed(
     format: String,
     socket: Option<std::path::PathBuf>,
 ) -> anyhow::Result<ExitCode> {
+    if format != "human" && format != "json" {
+        anyhow::bail!(
+            "guard feed: invalid format '{}': expected 'human' or 'json'",
+            format
+        );
+    }
     let socket = socket.unwrap_or_else(default_socket_path);
     let mut conn = match client::connect(&socket).await {
         Ok(c) => c,
@@ -1263,12 +1300,6 @@ async fn run_feed(
 
     match conn.round_trip(&request).await? {
         Response::GuardFeedResult { transitions } => {
-            if format != "human" && format != "json" {
-                anyhow::bail!(
-                    "guard feed: invalid format '{}': expected 'human' or 'json'",
-                    format
-                );
-            }
             if format == "json" {
                 let json = serde_json::json!({
                     "transitions": transitions,

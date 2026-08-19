@@ -157,7 +157,7 @@ struct WatchedRoot {
     /// Bounded event buffer with monotonic sequence.
     buffer: Arc<Mutex<EventBuffer>>,
     /// Explicit ignore paths / globs configured for this root.
-    ignore_paths: Vec<String>,
+    ignore_paths: parking_lot::RwLock<Vec<String>>,
     /// Gitignore matcher combining root .keyhogignore, .gitignore, and explicit ignore_paths.
     ignore_matcher: parking_lot::RwLock<Option<ignore::gitignore::Gitignore>>,
     /// Whether default excludes (.git, target, node_modules, lockfiles, minified files, binary extensions) are respected.
@@ -176,7 +176,7 @@ impl WatchedRoot {
             parking_lot::RwLock::new(build_root_ignore_matcher(root_path, &ignore_paths));
         Self {
             buffer,
-            ignore_paths,
+            ignore_paths: parking_lot::RwLock::new(ignore_paths),
             ignore_matcher,
             respect_default_excludes,
         }
@@ -222,9 +222,14 @@ impl WatchedRoot {
         // 3. Custom ignore rules (.keyhogignore, .keyhogignore.toml, .gitignore, and explicit ignore_paths).
         if let Some(matcher) = &*self.ignore_matcher.read() {
             let is_dir = path.is_dir();
-            if matcher
-                .matched_path_or_any_parents(rel_path, is_dir)
-                .is_ignore()
+            let match_result = matcher.matched_path_or_any_parents(rel_path, is_dir);
+            if match_result.is_ignore() {
+                return true;
+            }
+            if !is_dir
+                && matcher
+                    .matched_path_or_any_parents(rel_path, true)
+                    .is_ignore()
             {
                 return true;
             }
@@ -240,7 +245,12 @@ impl WatchedRoot {
                 || file_name == ".gitignore"
                 || file_name == ".keyhog.toml"
             {
-                *self.ignore_matcher.write() = build_root_ignore_matcher(root, &self.ignore_paths);
+                if file_name == ".keyhog.toml" {
+                    let (new_ignores, _) = resolve_root_exclusions(root);
+                    *self.ignore_paths.write() = new_ignores;
+                }
+                let paths = self.ignore_paths.read().clone();
+                *self.ignore_matcher.write() = build_root_ignore_matcher(root, &paths);
             }
         }
     }
@@ -253,11 +263,45 @@ fn build_root_ignore_matcher(
     let mut builder = ignore::gitignore::GitignoreBuilder::new(root);
     let keyhogignore = root.join(".keyhogignore");
     if keyhogignore.is_file() {
-        let _ = builder.add(&keyhogignore);
+        if let Ok(content) = std::fs::read_to_string(&keyhogignore) {
+            let allowlist = keyhog_core::Allowlist::parse(&content);
+            for pattern in &allowlist.ignored_paths {
+                let _ = builder.add_line(None, pattern);
+            }
+        }
     }
     let keyhogignore_toml = root.join(".keyhogignore.toml");
     if keyhogignore_toml.is_file() {
-        let _ = builder.add(&keyhogignore_toml);
+        #[derive(serde::Deserialize)]
+        struct TomlSuppressEntry {
+            path_eq: Option<String>,
+            path_starts_with: Option<String>,
+            path_ends_with: Option<String>,
+            path_contains: Option<String>,
+        }
+        #[derive(serde::Deserialize)]
+        struct KeyhogIgnoreDoc {
+            #[serde(default)]
+            suppress: Vec<TomlSuppressEntry>,
+        }
+        if let Ok(content) = std::fs::read_to_string(&keyhogignore_toml) {
+            if let Ok(doc) = toml::from_str::<KeyhogIgnoreDoc>(&content) {
+                for entry in doc.suppress {
+                    if let Some(p) = entry.path_eq {
+                        let _ = builder.add_line(None, &p);
+                    }
+                    if let Some(p) = entry.path_starts_with {
+                        let _ = builder.add_line(None, &format!("{p}*"));
+                    }
+                    if let Some(p) = entry.path_ends_with {
+                        let _ = builder.add_line(None, &format!("*{p}"));
+                    }
+                    if let Some(p) = entry.path_contains {
+                        let _ = builder.add_line(None, &format!("*{p}*"));
+                    }
+                }
+            }
+        }
     }
     let gitignore = root.join(".gitignore");
     if gitignore.is_file() {
@@ -273,23 +317,9 @@ fn resolve_root_exclusions(root: &std::path::Path) -> (Vec<String>, bool) {
     let dot_config = root.join(".keyhog.toml");
     if let Ok(bytes) = std::fs::read(&dot_config) {
         if let Ok(text) = std::str::from_utf8(&bytes) {
-            if let Ok(value) = toml::from_str::<toml::Value>(text) {
-                let ignore_paths = value
-                    .get("scan")
-                    .and_then(|s| s.get("ignore_paths"))
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let respect_default_excludes = value
-                    .get("scan")
-                    .and_then(|s| s.get("respect_default_excludes"))
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
-                return (ignore_paths, respect_default_excludes);
+            if let Ok(config) = toml::from_str::<crate::config::schema::ConfigFile>(text) {
+                let ignore_paths = config.scan.and_then(|s| s.exclude).unwrap_or_default();
+                return (ignore_paths, true);
             }
         }
     }
@@ -531,8 +561,8 @@ impl GuardWatcher {
 
     /// Explicit ignore paths configured for a watched root, if watched.
     #[must_use]
-    pub fn root_ignore_paths(&self, root: &std::path::Path) -> Option<&[String]> {
-        self.roots.get(root).map(|w| w.ignore_paths.as_slice())
+    pub fn root_ignore_paths(&self, root: &std::path::Path) -> Option<Vec<String>> {
+        self.roots.get(root).map(|w| w.ignore_paths.read().clone())
     }
 
     /// Whether default excludes are respected for a watched root, if watched.
@@ -589,6 +619,7 @@ impl GuardWatcher {
                             let roots = self.find_matching_roots_for_path(path);
                             for root in roots {
                                 if let Some(watched) = self.roots.get(&root) {
+                                    watched.maybe_reload_ignore_matcher(&root, path);
                                     if watched.is_path_excluded(&root, path, &self.skip_dirs) {
                                         continue;
                                     }

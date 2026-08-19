@@ -180,31 +180,42 @@ impl GuardRuntime {
                 self.attestations.invalidate_for_policy(&identity);
                 let mut roots = self.roots.write();
                 if let Some(r) = roots.get_mut(root_path) {
-                    if r.state != GuardRootState::Stopped && r.state != GuardRootState::Indexing {
+                    if r.state != GuardRootState::Stopped {
+                        let from_state = r.state;
                         if let Ok(new_state) = r.state.transition(&GuardTransition::PolicyChanged) {
                             r.state = new_state;
                             r.terminal_sequence = r.terminal_sequence.saturating_add(1);
+                            self.record_transition_internal(
+                                r,
+                                GuardTransition::PolicyChanged,
+                                from_state,
+                                new_state,
+                                "policy identity changed: detector/suppression/schema digest mismatch",
+                            );
                         }
                     }
                 }
             }
         }
-        root_map.insert(root_path.to_vec(), identity.clone());
-        *self.current_identity.write() = Some(identity);
+        root_map.insert(root_path.to_vec(), identity);
     }
+
+    /// Get the policy identity for a specific root, if set.
+    pub fn root_policy_identity(&self, root_path: &[u8]) -> Option<GuardPolicyIdentity> {
+        self.root_identities.read().get(root_path).cloned()
+    }
+
     /// Set the default policy identity. When it changes, invalidates attestations and transitions active roots.
     pub fn set_policy_identity(&self, identity: GuardPolicyIdentity) {
         let mut current = self.current_identity.write();
-        if let Some(ref existing) = *current {
+        if let Some(existing) = current.as_ref() {
             if !existing.is_compatible_with(&identity) {
                 self.attestations.invalidate_for_policy(&identity);
                 let mut roots = self.roots.write();
                 let paths: Vec<Vec<u8>> = roots
                     .list()
                     .iter()
-                    .filter(|r| {
-                        r.state != GuardRootState::Stopped && r.state != GuardRootState::Indexing
-                    })
+                    .filter(|r| r.state != GuardRootState::Stopped)
                     .map(|r| r.canonical_path.clone())
                     .collect();
                 for path in paths {

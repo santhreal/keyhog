@@ -570,3 +570,61 @@ fn mutation_gate_detects_unfiltered_exclusion_regressions() {
     assert!(!watcher.is_path_excluded(&root, &root.join("package.json")));
     assert!(!watcher.is_path_excluded(&root, &root.join("README.md")));
 }
+
+#[test]
+fn config_and_keyhogignore_exclusions_honored_and_dynamically_reloaded() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path().to_path_buf();
+
+    // Create .keyhog.toml with [scan] exclude
+    fs::write(
+        root.join(".keyhog.toml"),
+        "[scan]\nexclude = [\"custom_build/**\", \"*.gen.rs\"]\n",
+    )
+    .expect("write .keyhog.toml");
+
+    // Create .keyhogignore with path: prefix and bare glob
+    fs::write(
+        root.join(".keyhogignore"),
+        "# comments\ndetector:some-token\npath:ignored_sub/**\nbare_ignored/*.txt\n",
+    )
+    .expect("write .keyhogignore");
+
+    // Create .keyhogignore.toml with suppress rules
+    fs::write(
+        root.join(".keyhogignore.toml"),
+        "[[suppress]]\npath_eq = \"suppressed_file.rs\"\n\n[[suppress]]\npath_starts_with = \"suppressed_dir/\"\n",
+    )
+    .expect("write .keyhogignore.toml");
+
+    let config = GuardReconciliationConfig::default();
+    let (mut watcher, tx) = GuardWatcher::new_with_channel(config);
+    watcher.add_root(root.clone()).expect("add root");
+
+    // Verify .keyhog.toml exclusions
+    assert!(watcher.is_path_excluded(&root, &root.join("custom_build/output.bin")));
+    assert!(watcher.is_path_excluded(&root, &root.join("src/model.gen.rs")));
+
+    // Verify .keyhogignore exclusions
+    assert!(watcher.is_path_excluded(&root, &root.join("ignored_sub/deep/file.txt")));
+    assert!(watcher.is_path_excluded(&root, &root.join("bare_ignored/sample.txt")));
+
+    // Verify .keyhogignore.toml exclusions
+    assert!(watcher.is_path_excluded(&root, &root.join("suppressed_file.rs")));
+    assert!(watcher.is_path_excluded(&root, &root.join("suppressed_dir/anything.rs")));
+
+    // Non-ignored file should NOT be excluded
+    assert!(!watcher.is_path_excluded(&root, &root.join("src/normal.rs")));
+
+    // Now simulate dynamic update of .keyhogignore
+    fs::write(root.join(".keyhogignore"), "path:newly_ignored/**\n").expect("update .keyhogignore");
+
+    let mut reload_event = notify::Event::new(EventKind::Modify(ModifyKind::Any));
+    reload_event.paths.push(root.join(".keyhogignore"));
+    tx.send(Ok(reload_event)).expect("send reload event");
+
+    let _ = watcher.poll_events();
+
+    // Newly ignored path should now be excluded
+    assert!(watcher.is_path_excluded(&root, &root.join("newly_ignored/file.txt")));
+}

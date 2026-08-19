@@ -278,6 +278,7 @@ impl GuardRootState {
             (S::Current, T::CoverageLost) => Some(S::Degraded),
             (S::Dirty, T::CoverageLost) => Some(S::Degraded),
             (S::Blocked, T::CoverageLost) => Some(S::Degraded),
+            (S::StalePolicy, T::CoverageLost) => Some(S::Degraded),
             // any active state -> stale-policy on identity change
             (S::Indexing, T::PolicyChanged) => Some(S::StalePolicy),
             (S::Current, T::PolicyChanged) => Some(S::StalePolicy),
