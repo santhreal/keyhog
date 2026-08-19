@@ -6,6 +6,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- feat(gates): validate allowlists across reality and enforce meta-gate audit against unvalidated bypasses (Row 137).
 - fix(scanner): clamp decode-through window overlap to enforce strictly advancing window progress across UTF-8 scalar boundaries in release builds.
 - fix(cli): add `parse_decode_size_limit` rejecting empty and sub-4B `--decode-size-limit` inputs with actionable error diagnostic.
 - style: format guard massive diff test and git sources modules.
