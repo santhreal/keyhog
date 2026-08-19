@@ -81,3 +81,37 @@ fn metal_backend_on_non_macos_is_rejected_before_scan() {
         );
     }
 }
+#[test]
+fn require_gpu_with_no_gpu_is_rejected_at_parse_time() {
+    let args = ["keyhog", "scan", "--require-gpu", "--no-gpu", "."];
+    let result = keyhog::args::try_parse_from(args);
+    assert!(
+        result.is_err(),
+        "--require-gpu with --no-gpu must be rejected at parse time"
+    );
+    let err = result.err().expect("must be error").to_string();
+    assert!(
+        err.contains("--no-gpu") && err.contains("--require-gpu"),
+        "error must name both conflicting flags: got: {}",
+        err
+    );
+}
+
+#[test]
+fn require_gpu_with_non_gpu_backend_is_rejected_at_parse_time() {
+    for &backend in &["cpu", "simd-regex"] {
+        let args = ["keyhog", "scan", "--backend", backend, "--require-gpu", "."];
+        let result = keyhog::args::try_parse_from(args);
+        assert!(
+            result.is_err(),
+            "--backend {} with --require-gpu must be rejected at parse time",
+            backend
+        );
+        let err = result.err().expect("must be error").to_string();
+        assert!(
+            err.contains("--require-gpu") && err.contains("--backend"),
+            "error must name both conflicting flags: got: {}",
+            err
+        );
+    }
+}

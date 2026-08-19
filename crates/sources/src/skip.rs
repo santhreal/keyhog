@@ -273,9 +273,11 @@ pub(crate) fn reset_skip_counters() {
 
 /// Reset all sources runtime counters for a new scan.
 pub fn reset_for_scan() {
-    reset_skip_counters();
+    GLOBAL_SOURCE_TELEMETRY.reset();
     CURRENT_SOURCE_TELEMETRY.with(|slot| {
-        *slot.borrow_mut() = None;
+        if let Some(current) = slot.borrow_mut().take() {
+            current.reset();
+        }
     });
     #[cfg(feature = "binary")]
     crate::binary::reset_binary_counters();

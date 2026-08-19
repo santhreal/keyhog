@@ -247,8 +247,14 @@ fn is_gpu_backend_str(backend: &str) -> bool {
 pub(crate) fn validate_backend_and_gpu_flags(
     backend: Option<&str>,
     no_gpu: bool,
-    _require_gpu: bool,
+    require_gpu: bool,
 ) -> Result<(), clap::Error> {
+    if no_gpu && require_gpu {
+        return Err(clap::Error::raw(
+            clap::error::ErrorKind::ArgumentConflict,
+            "error: the argument '--no-gpu' cannot be used with '--require-gpu'\n",
+        ));
+    }
     if let Some(b) = backend {
         let is_gpu = is_gpu_backend_str(b);
         if no_gpu && is_gpu {
@@ -257,10 +263,16 @@ pub(crate) fn validate_backend_and_gpu_flags(
                 format!("error: the argument '--no-gpu' cannot be used with '--backend {b}'\n"),
             ));
         }
+        if require_gpu && !is_gpu && b != "auto" {
+            return Err(clap::Error::raw(
+                clap::error::ErrorKind::ArgumentConflict,
+                format!(
+                    "error: the argument '--require-gpu' cannot be used with '--backend {b}'\n"
+                ),
+            ));
+        }
         let b_lower = b.to_ascii_lowercase();
-        if (b_lower == "gpu-metal" || b_lower == "gpu-metal-region-presence")
-            && !cfg!(target_os = "macos")
-        {
+        if b_lower.starts_with("gpu-metal") && !cfg!(target_os = "macos") {
             return Err(clap::Error::raw(
                 clap::error::ErrorKind::InvalidValue,
                 format!(
@@ -269,9 +281,7 @@ pub(crate) fn validate_backend_and_gpu_flags(
                 ),
             ));
         }
-        if (b_lower == "gpu-cuda" || b_lower == "gpu-cuda-region-presence")
-            && cfg!(target_os = "macos")
-        {
+        if b_lower.starts_with("gpu-cuda") && cfg!(target_os = "macos") {
             return Err(clap::Error::raw(
                 clap::error::ErrorKind::InvalidValue,
                 format!("error: backend '{b}' is not supported on macOS\n"),

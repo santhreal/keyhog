@@ -389,7 +389,12 @@ fn profiler_cache_identities(
         }),
     };
 
-    let hyperscan_path = orchestrator.effective_config.hyperscan_cache_dir.as_deref();
+    let fallback_hyperscan_dir = dirs::cache_dir().map(|b| b.join("keyhog"));
+    let hyperscan_path = orchestrator
+        .effective_config
+        .hyperscan_cache_dir
+        .as_deref()
+        .or(fallback_hyperscan_dir.as_deref());
     let hyperscan_state = match hyperscan_path {
         None => CacheState::Disabled,
         Some(path) if path.exists() => CacheState::Warm,
@@ -1894,6 +1899,11 @@ impl ScanOrchestrator {
                 progress_ansi,
                 self.effective_config.backend_override,
             );
+            report_scanner_materialization_summary(
+                progress_ansi,
+                self.scanner_materialization.as_ref(),
+            );
+            report_compiled_cache_summary(progress_ansi, &self);
         } else {
             report_skip_summary(false);
         }
@@ -1904,11 +1914,6 @@ impl ScanOrchestrator {
             show_progress && progress_ansi,
             self.effective_config.backend_override.is_some(),
         );
-        report_scanner_materialization_summary(
-            show_progress && progress_ansi,
-            self.scanner_materialization.as_ref(),
-        );
-        report_compiled_cache_summary(show_progress && progress_ansi, &self);
         dump_dogfood_trace();
 
         tracing::info!(

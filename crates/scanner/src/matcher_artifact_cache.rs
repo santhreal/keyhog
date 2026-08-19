@@ -763,7 +763,8 @@ pub fn store_matcher_artifact(
     if sections.backend != expected_backend {
         return Err("matcher artifact backend does not match identity".to_owned());
     }
-    validate_and_tighten_matcher_artifact_cache_dir(cache_dir, true)?;
+    validate_and_tighten_matcher_artifact_cache_dir(cache_dir, false)?;
+    let existed = cache_dir.exists();
     std::fs::create_dir_all(cache_dir).map_err(|error| {
         format!(
             "cannot create matcher-artifact cache dir {}: {error}",
@@ -773,17 +774,19 @@ pub fn store_matcher_artifact(
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::symlink_metadata(cache_dir) {
-            // LAW10: best-effort permissions check on newly created cache dir; failure surfaced if chmod fails
-            if !meta.file_type().is_symlink() && (meta.permissions().mode() & 0o077 != 0) {
-                std::fs::set_permissions(cache_dir, std::fs::Permissions::from_mode(0o700))
-                    .map_err(|error| {
-                        format!(
-                            "cannot tighten matcher-artifact cache dir {}: {error}; repair with `chmod 700 {}`",
-                            cache_dir.display(),
-                            cache_dir.display()
-                        )
-                    })?;
+        if !existed {
+            if let Ok(meta) = std::fs::symlink_metadata(cache_dir) {
+                // LAW10: best-effort permissions check on newly created cache dir; failure surfaced if chmod fails
+                if !meta.file_type().is_symlink() && (meta.permissions().mode() & 0o077 != 0) {
+                    std::fs::set_permissions(cache_dir, std::fs::Permissions::from_mode(0o700))
+                        .map_err(|error| {
+                            format!(
+                                "cannot tighten matcher-artifact cache dir {}: {error}; repair with `chmod 700 {}`",
+                                cache_dir.display(),
+                                cache_dir.display()
+                            )
+                        })?;
+                }
             }
         }
     }

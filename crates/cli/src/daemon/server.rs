@@ -1596,6 +1596,7 @@ async fn handle_connection(
                     streamed?;
                 }
                 Err(panic_payload) => {
+                    *mass_session_ref = None;
                     let detail = if let Some(s) = panic_payload.downcast_ref::<&'static str>() {
                         (*s).to_string()
                     } else if let Some(s) = panic_payload.downcast_ref::<String>() {
@@ -1790,6 +1791,7 @@ async fn handle_connection(
         let response = match dispatch_result {
             Ok(resp) => resp,
             Err(panic_payload) => {
+                mass_session = None;
                 let detail = if let Some(s) = panic_payload.downcast_ref::<&'static str>() {
                     (*s).to_string()
                 } else if let Some(s) = panic_payload.downcast_ref::<String>() {
