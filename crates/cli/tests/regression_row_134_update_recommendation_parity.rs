@@ -9,10 +9,9 @@
 //! 2. Enforces documentation parity across `docs/src/install.md`, `capabilities.md`,
 //!    `hardening.md`, and `reference/cli.md` so every update and rollback instruction
 //!    prescribes verified installation.
-//! 3. Closes the stale-artifact defect on a legacy candidate probe: committing a
-//!    generation for a candidate without `compile-execution-packs` clears the packs and
-//!    autoroute cache of the previous binary, and a candidate that fails compilation
-//!    fails closed with the installed generation intact.
+//! 3. Closes the silent-fallback defect on the candidate capability probe: a candidate
+//!    without `compile-execution-packs`, and one that fails compilation, both fail closed
+//!    with the installed generation intact instead of publishing or clearing artifacts.
 //!
 //! What it does not catch / boundary limits:
 //! - Does not catch network transport failures when fetching packages from crates.io.
@@ -104,22 +103,23 @@ fn candidate_execution_generation_clears_stale_artifacts_and_fails_closed() {
         fs::write(&current_cache, b"prior-autoroute").expect("write autoroute");
     };
 
-    // 1. A legacy candidate has no compile-execution-packs subcommand, so
-    // committing its generation must clear the artifacts of the old binary
-    // rather than leave them bound to a version that no longer runs.
+    // 1. A candidate without the compile-execution-packs subcommand cannot
+    // publish a generation, so the install must fail closed and leave the
+    // installed artifacts untouched.
     seed_artifacts();
     let legacy_bin = test_dir.path().join("legacy_keyhog");
     create_executable_script(&legacy_bin, "#!/bin/sh\nexit 1\n");
-    keyhog::testing::API
+    let err = keyhog::testing::API
         .install_execution_generation(&legacy_bin)
-        .expect("legacy candidate probe must succeed");
+        .expect_err("candidate without execution-pack support must fail closed");
     assert!(
-        !current_packs.exists(),
-        "stale execution packs must be cleared when a legacy candidate commits"
+        format!("{err:#}").contains("cannot compile execution packs"),
+        "error must name the missing capability, got: {err:#}"
     );
-    assert!(
-        !current_cache.exists(),
-        "stale autoroute cache must be cleared when a legacy candidate commits"
+    assert_eq!(
+        fs::read(current_packs.join("manifest.json")).expect("installed manifest survives"),
+        b"prior-generation",
+        "a rejected candidate must leave the installed packs in place"
     );
 
     // 2. A candidate that advertises compile-execution-packs but fails to

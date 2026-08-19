@@ -64,6 +64,7 @@ pub mod regression_row_132_guard_scrub_unauthoritative_probe;
 pub mod regression_row_133_directional_queue_attribution;
 pub mod regression_row_134_update_recommendation_parity;
 pub mod regression_row_135_multi_dimensional_invalidation;
+pub mod regression_row_138_startup_latency;
 pub mod regression_row_139_release_binary_strip;
 #[path = "regression_row_143_pass_gate_terminal_output.rs"]
 pub mod regression_row_143_pass_gate_terminal_output;
