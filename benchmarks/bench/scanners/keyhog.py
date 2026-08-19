@@ -425,6 +425,7 @@ class KeyhogScanner(Scanner):
                # `--no-config` skips the walk-up discovery so the benched config
                # is the shipped default by design, not by accident (MC-07).
                "--no-config",
+               "--developer-compile-embedded-detectors",
                "--detectors", str(detector_corpus or self._detector_corpus),
                "--backend", cfg.backend,
                "--output", str(output)]
