@@ -985,13 +985,12 @@ fn compute_utilization(
         total_thread_cpu_ns: total,
         effective_parallelism_milli: milli_ratio(total, wall_ns)
             .map_or_else(|| gap(EvidenceGap::Unavailable), Evidence::recorded),
-        capacity_utilization_milli: if capacity_ns == 0 {
-            gap(EvidenceGap::Unavailable)
-        } else {
-            Evidence::recorded(
-                u64::try_from(u128::from(total) * 1_000 / capacity_ns).unwrap_or(u64::MAX),
-            )
-        },
+        capacity_utilization_milli: (u128::from(total) * 1_000)
+            .checked_div(capacity_ns)
+            .map_or_else(
+                || gap(EvidenceGap::Unavailable),
+                |ratio| Evidence::recorded(u64::try_from(ratio).unwrap_or(u64::MAX)),
+            ),
         threads,
         exited_threads,
         joined_threads,

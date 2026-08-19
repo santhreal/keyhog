@@ -89,9 +89,9 @@ pub(crate) fn install_execution_generation(
     reject_symlink_or_non_directory(&cache_root)?;
     reject_symlink_or_non_directory(&pack_root)?;
 
-    let signing_key = pack_root.join("signing.key");
-    let mut new_signing_key =
-        NewSigningKey(ensure_signing_key(&signing_key)?.then_some(signing_key.clone()));
+    let current_packs = pack_root.join("current");
+    let current_cache = cache_root.join("autoroute.json");
+
     let stage = tempfile::Builder::new()
         .prefix(".execution-generation-")
         .tempdir_in(&cache_root)
@@ -101,6 +101,62 @@ pub(crate) fn install_execution_generation(
                 cache_root.display()
             )
         })?;
+    let old_packs = stage.path().join("previous-packs");
+    let old_cache = stage.path().join("previous-autoroute.json");
+    let had_old_packs = path_lexists(&current_packs)?;
+    let had_old_cache = path_lexists(&current_cache)?;
+    if had_old_packs {
+        reject_symlink_or_non_directory(&current_packs)?;
+    }
+    if had_old_cache {
+        reject_symlink_or_non_file(&current_cache)?;
+    }
+
+    let probe = Command::new(candidate)
+        .arg("compile-execution-packs")
+        .arg("--help")
+        .output();
+
+    let supports_execution_packs = match &probe {
+        Ok(output) => output.status.success(),
+        Err(_) => false,
+    };
+
+    if !supports_execution_packs {
+        // Candidate binary genuinely lacks compile-execution-packs (legacy version).
+        // Surface warning via tracing. We back up existing artifacts to stage so rollbacks
+        // remain valid if candidate verification fails, and clear current artifacts so
+        // stale previous-version artifacts do not linger if the legacy binary is committed.
+        tracing::warn!(
+            candidate = %candidate.display(),
+            "candidate binary does not support compile-execution-packs; removing stale execution packs and autoroute cache"
+        );
+        let transaction = ExecutionGenerationInstallTransaction {
+            current_packs,
+            current_cache,
+            old_packs,
+            old_cache,
+            _stage: Some(stage),
+            packs_published: false,
+            cache_published: false,
+            had_old_packs,
+            had_old_cache,
+            created_signing_key: None,
+            committed: false,
+        };
+        if transaction.had_old_packs {
+            fs::rename(&transaction.current_packs, &transaction.old_packs)
+                .context("backing up current execution-pack generation")?;
+        }
+        if transaction.had_old_cache {
+            fs::rename(&transaction.current_cache, &transaction.old_cache)
+                .context("backing up current autoroute cache")?;
+        }
+        return Ok(transaction);
+    }
+    let signing_key = pack_root.join("signing.key");
+    let mut new_signing_key =
+        NewSigningKey(ensure_signing_key(&signing_key)?.then_some(signing_key.clone()));
     let staged_packs = stage.path().join("packs");
     let staged_cache = stage.path().join("autoroute.json");
     run_candidate(
@@ -128,20 +184,6 @@ pub(crate) fn install_execution_generation(
         ],
         "pack-bound autoroute calibration",
     )?;
-
-    let current_packs = pack_root.join("current");
-    let current_cache = cache_root.join("autoroute.json");
-    let old_packs = stage.path().join("previous-packs");
-    let old_cache = stage.path().join("previous-autoroute.json");
-    let had_old_packs = path_lexists(&current_packs)?;
-    let had_old_cache = path_lexists(&current_cache)?;
-    if had_old_packs {
-        reject_symlink_or_non_directory(&current_packs)?;
-    }
-    if had_old_cache {
-        reject_symlink_or_non_file(&current_cache)?;
-    }
-
     let mut transaction = ExecutionGenerationInstallTransaction {
         current_packs,
         current_cache,
