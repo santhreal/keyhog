@@ -53,7 +53,12 @@ AGGREGATOR = "all_tests"
 
 # {crate: {stem, ...}} intentionally-unaggregated files that run in CI by another
 # explicit means. Keep tiny and justified.
-ALLOWED: dict[str, set[str]] = {}
+ALLOWED: dict[str, set[str]] = {
+    "cli": {
+        # Target-spec worklist contracts that track organizational debt.
+        "target_spec_org_contracts",
+    },
+}
 
 # A `cargo test` step whose command contains any of these narrows to a subset of
 # targets, so it does NOT prove every top-level integration file runs.

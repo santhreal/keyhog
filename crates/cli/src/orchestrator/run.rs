@@ -389,7 +389,12 @@ fn profiler_cache_identities(
         }),
     };
 
-    let hyperscan_path = orchestrator.effective_config.hyperscan_cache_dir.as_deref();
+    let hyperscan_resolved = orchestrator
+        .effective_config
+        .hyperscan_cache_dir
+        .clone()
+        .or_else(|| dirs::cache_dir().map(|base| base.join("keyhog")));
+    let hyperscan_path = hyperscan_resolved.as_deref();
     let hyperscan_state = match hyperscan_path {
         None => CacheState::Disabled,
         Some(path) if path.exists() => CacheState::Warm,
@@ -496,12 +501,19 @@ fn profiler_cache_transitions(
         ),
         super::workflow_state::verifier_transition(orchestrator.effective_config.report.verify, 0),
         super::workflow_state::hyperscan_shard_transition(
-            orchestrator.effective_config.hyperscan_cache_dir.as_deref(),
-            0,
-            0,
+            orchestrator
+                .effective_config
+                .hyperscan_cache_dir
+                .as_deref()
+                .or_else(|| dirs::cache_dir().map(|base| base.join("keyhog")).as_deref()),
+            keyhog_profile::cache_hits(keyhog_profile::CacheId::HyperscanShard) as usize,
+            keyhog_profile::cache_misses(keyhog_profile::CacheId::HyperscanShard) as usize,
         ),
         super::workflow_state::matcher_artifact_transition(matcher_outcome),
-        super::workflow_state::gpu_program_transition(0, 0),
+        super::workflow_state::gpu_program_transition(
+            keyhog_profile::cache_hits(keyhog_profile::CacheId::GpuProgram) as usize,
+            keyhog_profile::cache_misses(keyhog_profile::CacheId::GpuProgram) as usize,
+        ),
         super::workflow_state::lock_file_transition(),
         super::workflow_state::daemon_transition(),
     ]

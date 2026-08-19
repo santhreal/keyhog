@@ -157,9 +157,7 @@ where
 {
     let first = {
         let _profile_span = keyhog_profile::blocked(keyhog_profile::Stage::ScannerQueueWait);
-        let first = batches.next()?;
-        keyhog_profile::record_queue_depth_dequeue(keyhog_profile::QueueId::ScannerWork);
-        first
+        batches.next()?
     };
     Some(scan(std::iter::once(first).chain(batches)))
 }
