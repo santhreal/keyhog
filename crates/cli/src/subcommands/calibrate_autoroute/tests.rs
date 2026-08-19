@@ -103,7 +103,8 @@ fn every_calibration_flag_has_a_forwarding_decision() {
         .map(|flag| (*flag).to_string())
         .collect();
     assert_eq!(
-        declared, decided,
+        declared,
+        decided,
         "every calibrate-autoroute flag must be forwarded to the isolated policy \
          children or explicitly owned by the parent\n  undecided: {:?}\n  stale: {:?}",
         declared.difference(&decided).collect::<Vec<_>>(),

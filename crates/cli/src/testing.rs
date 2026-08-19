@@ -337,7 +337,6 @@ pub trait CliTestApi {
     fn watch_resolve_roots(&self, requested: &[PathBuf]) -> Result<Vec<PathBuf>>;
     fn watch_roots_hint(&self, roots: &[PathBuf]) -> String;
 
-    fn install_execution_generation(&self, candidate: &Path) -> Result<bool>;
     fn max_resident_findings(&self) -> usize;
     fn parse_macos_mount_table_for_test(
         &self,
@@ -884,7 +883,6 @@ impl CliTestApi for TestApi {
     fn current_binary(&self) -> Result<PathBuf> {
         crate::installer::current_binary()
     }
-
 
     fn rewrite_detector_braces(&self, s: &str) -> (String, usize) {
         crate::subcommands::detectors::testing::rewrite_braces(s)

@@ -1103,7 +1103,7 @@ pub fn guard_event_action_with_policy(
     has_policy_change: bool,
 ) -> GuardEventAction {
     use keyhog_core::guard_state::{GuardRootState, GuardTransition};
-    if has_policy_change {
+    if has_policy_change && !has_overflow {
         match current_state {
             Some(GuardRootState::Stopped) | None => GuardEventAction::Ignore,
             Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
@@ -2238,8 +2238,15 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     };
                 }
             };
-            // Get the policy identity for attestation lookup.
-            let identity = match state.guard.policy_identity() {
+            // Get the policy identity for attestation lookup for this root.
+            let canonical_repo = match std::fs::canonicalize(&repo_path) {
+                Ok(p) => p,
+                Err(_) => std::path::PathBuf::from(&repo_path),
+            };
+            let identity = match state
+                .guard
+                .root_policy_identity(canonical_repo.as_os_str().as_encoded_bytes())
+            {
                 Some(id) => id,
                 None => {
                     return Response::Error {
@@ -2711,18 +2718,20 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             let bytes_hit = txn.bytes_hit;
             let terminal_state =
                 guard_commit_terminal_state(txn.blocking_findings_count, txn.coverage_gaps);
-            let identity = state.guard.policy_identity();
             let commit_root = match std::fs::canonicalize(&txn.repo_path) {
                 Ok(p) => p,
                 Err(_) => std::path::PathBuf::from(&txn.repo_path),
             };
-            let policy_identity = identity.clone().unwrap_or_else(|| {
-                compute_root_policy_identity(
-                    &commit_root,
-                    KEYHOG_VERSION,
-                    &state.detector_rules_digest,
-                )
-            });
+            let policy_identity = state
+                .guard
+                .root_policy_identity(commit_root.as_os_str().as_encoded_bytes())
+                .unwrap_or_else(|| {
+                    compute_root_policy_identity(
+                        &commit_root,
+                        KEYHOG_VERSION,
+                        &state.detector_rules_digest,
+                    )
+                });
             let receipt = keyhog_core::guard_state::GuardReceipt {
                 objects_requested: total_objects,
                 objects_hit,

@@ -8,6 +8,7 @@ use crate::daemon::client;
 use crate::daemon::protocol::{response_kind, Request, Response};
 use crate::exit_codes;
 use crate::style;
+use anyhow::Context;
 use std::process::ExitCode;
 
 use crate::daemon::server::default_socket_path;
@@ -339,11 +340,30 @@ async fn run_remove(
     }
 }
 
+fn is_socket_absent_or_refused(err: &anyhow::Error) -> bool {
+    err.chain().any(|cause| {
+        if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
+            matches!(
+                io_err.kind(),
+                std::io::ErrorKind::NotFound
+                    | std::io::ErrorKind::ConnectionRefused
+                    | std::io::ErrorKind::AddrNotAvailable
+            )
+        } else {
+            false
+        }
+    })
+}
+
 async fn run_list(socket: Option<std::path::PathBuf>) -> anyhow::Result<ExitCode> {
     let socket = socket.unwrap_or_else(default_socket_path);
     match client::connect(&socket).await {
         Ok(conn) => run_list_online(conn).await,
-        Err(_) => run_list_offline(),
+        Err(err) if is_socket_absent_or_refused(&err) => run_list_offline(),
+        Err(err) => Err(err).context(format!(
+            "connecting to guard daemon at {}",
+            socket.display()
+        )),
     }
 }
 
@@ -653,7 +673,11 @@ async fn run_status(
     let socket = socket.unwrap_or_else(default_socket_path);
     match client::connect(&socket).await {
         Ok(conn) => run_status_online(conn, root, &format).await,
-        Err(_) => run_status_offline(root, &format),
+        Err(err) if is_socket_absent_or_refused(&err) => run_status_offline(root, &format),
+        Err(err) => Err(err).context(format!(
+            "connecting to guard daemon at {}",
+            socket.display()
+        )),
     }
 }
 

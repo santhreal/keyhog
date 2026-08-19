@@ -6,6 +6,7 @@ crates/cli/src/daemon/guard_runtime.rs::Err(_) => {
 crates/cli/src/daemon/guard_watcher.rs::.unwrap_or(0)
 crates/cli/src/daemon/guard_watcher.rs::let _ = tx.send(res);
 crates/cli/src/daemon/guard_watcher.rs::let _ = watcher.unwatch(path);
+crates/cli/src/daemon/guard_watcher.rs::let path = event.paths.first().cloned().unwrap_or_default();
 crates/cli/src/daemon/server.rs::.and_then(|id| id.short_digest().ok())
 crates/cli/src/daemon/server.rs::.unwrap_or(&id.config_digest)
 crates/cli/src/daemon/server.rs::.unwrap_or(&id.detector_digest)
@@ -17,10 +18,14 @@ crates/cli/src/daemon/server.rs::Err(_) => std::path::PathBuf::from(&txn.repo_pa
 crates/cli/src/daemon/server.rs::Err(_) => {
 crates/cli/src/daemon/server.rs::chunk.metadata.mtime_ns.unwrap_or(0),
 crates/cli/src/daemon/server.rs::chunk.metadata.size_bytes.unwrap_or(0),
+crates/cli/src/daemon/server.rs::crate::daemon::guard_watcher::GuardWatcher::new(guard_recon_config).unwrap_or_else(
 crates/cli/src/daemon/server.rs::if let Ok(home) = std::env::var("HOME") {
 crates/cli/src/daemon/server.rs::let _ = sender.blocking_send(MassFilesystemMessage::Complete {
+crates/cli/src/daemon/server.rs::let _ = state.guard.remove_root(canonical.as_bytes());
 crates/cli/src/daemon/server.rs::policy_identity: identity.clone().unwrap_or_else(|| {
 crates/cli/src/daemon/transport.rs::.unwrap_or_else(|| "keyhog.sock".to_string());
+crates/cli/src/matcher_cache_path.rs::tracing::debug!( error = %error, "matcher-artifact cache disabled: no default cache location" );
+crates/cli/src/matcher_cache_path.rs::tracing::debug!( error = %error, path = %path.display(), "matcher-artifact cache disabled: default cache location is unusable" );
 crates/cli/src/orchestrator/dispatch.rs::.unwrap_or_else(|| Ok(Vec::new()))
 crates/cli/src/orchestrator/dispatch/backend.rs::let _ = (
 crates/cli/src/orchestrator/dispatch/backend.rs::let reason = self.cache_load_error.as_deref().unwrap_or_else(|| {
@@ -46,6 +51,10 @@ crates/cli/src/orchestrator_config/policy.rs::evidence_policy: args.evidence_pol
 crates/cli/src/subcommands/backend/autoroute.rs::.unwrap_or_default();
 crates/cli/src/subcommands/backend/autoroute.rs::let input = receipt.gpu_slot_input_capacity_bytes.unwrap_or_else(|| {
 crates/cli/src/subcommands/backend/autoroute.rs::let matches = receipt.gpu_slot_match_capacity.unwrap_or_else(|| {
+crates/cli/src/subcommands/daemon.rs::.unwrap_or(defaults.coalesce_window_ms),
+crates/cli/src/subcommands/daemon.rs::.unwrap_or(defaults.max_pending_events_per_root),
+crates/cli/src/subcommands/daemon.rs::.unwrap_or(defaults.subtree_max_depth),
+crates/cli/src/subcommands/daemon.rs::.unwrap_or(defaults.subtree_max_files),
 crates/cli/src/subcommands/daemon.rs::.unwrap_or(false)
 crates/cli/src/subcommands/daemon.rs::let num: f64 = num_str.parse().ok()?;
 crates/cli/src/subcommands/guard.rs::Err(_) => {
@@ -137,6 +146,9 @@ crates/scanner/src/gpu/backend/resident_evidence.rs::.and_then(|bytes| u64::try_
 crates/scanner/src/gpu/backend/resident_evidence.rs::.ok()
 crates/scanner/src/gpu/backend/resident_evidence.rs::.unwrap_or(0);
 crates/scanner/src/gpu/backend/resident_evidence.rs::Err(_) => {
+crates/scanner/src/matcher_artifact_cache.rs::.unwrap_or(0);
+crates/scanner/src/matcher_artifact_cache.rs::.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+crates/scanner/src/matcher_artifact_cache.rs::let _ = std::fs::remove_file(stale_path);
 crates/scanner/src/matcher_artifact_cache.rs::pack_generation: pack_generation.unwrap_or("none").to_owned(),
 crates/scanner/src/matcher_artifact_cache.rs::runtime_identity: runtime_identity.unwrap_or("none").to_owned(),
 crates/scanner/src/ml_scorer.rs::Err(_) => cpu_rows.push((candidate_id, Some(features))),
@@ -188,6 +200,7 @@ crates/sources/src/git/source.rs::if let Ok(record) = super::read_capped_line(
 crates/sources/src/git/source.rs::let _ =
 crates/sources/src/git/source.rs::let objectname = fields.next().unwrap_or("");
 crates/sources/src/git/source.rs::let peeled = fields.next().unwrap_or("");
+crates/sources/src/skip.rs::let _ = SKIPPED_EXCLUDED.fetch_update(Relaxed, Relaxed, |current| {
 crates/verifier/src/engine.rs::Err(_) => Err(VerificationResult::Error(TIMEOUT_ERROR.into())),
 crates/verifier/src/engine.rs::let deadline = start.checked_add(timeout).unwrap_or(start);
 crates/verifier/src/engine.rs::let deadline = start.checked_add(total_duration).unwrap_or(start);

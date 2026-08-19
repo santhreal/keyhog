@@ -187,7 +187,7 @@ impl WatchedRoot {
         &self,
         root: &std::path::Path,
         path: &std::path::Path,
-        _skip_dirs: &crate::skip_dirs::SkipDirPolicy,
+        skip_dirs: &crate::skip_dirs::SkipDirPolicy,
     ) -> bool {
         let Ok(rel_path) = path.strip_prefix(root) else {
             return false;
@@ -197,12 +197,13 @@ impl WatchedRoot {
         if self.respect_default_excludes {
             for component in rel_path.components() {
                 if let std::path::Component::Normal(os) = component {
-                    if keyhog_sources::is_default_excluded_dir_name(os) {
+                    if keyhog_sources::is_default_excluded_dir_name(os)
+                        || skip_dirs.is_watch_component(&os.to_string_lossy())
+                    {
                         return true;
                     }
                 }
             }
-
             // 2. Default excluded files, suffixes, infixes, filenames.
             #[cfg(unix)]
             {
@@ -255,10 +256,6 @@ fn build_root_ignore_matcher(
     if keyhogignore.is_file() {
         let _ = builder.add(&keyhogignore);
     }
-    let keyhogignore_toml = root.join(".keyhogignore.toml");
-    if keyhogignore_toml.is_file() {
-        let _ = builder.add(&keyhogignore_toml);
-    }
     let gitignore = root.join(".gitignore");
     if gitignore.is_file() {
         let _ = builder.add(&gitignore);
@@ -273,23 +270,9 @@ fn resolve_root_exclusions(root: &std::path::Path) -> (Vec<String>, bool) {
     let dot_config = root.join(".keyhog.toml");
     if let Ok(bytes) = std::fs::read(&dot_config) {
         if let Ok(text) = std::str::from_utf8(&bytes) {
-            if let Ok(value) = toml::from_str::<toml::Value>(text) {
-                let ignore_paths = value
-                    .get("scan")
-                    .and_then(|s| s.get("ignore_paths"))
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let respect_default_excludes = value
-                    .get("scan")
-                    .and_then(|s| s.get("respect_default_excludes"))
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
-                return (ignore_paths, respect_default_excludes);
+            if let Ok(config) = toml::from_str::<crate::config::schema::ConfigFile>(text) {
+                let excludes = config.scan.and_then(|s| s.exclude).unwrap_or_default();
+                return (excludes, true);
             }
         }
     }
@@ -589,6 +572,7 @@ impl GuardWatcher {
                             let roots = self.find_matching_roots_for_path(path);
                             for root in roots {
                                 if let Some(watched) = self.roots.get(&root) {
+                                    watched.maybe_reload_ignore_matcher(&root, path);
                                     if watched.is_path_excluded(&root, path, &self.skip_dirs) {
                                         continue;
                                     }
