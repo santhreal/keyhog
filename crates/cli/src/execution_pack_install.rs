@@ -556,13 +556,12 @@ fn load_manifest(
         .parent()
         .map(|parent| parent.join("signing.key"))
         .filter(|path| path.is_file())
-        .or_else(|| {
-            dirs::cache_dir()
-                .map(|cache| cache.join("keyhog").join("execution-packs").join("signing.key"))
-                .filter(|path| path.is_file())
-        })
-        .or_else(|| directory.parent().map(|parent| parent.join("signing.key")))
-        .context("execution-pack generation has no installation root. Fix: run `keyhog install` or `keyhog update`")?;
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "execution-pack generation at {} has no sibling signing.key. Fix: run `keyhog install` or `keyhog update`",
+                directory.display()
+            )
+        })?;
     let key_bytes = fs::read(&key_path).with_context(|| {
         format!(
             "reading execution-pack verification key {}. Fix: run `keyhog install` or `keyhog update`",
