@@ -57,14 +57,15 @@ pub(crate) const REGEX_SIZE_LIMIT_BYTES: usize = 1 << 20; // 1 MiB default
 static REGEX_DFA_LIMIT_OVERRIDE: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
-/// Process-wide count of [`LazyRegex`] first-use compilations - incremented
-/// EXACTLY once per `LazyRegex` the moment its `OnceLock` actually builds the
-/// `Regex` (the cold-cache miss inside [`LazyRegex::get`]). Scanner
+/// Process-wide count of dynamic regex first-use compilations - incremented
+/// EXACTLY once per lazily compiled regex the moment its `OnceLock` builds the
+/// `Regex` (the cold-cache miss inside [`LazyRegex::get`] or dynamic verifier
+/// compilation in [`crate::anchored_regex::AnchoredRegex::compile`]). Scanner
 /// construction VALIDATES every detector pattern by building it once and
 /// dropping it again (see `compiler_compile::compile_pattern`), so the first
-/// chunk that actually reaches a pattern pays one compile for it and every
-/// later chunk is a `OnceLock` hit: this counter is the observable that proves
-/// "compile once per reached pattern, scan many" - no per-scan regex rebuild.
+/// chunk that actually reaches a pattern or anchored verifier pays one compile
+/// for it and every later chunk is a cache hit: this counter is the observable
+/// that proves "compile once per reached pattern, scan many" - no per-scan regex rebuild.
 /// A regression that reintroduced per-scan `Regex::new` (the bug #13 fixed)
 /// would make this climb across scans. Pure observability (Law 10): it only
 /// ticks on a real compile, never gates or alters behaviour.
@@ -76,10 +77,10 @@ pub(crate) fn record_lazy_regex_compile() {
     LAZY_REGEX_COMPILE_EVENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Snapshot of [`LAZY_REGEX_COMPILE_EVENTS`]: how many `LazyRegex` first-use
-/// compilations have happened process-wide so far. The zero-recompile regression
-/// gate snapshots this around repeated scans to prove steady-state scanning
-/// rebuilds no regex.
+/// Snapshot of [`LAZY_REGEX_COMPILE_EVENTS`]: how many dynamic regex first-use
+/// compilations (including [`LazyRegex`] and [`crate::anchored_regex::AnchoredRegex`])
+/// have happened process-wide so far. The zero-recompile regression gate snapshots
+/// this around repeated scans to prove steady-state scanning rebuilds no regex.
 pub(crate) fn lazy_regex_compile_events() -> u64 {
     LAZY_REGEX_COMPILE_EVENTS.load(std::sync::atomic::Ordering::Relaxed)
 }

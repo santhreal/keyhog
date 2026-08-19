@@ -5,9 +5,7 @@
 mod support;
 
 use keyhog_core::Chunk;
-use keyhog_scanner::testing::{
-    anchored_regex_capture_for_test, lazy_regex_compile_events,
-};
+use keyhog_scanner::testing::{anchored_regex_capture_for_test, lazy_regex_compile_events};
 use keyhog_scanner::CompiledScanner;
 use std::sync::LazyLock;
 use support::contracts::{make_chunk, scanner};
@@ -154,7 +152,8 @@ fn warm_is_idempotent_and_steady_state_across_rescan_cycles() {
         "redundant warm() invocations must recompile zero regexes"
     );
 
-    let test_chunk = chunk("plain text with no secrets but some structural code: if (x == 42) { return; }");
+    let test_chunk =
+        chunk("plain text with no secrets but some structural code: if (x == 42) { return; }");
     s.clear_fragment_cache();
     let _ = s.scan(&test_chunk);
 
