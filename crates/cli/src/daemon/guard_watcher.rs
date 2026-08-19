@@ -192,12 +192,12 @@ impl GuardWatcher {
                     };
                     if newly_disconnected {
                         tracing::warn!("daemon: guard watcher event channel disconnected; failing closed for all watched roots");
-                    }
-                    for root in self.roots.keys() {
-                        results
-                            .entry(root.clone())
-                            .or_default()
-                            .push(GuardEvent::ReconcileSubtree(root.clone()));
+                        for root in self.roots.keys() {
+                            results
+                                .entry(root.clone())
+                                .or_default()
+                                .push(GuardEvent::ReconcileSubtree(root.clone()));
+                        }
                     }
                     break;
                 }
