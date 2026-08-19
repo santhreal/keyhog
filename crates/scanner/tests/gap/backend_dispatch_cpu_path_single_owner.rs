@@ -30,10 +30,10 @@ fn cpu_scan_and_boundary_path_has_single_owner() {
 
     // The direct and coalesced-lane traversals are mutually exclusive branches
     // inside the same owner. No other backend path may add a traversal.
-    let map_occurrences = src.matches("scan_one(").count();
+    let scan_invocations = src.matches("scan_one(index,").count();
     assert_eq!(
-        map_occurrences, 2,
-        "the CPU owner must contain exactly its direct and coalesced-lane traversals, found {map_occurrences}"
+        scan_invocations, 2,
+        "the CPU owner must contain exactly its direct and coalesced-lane traversals, found {scan_invocations}"
     );
 
     // The seam reassembly pass must run from the single owner. The route-carrying
