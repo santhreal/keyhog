@@ -1,6 +1,7 @@
 # Changelog
 
 ## 0.5.80 - 2026-08-17
+- feat(guard): populate GuardPolicyIdentity with canonical default digests and digest calculation helpers for ignore files, suppressions, config, and source policy (Row 142).
 
 - feat(guard): read-only durable guard store opening and single root query (Row 140).
 - feat(core): export canonical DEFAULT_WINDOW_OVERLAP_BYTES and DEFAULT_WINDOW_SIZE_BYTES (Row 111).

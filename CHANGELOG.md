@@ -4,6 +4,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [0.5.80] - 2026-08-17
 ### Added
+- feat(guard): populate GuardPolicyIdentity digests for ignore file, suppressions, configuration, and source policy, triggering state transition to StalePolicy and attestation invalidation on policy file modifications (Row 142).
 
 - feat(guard): offline guard status and list inspectability reading durable store from disk with optional root summary (Row 140).
 - feat(cli): optimize startup execution path for informational commands with fast zero-allocation dispatch, deferred runtime initialization, and zero detector corpus parsing (Row 138).
