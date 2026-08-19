@@ -304,3 +304,92 @@ pub(crate) fn format_decode_recursion(
         },
     )
 }
+
+/// Confirmed candidate confirmation and postprocess timing figures.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ConfirmedPostprocessProfile {
+    pub suffix_gate_ns: u64,
+    pub suffix_gate_calls: u64,
+    pub suffix_gate_skips: u64,
+    pub companion_gate_ns: u64,
+    pub companion_gate_calls: u64,
+    pub companion_gate_denials: u64,
+    pub anchor_collect_ns: u64,
+    pub anchor_collect_calls: u64,
+    pub anchor_candidates: u64,
+    pub extract_ns: u64,
+    pub extract_calls: u64,
+    pub anchored_matches: u64,
+    pub whole_chunk_matches: u64,
+    pub hot_direct_filter_skips: u64,
+    pub fragments_ns: u64,
+    pub fragments_calls: u64,
+    pub fragments_candidates: u64,
+    pub fragments_matches: u64,
+    pub dedup_ns: u64,
+    pub dedup_calls: u64,
+}
+
+impl ConfirmedPostprocessProfile {
+    pub fn any_recorded(&self) -> bool {
+        *self != Self::default()
+    }
+}
+
+pub fn confirmed_postprocess_profile_from_typed(
+    metrics: &[keyhog_profile::TypedMetricRecordV2],
+) -> ConfirmedPostprocessProfile {
+    let value = |counter: keyhog_profile::CounterId| {
+        metrics
+            .iter()
+            .find(|record| record.metric_id == counter.metric_id())
+            .map_or(0, |record| record.value)
+    };
+    use keyhog_profile::CounterId;
+    ConfirmedPostprocessProfile {
+        suffix_gate_ns: value(CounterId::ConfirmedSuffixGateNs),
+        suffix_gate_calls: value(CounterId::ConfirmedSuffixGateCalls),
+        suffix_gate_skips: value(CounterId::ConfirmedSuffixGateSkips),
+        companion_gate_ns: value(CounterId::ConfirmedCompanionGateNs),
+        companion_gate_calls: value(CounterId::ConfirmedCompanionGateCalls),
+        companion_gate_denials: value(CounterId::ConfirmedCompanionGateDenials),
+        anchor_collect_ns: value(CounterId::ConfirmedAnchorCollectNs),
+        anchor_collect_calls: value(CounterId::ConfirmedAnchorCollectCalls),
+        anchor_candidates: value(CounterId::ConfirmedAnchorCandidateCount),
+        extract_ns: value(CounterId::ConfirmedExtractNs),
+        extract_calls: value(CounterId::ConfirmedExtractCalls),
+        anchored_matches: value(CounterId::ConfirmedAnchoredMatches),
+        whole_chunk_matches: value(CounterId::ConfirmedWholeChunkMatches),
+        hot_direct_filter_skips: value(CounterId::ConfirmedHotDirectFilterSkips),
+        fragments_ns: value(CounterId::PostprocessFragmentsNs),
+        fragments_calls: value(CounterId::PostprocessFragmentsCalls),
+        fragments_candidates: value(CounterId::PostprocessFragmentsCandidates),
+        fragments_matches: value(CounterId::PostprocessFragmentsMatches),
+        dedup_ns: value(CounterId::PostprocessDedupNs),
+        dedup_calls: value(CounterId::PostprocessDedupCalls),
+    }
+}
+
+pub fn format_confirmed_postprocess_profile(p: &ConfirmedPostprocessProfile) -> String {
+    let sg_ms = p.suffix_gate_ns as f64 / 1e6;
+    let cg_ms = p.companion_gate_ns as f64 / 1e6;
+    let ac_ms = p.anchor_collect_ns as f64 / 1e6;
+    let ex_ms = p.extract_ns as f64 / 1e6;
+    let frag_ms = p.fragments_ns as f64 / 1e6;
+    let dedup_ms = p.dedup_ns as f64 / 1e6;
+    format!(
+        "=== CONFIRMED postprocess confirmation profile ===\n  \
+         suffix-gate: {sg_ms:.1}ms (calls={} skips={})\n  \
+         companion-gate: {cg_ms:.1}ms (calls={} denials={})\n  \
+         anchor-collect: {ac_ms:.1}ms (calls={} cands={})\n  \
+         extract: {ex_ms:.1}ms (calls={} anchored_matches={} whole_chunk_matches={} direct_skips={})\n  \
+         fragments: {frag_ms:.1}ms (calls={} cands={} matches={})\n  \
+         dedup: {dedup_ms:.1}ms (calls={})",
+        p.suffix_gate_calls, p.suffix_gate_skips,
+        p.companion_gate_calls, p.companion_gate_denials,
+        p.anchor_collect_calls, p.anchor_candidates,
+        p.extract_calls, p.anchored_matches, p.whole_chunk_matches, p.hot_direct_filter_skips,
+        p.fragments_calls, p.fragments_candidates, p.fragments_matches,
+        p.dedup_calls,
+    )
+}

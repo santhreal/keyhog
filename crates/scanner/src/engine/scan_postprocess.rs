@@ -29,6 +29,10 @@ pub(crate) fn register_literal(
 
 // Re-export the post-processing satellites through their established engine paths.
 // Scanner tuning owns enablement; the suffix-gate satellite only builds the gate.
+pub use super::scan_postprocess_profile::{
+    confirmed_postprocess_profile_from_typed, format_confirmed_postprocess_profile,
+    ConfirmedPostprocessProfile,
+};
 #[cfg(feature = "decode")]
 pub(crate) use super::scan_postprocess_profile::{
     decode_recursion_from_typed, format_decode_recursion,
@@ -182,6 +186,12 @@ impl CompiledScanner {
                     if decoded_candidates.is_empty() {
                         return Ok(());
                     }
+                    keyhog_profile::add_counter(
+                        keyhog_profile::CounterId::PostprocessDedupCalls,
+                        1,
+                    );
+                    let _dedup_span =
+                        keyhog_profile::counter_span(keyhog_profile::CounterId::PostprocessDedupNs);
                     // Decoding is monotonic: keep raw findings and union resolved decoded evidence.
                     let raw_findings = matches.clone();
 

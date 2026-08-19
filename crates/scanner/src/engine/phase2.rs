@@ -22,6 +22,11 @@ pub(crate) use hs_mark_timing::{format_hs_mark_split, hs_mark_split_from_typed, 
 #[cfg(feature = "simd")]
 pub(crate) use hs_mark_timing::{hs_mark_dropped_span, hs_mark_scan_span};
 
+mod verification_stats;
+pub use verification_stats::{
+    format_phase2_verification_profile, phase2_verification_profile_from_typed,
+    Phase2VerificationProfile,
+};
 // The per-scanner performance tuning lives at crate root but remains an
 // engine-internal route selector, not scanner public API.
 pub(crate) use crate::tuning::*;

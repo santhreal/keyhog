@@ -31,7 +31,7 @@ mod gpu_region_dispatch_helpers;
 pub(crate) use crate::gpu::GpuResidentLiteralSlot;
 mod gpu_stack;
 mod hot_patterns;
-pub(crate) mod phase2;
+pub mod phase2;
 pub(crate) mod phase2_anchor;
 #[cfg(test)]
 pub(crate) use phase2_anchor::required_prefix_literals as phase2_required_prefix_literals_for_test;
@@ -81,7 +81,7 @@ mod scan_coalesced;
 #[cfg(feature = "simd")]
 pub(crate) use scan_coalesced::ReusableSimdTriggerCache;
 pub(crate) mod scan_filters;
-pub(crate) mod scan_postprocess;
+pub mod scan_postprocess;
 pub(crate) use scan_postprocess::{
     build_confirmed_suffix_gate_with_hints, confirmed_anchor::ConfirmedAnchorIndex,
 };

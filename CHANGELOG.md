@@ -11,6 +11,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - feat(profile): instrument runtime compile surface counters across all 13 compiler surfaces and 4 phases (Row 125).
 - feat(gates): single authoritative structural gate architecture consolidating `no_inline_tests_in_src` and `no_cwd_relative_source_reads` workspace-wide and eliminating redundant per-crate gap tests (Row 149).
 - feat(benchmarks): publish honest multi-corpus benchmark data across mirror and competitor corpora with transparent F1, precision, recall, runtime metrics, and drift-prevention gate coverage (Row 151).
+- feat(profile): instrument fine-grained candidate confirmation and phase-2 verification timing metrics across suffix gating, companion gating, anchor collection, extraction, fragments, and dedup (Row 159).
 
 
 ### Changed

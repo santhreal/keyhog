@@ -36,6 +36,9 @@ impl CompiledScanner {
         if !Self::has_fragment_assignment_syntax(chunk.data.as_bytes()) {
             return Ok(());
         }
+        keyhog_profile::add_counter(keyhog_profile::CounterId::PostprocessFragmentsCalls, 1);
+        let _frag_span =
+            keyhog_profile::counter_span(keyhog_profile::CounterId::PostprocessFragmentsNs);
 
         let assign_re = &*crate::shared_regexes::ASSIGN_RE;
 
@@ -91,6 +94,10 @@ impl CompiledScanner {
 
                 let candidates = self.fragment_cache.record_and_reassemble(fragment);
                 for candidate in candidates {
+                    keyhog_profile::add_counter(
+                        keyhog_profile::CounterId::PostprocessFragmentsCandidates,
+                        1,
+                    );
                     if crate::deadline::expired(deadline) {
                         return Ok(());
                     }
@@ -161,6 +168,12 @@ impl CompiledScanner {
                         // not panic mid-scan.
                         m.location.offset =
                             fragment_value_offset.saturating_add(chunk.metadata.base_offset);
+                    }
+                    if !reassembled_matches.is_empty() {
+                        keyhog_profile::add_counter(
+                            keyhog_profile::CounterId::PostprocessFragmentsMatches,
+                            reassembled_matches.len() as u64,
+                        );
                     }
                     matches.append(&mut reassembled_matches);
                     // Zeroized automatically on drop (SensitiveString)
