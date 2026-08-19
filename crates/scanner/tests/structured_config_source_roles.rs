@@ -136,6 +136,26 @@ fn supported_structured_formats_emit_exact_candidate_roles_and_key_paths() {
     let (_, keys) = classify(sparse_ini, "settings.ini", "CFGPROV_INI_EMPTY_123456");
     assert_eq!(keys, ["auth", "token"]);
 
+    for config_path in [
+        "~/.aws/credentials",
+        "credentials",
+        ".credentials",
+        "config",
+        ".config",
+        "secrets",
+        ".secrets",
+        "service.conf",
+        "application.properties",
+    ] {
+        let aws_cfg = "[default]\naws_access_key_id = AKIA_AWS_KEY_123456\n";
+        let (_, keys) = classify(aws_cfg, config_path, "AKIA_AWS_KEY_123456");
+        assert_eq!(
+            keys,
+            ["default", "aws_access_key_id"],
+            "failed for path {config_path}"
+        );
+    }
+
     let wide_yaml = format!(
         "auth:\n{}  token: CFGPROV_YAML_WIDE_123456\n",
         (0..512)
