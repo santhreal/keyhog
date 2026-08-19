@@ -506,3 +506,102 @@ fn wire_protocol_guard_feed_and_status_roundtrip() {
         "baseline reconciliation clean: 10 files, 0 findings"
     );
 }
+
+#[test]
+fn set_root_policy_identity_records_transition_and_isolates_roots() {
+    let rt = GuardRuntime::new();
+    let root_a = b"/workspace/project_alpha".to_vec();
+    let root_b = b"/workspace/project_beta".to_vec();
+
+    rt.add_root(
+        root_a.clone(),
+        test_fs_identity(1, 101),
+        test_fs_authority(),
+        GuardRootMode::Repo,
+    )
+    .unwrap();
+    rt.add_root(
+        root_b.clone(),
+        test_fs_identity(1, 102),
+        test_fs_authority(),
+        GuardRootMode::Repo,
+    )
+    .unwrap();
+
+    rt.set_root_policy_identity(&root_a, test_policy_identity("det-a1"));
+    rt.set_root_policy_identity(&root_b, test_policy_identity("det-b1"));
+
+    rt.transition_root_with_cause(
+        &root_a,
+        &GuardTransition::ReconciliationStarted,
+        "reconcile A",
+    )
+    .unwrap();
+    rt.transition_root_with_cause(&root_a, &GuardTransition::ReconciliationClean, "clean A")
+        .unwrap();
+    assert_eq!(rt.root_state(&root_a), Some(GuardRootState::Current));
+
+    rt.transition_root_with_cause(
+        &root_b,
+        &GuardTransition::ReconciliationStarted,
+        "reconcile B",
+    )
+    .unwrap();
+    rt.transition_root_with_cause(&root_b, &GuardTransition::ReconciliationClean, "clean B")
+        .unwrap();
+    assert_eq!(rt.root_state(&root_b), Some(GuardRootState::Current));
+
+    // Update policy identity for Root A only
+    rt.set_root_policy_identity(&root_a, test_policy_identity("det-a2"));
+
+    // Root A should transition to StalePolicy and record it in the feed
+    assert_eq!(rt.root_state(&root_a), Some(GuardRootState::StalePolicy));
+    // Root B should remain untouched in Current
+    assert_eq!(rt.root_state(&root_b), Some(GuardRootState::Current));
+
+    let feed_a = rt.transition_feed(Some(&root_a), None);
+    assert_eq!(feed_a.len(), 3);
+    assert_eq!(feed_a[2].from_state, GuardRootState::Current);
+    assert_eq!(feed_a[2].to_state, GuardRootState::StalePolicy);
+    assert_eq!(feed_a[2].event, GuardTransition::PolicyChanged);
+    assert!(
+        feed_a[2].cause.contains("policy identity changed"),
+        "cause must describe policy change: {}",
+        feed_a[2].cause
+    );
+
+    // Verify root_policy_identity returns root-specific identity
+    assert_eq!(
+        rt.root_policy_identity(&root_a).unwrap().detector_digest,
+        "det-a2"
+    );
+    assert_eq!(
+        rt.root_policy_identity(&root_b).unwrap().detector_digest,
+        "det-b1"
+    );
+}
+
+#[test]
+fn guard_event_action_with_policy_prioritizes_overflow_and_prevents_duplicate_transitions() {
+    use keyhog::testing::daemon::server::{guard_event_action_with_policy, GuardEventAction};
+
+    // Overflow wins over policy change
+    let action = guard_event_action_with_policy(Some(GuardRootState::Current), true, true);
+    assert_eq!(
+        action,
+        GuardEventAction::Transition(GuardTransition::CoverageLost)
+    );
+
+    // Policy change on StalePolicy yields Ignore (no double transition)
+    let action_stale =
+        guard_event_action_with_policy(Some(GuardRootState::StalePolicy), false, true);
+    assert_eq!(action_stale, GuardEventAction::Ignore);
+
+    // Overflow on StalePolicy yields CoverageLost -> Degraded
+    let action_stale_overflow =
+        guard_event_action_with_policy(Some(GuardRootState::StalePolicy), true, false);
+    assert_eq!(
+        action_stale_overflow,
+        GuardEventAction::Transition(GuardTransition::CoverageLost)
+    );
+}

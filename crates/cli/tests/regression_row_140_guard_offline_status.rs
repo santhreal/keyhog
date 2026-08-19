@@ -140,6 +140,7 @@ fn sample_root(
         backend_route_label: "simd".to_string(),
         recent_transitions: Vec::new(),
         last_receipt: receipt,
+        recent_transitions: Vec::new(),
     }
 }
 
