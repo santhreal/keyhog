@@ -790,3 +790,18 @@ fn durable_store_open_read_only_fails_on_nonexistent_path() {
     let result = DurableGuardStore::open_read_only(&path);
     assert!(result.is_err());
 }
+
+#[test]
+fn durable_store_open_read_only_rejects_missing_schema_version() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("no_meta.redb");
+    // Create an empty redb database with no meta table.
+    {
+        let _db = redb::Database::create(&path).expect("create empty redb");
+    }
+    let result = DurableGuardStore::open_read_only(&path);
+    assert!(
+        matches!(result, Err(GuardStoreError::Corrupt { .. })),
+        "open_read_only on store without meta table must fail with Corrupt error"
+    );
+}

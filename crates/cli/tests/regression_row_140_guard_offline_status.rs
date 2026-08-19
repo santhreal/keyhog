@@ -442,3 +442,19 @@ fn row_140_guard_status_offline_all_states_exit_code_matrix() {
         );
     }
 }
+
+#[test]
+fn row_140_guard_status_untrusted_socket_fails_closed() {
+    let env = TestEnv::new();
+    let fake_socket = env.dir.path().join("fake_socket.txt");
+    fs::write(&fake_socket, "not a socket").unwrap();
+
+    let (_stdout, stderr, code) =
+        env.run_cmd(&["guard", "status", "--socket", fake_socket.to_str().unwrap()]);
+
+    assert_ne!(code, 0);
+    assert!(
+        !stderr.contains("(no daemon active)"),
+        "untrusted socket error must not be masked as '(no daemon active)': {stderr}"
+    );
+}
