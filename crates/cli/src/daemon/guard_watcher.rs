@@ -572,7 +572,7 @@ impl GuardWatcher {
         let mut results: HashMap<PathBuf, Vec<GuardEvent>> = HashMap::new();
         let mut reconcile_roots: std::collections::HashSet<PathBuf> =
             std::collections::HashSet::new();
-        if self.disabled {
+        if self.disabled || self.backend_kind == GuardWatcherBackendKind::NullWatcher {
             return Vec::new();
         }
         loop {
@@ -727,7 +727,7 @@ impl GuardWatcher {
     pub fn watcher_status(&self) -> &'static str {
         if self.is_disconnected() {
             "disconnected"
-        } else if self.disabled {
+        } else if self.disabled || self.backend_kind == GuardWatcherBackendKind::NullWatcher {
             "unmonitored"
         } else {
             "watching"
@@ -736,7 +736,10 @@ impl GuardWatcher {
 
     /// Whether the watcher is actively monitoring filesystem events.
     pub fn is_watching(&self) -> bool {
-        !self.disabled && !self.is_disconnected()
+        !self.disabled
+            && !self.is_disconnected()
+            && self.backend_kind != GuardWatcherBackendKind::NullWatcher
+            && self.watcher.is_some()
     }
 }
 
