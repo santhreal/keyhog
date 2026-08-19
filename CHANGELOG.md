@@ -32,6 +32,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - feat(compiled_artifact): add canonical `CompiledArtifactClass` enumeration and `CompiledArtifactIdentity` contracts.
 - feat(cache): add `validate_and_tighten_matcher_artifact_cache_dir` to auto-repair loose default cache directory permissions to 0700 without disabling cache.
 
+### Added
+
+- feat(daemon): report active watcher backend, latency tier, and polling interval in guard status (Row 123).
+
 ### Changed
 - **Benchmark corpus synthetic packs & representative test coverage (Row 162).** Fixed AWS Access Key token shape in the built-in benchmark corpus template to match 20-character credential length (`AKIA` + 16 chars). Added integration tests verifying benchmark corpus structure, metadata, planted credential shapes, and synthetic execution pack finding parity invariants.
 
