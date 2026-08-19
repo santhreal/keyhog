@@ -1275,6 +1275,11 @@ impl ScanOrchestrator {
             );
             let session = keyhog_profile::Session::start(identity).map_err(anyhow::Error::new)?;
             crate::set_operator_profile_active(true);
+            if args.developer_compile_embedded_detectors {
+                keyhog_profile::set_compile_phase(keyhog_profile::CompilePhase::Developer);
+            } else {
+                keyhog_profile::set_compile_phase(keyhog_profile::CompilePhase::Scan);
+            }
             Some(session)
         } else {
             None
