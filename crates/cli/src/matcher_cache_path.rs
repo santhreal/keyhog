@@ -45,25 +45,20 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
             match keyhog_scanner::validate_and_tighten_matcher_artifact_cache_dir(&path, true) {
                 Ok(()) => Ok(Some(path)),
                 Err(error) => {
-                    tracing::warn!(
+                    tracing::debug!(
                         error = %error,
                         path = %path.display(),
-                        "matcher-artifact cache unusable: default cache location is unusable"
-                    );
-                    eprintln!(
-                        "warning: matcher-artifact cache unusable at {}: {error}",
-                        path.display()
+                        "matcher-artifact cache soft-fail: default cache location is unusable"
                     );
                     Ok(None)
                 }
             }
         }
         Err(error) => {
-            tracing::warn!(
+            tracing::debug!(
                 error = %error,
-                "matcher-artifact cache unusable: no default cache location"
+                "matcher-artifact cache soft-fail: no default cache location"
             );
-            eprintln!("warning: matcher-artifact cache unusable: {error}; configure with --matcher-cache <DIR>");
             Ok(None)
         }
     }
