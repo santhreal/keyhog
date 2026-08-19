@@ -550,10 +550,16 @@ impl GuardStatusView {
             println!("last recon:     {t}");
         }
         println!("residency:      {}", self.scanner_residency);
-        println!(
-            "watcher:        {} ({})",
-            self.watcher_backend, self.watcher_latency_tier
-        );
+        if !self.watcher_backend.is_empty() {
+            if self.watcher_latency_tier.is_empty() {
+                println!("watcher:        {}", self.watcher_backend);
+            } else {
+                println!(
+                    "watcher:        {} ({})",
+                    self.watcher_backend, self.watcher_latency_tier
+                );
+            }
+        }
         if let Some(poll_ms) = self.watcher_poll_interval_ms {
             println!("poll interval:  {poll_ms}ms");
         }
