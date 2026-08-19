@@ -60,11 +60,34 @@ pub(crate) enum HookInstallStatus {
     Updated,
 }
 
-pub(crate) fn run(command: HookCommand) -> Result<ExitCode> {
+pub(crate) async fn run(command: HookCommand) -> Result<ExitCode> {
     match command {
         HookCommand::Install { force } => install(force),
         HookCommand::Uninstall => uninstall(),
+        HookCommand::Run(args) => run_hook_scan(*args).await,
     }
+}
+
+async fn run_hook_scan(mut args: crate::args::ScanArgs) -> Result<ExitCode> {
+    let _hook_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
+    if args.input.is_empty()
+        && args.path.is_none()
+        && !args.stdin
+        && args.git_blobs.is_none()
+        && args.git_diff.is_none()
+        && args.git_history.is_none()
+        && !args.git_staged
+    {
+        args.git_staged = true;
+    }
+    if !args.deep && !args.precision {
+        args.fast = true;
+    }
+    if args.backend.is_none() {
+        args.backend = Some("cpu".to_string());
+    }
+    drop(_hook_span);
+    crate::subcommands::scan::run(args).await
 }
 
 fn install(force: bool) -> Result<ExitCode> {

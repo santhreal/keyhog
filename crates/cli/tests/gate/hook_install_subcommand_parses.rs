@@ -13,3 +13,14 @@ fn hook_install_subcommand_is_selected() {
         _ => panic!("expected Hook subcommand"),
     }
 }
+
+#[test]
+fn hook_run_subcommand_is_selected() {
+    let cli = Cli::try_parse_from(["keyhog", "hook", "run"]).unwrap();
+    match cli.command {
+        Some(Command::Hook { command }) => {
+            assert!(matches!(command, keyhog::args::HookCommand::Run(..)));
+        }
+        _ => panic!("expected Hook subcommand"),
+    }
+}

@@ -168,7 +168,7 @@ impl DaemonMode {
     }
 }
 
-#[derive(Parser, Clone)]
+#[derive(Parser, Clone, Debug)]
 pub struct ScanArgs {
     /// Detector TOML directory
     #[arg(short, long, default_value = "detectors")]

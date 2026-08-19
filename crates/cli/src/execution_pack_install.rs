@@ -145,6 +145,13 @@ impl InstalledArtifactClass {
     pub const fn is_consumed_by_scan(self) -> bool {
         true
     }
+
+    pub const fn is_consumed_by_hook(self) -> bool {
+        match self {
+            Self::Manifest | Self::VerificationKey | Self::ExecutionPack | Self::Signature => true,
+            Self::GpuLiteralArtifact | Self::AutorouteCalibration => false,
+        }
+    }
 }
 
 /// Unified registry connecting artifact production, update regeneration, and scan loading.
@@ -172,6 +179,15 @@ impl InstalledArtifactRegistry {
             .iter()
             .copied()
             .filter(|class| class.is_consumed_by_scan())
+            .collect()
+    }
+
+    /// Return the set of all artifact classes consumed by the pre-commit hook path.
+    pub fn hook_consumed_classes() -> BTreeSet<InstalledArtifactClass> {
+        InstalledArtifactClass::ALL
+            .iter()
+            .copied()
+            .filter(|class| class.is_consumed_by_hook())
             .collect()
     }
 
@@ -294,14 +310,23 @@ pub(crate) fn installed_execution_pack_directory() -> Result<PathBuf> {
 }
 
 pub(crate) fn current_binary_digest() -> Result<[u8; 32]> {
+    #[cfg(target_os = "linux")]
+    let mut file = File::open("/proc/self/exe").or_else(|_| {
+        let path = std::env::current_exe()?;
+        File::open(&path)
+    }).context("opening current KeyHog executable")?;
+
+    #[cfg(not(target_os = "linux"))]
     let path = std::env::current_exe().context("resolving current KeyHog executable")?;
+    #[cfg(not(target_os = "linux"))]
     let mut file = File::open(&path).with_context(|| format!("opening {}", path.display()))?;
+
     let mut hasher = blake3::Hasher::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
         let read = file
             .read(&mut buffer)
-            .with_context(|| format!("hashing {}", path.display()))?;
+            .context("hashing current KeyHog executable")?;
         if read == 0 {
             break;
         }

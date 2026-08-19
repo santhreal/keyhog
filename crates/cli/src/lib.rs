@@ -468,7 +468,20 @@ pub async fn cli_main() -> ExitCode {
         Some(args::Command::ActionReport(args)) => match args.command {
             args::ActionReportCommand::Verify(args) => action_report::verify(args),
         },
-        Some(args::Command::Hook { command }) => subcommands::hook::run(command),
+        Some(args::Command::Hook { command }) => {
+            let profile_requested = match &command {
+                args::HookCommand::Run(args) => args.profile,
+                _ => false,
+            };
+            if profile_requested {
+                set_operator_profile_active(true);
+            }
+            let outcome = subcommands::hook::run(command).await;
+            if profile_requested {
+                set_operator_profile_active(false);
+            }
+            outcome
+        }
         Some(args::Command::Detectors(args)) => subcommands::detectors::run(args),
         Some(args::Command::Explain(args)) => {
             subcommands::explain::run(args).map(|()| ExitCode::SUCCESS)
