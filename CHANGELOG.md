@@ -9,6 +9,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - feat(cache): load-only scan execution and zero compilation fallback on prepared artifact caches (Row 127).
 - feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).
 - feat(profile): instrument runtime compile surface counters across all 13 compiler surfaces and 4 phases (Row 125).
+- fix(cli): eliminate noisy internal execution-pack fallback warning on clean scan passes and enforce unpolluted structured output (Row 144).
 
 
 ### Changed

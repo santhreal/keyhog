@@ -295,7 +295,25 @@ pub(crate) fn installed_execution_pack_directory() -> Result<PathBuf> {
 
 pub(crate) fn current_binary_digest() -> Result<[u8; 32]> {
     let path = std::env::current_exe().context("resolving current KeyHog executable")?;
-    let mut file = File::open(&path).with_context(|| format!("opening {}", path.display()))?;
+    let path_str = path.to_string_lossy();
+    let cleaned_path = if path_str.ends_with(" (deleted)") {
+        PathBuf::from(path_str.trim_end_matches(" (deleted)"))
+    } else {
+        path.clone()
+    };
+    let mut file = File::open(&cleaned_path)
+        .or_else(|_| File::open(&path))
+        .or_else(|_| {
+            #[cfg(target_os = "linux")]
+            {
+                File::open("/proc/self/exe")
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                File::open(&path)
+            }
+        })
+        .with_context(|| format!("opening {}", path.display()))?;
     let mut hasher = blake3::Hasher::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
