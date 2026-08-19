@@ -334,21 +334,9 @@ pub fn git_hash() -> &'static str {
     env!("GIT_HASH")
 }
 
-/// Path of the currently running executable, cleaned of Linux ` (deleted)` suffix if relinked.
+/// Path of the currently running executable.
 pub fn current_executable_path() -> Result<std::path::PathBuf, String> {
-    let path =
-        std::env::current_exe().map_err(|error| format!("locate running executable: {error}"))?;
-    if !path.exists() {
-        if let Some(path_str) = path.to_str() {
-            if let Some(stripped) = path_str.strip_suffix(" (deleted)") {
-                let candidate = std::path::PathBuf::from(stripped);
-                if candidate.exists() {
-                    return Ok(candidate);
-                }
-            }
-        }
-    }
-    Ok(path)
+    std::env::current_exe().map_err(|error| format!("locate running executable: {error}"))
 }
 
 /// SHA-256 hex digest of the currently running executable, memoized once per process.
