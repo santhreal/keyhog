@@ -148,6 +148,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "threads",
     "timeout",
     "update-baseline",
+    "window-overlap",
 ];
 
 /// Build the expected `scan` long-flag set for the CURRENTLY-COMPILED feature
