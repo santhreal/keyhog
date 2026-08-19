@@ -475,6 +475,7 @@ struct GuardStatusView {
     store_schema_version: u32,
     store_path: String,
     repair_command: String,
+    recent_transitions: Vec<crate::daemon::protocol::GuardTransitionWireEntry>,
 }
 
 impl GuardStatusView {
@@ -512,6 +513,7 @@ impl GuardStatusView {
             "store_schema_version": self.store_schema_version,
             "store_path": self.store_path,
             "repair_command": self.repair_command,
+            "recent_transitions": self.recent_transitions,
         })
     }
 
@@ -748,7 +750,7 @@ async fn run_status_online(
                 } else {
                     view.print_human();
                 }
-                Ok(exit_code_for_guard_state(&view.state, view.findings_count))
+                Ok(exit_for_guard_state(&view.state, view.findings_count))
             }
             Response::Error { message } => {
                 anyhow::bail!("{message}");
@@ -819,6 +821,7 @@ async fn run_status_online(
                         store_schema_version,
                         store_path,
                         repair_command,
+                        recent_transitions,
                     }) = conn.round_trip(&req).await
                     {
                         views.push(GuardStatusView {
@@ -854,6 +857,7 @@ async fn run_status_online(
                             store_schema_version,
                             store_path,
                             repair_command,
+                            recent_transitions,
                         });
                     }
                 }
