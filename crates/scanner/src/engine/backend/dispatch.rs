@@ -48,7 +48,6 @@ impl CompiledScanner {
         admission_plan: Option<&Phase1AdmissionPlan>,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<Vec<RawMatch>>> {
-        use rayon::prelude::*;
         let telemetry = crate::telemetry::capture_scan_telemetry();
         let recovery_receipts = crate::gpu::capture_recovery_receipts();
         let profile_runtime = keyhog_profile::current_runtime();
@@ -181,12 +180,13 @@ impl CompiledScanner {
             })
         };
         let threshold = self.tuning.chunk_lane_threshold();
-        let workers = rayon::current_num_threads().max(1);
+        let workers = std::thread::available_parallelism()
+            .map_or(1, std::num::NonZeroUsize::get);
 
         let mut results: Vec<Vec<RawMatch>> =
             if chunks.len() <= workers || chunks.iter().all(|chunk| chunk.data.len() > threshold) {
                 chunks
-                    .par_iter()
+                    .iter()
                     .enumerate()
                     .map(|(index, chunk)| scan_one(index, chunk))
                     .collect::<crate::error::Result<Vec<_>>>()?
@@ -194,7 +194,7 @@ impl CompiledScanner {
                 let work_lanes = super::batch_topology::coalesced_work_lanes(chunks, threshold);
                 let lane_results: Vec<Vec<(usize, Vec<RawMatch>)>> = work_lanes
                     .lanes()
-                    .par_iter()
+                    .iter()
                     .map(|lane| {
                         let indices = work_lanes.indices(lane);
                         indices
