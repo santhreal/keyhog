@@ -240,7 +240,8 @@ impl WatchedRoot {
                 || file_name == ".gitignore"
                 || file_name == ".keyhog.toml"
             {
-                *self.ignore_matcher.write() = build_root_ignore_matcher(root, &self.ignore_paths);
+                let (ignore_paths, _) = resolve_root_exclusions(root);
+                *self.ignore_matcher.write() = build_root_ignore_matcher(root, &ignore_paths);
             }
         }
     }
@@ -251,17 +252,19 @@ fn build_root_ignore_matcher(
     ignore_paths: &[String],
 ) -> Option<ignore::gitignore::Gitignore> {
     let mut builder = ignore::gitignore::GitignoreBuilder::new(root);
-    let keyhogignore = root.join(".keyhogignore");
-    if keyhogignore.is_file() {
-        let _ = builder.add(&keyhogignore);
-    }
-    let keyhogignore_toml = root.join(".keyhogignore.toml");
-    if keyhogignore_toml.is_file() {
-        let _ = builder.add(&keyhogignore_toml);
-    }
     let gitignore = root.join(".gitignore");
     if gitignore.is_file() {
         let _ = builder.add(&gitignore);
+    }
+    let keyhogignore = root.join(".keyhogignore");
+    if keyhogignore.is_file() {
+        if let Ok(allowlist) =
+            keyhog_core::Allowlist::load_with_metadata_policy(&keyhogignore, false, false, None)
+        {
+            for pattern in &allowlist.ignored_paths {
+                let _ = builder.add_line(None, pattern);
+            }
+        }
     }
     for pattern in ignore_paths {
         let _ = builder.add_line(None, pattern);
@@ -273,23 +276,9 @@ fn resolve_root_exclusions(root: &std::path::Path) -> (Vec<String>, bool) {
     let dot_config = root.join(".keyhog.toml");
     if let Ok(bytes) = std::fs::read(&dot_config) {
         if let Ok(text) = std::str::from_utf8(&bytes) {
-            if let Ok(value) = toml::from_str::<toml::Value>(text) {
-                let ignore_paths = value
-                    .get("scan")
-                    .and_then(|s| s.get("ignore_paths"))
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let respect_default_excludes = value
-                    .get("scan")
-                    .and_then(|s| s.get("respect_default_excludes"))
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
-                return (ignore_paths, respect_default_excludes);
+            if let Ok(config) = toml::from_str::<crate::config::schema::ConfigFile>(text) {
+                let ignore_paths = config.scan.and_then(|s| s.exclude).unwrap_or_default();
+                return (ignore_paths, true);
             }
         }
     }
@@ -589,6 +578,7 @@ impl GuardWatcher {
                             let roots = self.find_matching_roots_for_path(path);
                             for root in roots {
                                 if let Some(watched) = self.roots.get(&root) {
+                                    watched.maybe_reload_ignore_matcher(&root, path);
                                     if watched.is_path_excluded(&root, path, &self.skip_dirs) {
                                         continue;
                                     }

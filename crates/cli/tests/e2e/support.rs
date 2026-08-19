@@ -22,14 +22,24 @@ pub fn keyhog_command(args: &[&str]) -> Command {
 }
 
 pub fn apply_default_scan_backend(cmd: &mut Command, args: &[&str]) {
-    if args.first() == Some(&"scan") && !args.iter().any(|arg| *arg == "--backend") {
-        #[cfg(feature = "simd")]
-        let default_backend = "simd";
-        #[cfg(not(feature = "simd"))]
-        let default_backend = "cpu";
-        cmd.arg("scan")
-            .args(["--backend", default_backend])
-            .args(&args[1..]);
+    if args.first() == Some(&"scan") {
+        let mut final_args = Vec::new();
+        final_args.push("scan");
+        if !args.iter().any(|arg| *arg == "--backend") {
+            #[cfg(feature = "simd")]
+            let default_backend = "simd";
+            #[cfg(not(feature = "simd"))]
+            let default_backend = "cpu";
+            final_args.extend(["--backend", default_backend]);
+        }
+        if !args
+            .iter()
+            .any(|arg| *arg == "--developer-compile-embedded-detectors")
+        {
+            final_args.push("--developer-compile-embedded-detectors");
+        }
+        final_args.extend(&args[1..]);
+        cmd.args(final_args);
     } else {
         cmd.args(args);
     }
