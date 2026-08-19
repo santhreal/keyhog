@@ -6,6 +6,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Added
 - feat(guard): populate GuardPolicyIdentity digests for ignore file, suppressions, configuration, and source policy, triggering state transition to StalePolicy and attestation invalidation on policy file modifications (Row 142).
 
+- bench(product): add product-level criterion benchmarks for CLI startup, hook execution, guard status, core evaluation, and verifier evaluation (Row 147).
 - feat(guard): continuous guard transition feed and event log surface with causal attribution across registered roots (Row 146).
 - feat(cli): enhance pass-gate terminal output craft with structured volume, blob counts, bytes scanned, and execution timing (Row 143).
 - feat(guard): offline guard status and list inspectability reading durable store from disk with optional root summary (Row 140).

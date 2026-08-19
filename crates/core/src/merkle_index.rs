@@ -303,8 +303,13 @@ pub struct MerkleIndex {
 impl MerkleIndex {
     /// Construct a fresh, empty [`MerkleIndex`] with no cached entries and
     /// the default entry cap ([`MERKLE_DEFAULT_MAX_ENTRIES`]).
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         Self::with_max_entries(MERKLE_DEFAULT_MAX_ENTRIES)
+    }
+
+    /// Construct a fresh, empty [`MerkleIndex`].
+    pub fn new() -> Self {
+        Self::empty()
     }
 
     /// Construct a fresh, empty [`MerkleIndex`] with an explicit entry cap.

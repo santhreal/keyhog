@@ -90,7 +90,7 @@ pub(crate) const WIRE_VERSION: u32 = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct WarmBackendIdentity {
+pub struct WarmBackendIdentity {
     pub engine: String,
     pub gpu_artifact: Option<String>,
     pub binary_sha256: String,
@@ -100,7 +100,7 @@ pub(crate) struct WarmBackendIdentity {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct WarmBackendStatus {
+pub struct WarmBackendStatus {
     pub ready: bool,
     pub daemon_generation: String,
     pub identity: WarmBackendIdentity,
@@ -112,7 +112,7 @@ pub(crate) struct WarmBackendStatus {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct MassScanStats {
+pub struct MassScanStats {
     pub batches: u64,
     pub chunks: u64,
     pub bytes: u64,
@@ -133,7 +133,7 @@ impl MassScanStats {
 /// input data and the payload is privacy-safe by construction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ProfileStageMeasurement {
+pub struct ProfileStageMeasurement {
     pub stage: String,
     pub calls: u64,
     pub elapsed_ns: u64,
@@ -146,7 +146,7 @@ pub(crate) struct ProfileStageMeasurement {
 /// and exact event loss counts so dropped detail is never silent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct RequestProfile {
+pub struct RequestProfile {
     /// Server-assigned identity: the daemon generation string from
     /// [`WarmBackendStatus`] plus a process-atomic per-request sequence.
     pub request_id: String,
@@ -303,7 +303,7 @@ pub enum Request {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub(crate) enum Response {
+pub enum Response {
     Hello {
         wire_version: u32,
         keyhog_version: String,
@@ -695,7 +695,7 @@ pub(crate) struct GuardTransitionWireEntry {
 /// One root entry in a `GuardListResult`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct GuardListEntry {
+pub struct GuardListEntry {
     /// Canonical root path.
     pub root: String,
     /// Mode label: "repo" or "filesystem".
@@ -707,7 +707,7 @@ pub(crate) struct GuardListEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct BackendRecoveryStatus {
+pub struct BackendRecoveryStatus {
     pub failed_backend: String,
     pub recovery_backend: String,
     pub recovered_ranges: Vec<RecoveredInputRangeStatus>,
@@ -720,7 +720,7 @@ pub(crate) struct BackendRecoveryStatus {
 /// field is a deserialization error so older peers cannot silently downgrade
 /// a v6 `ScanResults` frame to a no-fault execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum RequiredOption<T> {
+pub enum RequiredOption<T> {
     None,
     Some(T),
 }
@@ -806,14 +806,14 @@ impl<T> Default for RequiredOption<T> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct RecoveredInputRangeStatus {
+pub struct RecoveredInputRangeStatus {
     pub chunk_index: usize,
     pub byte_start: usize,
     pub byte_end: usize,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct SourceCoverageGaps {
+pub struct SourceCoverageGaps {
     pub over_max_size: usize,
     pub binary: usize,
     pub unreadable: usize,
@@ -1175,7 +1175,7 @@ pub(crate) fn sample_request_for_kind(kind: &str) -> Option<Request> {
 /// One-word kind label for a daemon [`Response`]. Use this in user-facing
 /// protocol errors instead of `Debug`: response payloads can contain scanner
 /// results and therefore credential-shaped data.
-pub(crate) fn response_kind(response: &Response) -> &'static str {
+pub fn response_kind(response: &Response) -> &'static str {
     match response {
         Response::Hello { .. } => "Hello",
         Response::Health { .. } => "Health",

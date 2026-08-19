@@ -218,3 +218,16 @@ proptest = { workspace = true }
 # Mock GitHub releases API for the installer/update lifecycle suite. The suite
 # injects this server only through the library test API, never shipped argv.
 httpmock = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "cli_startup"
+harness = false
+
+[[bench]]
+name = "hook_execution"
+harness = false
+
+[[bench]]
+name = "guard_status"
+harness = false
