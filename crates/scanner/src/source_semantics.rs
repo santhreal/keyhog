@@ -435,9 +435,7 @@ fn syntax_for_path(path: &str) -> Option<StructuredSyntax> {
     } else if extension.eq_ignore_ascii_case("ini")
         || extension.eq_ignore_ascii_case("cfg")
         || extension.eq_ignore_ascii_case("conf")
-        || extension.eq_ignore_ascii_case("config")
         || extension.eq_ignore_ascii_case("properties")
-        || extension.eq_ignore_ascii_case("txt")
     {
         Some(StructuredSyntax::Ini)
     } else {
