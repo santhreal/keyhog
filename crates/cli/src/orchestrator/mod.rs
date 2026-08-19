@@ -1263,6 +1263,11 @@ impl ScanOrchestrator {
     }
 
     pub(crate) fn new(mut args: ScanArgs) -> Result<Self> {
+        if args.developer_compile_embedded_detectors {
+            keyhog_profile::set_compile_phase(keyhog_profile::CompilePhase::Developer);
+        } else {
+            keyhog_profile::set_compile_phase(keyhog_profile::CompilePhase::Scan);
+        }
         let early_profile_session = if args.profile || args.profile_out.is_some() {
             let identity = keyhog_profile::RunIdentity::new(
                 env!("CARGO_PKG_VERSION"),

@@ -829,6 +829,183 @@ impl CacheId {
         }
     }
 }
+/// A compiler surface / artifact class that compiles matcher, plan, or execution policy data.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[repr(u8)]
+pub enum CompileSurfaceId {
+    /// Detector execution plans compiled from detector definitions.
+    DetectorPlan = 0,
+    /// Entropy policy tables compiled for detector thresholds.
+    EntropyPolicy,
+    /// Assignment keyword index compiled from secret and policy keywords.
+    AssignmentKeywordMatcher,
+    /// GPU literal matchers compiled from detector patterns.
+    GpuLiterals,
+    /// SIMD / Hyperscan regex database compiled from detector patterns.
+    SimdProgram,
+    /// Intermediate compile state and companion compilation.
+    CompileState,
+    /// Decode transformation policy compiled from detector specs.
+    DecodePolicy,
+    /// Checksum validator catalog and index compiled from validator specs.
+    ValidatorCatalog,
+    /// Match confidence policy compiled from detector specs.
+    ConfidencePolicy,
+    /// Credential shape rules compiled from detector specs.
+    CredentialShapes,
+    /// Detector execution policy compiled from detector specs.
+    DetectorExecutionPolicy,
+    /// Canonical hex key material policy compiled from detector specs.
+    DetectorKeyMaterialPolicy,
+    /// Detector ML policy compiled from detector specs.
+    DetectorMlPolicy,
+}
+
+impl CompileSurfaceId {
+    /// Number of distinct compile surface classes.
+    pub const COUNT: usize = 13;
+
+    /// Every compile surface in stable wire order.
+    pub const ALL: [Self; Self::COUNT] = [
+        Self::DetectorPlan,
+        Self::EntropyPolicy,
+        Self::AssignmentKeywordMatcher,
+        Self::GpuLiterals,
+        Self::SimdProgram,
+        Self::CompileState,
+        Self::DecodePolicy,
+        Self::ValidatorCatalog,
+        Self::ConfidencePolicy,
+        Self::CredentialShapes,
+        Self::DetectorExecutionPolicy,
+        Self::DetectorKeyMaterialPolicy,
+        Self::DetectorMlPolicy,
+    ];
+
+    /// Dense index into the profiler's compile-surface arrays.
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Stable text label used by profiles and operator reports.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DetectorPlan => "detector-plan",
+            Self::EntropyPolicy => "entropy-policy",
+            Self::AssignmentKeywordMatcher => "assignment-keyword-matcher",
+            Self::GpuLiterals => "gpu-literals",
+            Self::SimdProgram => "simd-program",
+            Self::CompileState => "compile-state",
+            Self::DecodePolicy => "decode-policy",
+            Self::ValidatorCatalog => "validator-catalog",
+            Self::ConfidencePolicy => "confidence-policy",
+            Self::CredentialShapes => "credential-shapes",
+            Self::DetectorExecutionPolicy => "detector-execution-policy",
+            Self::DetectorKeyMaterialPolicy => "detector-key-material-policy",
+            Self::DetectorMlPolicy => "detector-ml-policy",
+        }
+    }
+
+    /// Canonical compile entry-point symbols for this surface class.
+    pub const fn entry_points(self) -> &'static [&'static str] {
+        match self {
+            Self::DetectorPlan => &[
+                "keyhog_scanner::detector_plan::CompiledDetectorPlans::compile",
+                "keyhog_scanner::detector_plan::CompiledDetectorPlans::compile_with_decoder_plan",
+                "keyhog_scanner::detector_plan::compile_detector_plan",
+                "keyhog_scanner::detector_plan::compile_metadata",
+                "keyhog_scanner::detector_plan::DetectorResolutionIndex::compile",
+                "keyhog_scanner::detector_plan::CompiledDetectorRelationIndex::compile",
+            ],
+            Self::EntropyPolicy => &[
+                "keyhog_scanner::entropy::policy::compile_entropy_policy",
+                "keyhog_scanner::entropy::policy::compile_entropy_policy_with_length",
+                "keyhog_scanner::entropy::policy::CompiledEntropyPolicy::compile",
+                "keyhog_scanner::entropy::policy::CompiledEntropyPolicy::compile_with_length",
+                "keyhog_scanner::entropy::policy::CompiledEntropyFloorPolicy::compile",
+            ],
+            Self::AssignmentKeywordMatcher => &[
+                "keyhog_scanner::assignment_keyword_matcher::AssignmentKeywordMatcher::compile",
+            ],
+            Self::GpuLiterals => &[
+                "keyhog_scanner::gpu_literal_artifacts::compile_gpu_literal_artifacts",
+                "keyhog_scanner::gpu_literal_artifacts::compile_gpu_literal_artifact_plan",
+                "keyhog_scanner::engine::gpu_lazy_helpers::compile_gpu_literals",
+            ],
+            Self::SimdProgram => &[
+                "keyhog_scanner::simd::backend::HsScanner::compile_with_opts",
+            ],
+            Self::CompileState => &[
+                "keyhog_scanner::compiler::compiler_build::build_compile_state",
+                "keyhog_scanner::compiler::compiler_compile::compile_companion",
+                "keyhog_scanner::compiler::compiler_compile::compile_detector_companions",
+                "keyhog_scanner::compiler::compiler_compile::compile_pattern",
+            ],
+            Self::DecodePolicy => &[
+                "keyhog_scanner::decode::policy::CompiledDecodeTransformPolicy::compile",
+            ],
+            Self::ValidatorCatalog => &[
+                "keyhog_scanner::checksum::compiled::CompiledValidatorCatalog::compile",
+                "keyhog_scanner::checksum::compiled::CompiledValidatorIndex::compile",
+                "keyhog_scanner::checksum::compiled::CompiledDetectorValidators::compile",
+            ],
+            Self::ConfidencePolicy => &[
+                "keyhog_scanner::confidence::policy::CompiledMatchConfidencePolicy::compile",
+            ],
+            Self::CredentialShapes => &[
+                "keyhog_scanner::credential_shapes::compile_detector_shape_rule",
+            ],
+            Self::DetectorExecutionPolicy => &[
+                "keyhog_scanner::detector_execution_policy::CompiledDetectorExecutionPolicy::compile",
+            ],
+            Self::DetectorKeyMaterialPolicy => &[
+                "keyhog_scanner::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::compile",
+            ],
+            Self::DetectorMlPolicy => &[
+                "keyhog_scanner::detector_ml_policy::CompiledDetectorMlPolicy::compile",
+            ],
+        }
+    }
+}
+
+/// Execution phase during which compilation occurred.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[repr(u8)]
+pub enum CompilePhase {
+    /// Compilation during installer generation (`keyhog install` or compile-execution-packs).
+    Install = 0,
+    /// Compilation during candidate update generation (`keyhog update`).
+    Update,
+    /// In-process compilation during scan execution.
+    Scan,
+    /// In-process compilation under explicit developer escape flag.
+    Developer,
+}
+
+impl CompilePhase {
+    /// Number of distinct compile phases.
+    pub const COUNT: usize = 4;
+
+    /// Every compile phase in stable wire order.
+    pub const ALL: [Self; Self::COUNT] = [Self::Install, Self::Update, Self::Scan, Self::Developer];
+
+    /// Dense index into compile phase arrays.
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Stable text label used by profiles and operator reports.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Install => "install",
+            Self::Update => "update",
+            Self::Scan => "scan",
+            Self::Developer => "developer",
+        }
+    }
+}
 
 /// Why one operation was attempted again.
 ///

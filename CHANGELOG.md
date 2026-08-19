@@ -3,6 +3,10 @@
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [0.5.80] - 2026-08-17
+### Added
+
+- feat(profile): instrument runtime compile surface counters across all 13 compiler surfaces and 4 phases (Row 125).
+
 
 ### Changed
 

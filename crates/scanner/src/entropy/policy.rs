@@ -119,12 +119,18 @@ pub(crate) struct CompiledEntropyFloorPolicy {
 
 impl CompiledEntropyFloorPolicy {
     pub(crate) fn compile(detector: &DetectorSpec) -> Result<Option<Self>, String> {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::EntropyPolicy,
+        );
         Self::compile_source(&detector.id, &detector.entropy_floor, detector.entropy_high)
     }
 
     pub(crate) fn hydrate(
         detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
     ) -> Result<Option<Self>, String> {
+        keyhog_profile::record_compile_surface_load(
+            keyhog_profile::CompileSurfaceId::EntropyPolicy,
+        );
         Self::compile_source(&detector.id, &detector.entropy_floor, detector.entropy_high)
     }
 
@@ -322,6 +328,9 @@ impl CompiledEntropyPolicy {
         detector: EntropyPolicySource<'_>,
         length: crate::detector_execution_policy::CompiledDetectorLengthPolicy,
     ) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::EntropyPolicy,
+        );
         let length = length.require_bounded(detector.id)?;
         let plausibility = detector.plausibility.ok_or_else(|| {
             format!(
@@ -507,6 +516,9 @@ impl CompiledEntropyPolicy {
 pub(crate) fn compile_entropy_policy(
     detector: &DetectorSpec,
 ) -> Result<Option<CompiledEntropyPolicy>, String> {
+    keyhog_profile::record_compile_surface_invocation(
+        keyhog_profile::CompileSurfaceId::EntropyPolicy,
+    );
     compile_entropy_policy_with_length(
         detector,
         crate::detector_execution_policy::CompiledDetectorLengthPolicy::compile(detector),
@@ -517,6 +529,9 @@ pub(crate) fn compile_entropy_policy_with_length(
     detector: &DetectorSpec,
     length: crate::detector_execution_policy::CompiledDetectorLengthPolicy,
 ) -> Result<Option<CompiledEntropyPolicy>, String> {
+    keyhog_profile::record_compile_surface_invocation(
+        keyhog_profile::CompileSurfaceId::EntropyPolicy,
+    );
     if !detector.owns_entropy_policy() {
         return Ok(None);
     }
@@ -539,6 +554,7 @@ pub(crate) fn hydrate_entropy_policy_with_length(
     detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
     length: crate::detector_execution_policy::CompiledDetectorLengthPolicy,
 ) -> Result<Option<CompiledEntropyPolicy>, String> {
+    keyhog_profile::record_compile_surface_load(keyhog_profile::CompileSurfaceId::EntropyPolicy);
     if !detector.owns_entropy_policy() {
         return Ok(None);
     }

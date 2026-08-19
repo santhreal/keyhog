@@ -332,6 +332,7 @@ fn restore_root_preserves_metadata_but_resets_state() {
     let record = keyhog_core::guard_state::GuardRootRecord {
         canonical_path: b"/restored/repo".to_vec(),
         filesystem_identity: test_fs_identity(),
+        filesystem_authority: keyhog_core::guard_state::FilesystemAuthority::default(),
         mode: GuardRootMode::Repo,
         state: keyhog_core::guard_state::GuardRootState::Current,
         terminal_sequence: 42,
@@ -365,6 +366,7 @@ fn restore_root_rejects_duplicate() {
     let record = keyhog_core::guard_state::GuardRootRecord {
         canonical_path: b"/dup/repo".to_vec(),
         filesystem_identity: test_fs_identity(),
+        filesystem_authority: keyhog_core::guard_state::FilesystemAuthority::default(),
         mode: GuardRootMode::Repo,
         state: keyhog_core::guard_state::GuardRootState::Stopped,
         terminal_sequence: 0,
@@ -387,6 +389,7 @@ fn restore_root_then_reconcile_transitions_to_indexing() {
     let record = keyhog_core::guard_state::GuardRootRecord {
         canonical_path: b"/restart/repo".to_vec(),
         filesystem_identity: test_fs_identity(),
+        filesystem_authority: keyhog_core::guard_state::FilesystemAuthority::default(),
         mode: GuardRootMode::Repo,
         state: keyhog_core::guard_state::GuardRootState::Stopped,
         terminal_sequence: 5,
@@ -427,6 +430,7 @@ fn mutation_restore_current_directly_is_rejected_by_caller_contract() {
     let record = keyhog_core::guard_state::GuardRootRecord {
         canonical_path: b"/mutation/current".to_vec(),
         filesystem_identity: test_fs_identity(),
+        filesystem_authority: keyhog_core::guard_state::FilesystemAuthority::default(),
         mode: GuardRootMode::Repo,
         state: keyhog_core::guard_state::GuardRootState::Current,
         terminal_sequence: 99,

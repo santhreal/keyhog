@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::future::{poll_fn, Future};
 use std::marker::PhantomData;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Instant;
 
@@ -268,6 +268,9 @@ struct WorkerShard {
     indexed_counters: [[AtomicU64; crate::INDEXED_COUNTER_SLOTS]; crate::IndexedCounterId::COUNT],
     indexed_counter_dropped: AtomicU64,
     retries: [AtomicU64; crate::RetryCause::COUNT],
+    compile_surface_invocations:
+        [[AtomicU64; crate::CompilePhase::COUNT]; crate::CompileSurfaceId::COUNT],
+    compile_surface_loads: [AtomicU64; crate::CompileSurfaceId::COUNT],
 }
 
 const fn zero_counters() -> [AtomicU64; STAGE_COUNT] {
@@ -300,6 +303,15 @@ const fn max_counters() -> [AtomicU64; STAGE_COUNT] {
 
 const fn zero_cache_counters() -> [AtomicU64; crate::CacheId::COUNT] {
     [const { AtomicU64::new(0) }; crate::CacheId::COUNT]
+}
+const fn zero_compile_surface_invocations(
+) -> [[AtomicU64; crate::CompilePhase::COUNT]; crate::CompileSurfaceId::COUNT] {
+    [const { [const { AtomicU64::new(0) }; crate::CompilePhase::COUNT] };
+        crate::CompileSurfaceId::COUNT]
+}
+
+const fn zero_compile_surface_loads() -> [AtomicU64; crate::CompileSurfaceId::COUNT] {
+    [const { AtomicU64::new(0) }; crate::CompileSurfaceId::COUNT]
 }
 
 impl WorkerShard {
@@ -337,6 +349,8 @@ impl WorkerShard {
             indexed_counters: zero_indexed_counters(),
             indexed_counter_dropped: AtomicU64::new(0),
             retries: [const { AtomicU64::new(0) }; crate::RetryCause::COUNT],
+            compile_surface_invocations: zero_compile_surface_invocations(),
+            compile_surface_loads: zero_compile_surface_loads(),
         }
     }
 }
@@ -426,6 +440,10 @@ struct RuntimeInner {
     distribution_buckets: [[AtomicU64; LATENCY_BUCKET_COUNT]; crate::MetricId::COUNT],
     distribution_min: [AtomicU64; crate::MetricId::COUNT],
     distribution_max: [AtomicU64; crate::MetricId::COUNT],
+    active_compile_phase: AtomicU8,
+    legacy_compile_surface_invocations:
+        [[AtomicU64; crate::CompilePhase::COUNT]; crate::CompileSurfaceId::COUNT],
+    legacy_compile_surface_loads: [AtomicU64; crate::CompileSurfaceId::COUNT],
 }
 
 const fn zero_queue_depths() -> [AtomicU64; crate::QueueId::COUNT] {
@@ -488,6 +506,9 @@ impl RuntimeInner {
             distribution_buckets: zero_distribution_buckets(),
             distribution_min: zero_distribution_mins(),
             distribution_max: zero_distribution_maxes(),
+            active_compile_phase: AtomicU8::new(crate::CompilePhase::Scan as u8),
+            legacy_compile_surface_invocations: zero_compile_surface_invocations(),
+            legacy_compile_surface_loads: zero_compile_surface_loads(),
         }
     }
 
@@ -1334,6 +1355,119 @@ impl Runtime {
                 .backend_dispatched_bytes
                 .fetch_add(bytes, Ordering::Relaxed);
         }
+    }
+    pub fn set_compile_phase(&self, phase: crate::CompilePhase) {
+        self.inner
+            .active_compile_phase
+            .store(phase as u8, Ordering::Relaxed);
+    }
+
+    pub fn active_compile_phase(&self) -> crate::CompilePhase {
+        match self.inner.active_compile_phase.load(Ordering::Relaxed) {
+            0 => crate::CompilePhase::Install,
+            1 => crate::CompilePhase::Update,
+            2 => crate::CompilePhase::Scan,
+            _ => crate::CompilePhase::Developer,
+        }
+    }
+
+    pub fn record_compile_surface_invocation(&self, surface: crate::CompileSurfaceId) {
+        let phase = self.active_compile_phase();
+        self.record_compile_surface_invocation_with_phase(surface, phase);
+    }
+
+    pub fn record_compile_surface_invocation_with_phase(
+        &self,
+        surface: crate::CompileSurfaceId,
+        phase: crate::CompilePhase,
+    ) {
+        if let Some(shard) = self.worker_shard() {
+            shard.compile_surface_invocations[surface.index()][phase.index()]
+                .fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.inner.legacy_compile_surface_invocations[surface.index()][phase.index()]
+                .fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    pub fn record_compile_surface_load(&self, surface: crate::CompileSurfaceId) {
+        if let Some(shard) = self.worker_shard() {
+            shard.compile_surface_loads[surface.index()].fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.inner.legacy_compile_surface_loads[surface.index()]
+                .fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    pub fn total_runtime_compiles(&self) -> u64 {
+        let mut total = 0u64;
+        for surface in crate::CompileSurfaceId::ALL {
+            total = total.saturating_add(
+                self.compile_surface_invocations(surface, crate::CompilePhase::Scan),
+            );
+            total = total.saturating_add(
+                self.compile_surface_invocations(surface, crate::CompilePhase::Developer),
+            );
+        }
+        total
+    }
+
+    pub fn compile_surface_invocations(
+        &self,
+        surface: crate::CompileSurfaceId,
+        phase: crate::CompilePhase,
+    ) -> u64 {
+        let mut count = self.inner.legacy_compile_surface_invocations[surface.index()]
+            [phase.index()]
+        .load(Ordering::Relaxed);
+        let shards = self.inner.sorted_shards();
+        for shard in shards.iter() {
+            count = count.saturating_add(
+                shard.compile_surface_invocations[surface.index()][phase.index()]
+                    .load(Ordering::Relaxed),
+            );
+        }
+        count
+    }
+
+    pub fn compile_surface_loads(&self, surface: crate::CompileSurfaceId) -> u64 {
+        let mut count =
+            self.inner.legacy_compile_surface_loads[surface.index()].load(Ordering::Relaxed);
+        let shards = self.inner.sorted_shards();
+        for shard in shards.iter() {
+            count = count.saturating_add(
+                shard.compile_surface_loads[surface.index()].load(Ordering::Relaxed),
+            );
+        }
+        count
+    }
+
+    pub fn compile_surface_reports(&self) -> Vec<crate::schema_v2::CompileSurfaceRecordV2> {
+        crate::CompileSurfaceId::ALL
+            .iter()
+            .map(|&surface| {
+                let install_compiles =
+                    self.compile_surface_invocations(surface, crate::CompilePhase::Install);
+                let update_compiles =
+                    self.compile_surface_invocations(surface, crate::CompilePhase::Update);
+                let scan_compiles =
+                    self.compile_surface_invocations(surface, crate::CompilePhase::Scan);
+                let developer_compiles =
+                    self.compile_surface_invocations(surface, crate::CompilePhase::Developer);
+                let runtime_compiles = scan_compiles.saturating_add(developer_compiles);
+                let loads = self.compile_surface_loads(surface);
+                crate::schema_v2::CompileSurfaceRecordV2 {
+                    version: crate::schema_v2::COMPILE_SURFACE_RECORD_V2_VERSION,
+                    surface,
+                    name: surface.as_str().to_string(),
+                    runtime_compiles,
+                    loads,
+                    install_compiles,
+                    update_compiles,
+                    developer_compiles,
+                }
+            })
+            .collect()
     }
 
     pub(crate) fn drain_stage_counters(&self, session: bool) -> RawStageCounters {
@@ -2645,6 +2779,82 @@ pub fn record_cache_hit(cache: crate::CacheId) {
 pub fn record_cache_miss(cache: crate::CacheId) {
     if let Some(runtime) = current_runtime() {
         runtime.record_cache_outcome(cache, false);
+    }
+}
+/// Set the current compile phase (Install, Update, Scan, Developer) on the active runtime.
+#[inline]
+pub fn set_compile_phase(phase: crate::CompilePhase) {
+    if let Some(runtime) = current_runtime() {
+        runtime.set_compile_phase(phase);
+    }
+}
+
+/// Retrieve the active compile phase from the active runtime (defaults to Scan).
+#[inline]
+pub fn active_compile_phase() -> crate::CompilePhase {
+    if let Some(runtime) = current_runtime() {
+        runtime.active_compile_phase()
+    } else {
+        crate::CompilePhase::Scan
+    }
+}
+
+/// Record one invocation of a compiler surface in the active compile phase.
+#[inline]
+pub fn record_compile_surface_invocation(surface: crate::CompileSurfaceId) {
+    if let Some(runtime) = current_runtime() {
+        runtime.record_compile_surface_invocation(surface);
+    }
+}
+
+/// Record one invocation of a compiler surface in an explicit compile phase.
+#[inline]
+pub fn record_compile_surface_invocation_with_phase(
+    surface: crate::CompileSurfaceId,
+    phase: crate::CompilePhase,
+) {
+    if let Some(runtime) = current_runtime() {
+        runtime.record_compile_surface_invocation_with_phase(surface, phase);
+    }
+}
+
+/// Record one load of a prepared/installed artifact for a compile surface class.
+#[inline]
+pub fn record_compile_surface_load(surface: crate::CompileSurfaceId) {
+    if let Some(runtime) = current_runtime() {
+        runtime.record_compile_surface_load(surface);
+    }
+}
+
+/// Sum total runtime compilations across all surfaces in Scan and Developer phases.
+#[inline]
+pub fn total_runtime_compiles() -> u64 {
+    if let Some(runtime) = current_runtime() {
+        runtime.total_runtime_compiles()
+    } else {
+        0
+    }
+}
+
+/// Derive compile surface reports for all 13 compile surface classes.
+#[inline]
+pub fn compile_surface_reports() -> Vec<crate::schema_v2::CompileSurfaceRecordV2> {
+    if let Some(runtime) = current_runtime() {
+        runtime.compile_surface_reports()
+    } else {
+        crate::CompileSurfaceId::ALL
+            .iter()
+            .map(|&surface| crate::schema_v2::CompileSurfaceRecordV2 {
+                version: crate::schema_v2::COMPILE_SURFACE_RECORD_V2_VERSION,
+                surface,
+                name: surface.as_str().to_string(),
+                runtime_compiles: 0,
+                loads: 0,
+                install_compiles: 0,
+                update_compiles: 0,
+                developer_compiles: 0,
+            })
+            .collect()
     }
 }
 

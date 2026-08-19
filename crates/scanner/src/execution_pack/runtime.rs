@@ -332,6 +332,21 @@ impl ExecutionPack {
         let entry = self.sections.iter().find(|entry| entry.kind == kind)?;
         let start = entry.offset as usize;
         let end = start + entry.len as usize;
+        let surface_id = match kind {
+            ExecutionPackSectionKind::DetectorPlan => {
+                Some(keyhog_profile::CompileSurfaceId::DetectorPlan)
+            }
+            ExecutionPackSectionKind::BackendProgram => match self.identity.backend {
+                super::format::ExecutionPackBackend::Simd => {
+                    Some(keyhog_profile::CompileSurfaceId::SimdProgram)
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(id) = surface_id {
+            keyhog_profile::record_compile_surface_load(id);
+        }
         Some(&self.mapping[start..end])
     }
 

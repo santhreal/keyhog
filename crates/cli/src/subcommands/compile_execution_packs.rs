@@ -48,6 +48,7 @@ struct InstallBackendInput<'a> {
 }
 
 pub(crate) fn run(args: CompileExecutionPacksArgs) -> Result<()> {
+    keyhog_profile::set_compile_phase(keyhog_profile::CompilePhase::Install);
     let signing_key = read_signing_key(&args.signing_key)?;
     let detectors = keyhog_core::load_embedded_detectors_or_fail()
         .context("loading embedded detectors for execution-pack compilation")?;

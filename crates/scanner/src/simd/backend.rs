@@ -891,6 +891,9 @@ impl HsScanner {
         opts: HsCompileOpts<'_>,
     ) -> Result<(Self, Vec<usize>), String> {
         COMPILE_WITH_OPTS_INVOCATIONS.fetch_add(1, Ordering::Relaxed);
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::SimdProgram,
+        );
         Self::compile_with_opts_inner(patterns, opts, None)
     }
 

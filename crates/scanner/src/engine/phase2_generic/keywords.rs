@@ -73,6 +73,9 @@ pub(crate) struct GenericAssignmentKeywordPlan {
 
 impl GenericAssignmentKeywordPlan {
     pub(crate) fn compile(detectors: &[keyhog_core::DetectorSpec]) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::AssignmentKeywordMatcher,
+        );
         let keywords = crate::assignment_keywords::derive_assignment_keywords(detectors)?;
         let vendor_suffixes =
             crate::assignment_keywords::derive_generic_vendor_suffixes(detectors)?;
@@ -117,6 +120,9 @@ impl GenericAssignmentKeywordPlan {
     pub(crate) fn hydrate_from<T: crate::assignment_keywords::DetectorPlanAssignmentSource>(
         detectors: &[T],
     ) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_load(
+            keyhog_profile::CompileSurfaceId::AssignmentKeywordMatcher,
+        );
         let keywords = crate::assignment_keywords::derive_assignment_keywords_from_plan(detectors)?;
         let vendor_suffixes =
             crate::assignment_keywords::derive_generic_suffixes_from_plan(detectors, false)?;

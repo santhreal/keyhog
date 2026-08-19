@@ -158,6 +158,9 @@ pub(crate) const MIN_HOMOGLYPH_PREFIX_LEN: usize = 3;
 
 pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
     BUILD_COMPILE_STATE_INVOCATIONS.set(BUILD_COMPILE_STATE_INVOCATIONS.get() + 1);
+    keyhog_profile::record_compile_surface_invocation(
+        keyhog_profile::CompileSurfaceId::CompileState,
+    );
 
     // De-duplicate identical regex strings BEFORE compilation. The 888-
     // detector corpus has ~6-15% duplicate patterns (e.g. multiple

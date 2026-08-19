@@ -11,6 +11,9 @@ pub(crate) struct AssignmentKeywordMatcher {
 
 impl AssignmentKeywordMatcher {
     pub(crate) fn compile(secret_keywords: &[String], detector_policy_keywords: &[String]) -> Self {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::AssignmentKeywordMatcher,
+        );
         let mut seen = std::collections::HashSet::new();
         let patterns = secret_keywords
             .iter()

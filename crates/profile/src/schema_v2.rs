@@ -568,6 +568,20 @@ pub struct BlockedWaitRecordV2 {
     pub calls: u64,
     pub blocked_ns: u64,
 }
+pub const COMPILE_SURFACE_RECORD_V2_VERSION: u16 = 1;
+
+/// Compilation and load metrics recorded for one compile surface class.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CompileSurfaceRecordV2 {
+    pub version: u16,
+    pub surface: crate::CompileSurfaceId,
+    pub name: String,
+    pub runtime_compiles: u64,
+    pub loads: u64,
+    pub install_compiles: u64,
+    pub update_compiles: u64,
+    pub developer_compiles: u64,
+}
 
 /// One exact logarithmic latency bucket.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -765,6 +779,9 @@ pub struct CausalProfileV2 {
     /// Retry attempts by cause; empty on profiles before 2.8.
     #[serde(default)]
     pub retries: Vec<RetryRecordV2>,
+    /// Compilation surface metrics by class and phase; empty on profiles before 2.9.
+    #[serde(default)]
+    pub compile_surfaces: Vec<CompileSurfaceRecordV2>,
     /// Derived bottleneck analysis; absent on profiles before 2.8.
     #[serde(default)]
     pub insight: Option<crate::insight::RunInsightV2>,
@@ -927,6 +944,7 @@ impl CausalProfileV2 {
             caches: Vec::new(),
             indexed_counters: Vec::new(),
             retries: Vec::new(),
+            compile_surfaces: crate::compile_surface_reports(),
             insight: None,
             observer_effect,
             events: EventStreamV2 {
