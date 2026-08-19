@@ -955,8 +955,9 @@ impl Runtime {
         self.current_parent().1
     }
 
-    fn reserve_span(
+    fn reserve_span_with_id(
         &self,
+        span_id: u64,
         stage: Stage,
         started: Instant,
         parent_span_id: u64,
@@ -977,11 +978,6 @@ impl Runtime {
             Ok(records) => records,
             Err(poisoned) => poisoned.into_inner(),
         };
-        let span_id = self
-            .inner
-            .session_span_sequence
-            .fetch_add(1, Ordering::Relaxed)
-            .saturating_add(1);
         let record_index = records.len();
         records.push(RawSpanRecord {
             span_id,
@@ -1008,6 +1004,29 @@ impl Runtime {
         })
     }
 
+    fn reserve_span(
+        &self,
+        stage: Stage,
+        started: Instant,
+        parent_span_id: u64,
+        stack_slot: Option<usize>,
+        worker_id: u64,
+    ) -> Option<SpanTrace> {
+        let span_id = self
+            .inner
+            .session_span_sequence
+            .fetch_add(1, Ordering::Relaxed)
+            .saturating_add(1);
+        self.reserve_span_with_id(
+            span_id,
+            stage,
+            started,
+            parent_span_id,
+            stack_slot,
+            worker_id,
+        )
+    }
+
     fn begin_span_with(
         &self,
         stage: Stage,
@@ -1015,21 +1034,32 @@ impl Runtime {
         parent_span_id: u64,
         parent_slot: Option<usize>,
         worker_id: u64,
-    ) -> (Option<SpanTrace>, Option<usize>) {
+    ) -> (Option<SpanTrace>, Option<usize>, u64) {
+        let span_id = self
+            .inner
+            .session_span_sequence
+            .fetch_add(1, Ordering::Relaxed)
+            .saturating_add(1);
         let stack_slot = ACTIVE_SPANS.with(|stack| stack.borrow().iter().position(Option::is_none));
         let Some(stack_slot) = stack_slot else {
             self.inner
                 .session_dropped_spans
                 .fetch_add(1, Ordering::Relaxed);
-            return (None, None);
+            return (None, None, span_id);
         };
         let trace = if self.inner.session_recording {
-            self.reserve_span(stage, started, parent_span_id, Some(stack_slot), worker_id)
+            self.reserve_span_with_id(
+                span_id,
+                stage,
+                started,
+                parent_span_id,
+                Some(stack_slot),
+                worker_id,
+            )
         } else {
             None
         };
         let runtime_key = Arc::as_ptr(&self.inner) as usize;
-        let span_id = trace.as_ref().map_or(0, |t| t.span_id);
         ACTIVE_SPANS.with(|stack| {
             stack.borrow_mut()[stack_slot] = Some(ActiveSpan {
                 runtime_key,
@@ -1038,18 +1068,24 @@ impl Runtime {
                 parent_slot,
             });
         });
-        (trace, Some(stack_slot))
+        (trace, Some(stack_slot), span_id)
     }
 
-    fn pop_active_span(&self, stack_slot: Option<usize>, elapsed_ns: u64) -> u64 {
+    fn pop_active_span(
+        &self,
+        stack_slot: Option<usize>,
+        expected_span_id: u64,
+        elapsed_ns: u64,
+    ) -> u64 {
         let Some(stack_slot) = stack_slot else {
             return elapsed_ns;
         };
         let runtime_key = Arc::as_ptr(&self.inner) as usize;
         let child_elapsed_ns = ACTIVE_SPANS.with(|stack| {
             let mut stack = stack.borrow_mut();
-            if let Some(active) = stack[stack_slot].take() {
-                if active.runtime_key == runtime_key {
+            if let Some(active) = &stack[stack_slot] {
+                if active.runtime_key == runtime_key && active.span_id == expected_span_id {
+                    let active = stack[stack_slot].take().unwrap();
                     if let Some(parent_slot) = active.parent_slot {
                         if let Some(parent) = stack[parent_slot].as_mut() {
                             if parent.runtime_key == runtime_key {
@@ -2384,6 +2420,7 @@ pub struct Span {
     started: Option<Instant>,
     trace: Option<SpanTrace>,
     stack_slot: Option<usize>,
+    span_id: u64,
     blocked: bool,
     serial: bool,
 }
@@ -2409,6 +2446,7 @@ fn span_impl(
             started: None,
             trace: None,
             stack_slot: None,
+            span_id: 0,
             blocked: false,
             serial: false,
         };
@@ -2420,7 +2458,7 @@ fn span_impl(
     if started.is_some() {
         SPAN_DEPTH.with(|depth| depth.set(depth.get() + 1));
     }
-    let (trace, stack_slot) = match (runtime.as_ref(), started) {
+    let (trace, stack_slot, span_id) = match (runtime.as_ref(), started) {
         (Some(runtime), Some(started)) => {
             let (parent_slot, current_parent_id) = runtime.current_parent();
             let parent_span_id = match parent_override {
@@ -2429,7 +2467,7 @@ fn span_impl(
             };
             runtime.begin_span_with(stage, started, parent_span_id, parent_slot, worker_id)
         }
-        _ => (None, None),
+        _ => (None, None, 0),
     };
     if trace.is_some() {
         crate::allocation::stage_context_push(stage);
@@ -2441,6 +2479,7 @@ fn span_impl(
         started,
         trace,
         stack_slot,
+        span_id,
         blocked,
         serial,
     }
@@ -2547,7 +2586,7 @@ impl Drop for Span {
             next == 0
         });
         let elapsed_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-        let self_ns = runtime.pop_active_span(self.stack_slot, elapsed_ns);
+        let self_ns = runtime.pop_active_span(self.stack_slot, self.span_id, elapsed_ns);
         runtime.record(
             self.shard.as_deref(),
             self.stage,

@@ -12,8 +12,13 @@ from __future__ import annotations
 import os
 import pathlib
 import sys
-import tomllib
-
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    try:
+        import tomli as tomllib  # type: ignore
+    except ImportError:
+        import toml as tomllib  # type: ignore
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 CARGO_TOML = REPO_ROOT / "Cargo.toml"
 
@@ -74,6 +79,8 @@ def self_test() -> int:
 
 
 def main(argv: list[str]) -> int:
+    if "--self-test" in argv:
+        return self_test()
     try:
         check_cargo_profiles(CARGO_TOML)
         check_binary_sizes()
@@ -82,7 +89,6 @@ def main(argv: list[str]) -> int:
     except Exception as e:
         print(f"Artifact size ceiling gate failed: {e}", file=sys.stderr)
         return 1
-
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
