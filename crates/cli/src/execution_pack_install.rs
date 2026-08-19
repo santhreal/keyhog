@@ -23,7 +23,6 @@ pub enum ArtifactIdentityInput {
     TargetHardwareDigest,
     FeatureDigest,
     DetectorCorpusDigest,
-    ConfigDigest,
     SigningKeyIdentity,
     GpuDeviceIdentity,
 }
@@ -34,7 +33,6 @@ impl ArtifactIdentityInput {
         Self::TargetHardwareDigest,
         Self::FeatureDigest,
         Self::DetectorCorpusDigest,
-        Self::ConfigDigest,
         Self::SigningKeyIdentity,
         Self::GpuDeviceIdentity,
     ];
@@ -45,7 +43,6 @@ impl ArtifactIdentityInput {
             Self::TargetHardwareDigest => "target hardware digest",
             Self::FeatureDigest => "feature digest",
             Self::DetectorCorpusDigest => "detector corpus digest",
-            Self::ConfigDigest => "config digest",
             Self::SigningKeyIdentity => "signing key identity",
             Self::GpuDeviceIdentity => "GPU device identity",
         }
@@ -109,7 +106,6 @@ impl InstalledArtifactClass {
                 ArtifactIdentityInput::TargetHardwareDigest,
                 ArtifactIdentityInput::FeatureDigest,
                 ArtifactIdentityInput::DetectorCorpusDigest,
-                ArtifactIdentityInput::ConfigDigest,
             ],
             Self::VerificationKey => &[ArtifactIdentityInput::SigningKeyIdentity],
             Self::ExecutionPack => &[
@@ -117,7 +113,6 @@ impl InstalledArtifactClass {
                 ArtifactIdentityInput::TargetHardwareDigest,
                 ArtifactIdentityInput::FeatureDigest,
                 ArtifactIdentityInput::DetectorCorpusDigest,
-                ArtifactIdentityInput::ConfigDigest,
                 ArtifactIdentityInput::SigningKeyIdentity,
             ],
             Self::Signature => &[
@@ -135,7 +130,6 @@ impl InstalledArtifactClass {
                 ArtifactIdentityInput::TargetHardwareDigest,
                 ArtifactIdentityInput::FeatureDigest,
                 ArtifactIdentityInput::DetectorCorpusDigest,
-                ArtifactIdentityInput::ConfigDigest,
                 ArtifactIdentityInput::GpuDeviceIdentity,
             ],
         }
@@ -691,11 +685,6 @@ fn load_manifest(
             "feature",
             manifest.feature_digest.as_str(),
             current_feature.as_str(),
-        ),
-        (
-            "detector",
-            manifest.detector_digest.as_str(),
-            keyhog_core::hex_encode(&current_embedded_detector_digest()?),
         ),
     ] {
         if actual != expected {

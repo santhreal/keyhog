@@ -491,6 +491,7 @@ pub fn cli_main() -> ExitCode {
     }
 
     drop(startup_span);
+    let _warn_dedup_summary = init_tracing();
     let cli = args::parse();
 
     if cli.build_version {
@@ -499,10 +500,6 @@ pub fn cli_main() -> ExitCode {
     }
 
     match cli.command {
-        Some(args::Command::Completion(args)) => {
-            subcommands::completion::run(args);
-            ExitCode::SUCCESS
-        }
         None => {
             let mut cmd = args::command();
             let _ = cmd.print_help(); // LAW10: unused-binding marker; no runtime effect, not a fallback
@@ -514,8 +511,6 @@ pub fn cli_main() -> ExitCode {
 
 fn dispatch_command(command: args::Command) -> ExitCode {
     interrupt::install();
-    let _warn_dedup_summary = init_tracing();
-
     match command {
         args::Command::Scan(args) => {
             let profile_requested = args.profile;

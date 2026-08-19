@@ -166,23 +166,7 @@ pub fn keyhog_matcher_artifacts_root() -> Option<std::path::PathBuf> {
     dirs::cache_dir().map(|dir| dir.join(KEYHOG_MATCHER_ARTIFACTS_SUBDIR))
 }
 
-/// Parse the embedded detector corpus, FAILING CLOSED on any malformed TOML.
-///
-/// This is the SINGLE loader every entrypoint shares (the `scan` orchestrator
-/// via `cli::orchestrator_config`, and every other scan entry point) so the
-/// fail-closed contract holds uniformly, there is exactly one way to turn the
-/// compiled-in corpus into `DetectorSpec`s.
-///
-/// Law 10 (NO SILENT FALLBACKS): the embedded set is baked into the binary by
-/// `build.rs`; a TOML that fails to parse is a BUILD/SOURCE bug, never a runtime
-/// condition the operator can act on (the user cannot have edited a compiled-in
-/// string). The old per-callsite `tracing::debug!`-then-`continue` shape silently
-/// dropped the offender, exactly how the dead `discord-bot-token` detector (a
-/// single-quoted TOML literal that broke parsing) reached a benched release as an
-/// invisible recall hole. So this collects every offender and returns
-/// [`SpecError::EmbeddedCorpusCorrupt`] naming each, making a corrupt corpus a
-/// hard error rather than a buried log line. Each embedded TOML holds exactly one
-/// detector, so on success `result.len() == embedded_detector_count()`.
+/// Global atomic counter tracking the number of times the embedded detector TOML corpus has been parsed.
 static DETECTOR_CORPUS_LOAD_COUNT: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 

@@ -35,9 +35,6 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
         Ok(crate::execution_pack_install::ArtifactFreshnessStatus::Fresh)
     );
 
-    let exe = installer::current_binary()?;
-    installer::reap_stale_binaries(&exe);
-
     if self_test_healthy && packs_fresh && !args.force && args.version.is_none() {
         println!(
             "  {} scan engine and execution packs healthy - nothing to repair.",
@@ -46,6 +43,9 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
         println!("  {dim}use --force to reinstall the newest binary release asset anyway.{reset}");
         return Ok(ExitCode::SUCCESS);
     }
+
+    let exe = installer::current_binary()?;
+    installer::reap_stale_binaries(&exe);
 
     if self_test_healthy && !packs_fresh && !args.force && args.version.is_none() {
         println!(

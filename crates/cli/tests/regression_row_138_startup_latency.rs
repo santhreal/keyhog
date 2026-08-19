@@ -254,3 +254,23 @@ fn in_process_argument_parsing_never_loads_detector_corpus() {
         "argument parsing and help generation must NEVER parse the detector TOML corpus"
     );
 }
+
+#[test]
+fn in_process_completion_execution_never_loads_detector_corpus() {
+    let _guard = TEST_LOCK.lock();
+    keyhog_core::reset_detector_corpus_load_count_for_test();
+
+    let mut cmd = keyhog::args::command();
+    clap_complete::generate(
+        clap_complete::Shell::Bash,
+        &mut cmd,
+        "keyhog",
+        &mut std::io::sink(),
+    );
+
+    assert_eq!(
+        keyhog_core::detector_corpus_load_count(),
+        0,
+        "in-process completion generation must NEVER parse the detector TOML corpus"
+    );
+}
