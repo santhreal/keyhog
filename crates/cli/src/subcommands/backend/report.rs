@@ -46,21 +46,35 @@ pub(super) fn print_backend_report(args: &BackendArgs) -> Result<()> {
         "  simd:              {}",
         simd_label(hw.has_avx512, hw.has_avx2, hw.has_neon)
     );
-    println!(
-        "  gpu:               {} {}",
-        if hw.gpu_available {
-            hw.gpu_name.as_deref().unwrap_or("yes") // LAW10: absent name/label => display default; reporting-only, recall-safe
-        } else if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
-            "not detected (binary built without --features gpu)"
-        } else {
-            "not detected"
-        },
+    let gpu_display = if hw.gpu_available {
+        let name = hw.gpu_name.as_deref().unwrap_or("yes"); // LAW10: absent name/label => display default; reporting-only, recall-safe
         if hw.gpu_is_software {
-            "(software renderer: disabled)"
+            format!("{name} (software renderer: disabled)")
         } else {
-            ""
+            name.to_string()
         }
-    );
+    } else if let Some(name) = hw.gpu_name.as_deref() {
+        if hw.gpu_is_software {
+            format!("{name} (software renderer: disabled)")
+        } else if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
+            if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
+                format!("{name} (compiled without GPU backend / single compiled backend)")
+            } else {
+                format!("{name} (compiled without GPU backend)")
+            }
+        } else {
+            format!("{name} (runtime unavailable)")
+        }
+    } else if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
+        if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
+            "not detected (compiled without GPU backend / single compiled backend)".to_string()
+        } else {
+            "not detected (binary built without --features gpu)".to_string()
+        }
+    } else {
+        "not detected".to_string()
+    };
+    println!("  gpu:               {gpu_display}");
     if let Some(buf) = hw.gpu_vram_mb {
         // `gpu_vram_mb` is actually `wgpu::Limits::max_buffer_size`,
         // not VRAM (wgpu has no portable VRAM query). Display under

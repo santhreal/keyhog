@@ -640,6 +640,22 @@ fn print_version_info(full: bool) {
                 })
                 .unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
         );
+    } else if let Some(name) = &hw.gpu_name {
+        if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
+            if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
+                println!("GPU Acceleration: {name} (compiled without GPU backend / single compiled backend)");
+            } else {
+                println!("GPU Acceleration: {name} (compiled without GPU backend)");
+            }
+        } else {
+            println!("GPU Acceleration: {name} (not active)");
+        }
+    } else if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
+        if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
+            println!("GPU Acceleration: not detected (compiled without GPU backend / single compiled backend)");
+        } else {
+            println!("GPU Acceleration: not detected (binary built without --features gpu)");
+        }
     } else {
         println!("GPU Acceleration: not detected");
     }

@@ -66,6 +66,8 @@ pub enum BackendRoutingReason {
     GpuSoftwareRenderer,
     GpuThresholdNotMet,
     GpuSelected,
+    CompiledWithoutGpu,
+    SingleCompiledBackend,
 }
 
 impl BackendRoutingReason {
@@ -79,6 +81,8 @@ impl BackendRoutingReason {
             Self::GpuSoftwareRenderer => "gpu_software_renderer",
             Self::GpuThresholdNotMet => "gpu_threshold_not_met",
             Self::GpuSelected => "gpu_selected",
+            Self::CompiledWithoutGpu => "compiled_without_gpu_backend",
+            Self::SingleCompiledBackend => "single_compiled_backend",
         }
     }
 }
@@ -135,6 +139,12 @@ impl BackendRoutingVerdict {
             BackendRoutingReason::GpuSoftwareRenderer => {
                 "GPU adapter is a software renderer and is slower than CPU/SIMD".to_string()
             }
+            BackendRoutingReason::CompiledWithoutGpu => {
+                "compiled without GPU backend".to_string()
+            }
+            BackendRoutingReason::SingleCompiledBackend => {
+                "compiled without GPU backend / single compiled backend".to_string()
+            }
             BackendRoutingReason::GpuThresholdNotMet => format!(
                 "GPU thresholds not met for tier {}: bytes={} min={} solo={} patterns={} pattern_floor={}",
                 self.gpu_tier,
@@ -190,6 +200,14 @@ fn select_backend_for_workload(
             cpu_backend,
             BackendRoutingReason::GpuSoftwareRenderer,
         );
+    }
+    if !crate::hw_probe::gpu_backend_compiled() {
+        let reason = if !crate::hw_probe::multiple_backends_compiled() {
+            BackendRoutingReason::SingleCompiledBackend
+        } else {
+            BackendRoutingReason::CompiledWithoutGpu
+        };
+        return BackendRoutingVerdict::new(caps, workload, cpu_backend, reason);
     }
 
     if !caps.gpu_available {
@@ -302,7 +320,7 @@ pub(crate) fn select_backend_for_batch_verdict(
 /// config before falling back to this hardware-only predicate.
 #[must_use]
 pub fn gpu_could_engage(caps: &HardwareCaps, workload_bytes: u64, pattern_count: usize) -> bool {
-    if !caps.gpu_available || caps.gpu_is_software {
+    if !crate::hw_probe::gpu_backend_compiled() || !caps.gpu_available || caps.gpu_is_software {
         return false;
     }
     let tier = classify_gpu_tier(caps.gpu_name.as_deref());
