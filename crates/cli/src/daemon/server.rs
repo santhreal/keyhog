@@ -305,9 +305,15 @@ impl ServerState {
                     "daemon: guard watcher disabled: unmonitored (not watching): {}",
                     e
                 );
-                crate::daemon::guard_watcher::GuardWatcher::new_disabled()
+                let disabled = crate::daemon::guard_watcher::GuardWatcher::new_disabled();
+                disabled
+                    .record_disconnection(&format!("watcher backend failed to initialize: {}", e));
+                disabled
             });
         guard.set_watcher_status(watcher_instance.watcher_status());
+        if let Some(reason) = watcher_instance.disconnection_reason() {
+            guard.record_watcher_disconnection(&reason);
+        }
         let guard_watcher = Arc::new(parking_lot::Mutex::new(watcher_instance));
         Self {
             scanner,

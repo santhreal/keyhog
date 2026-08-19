@@ -290,6 +290,24 @@ fn add_root_fails_closed_when_watcher_is_disconnected() {
 }
 
 #[test]
+fn disabled_watcher_rejects_add_root() {
+    let mut watcher = GuardWatcher::new_disabled();
+    assert!(watcher.is_disabled());
+
+    let dir = tempdir().unwrap();
+    let result = watcher.add_root(dir.path().to_path_buf());
+    assert!(
+        result.is_err(),
+        "add_root must fail when watcher backend is disabled"
+    );
+    let err_msg = result.unwrap_err();
+    assert!(
+        err_msg.contains("watcher backend disabled"),
+        "error message must name the disabled watcher condition: got '{err_msg}'"
+    );
+}
+
+#[test]
 fn runtime_tracks_named_watcher_disconnection_reason() {
     let rt = GuardRuntime::new();
     assert!(!rt.is_watcher_disconnected());
