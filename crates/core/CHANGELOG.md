@@ -1,6 +1,7 @@
 # Changelog
 
 ## 0.5.80 - 2026-08-17
+- feat(guard): populate GuardPolicyIdentity with canonical default digests and digest calculation helpers for ignore files, suppressions, config, and source policy (Row 142).
 
 - feat(core): export canonical DEFAULT_WINDOW_OVERLAP_BYTES and DEFAULT_WINDOW_SIZE_BYTES (Row 111).
 - feat(allowlist): implement match attribution tracking and unused suppression entry reporting across detector, path, and hash rules (`AllowlistRule`, `UnusedAllowlistEntry`).
