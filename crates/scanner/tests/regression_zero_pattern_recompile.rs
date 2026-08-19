@@ -44,7 +44,8 @@ fn run_isolated_counter_test() -> bool {
         .expect("isolated compile-event test process starts");
     assert!(
         output.status.success(),
-        "isolated compile-event test `{test_name}` failed"
+        "isolated compile-event test `{test_name}` failed: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
     true
 }
