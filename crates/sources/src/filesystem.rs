@@ -144,23 +144,24 @@ pub(crate) fn read_file_safe(path: &std::path::Path, cap: u64) -> std::io::Resul
     read::read_file_safe(path, cap)
 }
 
-pub(crate) fn default_exclude_dirs() -> &'static [String] {
+pub fn default_exclude_dirs() -> &'static [String] {
     filter::default_exclude_dirs()
 }
 
-#[cfg(any(feature = "docker", feature = "git"))]
-pub(crate) fn is_default_excluded_path(path: &str) -> bool {
+pub fn is_default_excluded_path(path: &str) -> bool {
     filter::is_default_excluded(path)
 }
 
-#[cfg(feature = "git")]
-pub(crate) fn is_default_excluded_path_bytes(path: &[u8]) -> bool {
+pub fn is_default_excluded_path_bytes(path: &[u8]) -> bool {
     filter::is_default_excluded_bytes(path)
 }
 
-#[cfg(any(feature = "docker", feature = "azure", feature = "s3", feature = "gcs"))]
-pub(crate) fn is_default_skip_extension(ext: &str) -> bool {
+pub fn is_default_skip_extension(ext: &str) -> bool {
     filter::is_skip_extension(ext)
+}
+
+pub fn is_default_excluded_dir_name(name: &std::ffi::OsStr) -> bool {
+    filter::is_default_excluded_dir_name(name)
 }
 
 pub(crate) fn reader_pool_thread_count_for_test(scanner_threads: usize) -> usize {
