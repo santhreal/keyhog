@@ -122,6 +122,7 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                         .as_deref()
                         .unwrap_or_else(|| std::path::Path::new("."));
                     let digest = keyhog_core::detector_digest().to_string();
+                    let guard_start = std::time::Instant::now();
                     let result = crate::daemon::guard_commit::run_guard_commit(
                         &socket_path,
                         repo_path,
@@ -129,7 +130,11 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                     )
                     .await
                     .context("--daemon=on guard commit transaction failed")?;
-                    return finish_guard_commit_scan(result, &policy.effective_args);
+                    return finish_guard_commit_scan(
+                        result,
+                        &policy.effective_args,
+                        Some(guard_start.elapsed()),
+                    );
                 }
                 run_via_daemon(&mut policy.effective_args).await
             }
@@ -144,6 +149,7 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                         .as_deref()
                         .unwrap_or_else(|| std::path::Path::new("."));
                     let digest = keyhog_core::detector_digest().to_string();
+                    let guard_start = std::time::Instant::now();
                     match crate::daemon::guard_commit::run_guard_commit(
                         &socket_path,
                         repo_path,
@@ -152,7 +158,11 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                     .await
                     {
                         Ok(result) => {
-                            return finish_guard_commit_scan(result, &policy.effective_args);
+                            return finish_guard_commit_scan(
+                                result,
+                                &policy.effective_args,
+                                Some(guard_start.elapsed()),
+                            );
                         }
                         Err(e) => {
                             if policy.effective_args.daemon_mode() == DaemonMode::Auto {
@@ -1580,19 +1590,23 @@ fn guard_commit_exit_code(finding_exit: u8, fingerprint_changed: bool, coverage_
 fn finish_guard_commit_scan(
     result: crate::daemon::guard_commit::GuardCommitResult,
     args: &ScanArgs,
+    elapsed: Option<std::time::Duration>,
 ) -> Result<ExitCode> {
     use crate::exit_codes::EXIT_CREDENTIALS_FOUND;
 
-    // Report cache hit statistics to stderr.
+    // Report cache hit statistics and pass gate summary to stderr.
     let palette = crate::style::for_stderr();
     eprintln!(
-        "{} guard: {} cache hit(s), {} blob(s) scanned, {} byte(s) scanned",
-        crate::style::pass("OK", &palette),
-        result.cache_hits,
-        result.blobs_scanned,
-        result.bytes_scanned
+        "{}",
+        crate::style::format_pass_gate_summary(
+            "guard",
+            result.cache_hits,
+            result.blobs_scanned,
+            result.bytes_scanned,
+            elapsed,
+            &palette,
+        )
     );
-
     let findings = finalize_staged_for_report(result.findings, args)?;
     let report_time = chrono::Utc::now();
     let source_chunks_scanned = usize::try_from(result.blobs_scanned)

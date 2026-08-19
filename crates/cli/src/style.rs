@@ -73,6 +73,29 @@ pub(crate) fn info(label: &str, palette: &Palette) -> String {
     format!("{}{}{}", palette.cyan, label, palette.reset)
 }
 
+/// Format a passing gate/scan summary line with item counts, volume, and execution duration.
+pub(crate) fn format_pass_gate_summary(
+    prefix: &str,
+    cache_hits: u64,
+    blobs_scanned: u64,
+    bytes_scanned: u64,
+    duration: Option<std::time::Duration>,
+    palette: &Palette,
+) -> String {
+    let mut parts = Vec::new();
+    parts.push(format!("{cache_hits} cache hit(s)"));
+    parts.push(format!("{blobs_scanned} blob(s) scanned"));
+    parts.push(format!("{bytes_scanned} byte(s) scanned"));
+    if let Some(dur) = duration {
+        parts.push(format!("in {:.2}s", dur.as_secs_f64()));
+    }
+    format!(
+        "{} {prefix}: {}",
+        pass("OK", palette),
+        parts.join(", ")
+    )
+}
+
 // 24-bit truecolor severity / progress palette shared by the scan progress
 // ticker and the completion severity/verification summary lines
 // (`orchestrator::reporting`). Centralized here, the one CLI file exempt from
