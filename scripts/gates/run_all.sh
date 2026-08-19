@@ -259,6 +259,18 @@ run "No scan compile: fail-closed scan execution path and permitted entrypoints 
   python3 -B scripts/gates/no_scan_compile.py
 run "No scan compile unit tests: static analysis of scan compile guards and declarations" \
   python3 -B -m unittest scripts.tests.test_no_scan_compile -v
+run "No inline tests in src self-test: inline test module and function detection (Row 149)" \
+  python3 -B scripts/gates/no_inline_tests_in_src.py --self-test
+run "No inline tests in src: single structural gate across workspace crates (Row 149)" \
+  python3 -B scripts/gates/no_inline_tests_in_src.py
+run "No inline tests in src unit tests: syntax recognition and allowlist validation" \
+  python3 -B -m unittest scripts.tests.test_no_inline_tests_in_src -v
+run "No CWD-relative source reads self-test: manifest-anchored reader contracts (Row 149)" \
+  python3 -B scripts/gates/no_cwd_relative_source_reads.py --self-test
+run "No CWD-relative source reads: test paths resolution safety (Row 149)" \
+  python3 -B scripts/gates/no_cwd_relative_source_reads.py
+run "No CWD-relative source reads unit tests: relative source path detection" \
+  python3 -B -m unittest scripts.tests.test_no_cwd_relative_source_reads -v
 run "Mutation gate self-test: AST mutation generator catches surviving mutants" \
   python3 -B scripts/gates/mutation_gate.py --self-test
 run "Mutation gate unit tests: operator inversion and comment preservation" \
