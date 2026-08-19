@@ -22,8 +22,11 @@ installed-corpus discovery. Disabling default exclusions makes every benchmark
 corpus file part of the scored coverage contract. Findings are written to
 ``--output`` so GNU time's RSS report never crosses the JSON.
 
-The default config (``variants()[0]``) is ``simd-nocache-nodaemon-full`` 
-the deterministic build the README leaderboard cites.
+The default config (``variants()[0]``) is ``simd-nocache-nodaemon-full``,
+the deterministic build the README leaderboard cites. Note that the default
+cargo install uses ``default = ["portable"]`` (pure-Rust CPU); the benchmark
+SIMD backend requires building or installing with ``--features simd``
+(or ``--features portable,simd`` / ``--no-default-features --features ci-lean``).
 """
 
 from __future__ import annotations
@@ -278,7 +281,8 @@ class KeyhogScanner(Scanner):
             return resolved
         raise RuntimeError(
             "no keyhog binary found for the benchmark: build a release binary "
-            "(`cargo build --release -p keyhog`) or set KEYHOG_BIN to its path. "
+            "(`cargo build --release -p keyhog --features simd` or `cargo build --release -p keyhog`) "
+            "or set KEYHOG_BIN to its path. "
             "Refusing to silently fall back to a PATH `keyhog`, which would score a "
             "stale install as if it were HEAD and misreport recall."
         )

@@ -32,8 +32,9 @@ make targets    # execute aspirational recall/competitor target specs (expected 
 
 The benchmark KeyHog binary is resolved from `$KEYHOG_BIN`, else the cargo
 target-dir in `$CARGO_TARGET_DIR`, else `~/.cargo/config.toml`, else the repo
-target dir, else `keyhog` on `PATH`. Build the benchmark candidate first:
-`make keyhog` or
+target dir (`<repo>/target`). The harness fails loudly when no candidate exists
+instead of silently falling back to a `keyhog` on `PATH`. Build the benchmark candidate first:
+`make keyhog`, `cargo build --release -p keyhog --features simd`, or
 `cargo build --release -p keyhog --bin keyhog --no-default-features --features ci-lean`.
 The `ci-lean` timing seam requires an independent authorization value and exists
 only for deterministic backend parity tests. Do not use this candidate as

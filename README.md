@@ -75,6 +75,12 @@ on a clean Rust host. Enable the three GPU peers without acquiring Hyperscan:
 cargo install --locked keyhog --no-default-features --features portable,gpu
 ```
 
+Enable the Hyperscan or Vectorscan SIMD regex peer:
+
+```sh
+cargo install --locked keyhog --no-default-features --features portable,simd
+```
+
 Run the production backend diagnostic, then inspect the measured route:
 
 ```sh
