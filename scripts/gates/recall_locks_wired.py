@@ -33,10 +33,6 @@ WORKFLOWS = REPO / ".github/workflows"
 # a promise the file runs in CI by some other means (bespoke --test step, nightly,
 # or a future GPU-CI lane). Keep this tiny and justified.
 ALLOWED: dict[str, str] = {
-    "backend_and_detector_class_api": "needs all backends available in process",
-    "decode_budget_streaming": "process-global decoder registration requires isolation",
-    "detector_corpus_backend_parity": "needs all backends available in process",
-    "detector_primary_regex_dedup_ratchet": "has mod support conflict with aggregator",
     "gpu_ac_recall_bug_56": "GPU host required",
     "gpu_ac_smoke": "GPU host required",
     "gpu_entropy_recall_parity": "GPU host required",
@@ -45,13 +41,7 @@ ALLOWED: dict[str, str] = {
     "gpu_proptest_invariants": "GPU host required",
     "gpu_region_overfire_validation": "GPU host required",
     "gpu_resident_output_ownership": "GPU host required",
-    "massive_adversarial_runner": "multi-module #[path] conflict with aggregator",
-    "metal_backend_contract": "Metal backend required",
     "packed_gpu_vyre_artifact": "GPU host required",
-    "packed_simd_native_shards": "SIMD host required",
-    "packed_simd_phase2_shards": "SIMD host required",
-    "perf_alloc_evidence_relations": "release-timing harness required",
-    "scan_backend_parity_proptest": "needs all backends available in process",
 }
 
 PATH_INCLUDE = re.compile(r'#\[path\s*=\s*"([A-Za-z0-9_]+)\.rs"\]')
