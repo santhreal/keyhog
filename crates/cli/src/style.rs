@@ -86,14 +86,16 @@ pub(crate) fn format_pass_gate_summary(
     parts.push(format!("{cache_hits} cache hit(s)"));
     parts.push(format!("{blobs_scanned} blob(s) scanned"));
     parts.push(format!("{bytes_scanned} byte(s) scanned"));
+    let details = parts.join(", ");
     if let Some(dur) = duration {
-        parts.push(format!("in {:.2}s", dur.as_secs_f64()));
+        format!(
+            "{} {prefix}: {details} in {:.2}s",
+            pass("OK", palette),
+            dur.as_secs_f64()
+        )
+    } else {
+        format!("{} {prefix}: {details}", pass("OK", palette),)
     }
-    format!(
-        "{} {prefix}: {}",
-        pass("OK", palette),
-        parts.join(", ")
-    )
 }
 
 // 24-bit truecolor severity / progress palette shared by the scan progress

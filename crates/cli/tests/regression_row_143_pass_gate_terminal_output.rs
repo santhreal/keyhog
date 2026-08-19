@@ -11,10 +11,17 @@ use std::time::Duration;
 
 #[test]
 fn pass_gate_summary_formatting_plain() {
-    let summary = API.format_pass_gate_summary("guard", 10, 5, 2048, Some(Duration::from_millis(150)), false);
+    let summary = API.format_pass_gate_summary(
+        "guard",
+        10,
+        5,
+        2048,
+        Some(Duration::from_millis(150)),
+        false,
+    );
     assert_eq!(
         summary,
-        "OK guard: 10 cache hit(s), 5 blob(s) scanned, 2048 byte(s) scanned, in 0.15s"
+        "OK guard: 10 cache hit(s), 5 blob(s) scanned, 2048 byte(s) scanned in 0.15s"
     );
 }
 
@@ -29,13 +36,11 @@ fn pass_gate_summary_formatting_without_duration() {
 
 #[test]
 fn pass_gate_summary_formatting_ansi() {
-    let summary = API.format_pass_gate_summary("guard", 100, 0, 0, Some(Duration::from_secs(1)), true);
+    let summary =
+        API.format_pass_gate_summary("guard", 100, 0, 0, Some(Duration::from_secs(1)), true);
     assert!(
         summary.contains("\x1b[32mOK\x1b[0m"),
         "ANSI pass gate summary must contain green OK prefix; got: {summary:?}"
     );
-    assert!(
-        summary.contains("100 cache hit(s), 0 blob(s) scanned, 0 byte(s) scanned, in 1.00s"),
-        "ANSI pass gate summary must contain statistics; got: {summary:?}"
-    );
+    assert!(summary.contains("100 cache hit(s), 0 blob(s) scanned, 0 byte(s) scanned in 1.00s"),);
 }

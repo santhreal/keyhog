@@ -133,7 +133,7 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                     return finish_guard_commit_scan(
                         result,
                         &policy.effective_args,
-                        Some(guard_start.elapsed()),
+                        Some(guard_start),
                     );
                 }
                 run_via_daemon(&mut policy.effective_args).await
@@ -161,7 +161,7 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                             return finish_guard_commit_scan(
                                 result,
                                 &policy.effective_args,
-                                Some(guard_start.elapsed()),
+                                Some(guard_start),
                             );
                         }
                         Err(e) => {
@@ -1590,23 +1590,10 @@ fn guard_commit_exit_code(finding_exit: u8, fingerprint_changed: bool, coverage_
 fn finish_guard_commit_scan(
     result: crate::daemon::guard_commit::GuardCommitResult,
     args: &ScanArgs,
-    elapsed: Option<std::time::Duration>,
+    guard_start: Option<std::time::Instant>,
 ) -> Result<ExitCode> {
     use crate::exit_codes::EXIT_CREDENTIALS_FOUND;
 
-    // Report cache hit statistics and pass gate summary to stderr.
-    let palette = crate::style::for_stderr();
-    eprintln!(
-        "{}",
-        crate::style::format_pass_gate_summary(
-            "guard",
-            result.cache_hits,
-            result.blobs_scanned,
-            result.bytes_scanned,
-            elapsed,
-            &palette,
-        )
-    );
     let findings = finalize_staged_for_report(result.findings, args)?;
     let report_time = chrono::Utc::now();
     let source_chunks_scanned = usize::try_from(result.blobs_scanned)
@@ -1626,6 +1613,20 @@ fn finish_guard_commit_scan(
     }
     crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
 
+    // Report cache hit statistics and pass gate summary to stderr with total elapsed time.
+    let palette = crate::style::for_stderr();
+    let total_elapsed = guard_start.map(|start| start.elapsed());
+    eprintln!(
+        "{}",
+        crate::style::format_pass_gate_summary(
+            "guard",
+            result.cache_hits,
+            result.blobs_scanned,
+            result.bytes_scanned,
+            total_elapsed,
+            &palette,
+        )
+    );
     let finding_exit = crate::orchestrator::scan_exit_code(
         &findings,
         args.evidence_policy.unwrap_or_default().is_paranoid(),
