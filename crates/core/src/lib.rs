@@ -48,6 +48,8 @@ mod correlation;
 /// Secure credential storage and redaction.
 mod credential;
 mod dedup;
+/// Detector specification and validator contracts.
+pub mod detector;
 mod detector_corpus;
 mod detector_file_io;
 mod display;

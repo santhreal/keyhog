@@ -1033,9 +1033,64 @@ fn spec_hash_distinguishes_every_detector_validator_primitive() {
         prefixes: vec!["token_".into()],
         allow_overlong: false,
     });
+
+    let jwt = digest(DetectorValidatorSpec::Jwt {
+        prefixes: vec!["eyJ".into()],
+        reject_alg_none: true,
+        confidence_floor: 0.95,
+    });
+    let jwt_alg_changed = digest(DetectorValidatorSpec::Jwt {
+        prefixes: vec!["eyJ".into()],
+        reject_alg_none: false,
+        confidence_floor: 0.95,
+    });
+    assert_ne!(jwt, jwt_alg_changed);
+
+    let uuid = digest(DetectorValidatorSpec::Uuid {
+        prefixes: vec!["uuid_".into()],
+        confidence_floor: 0.90,
+    });
+    let uuid_floor_changed = digest(DetectorValidatorSpec::Uuid {
+        prefixes: vec!["uuid_".into()],
+        confidence_floor: 0.95,
+    });
+    assert_ne!(uuid, uuid_floor_changed);
+
+    let hex_hash = digest(DetectorValidatorSpec::HexHash {
+        prefixes: vec!["hash_".into()],
+        expected_len: 32,
+        lowercase_only: true,
+        confidence_floor: 0.90,
+    });
+    let hex_hash_len_changed = digest(DetectorValidatorSpec::HexHash {
+        prefixes: vec!["hash_".into()],
+        expected_len: 64,
+        lowercase_only: true,
+        confidence_floor: 0.90,
+    });
+    assert_ne!(hex_hash, hex_hash_len_changed);
+
+    let luhn = digest(DetectorValidatorSpec::LuhnChecksum {
+        prefixes: vec!["card_".into()],
+        min_len: 13,
+        max_len: 19,
+        confidence_floor: 0.90,
+    });
+    let luhn_len_changed = digest(DetectorValidatorSpec::LuhnChecksum {
+        prefixes: vec!["card_".into()],
+        min_len: 15,
+        max_len: 16,
+        confidence_floor: 0.90,
+    });
+    assert_ne!(luhn, luhn_len_changed);
+
     assert_ne!(crc, fine_grained);
     assert_ne!(crc, base64);
     assert_ne!(crc, pattern_shape);
+    assert_ne!(crc, jwt);
+    assert_ne!(crc, uuid);
+    assert_ne!(crc, hex_hash);
+    assert_ne!(crc, luhn);
 }
 
 /// Every cross-detector operation field changes match resolution and must invalidate cached findings.

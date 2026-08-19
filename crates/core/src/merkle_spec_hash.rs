@@ -566,6 +566,60 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                             d.id, validator_index, allow_overlong
                         ));
                     }
+                    crate::DetectorValidatorSpec::Jwt {
+                        prefixes: _,
+                        reject_alg_none,
+                        confidence_floor,
+                    } => {
+                        entries.push(format!(
+                            "validator:{}:{}:jwt:{}:{:016x}",
+                            d.id,
+                            validator_index,
+                            reject_alg_none,
+                            confidence_floor.to_bits()
+                        ));
+                    }
+                    crate::DetectorValidatorSpec::Uuid {
+                        prefixes: _,
+                        confidence_floor,
+                    } => {
+                        entries.push(format!(
+                            "validator:{}:{}:uuid:{:016x}",
+                            d.id,
+                            validator_index,
+                            confidence_floor.to_bits()
+                        ));
+                    }
+                    crate::DetectorValidatorSpec::HexHash {
+                        prefixes: _,
+                        expected_len,
+                        lowercase_only,
+                        confidence_floor,
+                    } => {
+                        entries.push(format!(
+                            "validator:{}:{}:hex-hash:{}:{}:{:016x}",
+                            d.id,
+                            validator_index,
+                            expected_len,
+                            lowercase_only,
+                            confidence_floor.to_bits()
+                        ));
+                    }
+                    crate::DetectorValidatorSpec::LuhnChecksum {
+                        prefixes: _,
+                        min_len,
+                        max_len,
+                        confidence_floor,
+                    } => {
+                        entries.push(format!(
+                            "validator:{}:{}:luhn-checksum:{}:{}:{:016x}",
+                            d.id,
+                            validator_index,
+                            min_len,
+                            max_len,
+                            confidence_floor.to_bits()
+                        ));
+                    }
                 }
                 for (prefix_index, prefix) in validator.prefixes().iter().enumerate() {
                     entries.push(format!(

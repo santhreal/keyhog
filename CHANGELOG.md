@@ -4,6 +4,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [0.5.80] - 2026-08-17
 ### Added
+- feat(detectors): audit and expand checksum and structured offline validators (`Jwt`, `Uuid`, `HexHash`, `LuhnChecksum`, `PatternShape`, `Base62Crc32`) across detector corpus to eliminate false positives without false negatives (Row 152).
 - feat(artifacts): fail closed with EXIT_USER_ERROR and actionable repair instructions on stale or mismatched execution-pack artifact identity inputs (Row 129).
 - feat(compiler): install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata (Row 128).
 - feat(cache): load-only scan execution and zero compilation fallback on prepared artifact caches (Row 127).

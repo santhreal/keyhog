@@ -83,6 +83,10 @@ pub(crate) mod candidate_provenance;
 pub mod capability_ledger;
 /// Service-specific credential checksum validation (GitHub, npm, Slack, etc.).
 pub mod checksum;
+/// Offline validator engine and checksum verification primitives.
+pub mod validator {
+    pub use crate::checksum::*;
+}
 /// Candidate-bounded source-code semantic roles.
 pub(crate) mod code_semantics;
 /// Compiled scanner construction and lifecycle implementation.
