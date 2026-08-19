@@ -27,6 +27,49 @@ class TestArtifactSizeCeiling(unittest.TestCase):
             self.assertGreaterEqual(ceiling, 20 * 1024 * 1024)
             self.assertLessEqual(ceiling, 50 * 1024 * 1024)
 
+    def test_mutated_profiles_fail_closed(self) -> None:
+        import tempfile
+        valid_toml = (
+            '[profile.release]\n'
+            'opt-level = 3\n'
+            'strip = "symbols"\n'
+            'debug = false\n'
+            'panic = "unwind"\n'
+            'overflow-checks = true\n'
+        )
+        with tempfile.NamedTemporaryFile("w+", suffix=".toml") as tmp:
+            tmp.write(valid_toml)
+            tmp.flush()
+            artifact_size_ceiling.check_cargo_profiles(pathlib.Path(tmp.name))
+
+        # Mutate strip
+        with tempfile.NamedTemporaryFile("w+", suffix=".toml") as tmp:
+            tmp.write(valid_toml.replace('strip = "symbols"', 'strip = "none"'))
+            tmp.flush()
+            with self.assertRaises(ValueError):
+                artifact_size_ceiling.check_cargo_profiles(pathlib.Path(tmp.name))
+
+        # Mutate debug
+        with tempfile.NamedTemporaryFile("w+", suffix=".toml") as tmp:
+            tmp.write(valid_toml.replace('debug = false', 'debug = true'))
+            tmp.flush()
+            with self.assertRaises(ValueError):
+                artifact_size_ceiling.check_cargo_profiles(pathlib.Path(tmp.name))
+
+        # Mutate panic
+        with tempfile.NamedTemporaryFile("w+", suffix=".toml") as tmp:
+            tmp.write(valid_toml.replace('panic = "unwind"', 'panic = "abort"'))
+            tmp.flush()
+            with self.assertRaises(ValueError):
+                artifact_size_ceiling.check_cargo_profiles(pathlib.Path(tmp.name))
+
+        # Mutate overflow-checks
+        with tempfile.NamedTemporaryFile("w+", suffix=".toml") as tmp:
+            tmp.write(valid_toml.replace('overflow-checks = true', 'overflow-checks = false'))
+            tmp.flush()
+            with self.assertRaises(ValueError):
+                artifact_size_ceiling.check_cargo_profiles(pathlib.Path(tmp.name))
+
 
 if __name__ == "__main__":
     unittest.main()

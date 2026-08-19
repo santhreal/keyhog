@@ -9,7 +9,8 @@ mod compiled;
 
 #[cfg(test)]
 pub(crate) use compiled::base64_scratch_capacity_after_payload_for_test;
-pub(crate) use compiled::{CompiledDetectorValidators, CompiledValidatorIndex};
+pub use compiled::CompiledDetectorValidators;
+pub(crate) use compiled::CompiledValidatorIndex;
 
 use std::sync::LazyLock;
 
@@ -45,10 +46,7 @@ pub fn validate_checksum(credential: &str) -> ChecksumResult {
 }
 
 #[inline]
-pub(crate) fn validate_for_detector(
-    detector_id: &str,
-    credential: &str,
-) -> ChecksumConfidenceDecision {
+pub fn validate_for_detector(detector_id: &str, credential: &str) -> ChecksumConfidenceDecision {
     VALIDATOR_CATALOG.validate_for_detector(detector_id, credential)
 }
 
@@ -108,7 +106,7 @@ pub(crate) fn base62_encode_u32(mut value: u32, width: usize) -> String {
 pub const CHECKSUM_VALID_FLOOR: f64 = 0.9;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct ChecksumConfidenceDecision {
+pub struct ChecksumConfidenceDecision {
     result: ChecksumResult,
     valid_confidence_floor: Option<f64>,
     claimed_family: bool,
@@ -144,15 +142,14 @@ impl ChecksumConfidenceDecision {
     }
 
     #[inline]
-    pub(crate) fn result(self) -> ChecksumResult {
+    pub fn result(self) -> ChecksumResult {
         self.result
     }
 
     #[inline]
-    pub(crate) fn valid_confidence_floor(self) -> Option<f64> {
+    pub fn valid_confidence_floor(self) -> Option<f64> {
         self.valid_confidence_floor
     }
-
     #[inline]
     pub(crate) fn claims_family(self) -> bool {
         self.claimed_family

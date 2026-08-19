@@ -24,7 +24,7 @@ use crate::execution_pack::{CanonicalDetectorExecutionIr, ExecutionPackBackend};
 use crate::hw_probe::ScanBackend;
 use crate::types::ScannerTuningConfig;
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -808,7 +808,8 @@ pub fn store_matcher_artifact(
         sections.suppression_policy.len(),
     )?;
 
-    atomic_write(&path, artifact_len, |tmp| {
+    keyhog_core::state_file::write_atomically_with_writer(&path, |tmp| {
+        use std::io::Write as _;
         tmp.write_all(MATCHER_ARTIFACT_MAGIC)?;
         tmp.write_all(&MATCHER_ARTIFACT_VERSION.to_le_bytes())?;
         tmp.write_all(&identity_len.to_le_bytes())?;
@@ -820,7 +821,20 @@ pub fn store_matcher_artifact(
         tmp.write_all(&regex_len.to_le_bytes())?;
         tmp.write_all(&sections.regex_programs)?;
         tmp.write_all(&suppression_len.to_le_bytes())?;
-        tmp.write_all(&sections.suppression_policy)
+        tmp.write_all(&sections.suppression_policy)?;
+        let actual_len = usize::try_from(tmp.as_file().metadata()?.len()).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "matcher artifact length exceeds usize",
+            )
+        })?;
+        if actual_len != artifact_len {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("matcher artifact writer produced {actual_len} bytes, expected {artifact_len}"),
+            ));
+        }
+        Ok(())
     })
     .map_err(|error| format!("cannot write matcher artifact {}: {error}", path.display()))?;
     evict_old_matcher_artifacts(cache_dir);
@@ -836,43 +850,6 @@ fn evict_old_matcher_artifacts(cache_dir: &Path) {
     );
 }
 
-fn atomic_write(
-    path: &Path,
-    expected_len: usize,
-    write_body: impl FnOnce(&mut tempfile::NamedTempFile) -> std::io::Result<()>,
-) -> std::io::Result<()> {
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "matcher artifact path has no parent directory",
-            )
-        })?;
-    std::fs::create_dir_all(parent)?;
-    // Same-directory tempfile + rename (parity with HS shard cache). Keeps
-    // publish atomic on the common `/tmp` vs `$HOME` layout. In-flight
-    // tempfile names are not trusted by lockdown's compiled-pattern filename
-    // check, so a concurrent `--lockdown` audit still fails closed rather than
-    // treating a partial graph as clean.
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-    write_body(&mut tmp)?;
-    let actual_len = usize::try_from(tmp.as_file().metadata()?.len()).map_err(|_| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "matcher artifact length exceeds usize",
-        )
-    })?;
-    if actual_len != expected_len {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("matcher artifact writer produced {actual_len} bytes, expected {expected_len}"),
-        ));
-    }
-    tmp.as_file().sync_all()?;
-    tmp.persist(path).map(|_| ()).map_err(|error| error.error)
-}
 
 fn record_outcome(outcome: &MatcherArtifactCacheOutcome) {
     match outcome {

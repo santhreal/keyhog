@@ -81,6 +81,18 @@ enum CompiledValidatorKind {
         validator: LazyPatternShape,
         allow_overlong: bool,
     },
+    Jwt {
+        reject_alg_none: bool,
+    },
+    Uuid,
+    HexHash {
+        expected_len: usize,
+        lowercase_only: bool,
+    },
+    LuhnChecksum {
+        min_len: usize,
+        max_len: usize,
+    },
 }
 
 #[derive(Debug)]
@@ -140,6 +152,26 @@ impl CompiledValidator {
                     allow_overlong: *allow_overlong,
                 }
             }
+            keyhog_core::DetectorValidatorSpec::Jwt {
+                reject_alg_none, ..
+            } => CompiledValidatorKind::Jwt {
+                reject_alg_none: *reject_alg_none,
+            },
+            keyhog_core::DetectorValidatorSpec::Uuid { .. } => CompiledValidatorKind::Uuid,
+            keyhog_core::DetectorValidatorSpec::HexHash {
+                expected_len,
+                lowercase_only,
+                ..
+            } => CompiledValidatorKind::HexHash {
+                expected_len: *expected_len,
+                lowercase_only: *lowercase_only,
+            },
+            keyhog_core::DetectorValidatorSpec::LuhnChecksum {
+                min_len, max_len, ..
+            } => CompiledValidatorKind::LuhnChecksum {
+                min_len: *min_len,
+                max_len: *max_len,
+            },
         };
         Ok(Self {
             prefixes,
@@ -150,17 +182,25 @@ impl CompiledValidator {
 
     #[inline]
     fn claims(&self, credential: &str) -> bool {
-        self.prefixes
-            .iter()
-            .any(|prefix| credential.starts_with(prefix.as_ref()))
+        if self.prefixes.is_empty() {
+            true
+        } else {
+            self.prefixes
+                .iter()
+                .any(|prefix| credential.starts_with(prefix.as_ref()))
+        }
     }
 
     #[inline]
     fn matched_prefix_len(&self, credential: &str) -> Option<usize> {
-        self.prefixes
-            .iter()
-            .find(|prefix| credential.starts_with(prefix.as_ref()))
-            .map(|prefix| prefix.len())
+        if self.prefixes.is_empty() {
+            Some(0)
+        } else {
+            self.prefixes
+                .iter()
+                .find(|prefix| credential.starts_with(prefix.as_ref()))
+                .map(|prefix| prefix.len())
+        }
     }
 
     fn validate(&self, credential: &str, pattern_proven: bool) -> ChecksumConfidenceDecision {
@@ -209,6 +249,22 @@ impl CompiledValidator {
                     ChecksumResult::Invalid
                 }
             }
+            CompiledValidatorKind::Jwt { reject_alg_none } => {
+                let jwt_candidate = if payload.starts_with(crate::jwt::JWT_BASE64_HEADER_PREFIX) {
+                    payload
+                } else {
+                    credential
+                };
+                validate_jwt(jwt_candidate, *reject_alg_none)
+            }
+            CompiledValidatorKind::Uuid => validate_uuid(payload),
+            CompiledValidatorKind::HexHash {
+                expected_len,
+                lowercase_only,
+            } => validate_hex_hash(payload, *expected_len, *lowercase_only),
+            CompiledValidatorKind::LuhnChecksum { min_len, max_len } => {
+                validate_luhn(payload, *min_len, *max_len)
+            }
         };
         ChecksumConfidenceDecision::new(result, self.confidence_floor)
     }
@@ -220,7 +276,7 @@ fn is_provider_token_byte(byte: u8) -> bool {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct CompiledDetectorValidators {
+pub struct CompiledDetectorValidators {
     validators: Box<[CompiledValidator]>,
 }
 
@@ -367,7 +423,7 @@ impl CompiledValidatorCatalog {
 }
 
 impl CompiledDetectorValidators {
-    pub(crate) fn compile(detector: &keyhog_core::DetectorSpec) -> Result<Self, String> {
+    pub fn compile(detector: &keyhog_core::DetectorSpec) -> Result<Self, String> {
         keyhog_profile::record_compile_surface_invocation(
             keyhog_profile::CompileSurfaceId::ValidatorCatalog,
         );
@@ -397,11 +453,7 @@ impl CompiledDetectorValidators {
     }
 
     #[inline]
-    pub(crate) fn validate(
-        &self,
-        credential: &str,
-        pattern_proven: bool,
-    ) -> ChecksumConfidenceDecision {
+    pub fn validate(&self, credential: &str, pattern_proven: bool) -> ChecksumConfidenceDecision {
         for validator in &self.validators {
             if validator.claims(credential) {
                 return validator.validate(credential, pattern_proven);
@@ -553,4 +605,82 @@ fn base62_u32_matches(mut value: u32, encoded: &[u8]) -> bool {
         value /= 62;
     }
     value == 0
+}
+fn validate_jwt(candidate: &str, reject_alg_none: bool) -> ChecksumResult {
+    let Some(analysis) = crate::jwt::analyze(candidate) else {
+        return ChecksumResult::Invalid;
+    };
+    if reject_alg_none && analysis.alg.eq_ignore_ascii_case("none") {
+        return ChecksumResult::Invalid;
+    }
+    ChecksumResult::Valid
+}
+
+fn validate_uuid(payload: &str) -> ChecksumResult {
+    let bytes = payload.as_bytes();
+    if bytes.len() != 36 {
+        return ChecksumResult::Invalid;
+    }
+    if bytes[8] != b'-' || bytes[13] != b'-' || bytes[18] != b'-' || bytes[23] != b'-' {
+        return ChecksumResult::Invalid;
+    }
+    let is_hex = |b: u8| b.is_ascii_hexdigit();
+    let is_slice_hex = |slice: &[u8]| slice.iter().copied().all(is_hex);
+    if is_slice_hex(&bytes[0..8])
+        && is_slice_hex(&bytes[9..13])
+        && is_slice_hex(&bytes[14..18])
+        && is_slice_hex(&bytes[19..23])
+        && is_slice_hex(&bytes[24..36])
+    {
+        ChecksumResult::Valid
+    } else {
+        ChecksumResult::Invalid
+    }
+}
+
+fn validate_hex_hash(payload: &str, expected_len: usize, lowercase_only: bool) -> ChecksumResult {
+    let bytes = payload.as_bytes();
+    if bytes.len() != expected_len {
+        return ChecksumResult::Invalid;
+    }
+    let valid = if lowercase_only {
+        bytes
+            .iter()
+            .all(|&b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    } else {
+        bytes.iter().all(|&b| b.is_ascii_hexdigit())
+    };
+    if valid {
+        ChecksumResult::Valid
+    } else {
+        ChecksumResult::Invalid
+    }
+}
+
+fn validate_luhn(payload: &str, min_len: usize, max_len: usize) -> ChecksumResult {
+    let bytes = payload.as_bytes();
+    if bytes.len() < min_len || bytes.len() > max_len {
+        return ChecksumResult::Invalid;
+    }
+    if !bytes.iter().all(|&b| b.is_ascii_digit()) {
+        return ChecksumResult::Invalid;
+    }
+    let mut sum = 0u32;
+    let mut alternate = false;
+    for &b in bytes.iter().rev() {
+        let mut d = (b - b'0') as u32;
+        if alternate {
+            d *= 2;
+            if d > 9 {
+                d -= 9;
+            }
+        }
+        sum += d;
+        alternate = !alternate;
+    }
+    if sum % 10 == 0 {
+        ChecksumResult::Valid
+    } else {
+        ChecksumResult::Invalid
+    }
 }
