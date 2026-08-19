@@ -204,7 +204,8 @@ fn bench_ssrf_and_domain_policy(c: &mut Criterion) {
 
     group.bench_function("host_is_allowed_matching", |b| {
         b.iter(|| {
-            let allowed_gh = TestApi.host_is_allowed(black_box("api.github.com"), black_box(&allowlist));
+            let allowed_gh =
+                TestApi.host_is_allowed(black_box("api.github.com"), black_box(&allowlist));
             let allowed_stripe =
                 TestApi.host_is_allowed(black_box("hooks.stripe.com"), black_box(&allowlist));
             let allowed_evil =
@@ -224,7 +225,10 @@ fn bench_sigv4_canonicalization(c: &mut Criterion) {
     let query_params = vec![
         ("Action".to_string(), "GetCallerIdentity".to_string()),
         ("Version".to_string(), "2011-06-15".to_string()),
-        ("X-Amz-Algorithm".to_string(), "AWS4-HMAC-SHA256".to_string()),
+        (
+            "X-Amz-Algorithm".to_string(),
+            "AWS4-HMAC-SHA256".to_string(),
+        ),
         (
             "X-Amz-Credential".to_string(),
             "AKIAIOSFODNN7EXAMPLE/20260819/us-east-1/sts/aws4_request".to_string(),

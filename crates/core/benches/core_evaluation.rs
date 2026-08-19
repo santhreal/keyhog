@@ -2,8 +2,8 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use keyhog_core::guard_state::{GuardPolicyIdentity, GuardRootState, GuardTransition};
 use keyhog_core::suppression::RuleSuppressor;
 use keyhog_core::{
-    compute_detector_corpus_digest, correlate_findings, dedup_matches, load_detectors,
-    sha256_hash, validate_detector, DedupScope, DetectorSpec, MatchLocation, MerkleIndex, RawMatch,
+    compute_detector_corpus_digest, correlate_findings, dedup_matches, load_detectors, sha256_hash,
+    validate_detector, DedupScope, DetectorSpec, MatchLocation, MerkleIndex, RawMatch,
     SensitiveString, Severity, VerificationResult, VerifiedFinding,
 };
 use std::borrow::Cow;

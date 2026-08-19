@@ -105,9 +105,9 @@ fn assert_no_internal_execution_pack_warnings(stderr: &str) {
     );
 
     // Assert absence of raw ISO-8601 timestamps typically emitted by unconfigured tracing formatters
-    let contains_raw_iso_timestamp = stderr
-        .lines()
-        .any(|line| line.contains("Z  WARN") || line.contains("Z  INFO") || line.contains("Z  ERROR"));
+    let contains_raw_iso_timestamp = stderr.lines().any(|line| {
+        line.contains("Z  WARN") || line.contains("Z  INFO") || line.contains("Z  ERROR")
+    });
     assert!(
         !contains_raw_iso_timestamp,
         "stderr must not contain raw ISO-timestamped tracing lines: {stderr}"
