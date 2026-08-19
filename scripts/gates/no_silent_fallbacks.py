@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Gate #1: NO SILENT FALLBACKS (Law 10), enforced as a shrink-only ratchet.
 
-Law 10 was written in CLAUDE.md the whole time 66 silent fallbacks accumulated.
+Law 10 was written in CLAUDE.md the whole time 202 silent fallbacks accumulated.
 A rule a human has to remember is a rule that gets skipped. This gate makes a
 NEW silent-swallow idiom in the detection crates a RED BUILD.
 
@@ -30,7 +30,7 @@ BASELINE RATCHET: the current (unfixed) candidates are recorded in
 appears that is not in the baseline (a NEW silent fallback), so new ones can't
 land. Fixing or annotating an existing one removes it from the live set; the gate
 also FAILS if the baseline contains entries no longer present UNLESS you
-regenerate it, so the baseline can only SHRINK. The 66 audited violations live in
+regenerate it, so the baseline can only SHRINK. The 202 audited violations live in
 this baseline as visible, shrinking debt.
 
 Keys are `relpath::normalized_code` (NOT line numbers) so they survive line moves.
@@ -200,12 +200,60 @@ def _snippet_is_candidate(lines: list[str]) -> bool:
     return False
 
 
-def load_baseline() -> set[str]:
-    if not BASELINE.exists():
+def load_baseline(path: pathlib.Path = BASELINE) -> set[str]:
+    if not path.exists():
         return set()
-    return {ln.strip() for ln in BASELINE.read_text().splitlines()
+    return {ln.strip() for ln in path.read_text().splitlines()
             if ln.strip() and not ln.startswith("#")}
 
+
+def format_baseline(entries: set[str] | list[str]) -> str:
+    """Format baseline content with header and sorted entries."""
+    header = (
+        "# Silent-fallback baseline (Gate #1). Shrink-only: an entry leaving "
+        "this list (fixed or annotated `// LAW10:`) is good; a NEW entry not "
+        "in this list fails CI. Regenerate ONLY when intentionally shrinking.\n"
+    )
+    return header + "\n".join(sorted(entries)) + "\n"
+
+
+def write_baseline(entries: set[str] | list[str], path: pathlib.Path = BASELINE) -> None:
+    """Write formatted baseline entries to file."""
+    path.write_text(format_baseline(entries))
+
+
+def check_baseline_growth(
+    current: set[str],
+    baseline: set[str],
+) -> tuple[bool, list[str]]:
+    """Check whether candidate set would expand the baseline.
+
+    Returns (is_growth, added_entries).
+    Growth occurs when len(current) > len(baseline).
+    """
+    if len(current) > len(baseline):
+        added = sorted(current - baseline)
+        return True, added
+    return False, []
+
+
+def update_baseline_ratchet(
+    current: set[str],
+    baseline_path: pathlib.Path = BASELINE,
+) -> tuple[int, list[str]]:
+    """Update baseline if candidate count does not exceed existing baseline count.
+
+    Returns (exit_code, added_entries).
+    If candidate count > existing baseline count, returns (1, sorted_added_entries)
+    without modifying the baseline file.
+    If candidate count <= existing count, writes the candidate set and returns (0, []).
+    """
+    baseline = load_baseline(baseline_path)
+    is_growth, added = check_baseline_growth(current, baseline)
+    if is_growth:
+        return 1, added
+    write_baseline(current, baseline_path)
+    return 0, []
 
 def _line_is_candidate(line: str, next_line: str = "") -> bool:
     """True if `line` would be flagged (mirrors the per-line logic in collect)."""
@@ -291,6 +339,58 @@ def self_test() -> int:
     ):
         ok = False
         print("  FAIL fake repo-relative tests/ path was not classified as tests/", file=sys.stderr)
+    # Ratchet self-tests: baseline growth is rejected, shrink is allowed
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        test_baseline = pathlib.Path(td) / "silent_fallback_baseline.txt"
+        seed = {"crates/core/src/a.rs::code_a", "crates/core/src/b.rs::code_b"}
+        write_baseline(seed, test_baseline)
+
+        # 1. Growth must be rejected, baseline file must remain untouched
+        growth_candidates = {
+            "crates/core/src/a.rs::code_a",
+            "crates/core/src/b.rs::code_b",
+            "crates/scanner/src/c.rs::code_c",
+        }
+        growth_code, growth_added = update_baseline_ratchet(growth_candidates, test_baseline)
+        if growth_code != 1:
+            ok = False
+            print("  FAIL update_baseline_ratchet did not return 1 on growth", file=sys.stderr)
+        if growth_added != ["crates/scanner/src/c.rs::code_c"]:
+            ok = False
+            print(f"  FAIL update_baseline_ratchet growth_added mismatch: {growth_added}", file=sys.stderr)
+        if load_baseline(test_baseline) != seed:
+            ok = False
+            print("  FAIL update_baseline_ratchet modified baseline file during rejected growth", file=sys.stderr)
+
+        # 2. Shrink must be accepted and written to disk
+        shrink_candidates = {"crates/core/src/a.rs::code_a"}
+        shrink_code, shrink_added = update_baseline_ratchet(shrink_candidates, test_baseline)
+        if shrink_code != 0 or shrink_added != []:
+            ok = False
+            print("  FAIL update_baseline_ratchet rejected valid shrink", file=sys.stderr)
+        if load_baseline(test_baseline) != shrink_candidates:
+            ok = False
+            print("  FAIL update_baseline_ratchet did not write shrunken baseline", file=sys.stderr)
+
+        # 3. Equal count must be accepted
+        equal_code, equal_added = update_baseline_ratchet(shrink_candidates, test_baseline)
+        if equal_code != 0 or equal_added != []:
+            ok = False
+            print("  FAIL update_baseline_ratchet rejected equal count update", file=sys.stderr)
+
+    # Docstring count consistency check
+    doc_match = re.search(r"(\d+)\s+audited violations", __doc__ or "")
+    if not doc_match:
+        ok = False
+        print("  FAIL module docstring missing 'N audited violations' count", file=sys.stderr)
+    elif int(doc_match.group(1)) != len(load_baseline()):
+        ok = False
+        print(
+            f"  FAIL docstring count {doc_match.group(1)} != actual baseline count {len(load_baseline())}",
+            file=sys.stderr,
+        )
+
     print("self-test PASS" if ok else "self-test FAIL", file=sys.stderr)
     return 0 if ok else 1
 
@@ -300,12 +400,25 @@ def main(argv: list[str]) -> int:
         return self_test()
     current = collect()
     if "--update-baseline" in argv:
-        header = (
-            "# Silent-fallback baseline (Gate #1). Shrink-only: an entry leaving "
-            "this list (fixed or annotated `// LAW10:`) is good; a NEW entry not "
-            "in this list fails CI. Regenerate ONLY when intentionally shrinking.\n"
-        )
-        BASELINE.write_text(header + "\n".join(sorted(current)) + "\n")
+        code, added = update_baseline_ratchet(current, BASELINE)
+        if code != 0:
+            baseline = load_baseline(BASELINE)
+            print(
+                f"FAIL: baseline cannot grow (existing={len(baseline)}, candidate={len(current)}). "
+                f"Refusing to write baseline expansion with {len(added)} new candidate(s):\n",
+                file=sys.stderr,
+            )
+            for k in added:
+                path, _, code_str = k.partition("::")
+                print(f"  {path}\n      {code_str}", file=sys.stderr)
+            print(
+                "\nFix each: make the primary path correct, fail closed, or surface "
+                "LOUDLY (unconditional eprintln + a counter). If it is genuinely "
+                "recall-safe, annotate the line `// LAW10: <why>`. Do NOT add it to "
+                "the baseline, the baseline only shrinks.",
+                file=sys.stderr,
+            )
+            return 1
         print(f"wrote {len(current)} baseline entries -> {BASELINE}")
         return 0
 

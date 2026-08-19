@@ -107,6 +107,8 @@ run "Gate #1 self-test: both idiom classes catch real fallbacks, ignore benign c
   python3 -B scripts/gates/no_silent_fallbacks.py --self-test
 run "Gate #1: no silent fallbacks (scanner/sources/core/cli/verifier)" \
   python3 -B scripts/gates/no_silent_fallbacks.py
+run "Gate #1 unit tests: shrink-only baseline ratchet and self-test invariants" \
+  python3 -B -m unittest scripts.tests.test_no_silent_fallbacks -v
 run "Gate #1b self-test: Law 10 semantic classifier catches unsafe waivers" \
   python3 -B scripts/gates/law10_semantics.py --self-test
 run "Gate #1b: Law 10 annotations prove conservation or loud surfacing" \
