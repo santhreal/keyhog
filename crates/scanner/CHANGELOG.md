@@ -2,6 +2,7 @@
 
 
 ## 0.5.80 - 2026-08-17
+- fix(scanner): classify standard configuration and credentials paths (`credentials`, `.credentials`, `config`, `.config`, `secrets`, `.secrets`, `.conf`, `.properties`, `.txt`) as structured INI context to prevent false downgrade of AWS credentials to unsupported-context (Row 164).
 - feat(scanner): instrument compile surface invocations and prepared artifact loads across 13 compile entrypoints (Row 125).
 - feat(parallelism): unify scanner execution width with keyhog_profile host parallelism (Row 110/137).
 - refactor(scanner): move rayon to dev-dependencies and replace internal usages with standard iterators (Row 119).
