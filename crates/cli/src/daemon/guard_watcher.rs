@@ -222,6 +222,10 @@ impl WatchedRoot {
             if matcher
                 .matched_path_or_any_parents(rel_path, is_dir)
                 .is_ignore()
+                || (!is_dir
+                    && matcher
+                        .matched_path_or_any_parents(rel_path, true)
+                        .is_ignore())
             {
                 return true;
             }
@@ -261,6 +265,15 @@ fn build_root_ignore_matcher(
     let gitignore = root.join(".gitignore");
     if gitignore.is_file() {
         let _ = builder.add(&gitignore);
+    }
+    let keyhogignore = root.join(".keyhogignore");
+    if keyhogignore.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&keyhogignore) {
+            let allowlist = keyhog_core::Allowlist::parse(&content);
+            for pattern in &*allowlist.ignored_paths {
+                let _ = builder.add_line(None, pattern);
+            }
+        }
     }
     for pattern in ignore_paths {
         let _ = builder.add_line(None, pattern);

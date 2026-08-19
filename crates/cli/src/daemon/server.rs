@@ -574,12 +574,21 @@ pub(crate) async fn run_with_backend_override(
         .set_policy_identity(keyhog_core::guard_state::GuardPolicyIdentity {
             build_identity: KEYHOG_VERSION.to_string(),
             detector_digest: detector_rules_digest.clone(),
-            suppression_digest: String::new(),
+            suppression_digest: {
+                let mut hasher = blake3::Hasher::new();
+                hasher.update(b"keyhog-suppressions-v1:bundled:");
+                hasher.update(
+                    crate::test_fixture_suppressions::TestFixtureSuppressions::bundled_raw()
+                        .as_bytes(),
+                );
+                hex::encode(hasher.finalize().as_bytes())
+            },
             keyhogignore_digest:
                 keyhog_core::guard_state::GuardPolicyIdentity::default_keyhogignore_digest(),
             config_digest: crate::orchestrator::autoroute_default_config_identity(),
             decode_policy_version: keyhog_core::guard_state::GUARD_DECODE_POLICY_VERSION,
-            source_policy_digest: String::new(),
+            source_policy_digest:
+                keyhog_core::guard_state::GuardPolicyIdentity::default_source_policy_digest(),
             guard_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
             report_semantics_version: keyhog_core::guard_state::GUARD_REPORT_SEMANTICS_VERSION,
         });
@@ -988,8 +997,8 @@ pub fn compute_keyhogignore_digest(root: &Path) -> String {
 
 /// Compute `.keyhog.toml` scan configuration digest for a guard root.
 pub fn compute_config_digest(root: &Path) -> String {
-    let resolved_config = crate::config::find_config_file(Some(root));
-    match resolved_config.and_then(|p| std::fs::read(&p).ok()) {
+    let root_config = root.join(".keyhog.toml");
+    match std::fs::read(&root_config).ok() {
         Some(bytes) => {
             let mut hasher = blake3::Hasher::new();
             hasher.update(b"keyhog-config-v1:");
@@ -1061,7 +1070,7 @@ fn process_guard_events(
     let has_overflow = events
         .iter()
         .any(|e| matches!(e, GuardEvent::ReconcileSubtree(_)));
-    let has_policy_change = events.iter().any(|e| match e {
+    let is_potential_policy_change = events.iter().any(|e| match e {
         GuardEvent::Create(p)
         | GuardEvent::Modify(p)
         | GuardEvent::Remove(p)
@@ -1071,13 +1080,21 @@ fn process_guard_events(
     });
     let current_state = state.guard.root_state(root_bytes);
 
-    if has_policy_change {
+    let has_policy_change = if is_potential_policy_change {
         let new_identity =
             compute_root_policy_identity(root, KEYHOG_VERSION, &state.detector_rules_digest);
+        let existing = state.guard.get_root_policy_identity(root_bytes);
+        let changed = match &existing {
+            Some(existing) => !existing.is_compatible_with(&new_identity),
+            None => true,
+        };
         state
             .guard
             .set_root_policy_identity(root_bytes, new_identity);
-    }
+        changed
+    } else {
+        false
+    };
 
     match guard_event_action_with_policy(current_state, has_overflow, has_policy_change) {
         GuardEventAction::Ignore => {}
@@ -1131,24 +1148,24 @@ pub fn guard_event_action_with_policy(
     has_policy_change: bool,
 ) -> GuardEventAction {
     use keyhog_core::guard_state::{GuardRootState, GuardTransition};
-    if has_policy_change {
-        match current_state {
-            Some(GuardRootState::Stopped) | None => GuardEventAction::Ignore,
-            Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
-                coverage_lost: has_overflow,
-            },
-            Some(GuardRootState::Degraded) => GuardEventAction::Ignore,
-            Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
-            _ => GuardEventAction::Transition(GuardTransition::PolicyChanged),
-        }
-    } else if has_overflow {
+    if has_overflow {
         match current_state {
             Some(GuardRootState::Stopped) | None => GuardEventAction::Ignore,
             Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
                 coverage_lost: true,
             },
-            Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
+            Some(GuardRootState::Degraded) => GuardEventAction::Ignore,
             _ => GuardEventAction::Transition(GuardTransition::CoverageLost),
+        }
+    } else if has_policy_change {
+        match current_state {
+            Some(GuardRootState::Stopped) | None => GuardEventAction::Ignore,
+            Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
+                coverage_lost: false,
+            },
+            Some(GuardRootState::Degraded) => GuardEventAction::Ignore,
+            Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
+            _ => GuardEventAction::Transition(GuardTransition::PolicyChanged),
         }
     } else {
         match current_state {
@@ -2259,16 +2276,20 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     };
                 }
             };
-            // Get the policy identity for attestation lookup.
-            let identity = match state.guard.policy_identity() {
-                Some(id) => id,
-                None => {
-                    return Response::Error {
-                        message: "daemon: guard commit: policy identity not yet established"
-                            .to_string(),
-                    };
-                }
+            let canonical_repo = match std::fs::canonicalize(&repo_path) {
+                Ok(p) => p,
+                Err(_) => std::path::PathBuf::from(&repo_path),
             };
+            let identity = state
+                .guard
+                .get_root_policy_identity(canonical_repo.as_os_str().as_encoded_bytes())
+                .unwrap_or_else(|| {
+                    compute_root_policy_identity(
+                        &canonical_repo,
+                        KEYHOG_VERSION,
+                        &state.detector_rules_digest,
+                    )
+                });
             // Group identical Git objects while retaining every staged path.
             // Evidence is path-conditioned, so the daemon scans one shared
             // payload under each path and binds clean attestations to that
@@ -2732,18 +2753,20 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             let bytes_hit = txn.bytes_hit;
             let terminal_state =
                 guard_commit_terminal_state(txn.blocking_findings_count, txn.coverage_gaps);
-            let identity = state.guard.policy_identity();
             let commit_root = match std::fs::canonicalize(&txn.repo_path) {
                 Ok(p) => p,
                 Err(_) => std::path::PathBuf::from(&txn.repo_path),
             };
-            let policy_identity = identity.clone().unwrap_or_else(|| {
-                compute_root_policy_identity(
-                    &commit_root,
-                    KEYHOG_VERSION,
-                    &state.detector_rules_digest,
-                )
-            });
+            let policy_identity = state
+                .guard
+                .get_root_policy_identity(commit_root.as_os_str().as_encoded_bytes())
+                .unwrap_or_else(|| {
+                    compute_root_policy_identity(
+                        &commit_root,
+                        KEYHOG_VERSION,
+                        &state.detector_rules_digest,
+                    )
+                });
             let receipt = keyhog_core::guard_state::GuardReceipt {
                 objects_requested: total_objects,
                 objects_hit,
@@ -3021,13 +3044,15 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     backend_route_label: record.backend_route_label.clone(),
                     build_identity_short: state
                         .guard
-                        .policy_identity()
+                        .get_root_policy_identity(root.as_bytes())
+                        .or_else(|| state.guard.policy_identity())
                         .as_ref()
                         .and_then(|id| id.short_digest().ok())
                         .unwrap_or_default(),
                     detector_digest_short: state
                         .guard
-                        .policy_identity()
+                        .get_root_policy_identity(root.as_bytes())
+                        .or_else(|| state.guard.policy_identity())
                         .as_ref()
                         .map(|id| {
                             id.detector_digest
@@ -3038,7 +3063,8 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                         .unwrap_or_default(),
                     suppression_digest_short: state
                         .guard
-                        .policy_identity()
+                        .get_root_policy_identity(root.as_bytes())
+                        .or_else(|| state.guard.policy_identity())
                         .as_ref()
                         .map(|id| {
                             id.suppression_digest
@@ -3049,7 +3075,8 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                         .unwrap_or_default(),
                     config_digest_short: state
                         .guard
-                        .policy_identity()
+                        .get_root_policy_identity(root.as_bytes())
+                        .or_else(|| state.guard.policy_identity())
                         .as_ref()
                         .map(|id| {
                             id.config_digest
