@@ -273,6 +273,16 @@ fn core_workload_plan() -> Vec<Workload> {
             decode_heavy: false,
         },
         Workload::File {
+            label: "decode-heavy 4 KiB workload",
+            bytes: 4 * 1024,
+            decode_heavy: true,
+        },
+        Workload::File {
+            label: "decode-heavy 64 KiB workload",
+            bytes: 64 * 1024,
+            decode_heavy: true,
+        },
+        Workload::File {
             label: "decode-heavy 256 KiB workload",
             bytes: 256 * 1024,
             decode_heavy: true,
@@ -444,6 +454,48 @@ fn read_measurement_receipts(path: &Path) -> Result<BTreeSet<MeasuredRouteClass>
     Ok(receipts)
 }
 
+/// The argv one isolated policy child runs.
+///
+/// Every flag that reaches the parent and changes what a probe MEASURES has to
+/// reach the child, because the child is what measures. `--no-config` did not:
+/// `install.sh` asked for the compiled-in baseline, the parent honored it, and
+/// the four children resolved whatever `.keyhog.toml` the install directory
+/// happened to carry. A 40-minute install then published 629 decisions under
+/// four config digests no ordinary scan requests, and the first `keyhog scan`
+/// after it exited 2 with "none matching config digest".
+///
+/// The three flags the parent owns rather than forwards are `--policy` (the
+/// child calibrates exactly one), `--autoroute-cache` (children write the
+/// parent's staged transaction, not the live cache) and
+/// `--measurement-receipts` (one sink per child).
+fn isolated_policy_argv(
+    args: &CalibrateAutorouteArgs,
+    policy_name: &str,
+    staged_cache_path: &Path,
+    receipt_path: &Path,
+) -> Vec<OsString> {
+    let mut argv = vec![
+        OsString::from("calibrate-autoroute"),
+        OsString::from("--policy"),
+        OsString::from(policy_name),
+        OsString::from("--autoroute-cache"),
+        staged_cache_path.as_os_str().to_owned(),
+        OsString::from("--measurement-receipts"),
+        receipt_path.as_os_str().to_owned(),
+    ];
+    if args.no_config {
+        argv.push(OsString::from("--no-config"));
+    }
+    if args.quiet {
+        argv.push(OsString::from("--quiet"));
+    }
+    if let Some(packs) = args.execution_packs.as_deref() {
+        argv.push(OsString::from("--execution-packs"));
+        argv.push(packs.as_os_str().to_owned());
+    }
+    argv
+}
+
 fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Result<ExitCode> {
     let workload_count = selected_workload_plan()?.len();
     let live_cache_path =
@@ -481,20 +533,12 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
             .path()
             .join(format!("autoroute-{policy_name}-receipts.json"));
         let mut command = Command::new(&executable);
-        command
-            .arg("calibrate-autoroute")
-            .arg("--policy")
-            .arg(policy_name)
-            .arg("--autoroute-cache")
-            .arg(&staged_cache_path)
-            .arg("--measurement-receipts")
-            .arg(&receipt_path);
-        if args.quiet {
-            command.arg("--quiet");
-        }
-        if let Some(packs) = args.execution_packs.as_deref() {
-            command.arg("--execution-packs").arg(packs);
-        }
+        command.args(isolated_policy_argv(
+            args,
+            policy_name,
+            &staged_cache_path,
+            &receipt_path,
+        ));
         let status = command
             .status()
             .with_context(|| format!("starting isolated {policy_name} autoroute calibration"))?;
@@ -515,6 +559,11 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
             );
         }
         measured_routes.extend(policy_receipts);
+    }
+
+    if let Some(binding) = resolve_execution_pack_binding(args.execution_packs.as_deref())? {
+        crate::orchestrator::bind_autoroute_cache_to_execution_packs(&staged_cache_path, binding)
+            .context("binding all-policy calibration evidence to exact execution packs")?;
     }
 
     let staged_inspection = crate::orchestrator::inspect_autoroute_cache(Some(&staged_cache_path));
@@ -590,6 +639,35 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
     Ok(ExitCode::SUCCESS)
 }
 
+/// The execution-pack generation this calibration binds its evidence to.
+///
+/// An operator who names a generation gets it or an error: an unauthenticated
+/// directory they asked for is a failure, not something to work around.
+///
+/// With no flag the installed generation is used when it authenticates, because
+/// that is the artifact set the probes just ran against. Requiring the flag
+/// instead left every ordinary install unbound: `install.sh` calls
+/// `keyhog calibrate-autoroute` with no arguments, so `keyhog doctor` reported
+/// `route binding MISSING` on a host that had just calibrated successfully, and
+/// the repair line it printed named a hidden flag. A missing or unauthenticated
+/// generation leaves the evidence unbound, exactly as an install without packs
+/// does.
+fn resolve_execution_pack_binding(
+    requested: Option<&Path>,
+) -> Result<Option<crate::execution_pack_install::ExecutionPackGenerationBinding>> {
+    if let Some(directory) = requested {
+        return crate::execution_pack_install::load_authenticated_binding(directory)
+            .map(Some)
+            .context("loading authenticated execution-pack generation for calibration");
+    }
+    let installed = crate::execution_pack_install::installed_execution_pack_directory()
+        .context("resolving the installed execution-pack generation for calibration")?;
+    if !installed.exists() {
+        return Ok(None);
+    }
+    Ok(crate::execution_pack_install::load_authenticated_binding(&installed).ok())
+}
+
 pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     // Calibration EXISTS to persist routing decisions; `--autoroute-cache off`
     // disables persistence, so every probe would fail closed ("calibration did
@@ -606,12 +684,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
              default cache, or pass a writable file path."
         );
     }
-    let execution_pack_binding = args
-        .execution_packs
-        .as_deref()
-        .map(crate::execution_pack_install::load_authenticated_binding)
-        .transpose()
-        .context("loading authenticated execution-pack generation for calibration")?;
+    let execution_pack_binding = resolve_execution_pack_binding(args.execution_packs.as_deref())?;
     if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
         if !args.quiet {
             println!(
@@ -682,6 +755,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
             Some(transaction.staged_path()),
             *policy,
             physical_gpu_available,
+            args.no_config,
         )
         .with_context(|| format!("constructing {policy_label} calibration runtime"))?;
         let mut orchestrator = ScanOrchestrator::new(scan_args)
@@ -1002,21 +1076,43 @@ fn calibration_point_summary_count(
     Ok(measured_points.len())
 }
 
+/// Argv for one calibration pass.
+///
+/// `include_gpu` admits GPU candidates through `--autoroute-gpu`, which is
+/// deliberately outside `autoroute_config_digest` so a calibrated decision
+/// serves the later scan that does not repeat the flag. Its absence must stay
+/// equally invisible to that digest, so a host without an eligible GPU drops
+/// the flag instead of passing `--no-gpu`.
+///
+/// `--no-gpu` resolves `gpu_runtime_policy = Disabled`, and that policy IS
+/// hashed: it changes which backends a scan may use. Passing it here wrote
+/// every measured decision under a config digest no ordinary scan requests. On
+/// a host with no eligible GPU that was every decision in the cache: a
+/// completed install persisted 635 decisions across four policies, and the very
+/// next `keyhog scan` reported "7 calibrated config(s), none matching config
+/// digest" and exited 2.
+///
+/// `no_config` is the same reasoning applied to `.keyhog.toml`: the digest
+/// hashes the resolved configuration, so calibration resolves the repository
+/// config exactly when the scans it serves will. Only a caller that wants the
+/// compiled-in host baseline, such as an installer running from whatever
+/// directory the install was started in, passes it.
 fn calibration_scan_args(
     autoroute_cache: Option<&Path>,
     policy: Option<&str>,
     include_gpu: bool,
+    no_config: bool,
 ) -> Result<ScanArgs> {
     let mut argv = vec![
         OsString::from("keyhog-scan"),
         OsString::from("--autoroute-calibrate"),
-        OsString::from(if include_gpu {
-            "--autoroute-gpu"
-        } else {
-            "--no-gpu"
-        }),
-        OsString::from("--no-config"),
     ];
+    if no_config {
+        argv.push(OsString::from("--no-config"));
+    }
+    if include_gpu {
+        argv.push(OsString::from("--autoroute-gpu"));
+    }
     if let Some(cache) = autoroute_cache {
         argv.push(OsString::from("--autoroute-cache"));
         argv.push(cache.as_os_str().to_owned());

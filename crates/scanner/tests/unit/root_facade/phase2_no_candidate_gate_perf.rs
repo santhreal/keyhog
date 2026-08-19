@@ -49,10 +49,10 @@ const NO_CANDIDATE_TEXT: &str =
 fn mark_matches_gate_path_is_fast() {
     let detectors = match keyhog_core::load_detectors(&detector_dir()) {
         Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors unavailable: {e}");
-            return;
-        }
+        Err(e) => panic!(
+            "detector corpus failed to load, which is the exact state this \
+             guard exists to catch, so it fails instead of skipping: {e}"
+        ),
     };
     let scanner =
         keyhog_scanner::CompiledScanner::compile(detectors).expect("scanner compile failed");

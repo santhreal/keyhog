@@ -49,39 +49,4 @@ pub(super) use validation::{
 };
 
 #[cfg(test)]
-use keyhog_scanner::hw_probe::ScanBackend;
-#[cfg(test)]
-use std::collections::HashMap;
-#[cfg(test)]
 pub(super) use validation::decision_requires_gpu_artifact_identity;
-
-#[cfg(test)]
-use super::evidence::AutorouteDecision;
-#[cfg(test)]
-use super::workload::WorkloadKey;
-
-// --- Exact bucket resolution (test facade) ----------------------------------
-//
-// Autoroute evidence is scoped to the complete workload key. Neighbouring size
-// buckets do not prove which backend is fastest for this one, even when their
-// CPU decisions agree, so a miss must remain unresolved.
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(test)]
-pub(super) enum BucketResolution {
-    /// The exact workload bucket was calibrated.
-    Exact(ScanBackend),
-    /// No exact decision exists (the caller must fail closed).
-    Unresolved,
-}
-
-#[cfg(test)]
-pub(super) fn resolve_bucket(
-    decisions: &HashMap<WorkloadKey, AutorouteDecision>,
-    key: &WorkloadKey,
-) -> BucketResolution {
-    if let Some(backend) = decisions.get(key).and_then(AutorouteDecision::backend) {
-        return BucketResolution::Exact(backend);
-    }
-    BucketResolution::Unresolved
-}
