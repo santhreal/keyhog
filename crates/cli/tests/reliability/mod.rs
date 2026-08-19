@@ -30,7 +30,5 @@ pub mod surface_valid;
 
 // Hand-authored deep defect-class suites.
 pub mod exit_contract;
-pub mod installer_recoverability;
 pub mod output_format;
 pub mod scan_robustness;
-pub mod update_lifecycle;

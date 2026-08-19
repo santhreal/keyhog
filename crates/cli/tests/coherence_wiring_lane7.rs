@@ -244,7 +244,7 @@ fn help_exit_codes_block_is_complete_and_labels_match() {
         "`--help` exit-2 line must say \"User error\" to match docs + EXIT_USER_ERROR; \
          got {exit2_line:?}"
     );
-    // Exit 4 must acknowledge the `repair` producer (doctor/repair/backend).
+    // Exit 4 must name its surviving producers (doctor / backend self-test).
     let exit4_line = help
         .lines()
         .find(|l| {
@@ -257,8 +257,8 @@ fn help_exit_codes_block_is_complete_and_labels_match() {
         .unwrap_or_else(|| panic!("no exit-4 line in --help:\n{help}"))
         .to_lowercase();
     assert!(
-        exit4_line.contains("repair"),
-        "`--help` exit-4 line must mention the `repair` producer; got {exit4_line:?}"
+        exit4_line.contains("doctor") && exit4_line.contains("backend"),
+        "`--help` exit-4 line must mention the doctor and backend producers; got {exit4_line:?}"
     );
 }
 

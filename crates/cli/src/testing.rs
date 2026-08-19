@@ -158,16 +158,6 @@ impl SkipDirPolicyView {
     }
 }
 
-pub type DownloadFuture<'a> = Pin<Box<dyn Future<Output = Result<Vec<u8>>> + 'a>>;
-pub type ReleaseResolutionFuture<'a> = Pin<Box<dyn Future<Output = Result<ResolvedRelease>> + 'a>>;
-pub type ReleaseInstallFuture<'a> = Pin<Box<dyn Future<Output = Result<()>> + 'a>>;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolvedRelease {
-    pub tag_name: String,
-    pub asset_name: String,
-}
-
 /// Verification-state tallies exposed to the relocated completion-summary
 /// tests without leaking the crate-internal `VerificationBreakdown` type.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -311,81 +301,8 @@ pub trait CliTestApi {
     fn test_fixture_suppresses(&self, suppressions: &TestFixtureSuppressions, cred: &str) -> bool;
     fn test_fixture_exact_count(&self, suppressions: &TestFixtureSuppressions) -> usize;
 
-    fn asset_name(&self, os: &str, arch: &str) -> Option<String>;
-    fn select_release_asset_name(&self, tag_name: &str, asset_names: &[&str]) -> Result<String>;
-    fn parse_semver(&self, tag: &str) -> Option<(u64, u64, u64)>;
-    fn is_newer(&self, current: &str, latest: &str) -> bool;
-    fn release_channel_state(&self, current: &str, latest: &str) -> &'static str;
-    fn looks_like_native_executable(&self, bytes: &[u8]) -> bool;
-    fn looks_like_native_executable_for_os(&self, bytes: &[u8], os: &str) -> bool;
-    fn verify_release_signature(&self, data: &[u8], signature: &str) -> Result<()>;
-    fn verify_release_checksum(
-        &self,
-        data: &[u8],
-        asset_name: &str,
-        checksum_file: &[u8],
-    ) -> Result<()>;
-    fn parse_gpu_literal_sidecar(
-        &self,
-        archive: &[u8],
-        expected_release_tag: &str,
-    ) -> Result<Vec<(String, Vec<u8>)>>;
-    fn install_gpu_literal_files_in_dir(
-        &self,
-        cache_dir: &Path,
-        files: &[(&str, &[u8])],
-        commit: bool,
-    ) -> Result<()>;
-    fn release_api_base(&self) -> &'static str;
-    fn resolve_release_at<'a>(
-        &self,
-        client: &'a reqwest::Client,
-        version: Option<&'a str>,
-        release_api_base: &'a str,
-    ) -> ReleaseResolutionFuture<'a>;
-    fn install_verified_release_payload_at<'a>(
-        &self,
-        client: &'a reqwest::Client,
-        version: Option<&'a str>,
-        release_api_base: &'a str,
-        asset_name: &'a str,
-        target: &'a Path,
-    ) -> ReleaseInstallFuture<'a>;
-    fn release_public_key(&self) -> &'static str;
-    fn release_repo(&self) -> &'static str;
     fn scan_engine_self_test(&self) -> Result<bool>;
-    fn verify_via_doctor(&self, exe: &Path) -> bool;
-    fn http_client(&self) -> Result<reqwest::Client>;
-    fn download_verified_asset<'a>(
-        &self,
-        client: &'a reqwest::Client,
-        name: &'a str,
-        browser_download_url: String,
-    ) -> DownloadFuture<'a>;
     fn current_binary(&self) -> Result<PathBuf>;
-    fn replace_running_binary<F>(
-        &self,
-        exe: &Path,
-        bytes: &[u8],
-        verify: F,
-    ) -> Result<Option<PathBuf>>
-    where
-        F: FnOnce(&Path) -> bool;
-    fn reap_stale_binaries(&self, exe: &Path);
-    fn backup_path(&self, exe: &Path) -> PathBuf;
-    fn verify_candidate_release(
-        &self,
-        exe: &Path,
-        expected_release_tag: &str,
-        current_version: &str,
-        allow_explicit_downgrade: bool,
-    ) -> Result<()>;
-    fn install_with_rollback<F>(&self, exe: &Path, bytes: &[u8], verify: F) -> Result<()>
-    where
-        F: FnOnce(&Path) -> bool;
-    fn install_with_rollback_checked<F>(&self, exe: &Path, bytes: &[u8], verify: F) -> Result<()>
-    where
-        F: FnOnce(&Path) -> Result<()>;
 
     fn rewrite_detector_braces(&self, s: &str) -> (String, usize);
     fn fix_single_brace_in_verify_blocks(&self, toml_text: &str) -> (String, usize);
@@ -628,6 +545,24 @@ pub trait CliTestApi {
         rejections: std::collections::BTreeMap<String, u64>,
         status: keyhog_scanner::telemetry::StaticRecoveryStatus,
     ) -> Result<StaticRecoveryMergeSnapshot>;
+}
+
+/// The recovery peer a failed accelerator can hand a batch to in THIS build.
+///
+/// `portable,gpu` is a shipped configuration (the macOS and Windows ships), so
+/// a harness that always names `SimdCpu` fails on a build with no Hyperscan and
+/// reports the routing refusal as lost recovery. Production resolves the peer
+/// from measured calibration evidence, which can only name a backend this
+/// binary carries; this mirrors that constraint.
+fn recovery_peer_for_this_build() -> keyhog_scanner::ScanBackend {
+    #[cfg(feature = "simd")]
+    {
+        keyhog_scanner::ScanBackend::SimdCpu
+    }
+    #[cfg(not(feature = "simd"))]
+    {
+        keyhog_scanner::ScanBackend::CpuFallback
+    }
 }
 
 impl CliTestApi for TestApi {
@@ -933,221 +868,11 @@ impl CliTestApi for TestApi {
         suppressions.0.exact_count()
     }
 
-    fn asset_name(&self, os: &str, arch: &str) -> Option<String> {
-        crate::installer::asset_name(os, arch)
-    }
-    fn select_release_asset_name(&self, tag_name: &str, asset_names: &[&str]) -> Result<String> {
-        let release = crate::installer::Release {
-            tag_name: tag_name.to_string(),
-            draft: false,
-            prerelease: false,
-            assets: asset_names
-                .iter()
-                .map(|name| crate::installer::Asset {
-                    name: (*name).to_string(),
-                    browser_download_url: format!("https://example.invalid/{name}"),
-                })
-                .collect(),
-        };
-        crate::installer::select_asset(&release).map(|asset| asset.name.clone())
-    }
-    fn parse_semver(&self, tag: &str) -> Option<(u64, u64, u64)> {
-        crate::installer::parse_semver(tag)
-    }
-    fn is_newer(&self, current: &str, latest: &str) -> bool {
-        crate::installer::is_newer(current, latest)
-    }
-    fn release_channel_state(&self, current: &str, latest: &str) -> &'static str {
-        match crate::installer::classify_channel(current, latest) {
-            crate::installer::ReleaseChannelState::UpdateAvailable => "update-available",
-            crate::installer::ReleaseChannelState::OnNewestAsset => "on-newest-asset",
-            crate::installer::ReleaseChannelState::ChannelBehind => "channel-behind",
-        }
-    }
-    fn looks_like_native_executable(&self, bytes: &[u8]) -> bool {
-        crate::installer::looks_like_native_executable(bytes)
-    }
-    fn looks_like_native_executable_for_os(&self, bytes: &[u8], os: &str) -> bool {
-        crate::installer::looks_like_native_executable_for_os(bytes, os)
-    }
-    fn verify_release_signature(&self, data: &[u8], signature: &str) -> Result<()> {
-        crate::installer::verify_release_signature(data, signature)
-    }
-    fn verify_release_checksum(
-        &self,
-        data: &[u8],
-        asset_name: &str,
-        checksum_file: &[u8],
-    ) -> Result<()> {
-        crate::installer::verify_release_checksum(data, asset_name, checksum_file)
-    }
-    fn parse_gpu_literal_sidecar(
-        &self,
-        archive: &[u8],
-        expected_release_tag: &str,
-    ) -> Result<Vec<(String, Vec<u8>)>> {
-        crate::installer::parse_gpu_literal_sidecar(archive, expected_release_tag).map(|files| {
-            files
-                .into_iter()
-                .map(|file| (file.name, file.bytes))
-                .collect()
-        })
-    }
-    fn install_gpu_literal_files_in_dir(
-        &self,
-        cache_dir: &Path,
-        files: &[(&str, &[u8])],
-        commit: bool,
-    ) -> Result<()> {
-        let files = files
-            .iter()
-            .map(|(name, bytes)| crate::installer::GpuLiteralFile {
-                name: (*name).to_string(),
-                bytes: (*bytes).to_vec(),
-            })
-            .collect::<Vec<_>>();
-        let transaction = crate::installer::install_gpu_literal_files_in_dir(cache_dir, &files)?;
-        if commit {
-            transaction.commit();
-        }
-        Ok(())
-    }
-    fn release_api_base(&self) -> &'static str {
-        crate::installer::release_api_base()
-    }
-    fn resolve_release_at<'a>(
-        &self,
-        client: &'a reqwest::Client,
-        version: Option<&'a str>,
-        release_api_base: &'a str,
-    ) -> ReleaseResolutionFuture<'a> {
-        Box::pin(async move {
-            let release =
-                crate::installer::resolve_release_at(client, version, release_api_base).await?;
-            let asset_name = crate::installer::select_asset(&release)?.name.clone();
-            Ok(ResolvedRelease {
-                tag_name: release.tag_name,
-                asset_name,
-            })
-        })
-    }
-    fn install_verified_release_payload_at<'a>(
-        &self,
-        client: &'a reqwest::Client,
-        version: Option<&'a str>,
-        release_api_base: &'a str,
-        asset_name: &'a str,
-        target: &'a Path,
-    ) -> ReleaseInstallFuture<'a> {
-        Box::pin(async move {
-            let bytes = crate::installer::resolve_and_download_verified_payload_at(
-                client,
-                version,
-                release_api_base,
-                asset_name,
-            )
-            .await?;
-            let expected = bytes.clone();
-            crate::installer::install_with_rollback_checked(target, &bytes, move |candidate| {
-                let installed = std::fs::read(candidate).map_err(anyhow::Error::from)?;
-                anyhow::ensure!(
-                    installed == expected,
-                    "installed release payload changed bytes"
-                );
-                Ok(())
-            })
-        })
-    }
-    fn release_public_key(&self) -> &'static str {
-        crate::installer::RELEASE_PUBLIC_KEY
-    }
-    fn release_repo(&self) -> &'static str {
-        crate::installer::REPO
-    }
     fn scan_engine_self_test(&self) -> Result<bool> {
         crate::installer::scan_engine_self_test()
     }
-    fn verify_via_doctor(&self, exe: &Path) -> bool {
-        crate::installer::verify_via_doctor_checked(exe).is_ok()
-    }
-    fn http_client(&self) -> Result<reqwest::Client> {
-        crate::installer::http_client()
-    }
-    fn download_verified_asset<'a>(
-        &self,
-        client: &'a reqwest::Client,
-        name: &'a str,
-        browser_download_url: String,
-    ) -> DownloadFuture<'a> {
-        Box::pin(async move {
-            let asset = crate::installer::Asset {
-                name: name.to_string(),
-                browser_download_url: browser_download_url.clone(),
-            };
-            let release = crate::installer::Release {
-                tag_name: "v0.0.0-test".to_string(),
-                draft: false,
-                prerelease: false,
-                assets: vec![
-                    asset.clone(),
-                    crate::installer::Asset {
-                        name: format!("{name}.minisig"),
-                        browser_download_url: format!("{browser_download_url}.minisig"),
-                    },
-                    crate::installer::Asset {
-                        name: format!("{name}.sha256"),
-                        browser_download_url: format!("{browser_download_url}.sha256"),
-                    },
-                ],
-            };
-            crate::installer::download_verified_asset(client, &release, &asset).await
-        })
-    }
     fn current_binary(&self) -> Result<PathBuf> {
         crate::installer::current_binary()
-    }
-    fn replace_running_binary<F>(
-        &self,
-        exe: &Path,
-        bytes: &[u8],
-        verify: F,
-    ) -> Result<Option<PathBuf>>
-    where
-        F: FnOnce(&Path) -> bool,
-    {
-        crate::installer::replace_running_binary(exe, bytes, verify)
-    }
-    fn reap_stale_binaries(&self, exe: &Path) {
-        crate::installer::reap_stale_binaries(exe)
-    }
-    fn backup_path(&self, exe: &Path) -> PathBuf {
-        crate::installer::backup_path(exe)
-    }
-    fn verify_candidate_release(
-        &self,
-        exe: &Path,
-        expected_release_tag: &str,
-        current_version: &str,
-        allow_explicit_downgrade: bool,
-    ) -> Result<()> {
-        crate::installer::verify_candidate_release(
-            exe,
-            expected_release_tag,
-            current_version,
-            allow_explicit_downgrade,
-        )
-    }
-    fn install_with_rollback<F>(&self, exe: &Path, bytes: &[u8], verify: F) -> Result<()>
-    where
-        F: FnOnce(&Path) -> bool,
-    {
-        crate::installer::install_with_rollback(exe, bytes, verify)
-    }
-    fn install_with_rollback_checked<F>(&self, exe: &Path, bytes: &[u8], verify: F) -> Result<()>
-    where
-        F: FnOnce(&Path) -> Result<()>,
-    {
-        crate::installer::install_with_rollback_checked(exe, bytes, verify)
     }
 
     fn rewrite_detector_braces(&self, s: &str) -> (String, usize) {
@@ -1435,9 +1160,9 @@ impl CliTestApi for TestApi {
             None,
             scanner.execution_route_for_backend(keyhog_scanner::ScanBackend::GpuWgpu),
             recover_automatic_backend_faults.then_some(crate::orchestrator::BackendRecoveryPlan {
-                backend: keyhog_scanner::ScanBackend::SimdCpu,
+                backend: recovery_peer_for_this_build(),
                 execution_route: scanner
-                    .execution_route_for_backend(keyhog_scanner::ScanBackend::SimdCpu),
+                    .execution_route_for_backend(recovery_peer_for_this_build()),
             }),
         )?;
         if recover_automatic_backend_faults && !outcome.recovered {

@@ -3,9 +3,9 @@
 //!
 //! The per-batch routing decision used to be logged only at `tracing::debug!`,
 //! invisible at default verbosity, so a scan that correctly chose SIMD on a
-//! small-file tree read as "backend selection is broken." This test forces SIMD
-//! explicitly so the routing line is deterministic and does not depend on a
-//! persisted autoroute calibration cache.
+//! small-file tree read as "backend selection is broken." This test forces the
+//! backend this build carries, so the routing line is deterministic and does
+//! not depend on a persisted autoroute calibration cache.
 
 use crate::support::{binary, write_temp_file};
 use std::process::Command;
@@ -21,7 +21,7 @@ fn progress_flag_emits_routing_decision_summary() {
             "--format",
             "json",
             "--backend",
-            "simd",
+            crate::support::DIAGNOSTIC_BACKEND,
         ])
         .arg(&path)
         .stdout(std::process::Stdio::piped())
@@ -36,8 +36,11 @@ fn progress_flag_emits_routing_decision_summary() {
         "completion summary must surface the routing decision line; got: {stderr}"
     );
     assert!(
-        stderr.contains("backend: simd-regex"),
-        "an explicit SIMD scan must report simd-regex routing on every host; got: {stderr}"
+        stderr.contains(&format!(
+            "backend: {}",
+            crate::support::DIAGNOSTIC_BACKEND_ROUTE
+        )),
+        "an explicit backend request must report its own route on every host; got: {stderr}"
     );
     assert!(
         stderr.contains("forced via --backend"),

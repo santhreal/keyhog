@@ -69,23 +69,83 @@ def crate_pkg(crate: str) -> str:
     return "keyhog" if crate == "cli" else f"keyhog-{crate}"
 
 
-def logical_command_lines(text: str) -> list[str]:
-    """Join shell backslash-continued lines into ONE logical command string.
+BLOCK_SCALAR = re.compile(r"^(\s*)[A-Za-z0-9_.-]+:\s*(\||>)[-+]?\s*$")
 
-    A CI step commonly narrows across continuation lines:
+
+def fold_block_scalars(text: str) -> list[str]:
+    """Expand YAML block scalars so a folded step reads as ONE command.
+
+    A folded (">") step joins its continuation lines into a single command,
+    but the raw file still shows them as separate lines:
+
+        run: >
+          cargo test -p keyhog --profile ci-test
+          --test regression_install_insecure_env_removed
+
+    Read line by line, line one is a `cargo test -p keyhog` carrying no
+    narrowing flag, which is exactly the all-targets shape. That made
+    `runs_all_targets("keyhog")` true and short-circuited orphan detection for
+    the WHOLE crate: the gate reported every cli test file wired while
+    `lane5_cli_subcommand_surface_matrix`, `regression_cli_version_help`, and
+    `release_attestation_contract` ran in no job at all, and two of them had
+    been red for some time.
+
+    ">" folds into one line and "|" keeps its lines separate, matching what
+    the shell receives, so the fold honours the indicator instead of treating
+    every block alike. A blank line inside a folded block is a paragraph break
+    and starts a new command.
+    """
+    out: list[str] = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        m = BLOCK_SCALAR.match(lines[i])
+        if not m:
+            out.append(lines[i])
+            i += 1
+            continue
+        header_indent, style = m.group(1), m.group(2)
+        i += 1
+        body: list[str] = []
+        while i < len(lines):
+            line = lines[i]
+            if line.strip() and len(line) - len(line.lstrip()) <= len(header_indent):
+                break
+            body.append(line)
+            i += 1
+        if style == "|":
+            out.extend(body)
+            continue
+        paragraph: list[str] = []
+        for line in body:
+            if line.strip():
+                paragraph.append(line.strip())
+            elif paragraph:
+                out.append(" ".join(paragraph))
+                paragraph = []
+        if paragraph:
+            out.append(" ".join(paragraph))
+    return out
+
+
+def logical_command_lines(text: str) -> list[str]:
+    """Join a CI step's continuation lines into ONE logical command string.
+
+    Two mechanisms split one command across lines, and both hide a narrowing
+    flag from a line-by-line scan: a YAML block scalar (see
+    `fold_block_scalars`) and a shell backslash continuation:
 
         cargo test -p keyhog-scanner --profile release-fast \\
-          --test contracts_runner \\
+          --test contracts_runner
           --test adversarial_explosion_runner
 
-    Scanning line-by-line, the FIRST line carries no `--test`, so a naive check
-    would misread it as an all-targets run and vacuously wire every orphan. We
-    fold each `\\`-continued run into a single logical line so the narrowing
-    flags on later lines are seen as part of the same command.
+    The FIRST line carries no `--test`, so a naive check reads it as an
+    all-targets run and vacuously wires every orphan. Fold both so the flags
+    on later lines belong to the same command.
     """
     out: list[str] = []
     buf = ""
-    for raw in text.splitlines():
+    for raw in fold_block_scalars(text):
         stripped = raw.rstrip()
         if stripped.endswith("\\"):
             buf += stripped[:-1] + " "
@@ -106,11 +166,9 @@ def runs_all_targets(pkg: str) -> bool:
     multi-line command whose `--test` flags sit on later lines is correctly
     recognised as NARROWED, not all-targets.
     """
-    if not WORKFLOWS.is_dir():
-        return False
     pkg_ref = re.compile(rf"-p\s+{re.escape(pkg)}(?:\s|$)")
-    for wf in sorted(WORKFLOWS.glob("*.yml")):
-        for line in logical_command_lines(wf.read_text()):
+    for text in ci_entrypoints():
+        for line in logical_command_lines(text):
             if "cargo test" not in line or not pkg_ref.search(line):
                 continue
             if any(flag in line for flag in TARGET_NARROWING):
@@ -119,11 +177,41 @@ def runs_all_targets(pkg: str) -> bool:
     return False
 
 
+SCRIPT_REF = re.compile(r"\b(?:bash|sh)\s+(scripts/[A-Za-z0-9_./-]+\.sh)")
+
+
+def ci_entrypoints() -> list[str]:
+    """Every text a CI step ultimately executes: the workflows plus the shell
+    scripts they invoke.
+
+    A workflow step is often one line, `bash scripts/ci_local.sh`, with the real
+    `cargo test --test ...` battery inside the script. Reading only
+    `.github/workflows/*.yml` therefore reports a test as running nowhere while
+    it runs on every release: `ci_local.sh` is the ONLY lane that proves GPU
+    finding parity, and all twelve of its GPU targets looked like orphans.
+    Follow the reference one level, which is the depth CI actually uses.
+    """
+    texts: list[str] = []
+    if not WORKFLOWS.is_dir():
+        return texts
+    seen: set[str] = set()
+    for wf in sorted(WORKFLOWS.glob("*.yml")):
+        text = wf.read_text()
+        texts.append(text)
+        for rel in SCRIPT_REF.findall(text):
+            if rel in seen:
+                continue
+            seen.add(rel)
+            script = REPO / rel
+            if script.is_file():
+                texts.append(script.read_text())
+    return texts
+
+
 def workflow_test_flags() -> set[str]:
     stems: set[str] = set()
-    if WORKFLOWS.is_dir():
-        for wf in sorted(WORKFLOWS.glob("*.yml")):
-            stems |= set(TEST_FLAG.findall(wf.read_text()))
+    for text in ci_entrypoints():
+        stems |= set(TEST_FLAG.findall(text))
     return stems
 
 
@@ -231,6 +319,43 @@ def self_test() -> int:
         ok = False
     if "plain" not in folded:
         print("self-test: folding dropped a non-continued line", file=sys.stderr)
+        ok = False
+    # A YAML FOLDED (">") step is one command: its `--test` flags sit on later
+    # lines, so line-by-line the first line is a bare `cargo test -p keyhog`,
+    # the all-targets shape that short-circuits orphan detection for the whole
+    # crate. This is the bug that hid 89 cli and 19 scanner orphans.
+    folded_yaml = fold_block_scalars(
+        "      - name: x\n"
+        "        run: >\n"
+        "          cargo test -p keyhog --profile ci-test\n"
+        "          --test regression_cli_version_help\n"
+        "      - name: y\n"
+    )
+    joined = [ln for ln in folded_yaml if "cargo test" in ln]
+    if len(joined) != 1 or "--test regression_cli_version_help" not in joined[0]:
+        print(f"self-test: folded scalar not joined: {joined}", file=sys.stderr)
+        ok = False
+    if not any("- name: y" in ln for ln in folded_yaml):
+        print("self-test: folding swallowed the next step", file=sys.stderr)
+        ok = False
+    # A LITERAL ("|") block keeps its lines separate, matching the shell: two
+    # commands must not merge into one, or a narrowing flag from the second
+    # would silently narrow the first.
+    literal = fold_block_scalars(
+        "        run: |\n"
+        "          cargo test -p keyhog-core\n"
+        "          cargo test -p keyhog-scanner --test all_tests\n"
+    )
+    cmds = [ln.strip() for ln in literal if "cargo test" in ln]
+    if cmds != ["cargo test -p keyhog-core", "cargo test -p keyhog-scanner --test all_tests"]:
+        print(f"self-test: literal block merged commands: {cmds}", file=sys.stderr)
+        ok = False
+    # A workflow step that only invokes a script must be followed into that
+    # script, or every target the script runs looks like an orphan.
+    if SCRIPT_REF.findall("        run: bash scripts/ci_local.sh") != [
+        "scripts/ci_local.sh"
+    ]:
+        print("self-test: SCRIPT_REF broken", file=sys.stderr)
         ok = False
     # crate -> cargo package name (cli ships as `keyhog`).
     if (crate_pkg("cli"), crate_pkg("core")) != ("keyhog", "keyhog-core"):

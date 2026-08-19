@@ -22,29 +22,19 @@ use support::paths::detector_dir;
 
 use std::collections::BTreeMap;
 
-/// The 7 known byte-identical primary-regex duplicate pairs (2026-07-07 audit
-/// over all 923 detectors). Each is a real ONE-PLACE violation awaiting
-/// consolidation into a single owner; the note names the intended survivor and
-/// why the pair exists. Ordered ids within a pair are sorted so the match
-/// against a discovered group (also sorted) is order-independent.
+/// The byte-identical primary-regex duplicate pairs still in the corpus. Each
+/// is a real ONE-PLACE violation awaiting consolidation into a single owner;
+/// the note names the intended survivor and why the pair exists. Ordered ids
+/// within a pair are sorted so the match against a discovered group (also
+/// sorted) is order-independent.
+///
+/// The 2026-07-07 audit over 923 detectors tracked 7. Three have since been
+/// consolidated and are removed here, which tightens the ratchet: if one
+/// regresses to byte-identical it is now a NEW duplicate and fails the build.
+/// `bigcommerce-store-api-credentials` and `clerk-frontend-api-key` gained a
+/// trailing boundary group, and `gitlab-package-registry-token` gained `.` in
+/// its charset plus an upper length bound.
 const KNOWN_DUP_PAIRS: &[&[&str]] = &[
-    // Both fire on `bbc_[a-zA-Z0-9]{48,}`. Survivor: bigcommerce-store-api-
-    // credentials (superset naming covering the token). Fold the access-token
-    // keywords in, then drop bigcommerce-access-token.
-    &[
-        "bigcommerce-access-token",
-        "bigcommerce-store-api-credentials",
-    ],
-    // Both fire on `pk_(?:live|test)_[a-zA-Z0-9]{32}`: Clerk's PUBLISHABLE
-    // (client-safe) key. 100% redundant (same regex/severity/client_safe). The
-    // real secret `sk_` is already caught (shares Stripe's `sk_live_` prefix).
-    // Survivor: clerk-frontend-api-key (the precise "frontend/publishable"
-    // name); clerk-api-key is misnamed (it is NOT the secret key).
-    &["clerk-api-key", "clerk-frontend-api-key"],
-    // Both fire on `gldt-[a-zA-Z0-9_-]{20,}`. GitLab deploy tokens and package-
-    // registry tokens share the `gldt-` shape; survivor TBD by product (they
-    // are semantically distinct scopes but shape-identical).
-    &["gitlab-deploy-token", "gitlab-package-registry-token"],
     // Both fire on `hf_[a-zA-Z0-9]{34,}`. HF user vs org tokens are shape-
     // identical; the org/user distinction is not encodable in the prefix, so
     // these should be ONE `huggingface-token` detector.
@@ -53,15 +43,17 @@ const KNOWN_DUP_PAIRS: &[&[&str]] = &[
     // Cloud and Enterprise use the same `atlasv1.` token shape; survivor:
     // terraform-cloud-api-token (Enterprise is the same API surface).
     &["terraform-cloud-api-token", "terraform-enterprise-token"],
-    // Both fire on `ck_[a-f0-9]{40}` with the same `cs_` companion. woocommerce-
-    // consumer-key is a strict subset of woocommerce-rest-api-credentials (which
-    // has the fuller keyword set). Survivor: woocommerce-rest-api-credentials.
+    // Both fire on `ck_[a-f0-9]{40}` with the same `cs_` companion. The two
+    // TOMLs differ only in quote style, which canonicalizes away. woocommerce-
+    // consumer-key is a strict subset of woocommerce-rest-api-credentials
+    // (fuller keyword set). Survivor: woocommerce-rest-api-credentials.
     &[
         "woocommerce-consumer-key",
         "woocommerce-rest-api-credentials",
     ],
-    // Both fire on `xau_[a-zA-Z0-9_-]{40,}`. Xata api-key vs workspace-api-key
-    // are the same token shape; consolidate to one `xata-api-key`.
+    // Both fire on `xau_[a-zA-Z0-9_-]{40,}`, again differing only in quote
+    // style. Xata api-key vs workspace-api-key are the same token shape;
+    // consolidate to one `xata-api-key`.
     &["xata-api-key", "xata-workspace-api-key"],
 ];
 
@@ -80,10 +72,10 @@ fn known_pair_set() -> Vec<Vec<String>> {
 fn no_new_duplicate_primary_regex_detectors() {
     let detectors = match keyhog_core::load_detectors(&detector_dir()) {
         Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors unavailable: {e}");
-            return;
-        }
+        Err(e) => panic!(
+            "detector corpus failed to load, which is the exact state this \
+             guard exists to catch, so it fails instead of skipping: {e}"
+        ),
     };
 
     // Group detector ids by their PRIMARY (patterns[0]) regex. Detectors with no

@@ -124,20 +124,7 @@ pub(crate) fn workload_key(
     batch: &[Chunk],
     pattern_count: usize,
 ) -> StdResult<WorkloadKey, super::super::workload::WorkloadClassificationError> {
-    workload_key_with_plan(
-        batch,
-        pattern_count,
-        all_admitted_phase1(batch),
-        keyhog_scanner::Phase2KeywordTriggerSummary::default(),
-        test_decode_workload_plan(),
-    )
-}
-
-pub(crate) fn all_admitted_phase1(batch: &[Chunk]) -> keyhog_scanner::Phase1AdmissionSummary {
-    keyhog_scanner::Phase1AdmissionSummary::all_admitted(
-        batch.len() as u64,
-        batch.iter().map(|chunk| chunk.data.len() as u64).sum(),
-    )
+    workload_key_with_plan(batch, pattern_count, test_decode_workload_plan())
 }
 
 pub(crate) fn phase1_test_scanner() -> CompiledScanner {
@@ -215,23 +202,7 @@ pub(crate) fn test_workload_key() -> WorkloadKey {
         chunks_bucket: 1,
         max_file_bucket: 24,
         pattern_bucket: 5,
-        phase2_keyword_triggers: Phase2KeywordTriggerKey {
-            chunks_bucket: 0,
-            bytes_bucket: 0,
-            count_bucket: 0,
-        },
-        phase1: Phase1AdmissionKey {
-            alphabet_rejected_chunks_bucket: 0,
-            alphabet_rejected_bytes_bucket: 0,
-            bigram_rejected_chunks_bucket: 0,
-            bigram_rejected_bytes_bucket: 0,
-            admitted_chunks_bucket: 1,
-            admitted_bytes_bucket: 24,
-        },
-        decode_kind_mask: keyhog_scanner::decode::DecodeAdmissionSketch::BASE64,
-        decode_candidate_count_bucket: 2,
-        decode_candidate_bytes_bucket: 3,
-        decode_unknown: false,
+        decode_admitted: (keyhog_scanner::decode::DecodeAdmissionSketch::BASE64 != 0) || false,
         source_mixture: test_source_mixture("filesystem"),
     }
 }
@@ -241,9 +212,6 @@ pub(crate) fn test_source_mixture(source_class: &str) -> SourceMixtureKey {
         entries: vec![SourceMixtureEntry {
             source_class_digest: source_class_id(source_class),
             has_full_size: true,
-            chunk_ratio: 1,
-            payload_ratio: 1,
-            max_span_bucket: 24,
         }],
     }
 }

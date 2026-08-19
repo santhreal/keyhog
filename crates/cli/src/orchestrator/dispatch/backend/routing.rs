@@ -8,7 +8,7 @@ use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::ScanBackend;
 use keyhog_scanner::{CompiledScanner, Phase1AdmissionPlan};
 
-use super::evidence::{AutorouteDecision, MeasuredRoute};
+use super::evidence::{reconcile_route_across_decisions, AutorouteDecision, MeasuredRoute};
 use super::store::autoroute_cache_file_presence;
 use super::workload::{
     differing_workload_dimensions, render_workload_key, WorkloadClassificationError, WorkloadKey,
@@ -401,28 +401,132 @@ pub(super) fn phase1_plan_for_selected_backend(
     plan
 }
 
-pub(super) fn resolve_persisted_route(
-    decisions: &HashMap<WorkloadKey, AutorouteDecision>,
+/// The route this workload's measured family reconciles to.
+///
+/// A sibling shares this workload's detector corpus, decode state, and set of
+/// source classes, and differs only in size band.
+///
+/// The workload key is a conjunction of enumerable bands. The reachable grid
+/// is about 1.45 million cells (13,685 valid byte/chunk/max-file triples, two
+/// decode states, 53 source classes); the probe ladder measures a few hundred
+/// of them, and enumerating the rest would take hundreds of hours. Exact
+/// lookup therefore missed nearly every real scan: a freshly calibrated
+/// install exited 2 on a two-file directory, and adding one file to a
+/// directory that had just scanned broke it again.
+///
+/// The family's bands are pooled and reconciled by
+/// [`reconcile_route_across_decisions`], which is the same rule that
+/// reconciles the repeated points inside one band. Serving its result is not a
+/// guess, a benchmark, a heuristic, or a substituted backend: the backend it
+/// returns was measured at every band of the family and proved slower at none,
+/// and where the bands split on the phase-2 plan it returns the compiled
+/// default plan every band measured. A real crossover, where one band proves a
+/// peer faster and another proves the reverse, leaves no route non-inferior
+/// everywhere, and the scan fails closed exactly as before rather than picking
+/// a side.
+fn family_agreed_route<'a>(
+    decisions: &'a HashMap<WorkloadKey, AutorouteDecision>,
+    key: &WorkloadKey,
+    runtime_class: AutorouteRuntimeClass,
+) -> Option<(MeasuredRoute, &'a AutorouteDecision)> {
+    let persistent = runtime_class == AutorouteRuntimeClass::Persistent;
+    let mut family: Vec<(&WorkloadKey, &AutorouteDecision)> = decisions
+        .iter()
+        .filter(|(candidate, _)| {
+            candidate.pattern_bucket == key.pattern_bucket
+                && candidate.decode_admitted == key.decode_admitted
+                && candidate.source_mixture == key.source_mixture
+        })
+        .collect();
+    // HashMap order is not stable across runs and the reconciled plan reads the
+    // compiled default off the first pooled point, so order by band.
+    family.sort_unstable_by_key(|(candidate, _)| {
+        (
+            candidate.bytes_bucket,
+            candidate.chunks_bucket,
+            candidate.max_file_bucket,
+        )
+    });
+    for (_, decision) in &family {
+        // A sibling that resolves no route leaves the family incompletely
+        // measured, so it withdraws the whole reuse instead of being skipped.
+        let route = match runtime_class {
+            AutorouteRuntimeClass::OneShot => decision.measured_route()?,
+            AutorouteRuntimeClass::Persistent => decision.resolved_persistent_route()?,
+        };
+        // GPU correctness, not merely GPU speed, varies with input size: batch
+        // input limits and slot capacities are bound to the measured shape, and
+        // a parity receipt proves that shape and no other. A GPU route is
+        // therefore never reused for a band nobody measured, however unanimous
+        // its neighbours are.
+        if route.backend.is_gpu() {
+            return None;
+        }
+    }
+    // One measured band says nothing about whether the winner depends on size.
+    // Invariance needs at least two bands.
+    if family.len() < 2 {
+        return None;
+    }
+    let members: Vec<&AutorouteDecision> = family.iter().map(|(_, decision)| *decision).collect();
+    let route = reconcile_route_across_decisions(&members, persistent)?;
+    if route.backend.is_gpu() {
+        return None;
+    }
+    // An accelerated route is only usable with a recovery peer, so the family
+    // must agree on that too. Serving a route whose bands recover differently
+    // would hand the scan a recovery peer nothing measured for this band.
+    if route.backend != ScanBackend::CpuFallback {
+        let mut agreed_recovery: Option<MeasuredRoute> = None;
+        for decision in &members {
+            let recovery = decision.resolved_recovery_route(route.backend, persistent)?;
+            match agreed_recovery {
+                None => agreed_recovery = Some(recovery),
+                Some(existing) if existing == recovery => {}
+                Some(_) => return None,
+            }
+        }
+    }
+    Some((route, members[0]))
+}
+
+/// A route plus the calibrated decision that authorizes it. For an exact hit
+/// that is the workload's own row; for a reused route it is the family member
+/// whose evidence every measured sibling reproduced.
+#[derive(Debug)]
+pub(super) struct ResolvedRoute<'a> {
+    pub(super) route: MeasuredRoute,
+    pub(super) decision: &'a AutorouteDecision,
+}
+
+pub(super) fn resolve_persisted_route<'a>(
+    decisions: &'a HashMap<WorkloadKey, AutorouteDecision>,
     key: WorkloadKey,
     runtime_class: AutorouteRuntimeClass,
     cache_path: &Option<PathBuf>,
     cache_load_error: &Option<String>,
-) -> Result<MeasuredRoute, AutorouteRoutingError> {
-    let route = decisions
+) -> Result<ResolvedRoute<'a>, AutorouteRoutingError> {
+    let resolved = decisions
         .get(&key)
-        .and_then(|decision| match runtime_class {
-            AutorouteRuntimeClass::OneShot => decision.measured_route(),
-            AutorouteRuntimeClass::Persistent => decision.resolved_persistent_route(),
-        });
-    route.ok_or_else(|| {
-        AutorouteRoutingError::missing_decision(
-            key,
-            decisions,
-            runtime_class,
-            cache_path,
-            cache_load_error,
-        )
-    })
+        .and_then(|decision| {
+            match runtime_class {
+                AutorouteRuntimeClass::OneShot => decision.measured_route(),
+                AutorouteRuntimeClass::Persistent => decision.resolved_persistent_route(),
+            }
+            .map(|route| (route, decision))
+        })
+        .or_else(|| family_agreed_route(decisions, &key, runtime_class));
+    resolved
+        .map(|(route, decision)| ResolvedRoute { route, decision })
+        .ok_or_else(|| {
+            AutorouteRoutingError::missing_decision(
+                key,
+                decisions,
+                runtime_class,
+                cache_path,
+                cache_load_error,
+            )
+        })
 }
 
 pub(super) fn automatic_recovery_plan(

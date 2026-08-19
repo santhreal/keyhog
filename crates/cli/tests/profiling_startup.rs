@@ -13,7 +13,6 @@ use keyhog::args::ScanArgs;
 use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use keyhog_profile::{Stage, StageMeasurement};
-use sha2::Digest as _;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -40,20 +39,6 @@ fn stage_calls(measurements: &[StageMeasurement], stage: Stage) -> u64 {
         .filter(|measurement| measurement.stage == stage)
         .map(|measurement| measurement.calls)
         .sum()
-}
-
-/// Tempdir with owner-only permissions: the installer refuses group/world-
-/// writable install directories by design, and the default /tmp mode here is
-/// 0775.
-fn private_tempdir() -> tempfile::TempDir {
-    let dir = tempfile::TempDir::new().expect("tempdir");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700))
-            .expect("chmod tempdir");
-    }
-    dir
 }
 
 /// Minimal raw match fixture; `detector_id` keys rule-suppressor evaluation.
@@ -218,73 +203,6 @@ fn detector_corpus_load_records_one_backend_select_span() {
     assert_eq!(stage_calls(&measurements, Stage::BackendSelect), 1);
 }
 
-/// WHY: `keyhog update`/`repair` select the host release asset before any
-/// download; that planning step must record exactly one Preprocess span and no
-/// SourceAcquire (nothing is fetched). Locks out a stage-mapping regression
-/// that would bill offline planning as remote acquisition.
-#[test]
-fn install_asset_selection_records_one_preprocess_span() {
-    let mut selected = String::new();
-    let measurements = measure(|| {
-        selected = API
-            .select_release_asset_name("v0.5.50", &["keyhog-linux-x86_64"])
-            .expect("host asset must resolve");
-    });
-
-    assert_eq!(selected, "keyhog-linux-x86_64");
-    assert_eq!(stage_calls(&measurements, Stage::Preprocess), 1);
-    assert_eq!(stage_calls(&measurements, Stage::SourceAcquire), 0);
-}
-
-/// WHY: release checksum verification is the update/repair validation gate;
-/// it must record exactly one Preprocess span per verification so tamper-check
-/// cost is visible without being billed as download time. Locks out a
-/// regression where the verify span is lost or re-staged.
-#[test]
-fn release_checksum_verification_records_one_preprocess_span() {
-    use sha2::Digest as _;
-    let data = b"payload-bytes";
-    let asset = "keyhog-linux-x86_64";
-    let digest = keyhog_core::hex_encode(&sha2::Sha256::digest(data));
-    let checksum_file = format!("{digest}  {asset}");
-
-    let measurements = measure(|| {
-        API.verify_release_checksum(data, asset, checksum_file.as_bytes())
-            .expect("checksum must verify");
-    });
-
-    assert_eq!(
-        measurements.len(),
-        1,
-        "checksum verify must record exactly one stage, got {measurements:?}"
-    );
-    assert_eq!(stage_calls(&measurements, Stage::Preprocess), 1);
-}
-
-/// WHY: the atomic binary swap is the install/update publication step; it
-/// must record exactly one Reporting span per install so artifact publication
-/// is attributable. Exercisable without network via the rollback wrapper with
-/// an injected health gate. Locks out a regression where publication cost
-/// disappears into the unmeasured install path.
-#[test]
-fn install_with_rollback_records_one_reporting_span() {
-    let dir = private_tempdir();
-    let exe = dir.path().join("keyhog");
-
-    let measurements = measure(|| {
-        API.install_with_rollback(&exe, b"candidate-bytes", |_| true)
-            .expect("install with passing health gate must succeed");
-    });
-
-    assert!(exe.exists(), "installed binary must exist after publish");
-    assert_eq!(
-        measurements.len(),
-        1,
-        "install must record exactly one stage, got {measurements:?}"
-    );
-    assert_eq!(stage_calls(&measurements, Stage::Reporting), 1);
-}
-
 /// WHY: the doctor host probe is the check-collection phase of
 /// `keyhog doctor`; it must record exactly one Preprocess span so environment
 /// probing is attributable at the collect boundary. Locks out a regression
@@ -339,22 +257,6 @@ fn paths_are_silent_without_runtime() {
 
     keyhog::profiling_test_seams::load_detector_corpus(Path::new("detectors"))
         .expect("embedded corpus must load");
-    API.select_release_asset_name("v0.5.50", &["keyhog-linux-x86_64"])
-        .expect("host asset must resolve");
-    let digest = keyhog_core::hex_encode(&sha2::Sha256::digest(b"payload-bytes"));
-    API.verify_release_checksum(
-        b"payload-bytes",
-        "keyhog-linux-x86_64",
-        format!("{digest}  keyhog-linux-x86_64").as_bytes(),
-    )
-    .expect("checksum must verify");
-    let install_dir = private_tempdir();
-    API.install_with_rollback(
-        &install_dir.path().join("keyhog"),
-        b"candidate-bytes",
-        |_| true,
-    )
-    .expect("install must succeed");
     keyhog::profiling_test_seams::doctor_host_probe();
 
     let measurements = keyhog_profile::take_stage_measurements();

@@ -2,20 +2,16 @@
 #
 # Hand-written edge-case battery for install.sh.
 #
-# Unlike scenarios.sh (which only drives --diagnose with KEYHOG_VERSION
-# pinned so the network is never touched), this harness mocks the ENTIRE
-# surface install.sh depends on - curl (releases API, asset download,
-# .minisig, .sha256), minisign, uname, nvidia-smi, ldconfig, ldd, and the
-# downloaded binary itself - so the full install -> verify_release_signature
-# -> verify_checksum -> stage -> verify_install
-# path runs offline and deterministically. Every documented mode, flag,
-# detection branch, and failure path gets a real assertion against the
-# real script. These are the tests that would have caught the resolve_tag
-# JSON-indentation bug (the default `curl | sh` install failing outright).
+# Unlike scenarios.sh (which only drives --diagnose), this harness mocks the
+# ENTIRE surface install.sh depends on - minisign, uname, nvidia-smi, ldconfig,
+# ldd, and the installed binary itself - and stages a local `--from-file`
+# bundle, so the full install -> verify local signature -> verify checksum ->
+# stage -> verify_install path runs offline and deterministically. Every
+# documented mode, flag, detection branch, and failure path gets a real
+# assertion against the real script.
 #
 # Each test runs install.sh in a per-test sandbox: env -i with PATH pointed
-# at a mock bin/ dir and a throwaway HOME. No
-# network, no host mutation.
+# at a mock bin/ dir and a throwaway HOME. No network, no host mutation.
 
 set -u
 
@@ -378,6 +374,60 @@ case "$1" in
   *) ;;
 esac
 SH
+# Binary that installs, passes doctor, and calibrates, but whose ordinary scan
+# still has no route: the class doctor cannot see, because its self-test scans
+# with an explicit CPU backend.
+cat > "$FIX_DIR/fake_keyhog_unroutable_scan" <<'SH'
+#!/bin/sh
+write_mock_autoroute_cache() {
+  if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+    cache="$HOME/Library/Caches/keyhog/autoroute.json"
+  else
+    cache="${XDG_CACHE_HOME:-$HOME/.cache}/keyhog/autoroute.json"
+  fi
+  mkdir -p "$(dirname "$cache")" || exit 1
+  printf '{}\n' > "$cache"
+}
+case "$1" in
+  --version) echo "KeyHog v9.9.9 (mock)" ;;
+  --help) echo "Usage: keyhog <COMMAND>"; echo "  scan"; exit 0 ;;
+  doctor)    echo "mock doctor: healthy"; exit 0 ;;
+  scan)
+    case "${2:-}" in
+      --help) echo "Usage: keyhog scan [--no-config] [--autoroute-calibrate]"; exit 0 ;;
+    esac
+    case " $* " in
+      *" --autoroute-calibrate "*) write_mock_autoroute_cache; exit 0 ;;
+    esac
+    echo "error: autoroute calibration required: this workload has no persisted fastest-correct backend decision." >&2
+    exit 2
+    ;;
+  backend)
+    cat <<'JSON'
+{
+  "configs": [{
+    "decisions": [
+      {
+        "backend": "simd-regex",
+        "sample_bytes": 0,
+        "sample_chunks": 0,
+        "simd_ms": 1,
+        "cpu_ms": 3,
+        "gpu_cuda_ms": null,
+        "gpu_wgpu_ms": null,
+        "selected_margin_ns": 2000000,
+        "daemon_backend": "simd-regex"
+      }
+    ]
+  }]
+}
+JSON
+    exit 0
+    ;;
+  *) ;;
+esac
+SH
+
 
 sha_of() {
     if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
@@ -397,23 +447,29 @@ cp "$FIX_DIR/gpu-literals.tar.gz" "$FIX_DIR/fake_keyhog_healthy.gpu-literals.tar
 printf '%s  fake_keyhog_healthy.gpu-literals.tar.gz\n' "$(sha_of "$FIX_DIR/fake_keyhog_healthy.gpu-literals.tar.gz")" > "$FIX_DIR/fake_keyhog_healthy.gpu-literals.tar.gz.sha256"
 printf 'trusted local binary signature\n' > "$FIX_DIR/fake_keyhog_healthy.minisig"
 printf 'trusted local sidecar signature\n' > "$FIX_DIR/fake_keyhog_healthy.gpu-literals.tar.gz.minisig"
+
+# Other behaviour fixtures (slow scan for the calibration-signal test, wizard
+# failure for the wizard-stderr tests) also install through --from-file now, so
+# each needs the same complete local bundle beside it.
+for _fx in fake_keyhog_slow_scan fake_keyhog_wizard_fail; do
+    printf '%s  %s\n' "$(sha_of "$FIX_DIR/$_fx")" "$_fx" > "$FIX_DIR/$_fx.sha256"
+    cp "$FIX_DIR/gpu-literals.tar.gz" "$FIX_DIR/$_fx.gpu-literals.tar.gz"
+    printf '%s  %s.gpu-literals.tar.gz\n' \
+        "$(sha_of "$FIX_DIR/$_fx.gpu-literals.tar.gz")" "$_fx" \
+        > "$FIX_DIR/$_fx.gpu-literals.tar.gz.sha256"
+    printf 'trusted local binary signature\n' > "$FIX_DIR/$_fx.minisig"
+    printf 'trusted local sidecar signature\n' > "$FIX_DIR/$_fx.gpu-literals.tar.gz.minisig"
+done
 cp "$FIX_DIR/fake_keyhog_healthy" "$FIX_DIR/local_keyhog_no_sidecar"
 printf '%s  local_keyhog_no_sidecar\n' "$(sha_of "$FIX_DIR/local_keyhog_no_sidecar")" > "$FIX_DIR/local_keyhog_no_sidecar.sha256"
 
 # ── sandbox builder ───────────────────────────────────────────────────
 # build_sandbox writes a bin/ of mocks. Behaviour is steered by env vars
-# the mock curl reads at runtime (exported into the run via run_install):
-#   MOCK_RELEASES   - path to releases JSON, or "DOWN" to simulate API down
-#   MOCK_ASSET      - path to the binary to serve, or "404"
-#   MOCK_LATEST_ASSET - legacy latest-redirect fixture hook, or "404"
-#   MOCK_GPU_LITERAL_SIDECAR - path to serve for <asset>.gpu-literals.tar.gz, or
-#                     "404" (curl exit 22 = HTTP 404 = not published) or
-#                     "neterror" (curl exit 6 = a network/transport failure)
-#   MOCK_SIG        - "match" | "invalid" | "absent" | "neterror"
-#   MOCK_SHA        - "match" | "mismatch" | "absent" | "neterror"
-#     ("absent" = curl exit 22 / HTTP 404 = asset genuinely not published;
-#      "neterror" = curl exit 6 = a network/transport failure, which must NOT
-#      be silently downgraded to "not published", see tests 6.4ac-6.4ai.)
+# read when the local source tree is staged for --from-file:
+#   MOCK_ASSET      - path to the binary to stage, or "404" to stage none
+#   MOCK_GPU_LITERAL_SIDECAR - path to stage as <asset>.gpu-literals.tar.gz
+#   MOCK_SIG        - "match" | "invalid" | "absent" (the sibling .minisig)
+#   MOCK_SHA        - "match" | "mismatch" | "absent" (the sibling .sha256)
 #   MOCK_LDD        - "ok" | path-to-missing-lib-name (e.g. "libhyperscan.so.5")
 build_sandbox() {
     os=$1 arch=$2 nv=$3 lib=$4 toolkit=$5
@@ -512,92 +568,18 @@ esac
 EOF
     chmod +x "$sb/bin/minisign"
 
-    # The mock curl: URL-dispatched, scenario-driven.
+    # curl is a NETWORK TRIPWIRE, not a mock. install.sh has no fetch path:
+    # every artifact arrives through --from-file plus its local sidecars. Any
+    # curl invocation therefore means a network fetch was reintroduced, so the
+    # stub records the URL and fails loudly instead of serving a fixture.
     cat > "$sb/bin/curl" <<EOF
 #!/bin/sh
-FIX_DIR="$FIX_DIR"
+TRIPWIRE="$FIX_DIR/network-attempted"
 EOF
     cat >> "$sb/bin/curl" <<'EOF'
-url="" ; out="" ; write_out="" ; prev=""
-for a in "$@"; do
-  case "$prev" in -o) out="$a" ;; esac
-  case "$prev" in -w) write_out="$a" ;; esac
-  case "$a" in http://*|https://*) url="$a" ;; esac
-  prev="$a"
-done
-emit() { if [ -n "$out" ]; then cat > "$out"; else cat; fi; }
-emit_redirect_url() {
-  case "$write_out" in
-    *'%{redirect_url}'*) printf '%s' "$1" ;;
-  esac
-}
-
-# Cross-invocation state (each curl call is a fresh process, so attempt
-# ordering and the "what did we serve" record live in files, not env).
-sd="${MOCK_STATE_DIR:-/tmp/kh-mock-state}"
-mkdir -p "$sd" 2>/dev/null || true
-
-case "$url" in
-  *api.github.com*releases*)
-    : > "$HOME/github-api-called"
-    case " $* " in *"Authorization: Bearer "*) : > "$HOME/github-api-auth" ;; esac
-    if [ "${MOCK_RELEASES:-DOWN}" = "DOWN" ]; then
-      echo "mock GitHub API down" >&2
-      exit 22
-    fi
-    emit < "$MOCK_RELEASES"; exit 0 ;;
-  *.minisig)
-    case "${MOCK_SIG:-match}" in
-      absent)  exit 22 ;;
-      neterror) echo "mock curl: could not resolve host" >&2; exit 6 ;;
-      invalid) printf 'invalid mock minisig\n' | emit; exit 0 ;;
-      match)   printf 'trusted mock minisig\n' | emit; exit 0 ;;
-    esac ;;
-  *.sha256)
-    case "${MOCK_SHA:-absent}" in
-      absent)   exit 22 ;;
-      neterror) echo "mock curl: could not resolve host" >&2; exit 6 ;;
-      mismatch) printf '%s  asset\n' "0000000000000000000000000000000000000000000000000000000000000000" | emit; exit 0 ;;
-      match)
-        sf=$(cat "$sd/served" 2>/dev/null)
-        h=$(sha256sum "$sf" 2>/dev/null | awk '{print $1}')
-        [ -z "$h" ] && h=$(shasum -a 256 "$sf" 2>/dev/null | awk '{print $1}')
-        printf '%s  asset\n' "$h" | emit; exit 0 ;;
-    esac ;;
-  *releases/latest/download/*)
-    asset_name="${url##*/}"
-    case "$asset_name" in
-      *.gpu-literals.tar.gz)
-        served="${MOCK_GPU_LITERAL_SIDECAR:-$FIX_DIR/gpu-literals.tar.gz}"
-        if [ "$served" = "neterror" ]; then echo "mock curl: could not resolve host" >&2; exit 6; fi ;;
-      *)
-        served="${MOCK_LATEST_ASSET:-${MOCK_ASSET:-404}}" ;;
-    esac
-    if [ "$served" = "404" ]; then exit 22; fi
-    printf '%s' "$served" > "$sd/served"
-    if [ -n "$out" ]; then cat "$served" > "$out"; fi
-    emit_redirect_url "https://github.com/santhreal/keyhog/releases/download/${MOCK_LATEST_TAG:-v9.9.9}/$asset_name"
-    exit 0 ;;
-  *releases/download/*)
-    asset_name="${url##*/}"
-    case "$asset_name" in
-      *.gpu-literals.tar.gz)
-        served="${MOCK_GPU_LITERAL_SIDECAR:-$FIX_DIR/gpu-literals.tar.gz}"
-        if [ "$served" = "neterror" ]; then echo "mock curl: could not resolve host" >&2; exit 6; fi
-        if [ "$served" = "404" ]; then exit 22; fi
-        printf '%s' "$served" > "$sd/served"
-        if [ -n "$out" ]; then cat "$served" > "$out"; fi
-        emit_redirect_url "$url"
-        exit 0 ;;
-    esac
-    if [ "${MOCK_ASSET:-404}" = "404" ]; then exit 22; fi
-    served="$MOCK_ASSET"
-    printf '%s' "$served" > "$sd/served"
-    if [ -n "$out" ]; then cat "$served" > "$out"; fi
-    emit_redirect_url "$url"
-    exit 0 ;;
-  *) exit 22 ;;
-esac
+printf 'curl %s\n' "$*" >> "$TRIPWIRE"
+echo "install.sh invoked curl: the installer must not touch the network" >&2
+exit 1
 EOF
     chmod +x "$sb/bin/curl"
     echo "$sb"
@@ -605,24 +587,64 @@ EOF
 
 # run_install SANDBOX HOME_DIR -- <install.sh args...>
 # extra env passed via the caller's exported MOCK_* vars.
+#
+# The installer no longer resolves or downloads GitHub release assets, so an
+# install is driven from a local source binary. Materialise what the release
+# mock used to serve as an on-disk --from-file bundle (binary + optional
+# .sha256 + required GPU literal sidecar) so every post-acquire behaviour -
+# staging, verification, doctor, rollback, PATH, completions - keeps the
+# coverage it had when the bytes arrived over the network.
+#
+# MOCK_ASSET  path to the source binary fixture, or a non-path ("404") to
+#             simulate a missing source file.
+# MOCK_SHA    match | mismatch | absent - the sibling .sha256 proof.
+stage_local_source() {
+    srcdir=$(mktemp -d -t kh-src-XXXXXX)
+    src="$srcdir/keyhog"
+    asset="${MOCK_ASSET:-404}"
+    if [ -f "$asset" ]; then
+        cp "$asset" "$src"
+    fi
+    sidecar="${MOCK_GPU_LITERAL_SIDECAR:-$FIX_DIR/gpu-literals.tar.gz}"
+    if [ -f "$sidecar" ]; then
+        cp "$sidecar" "$src.gpu-literals.tar.gz"
+        sha256sum "$src.gpu-literals.tar.gz" | awk '{print $1}' \
+            > "$src.gpu-literals.tar.gz.sha256"
+    fi
+    if [ -f "$src" ]; then
+        case "${MOCK_SHA:-match}" in
+            match)
+                sha256sum "$src" | awk '{print $1}' > "$src.sha256" ;;
+            mismatch)
+                printf '%064d\n' 0 > "$src.sha256" ;;
+        esac
+    fi
+    printf '%s' "$src"
+}
+
 run_install() {
     sb=$1; home=$2; shift 2
     [ "$1" = "--" ] && shift
     if [ "${INSTALL_DIR_OVERRIDE:-}" != "" ]; then
         set -- "--install-dir=$INSTALL_DIR_OVERRIDE" "$@"
     fi
+    # Only an install needs a source binary. Read-only and removal modes must
+    # keep running with no --from-file so their own contracts stay covered.
+    needs_source=1
+    for a in "$@"; do
+        case "$a" in
+            --diagnose|--calibrate|--uninstall|--help|-h) needs_source=0 ;;
+            --from-file=*) needs_source=0 ;;
+        esac
+    done
+    if [ "$needs_source" = "1" ]; then
+        set -- "--from-file=$(stage_local_source)" "$@"
+    fi
     state=$(mktemp -d -t kh-state-XXXXXX)
     env -i PATH="$sb/bin" HOME="$home" \
         MOCK_STATE_DIR="$state" \
-        MOCK_RELEASES="${MOCK_RELEASES:-DOWN}" \
-        MOCK_ASSET="${MOCK_ASSET:-404}" \
-        MOCK_LATEST_ASSET="${MOCK_LATEST_ASSET:-${MOCK_ASSET:-404}}" \
-        MOCK_GPU_LITERAL_SIDECAR="${MOCK_GPU_LITERAL_SIDECAR:-$FIX_DIR/gpu-literals.tar.gz}" \
-        MOCK_SIG="${MOCK_SIG:-match}" \
-        MOCK_SHA="${MOCK_SHA:-absent}" \
         MOCK_LDD="${MOCK_LDD:-ok}" \
-        ${KEYHOG_VERSION:+KEYHOG_VERSION="$KEYHOG_VERSION"} \
-        ${GITHUB_TOKEN:+GITHUB_TOKEN="$GITHUB_TOKEN"} \
+        MOCK_SIG="${MOCK_SIG:-match}" \
         sh "$INSTALL_SH" "$@" 2>&1
     rc=$?
     rm -rf "$state"
@@ -636,8 +658,8 @@ echo " install.sh edge-case battery"
 echo "=============================================================="
 
 reset_mocks() {
-    unset MOCK_RELEASES MOCK_ASSET MOCK_LATEST_ASSET MOCK_GPU_LITERAL_SIDECAR MOCK_SIG MOCK_SHA MOCK_LDD \
-          KEYHOG_VERSION INSTALL_DIR_OVERRIDE GITHUB_TOKEN
+    unset MOCK_ASSET MOCK_GPU_LITERAL_SIDECAR MOCK_SIG MOCK_SHA MOCK_LDD \
+          INSTALL_DIR_OVERRIDE
 }
 
 # ======================================================================
@@ -646,8 +668,8 @@ reset_mocks() {
 printf '\n[1] argument & help parsing\n'
 out=$(sh "$INSTALL_SH" --help 2>&1); st=$?
 expect_status "1.1 --help exits 0" 0 "$st"
-expect_match  "1.2 --help shows authenticated install" "Authenticated install from one tagged release" "$out"
-expect_match  "1.3 --help shows --repair"    "\-\-repair"  "$out"
+expect_match  "1.2 --help points at the supported channel" "cargo install keyhog --locked" "$out"
+expect_match  "1.3 --help shows --from-file" "\-\-from-file" "$out"
 expect_match  "1.4 --help shows --diagnose"  "\-\-diagnose" "$out"
 expect_match  "1.5 --help shows --uninstall" "\-\-uninstall" "$out"
 expect_match  "1.5a uninstall names owned cleanup" "installer-owned PATH and completions" "$out"
@@ -661,84 +683,10 @@ out=$(sh "$INSTALL_SH" --another 2>&1); expect_match "1.9 unknown flag suggests 
 # must render the authenticated tagged-release flow without a sed error.
 out=$(cat "$INSTALL_SH" | sh -s -- --help 2>&1)
 expect_match   "1.10 piped --help shows synopsis" "KeyHog installer" "$out"
-expect_match   "1.11 piped --help shows authenticated install" "verify with Minisign key" "$out"
+expect_match   "1.11 piped --help points at the supported channel" "cargo install keyhog --locked" "$out"
 expect_nomatch "1.12 piped --help has no sed error" "can't read|No such file" "$out"
 
-# ======================================================================
-# 2. resolve_tag (concrete latest resolution + JSON-indentation regression)
-# ======================================================================
-printf '\n[2] resolve_tag against GitHub-shaped JSON\n'
-reset_mocks
-sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
-out=$(MOCK_RELEASES="$FIX_DIR/releases_normal.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "2.1 default install resolves latest to a concrete tag" "Release tag:   v9.9.9" "$out"
-expect_status "2.2 normal install exits 0" 0 "$st"
-expect_nofile "2.3 default latest resolution skips GitHub API when redirect proves tag" "$h/github-api-called"
-rm -rf "$h"; h=$(newhome)
-out=$(MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_latest_empty.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy_v998" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
-expect_match  "2.4 unproven latest bundle falls back to API release walk" "checking recent stable releases" "$out"
-expect_match  "2.5 skips partial newest bundle, picks v9.9.8" "Release tag:   v9.9.8" "$out"
-expect_file   "2.6 asset walk calls GitHub API" "$h/github-api-called"
-rm -rf "$h"; h=$(newhome)
-out=$(MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_latest_empty_compact.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy_v998" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_status "2.6a compact GitHub JSON install exits 0" 0 "$st" "$out"
-expect_match  "2.6b compact GitHub JSON picks complete stable bundle" "Release tag:   v9.9.8" "$out"
-rm -rf "$h"; h=$(newhome)
-out=$(GITHUB_TOKEN=ghp_mock_token MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_latest_empty.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy_v998" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_status "2.7 authenticated latest-resolution install exits 0" 0 "$st" "$out"
-expect_file   "2.8 latest-resolution API sends Authorization when GITHUB_TOKEN is set" "$h/github-api-auth"
-rm -rf "$h"; h=$(newhome)
-out=$(MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_all_empty.json" run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "2.9 no complete release errors" "No stable GitHub release" "$out"
-expect_status "2.10 all-empty exits 1" 1 "$st"
-rm -rf "$h"; h=$(newhome)
-out=$(MOCK_LATEST_ASSET=404 run_install "$sb" "$h" -- --no-prompt); st=$?    # MOCK_RELEASES unset => DOWN
-expect_match  "2.11 API down errors clearly during latest resolution" "Could not query GitHub releases API" "$out"
-expect_match  "2.12 API down surfaces curl detail" "GitHub API error: mock GitHub API down" "$out"
-expect_status "2.13 API down exits 1" 1 "$st"
-rm -rf "$h"; h=$(newhome)
-out=$(KEYHOG_VERSION=v1.2.3 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
-expect_match  "2.14 --version pin skips API" "Release tag:   v1.2.3" "$out"
-rm -rf "$h"; h=$(newhome)
-# A bare semver (no leading v) must normalise to the v-prefixed tag. keyhog
-# tags are all vX.Y.Z, so `--version=9.9.9` building a download URL from the
-# un-prefixed tag 404s, exactly the bug that failed the Windows install smoke
-# (the smoke passed "0.5.37", not "v0.5.37"). Assert the resolved tag is v-fixed
-# AND the install completes, so the 404 can never come back silently.
-out=$(KEYHOG_VERSION=9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "2.15 bare semver normalises to v-prefixed tag" "Release tag:   v9.9.9" "$out"
-expect_status "2.16 bare-semver install exits 0" 0 "$st"
-rm -rf "$sb" "$h"
 
-# ======================================================================
-# 3. Platform / asset resolution
-# ======================================================================
-printf '\n[3] platform & asset resolution (via --diagnose)\n'
-reset_mocks
-diag() { sb=$1; h=$2; KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --diagnose --no-color; }
-for spec in "Linux:x86_64:no:no:no:keyhog-linux-x86_64" \
-            "Linux:amd64:no:no:no:keyhog-linux-x86_64" \
-            "Darwin:arm64:no:no:no:keyhog-macos-aarch64" \
-            "Darwin:aarch64:no:no:no:keyhog-macos-aarch64" \
-            "Darwin:x86_64:no:no:no:keyhog-macos-x86_64" \
-            "Darwin:amd64:no:no:no:keyhog-macos-x86_64"; do
-    os=${spec%%:*}; rest=${spec#*:}; arch=${rest%%:*}; rest=${rest#*:}
-    nv=${rest%%:*}; rest=${rest#*:}; lib=${rest%%:*}; rest=${rest#*:}
-    tk=${rest%%:*}; want=${rest##*:}
-    sb=$(build_sandbox "$os" "$arch" "$nv" "$lib" "$tk"); h=$(newhome)
-    out=$(diag "$sb" "$h")
-    expect_match "3.$os-$arch -> $want" "Would install: $want" "$out"
-    rm -rf "$sb" "$h"
-done
-sb=$(build_sandbox FreeBSD x86_64 no no no); h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --diagnose --no-color); st=$?
-expect_match  "3.unsupported-os reports it" "Unsupported platform" "$out"
-expect_status "3.unsupported-os exits 1" 1 "$st"
-rm -rf "$sb" "$h"
-sb=$(build_sandbox Linux armv7l no no no); h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --diagnose --no-color); st=$?
-expect_match  "3.unsupported-arch reports it" "Unsupported platform" "$out"
-rm -rf "$sb" "$h"
 
 # ======================================================================
 # 6. Download + checksum + staging (full offline install)
@@ -748,11 +696,10 @@ reset_mocks
 sb=$(build_sandbox Linux x86_64 no no no)
 # 6.1 happy path: install + verify + binary on disk + executable
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
 expect_status "6.1 healthy install exits 0" 0 "$st"
 expect_match  "6.2 reports installed version" "KeyHog v9.9.9" "$out"
 expect_match  "6.3 SHA256 verified line"      "SHA256 verified" "$out"
-expect_match  "6.3a minisign verified line"   "Minisign signature verified" "$out"
 expect_exec   "6.4 binary is executable"      "$h/.local/bin/keyhog"
 expect_match  "6.4a calibration summary table printed" "Autoroute calibration decisions" "$out"
 expect_match  "6.4b calibration summary reports persisted decision count" "decisions persisted: 2" "$out"
@@ -760,119 +707,31 @@ expect_match  "6.4c calibration summary shows exact peer margin" "gpu-cuda-regio
 expect_match  "6.4d GPU literal sidecar is installed" "Installed 1 GPU literal matcher artifact" "$out"
 expect_file   "6.4e GPU literal artifact seeds runtime cache" "$h/.cache/keyhog/programs/lit-mock.bin"
 rm -rf "$h"
-# 6.4f missing GPU literal sidecar refuses before binary overwrite.
+# 6.4f no sidecar, and a binary that publishes no matchers: fail closed before
+# the binary is left on PATH. A sidecar is optional because nothing ships one,
+# so the refusal comes from the empty compile result, not the missing tarball.
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match MOCK_GPU_LITERAL_SIDECAR=404 run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "6.4f missing GPU literal sidecar refuses" "No GPU literal artifact sidecar" "$out"
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match MOCK_GPU_LITERAL_SIDECAR=404 run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_match  "6.4f missing GPU literal sidecar refuses" "Install failed while seeding shipped GPU literal artifacts" "$out"
 expect_status "6.4g missing GPU literal sidecar exits 1" 1 "$st"
 expect_nofile "6.4h no binary written without GPU literal sidecar" "$h/.local/bin/keyhog"
-rm -rf "$h"
-# 6.4f-net a network/transport failure fetching the sidecar must NOT be reported
-# as "not published" (Law 10: never conflate a transport failure with a missing
-# asset). curl exit 6 (DNS) != exit 22 (HTTP 404), so the operator is told the
-# sidecar may well exist and a retry may succeed (never to rebuild the workflow).
-h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match MOCK_GPU_LITERAL_SIDECAR=neterror run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match   "6.4f-net sidecar transport failure names the transport error" "network/transport failure, not a missing asset" "$out"
-expect_match   "6.4f-net2 sidecar transport failure invites a retry" "A retry may succeed" "$out"
-expect_nomatch "6.4f-net3 sidecar transport failure does NOT claim 'not published'" "was published" "$out"
-expect_nomatch "6.4f-net4 sidecar transport failure does NOT tell operator to rebuild the workflow" "rebuild the release workflow" "$out"
-expect_status "6.4f-net5 sidecar transport failure still fails closed (exit 1)" 1 "$st"
-expect_nofile "6.4f-net6 no binary written after sidecar transport failure" "$h/.local/bin/keyhog"
+expect_nofile "6.4h1 no GPU literal cache survives the failed install" "$h/.cache/keyhog/programs"
 rm -rf "$h"
 # 6.4i link entries in the GPU literal sidecar refuse before binary overwrite.
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match MOCK_GPU_LITERAL_SIDECAR="$FIX_DIR/gpu-literals-link.tar.gz" run_install "$sb" "$h" -- --no-prompt); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match MOCK_GPU_LITERAL_SIDECAR="$FIX_DIR/gpu-literals-link.tar.gz" run_install "$sb" "$h" -- --no-prompt); st=$?
 expect_match  "6.4i GPU literal sidecar link entry refuses" "GPU literal artifact sidecar contains link entries" "$out"
 expect_status "6.4j GPU literal sidecar link entry exits 1" 1 "$st"
 expect_nofile "6.4k no binary written after GPU literal sidecar link entry" "$h/.local/bin/keyhog"
 rm -rf "$h"
 # 6.4l absolute paths in the GPU literal sidecar refuse before binary overwrite.
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match MOCK_GPU_LITERAL_SIDECAR="$FIX_DIR/gpu-literals-absolute.tar.gz" run_install "$sb" "$h" -- --no-prompt); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match MOCK_GPU_LITERAL_SIDECAR="$FIX_DIR/gpu-literals-absolute.tar.gz" run_install "$sb" "$h" -- --no-prompt); st=$?
 expect_match  "6.4l GPU literal sidecar absolute path refuses" "GPU literal artifact sidecar contains unsafe archive paths" "$out"
 expect_status "6.4m GPU literal sidecar absolute path exits 1" 1 "$st"
 expect_nofile "6.4n no binary written after GPU literal sidecar absolute path" "$h/.local/bin/keyhog"
 rm -rf "$h"
-# 6.4o missing .minisig refuses by default.
-h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=absent MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "6.4o absent .minisig refuses unverified install" "No \\.minisig signature|Refusing to install an unverified" "$out"
-expect_status "6.4p absent .minisig exits 1" 1 "$st"
-expect_nofile "6.4q no binary written without signature" "$h/.local/bin/keyhog"
-rm -rf "$h"
-# 6.4r missing .minisig with --insecure is loud and still requires checksum.
-h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=absent MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --insecure); st=$?
-expect_match  "6.4r absent .minisig insecure override is loud" "INSECURE" "$out"
-expect_match  "6.4s absent .minisig insecure override still checks checksum" "SHA256 verified" "$out"
-expect_status "6.4t absent .minisig insecure override installs" 0 "$st"
-expect_exec   "6.4u binary present after signature bypass" "$h/.local/bin/keyhog"
-rm -rf "$h"
-# 6.4v invalid signatures are known-bad proof and cannot be bypassed.
-h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=invalid MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "6.4v invalid .minisig refuses" "Minisign signature verification failed" "$out"
-expect_status "6.4w invalid .minisig exits 1" 1 "$st"
-expect_nofile "6.4x no binary written after invalid signature" "$h/.local/bin/keyhog"
-rm -rf "$h"
-h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=invalid MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --insecure); st=$?
-expect_match  "6.4y invalid .minisig still refuses with insecure" "Minisign signature verification failed" "$out"
-expect_status "6.4z invalid .minisig insecure exits 1" 1 "$st"
-expect_nofile "6.4aa no binary written after invalid signature with insecure" "$h/.local/bin/keyhog"
-rm -rf "$h"
-# 6.4na a transient network/transport failure fetching the .sha256 must NOT be
-# silently downgraded to "no checksum published" and skipped (a CDN blip would
-# otherwise waive integrity verification). Under strict mode it fails closed with
-# an HONEST message that names it a network failure, not a missing checksum.
-# (The GPU literal sidecar is left present/default since it is mandatory; its own
-# .sha256 fetch also hits neterror, so whichever checksum runs first fails.)
-h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=match MOCK_SHA=neterror run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match   "6.4na checksum network error is named honestly" "network/transport failure, not a missing checksum" "$out"
-expect_nomatch "6.4nb checksum network error is NOT mislabeled 'not published'" "No \\.sha256 checksum was published" "$out"
-expect_status  "6.4nc checksum network error fails closed" 1 "$st"
-expect_nofile  "6.4nd no binary written when the checksum fetch fails on the network" "$h/.local/bin/keyhog"
-rm -rf "$h"
-# 6.4ne with --insecure the operator may waive verification, but the skip is loud
-# and still honestly names the network failure (never a false "not published").
-h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=match MOCK_SHA=neterror run_install "$sb" "$h" -- --no-prompt --insecure); st=$?
-expect_match   "6.4ne checksum network error insecure override is loud + honest" "INSECURE.*network/transport failure" "$out"
-expect_status  "6.4nf checksum network error insecure override installs" 0 "$st"
-expect_exec    "6.4ng binary present after explicit insecure checksum waiver" "$h/.local/bin/keyhog"
-rm -rf "$h"
-# 6.4nh a transient network/transport failure fetching the .minisig is likewise
-# fail-closed with an honest message (not a false "no signature published").
-h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=neterror MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match   "6.4nh signature network error is named honestly" "network/transport failure, not a missing signature" "$out"
-expect_nomatch "6.4ni signature network error is NOT mislabeled 'not published'" "No \\.minisig signature was published" "$out"
-expect_status  "6.4nj signature network error fails closed" 1 "$st"
-expect_nofile  "6.4nk no binary written when the signature fetch fails on the network" "$h/.local/bin/keyhog"
-rm -rf "$h"
-# 6.4ab missing minisign verifier fails closed unless explicitly insecure.
-sb_no_minisign=$(build_sandbox Linux x86_64 no no no); rm -f "$sb_no_minisign/bin/minisign"
-cat > "$sb_no_minisign/bin/apt-get" <<'EOF'
-#!/bin/sh
-exit 0
-EOF
-chmod +x "$sb_no_minisign/bin/apt-get"
-h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb_no_minisign" "$h" -- --no-prompt); st=$?
-expect_match  "6.4ab no minisign tool refuses" "minisign is not installed|Refusing to install an unverified" "$out"
-expect_match  "6.4ac no minisign tool gives Debian install command" "sudo apt-get update && sudo apt-get install -y minisign" "$out"
-expect_status "6.4ad no minisign tool exits 1" 1 "$st"
-expect_nofile "6.4ae no binary written without minisign" "$h/.local/bin/keyhog"
-rm -rf "$h"
-h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb_no_minisign" "$h" -- --no-prompt --insecure); st=$?
-expect_match  "6.4af no minisign tool insecure override is loud" "INSECURE" "$out"
-expect_status "6.4ag no minisign tool insecure override installs" 0 "$st"
-expect_exec   "6.4ah binary present after verifier-tool bypass" "$h/.local/bin/keyhog"
-rm -rf "$sb_no_minisign" "$h"
-# 6.4ai --from-file still requires a local GPU literal sidecar and seeds it before calibration.
+# 6.4ai --from-file seeds a local GPU literal sidecar before calibration when one exists.
 h=$(newhome)
 out=$(run_install "$sb" "$h" -- --from-file="$FIX_DIR/fake_keyhog_healthy" --no-prompt); st=$?
 expect_status "6.4ai from-file with local GPU sidecar installs" 0 "$st"
@@ -892,47 +751,40 @@ reset_mocks
 rm -rf "$h"
 h=$(newhome)
 out=$(run_install "$sb" "$h" -- --from-file="$FIX_DIR/local_keyhog_no_sidecar" --no-prompt); st=$?
-expect_match  "6.4al from-file missing local GPU sidecar refuses" "--from-file requires a sibling GPU literal sidecar" "$out"
+expect_match  "6.4al from-file missing local GPU sidecar refuses" "Install failed while seeding shipped GPU literal artifacts" "$out"
 expect_status "6.4am from-file missing local GPU sidecar exits 1" 1 "$st"
 expect_nofile "6.4an no binary written without from-file GPU sidecar" "$h/.local/bin/keyhog"
-rm -rf "$h"
-# 6.4ao valid older signed release cannot substitute for the resolved tag.
-h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_old_signed" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "6.4ao signed older release substitution refuses" "Candidate binary version does not match release tag" "$out"
-expect_match  "6.4ap signed older release names mismatch" "v9\\.9\\.8.*v9\\.9\\.9" "$out"
-expect_status "6.4aq signed older release substitution exits 1" 1 "$st"
-expect_nofile "6.4ar no binary written after signed older release substitution" "$h/.local/bin/keyhog"
+expect_nofile "6.4an1 no GPU literal cache survives the failed from-file install" "$h/.cache/keyhog/programs"
 rm -rf "$h"
 # 6.5 checksum mismatch refuses + no install
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=mismatch run_install "$sb" "$h" -- --no-prompt); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=mismatch run_install "$sb" "$h" -- --no-prompt); st=$?
 expect_match  "6.5 mismatch refuses"   "SHA256 mismatch" "$out"
 expect_status "6.6 mismatch exits 1"   1 "$st"
 expect_nofile "6.7 no binary written on mismatch" "$h/.local/bin/keyhog"
 rm -rf "$h"
 # 6.8 no .sha256 published: fail closed unless explicit insecure override.
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=absent run_install "$sb" "$h" -- --no-prompt); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=absent run_install "$sb" "$h" -- --no-prompt); st=$?
 expect_match  "6.8 absent .sha256 refuses unverified install" "No \\.sha256 checksum|Refusing to install an unverified" "$out"
 expect_status "6.9 absent .sha256 exits 1" 1 "$st"
 expect_nofile "6.10 no binary written without checksum" "$h/.local/bin/keyhog"
 rm -rf "$h"
 # 6.11 absent .sha256 with --insecure is loud and installs.
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=absent run_install "$sb" "$h" -- --no-prompt --insecure); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=absent run_install "$sb" "$h" -- --no-prompt --insecure); st=$?
 expect_match  "6.11 absent .sha256 insecure override is loud" "INSECURE" "$out"
 expect_status "6.12 absent .sha256 insecure override installs" 0 "$st"
 expect_exec   "6.13 binary present after insecure override" "$h/.local/bin/keyhog"
 rm -rf "$h"
 # 6.14 install dir created when missing
 h=$(newhome); rm -rf "$h/.local"
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
 expect_file "6.14 mkdir -p created install dir" "$h/.local/bin/keyhog"
 rm -rf "$h"
 # 6.15 optional source-class calibration tool missing: warn, do not brick install.
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_docker_help" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_docker_help" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
 expect_match  "6.15 missing docker source tool warns" "Docker image calibration unavailable" "$out"
 expect_status "6.16 missing docker source tool does not fail filesystem install" 0 "$st"
 expect_exec   "6.17 binary present when optional source tool missing" "$h/.local/bin/keyhog"
@@ -948,7 +800,7 @@ esac
 SH
 chmod +x "$sb_dead_docker/bin/docker"
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_docker_help" MOCK_SHA=match run_install "$sb_dead_docker" "$h" -- --no-prompt); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_docker_help" MOCK_SHA=match run_install "$sb_dead_docker" "$h" -- --no-prompt); st=$?
 expect_match  "6.18 dead docker daemon warns" "Docker daemon is not responding" "$out"
 expect_status "6.19 dead docker daemon does not fail filesystem install" 0 "$st"
 expect_exec   "6.20 binary present when docker daemon is dead" "$h/.local/bin/keyhog"
@@ -964,7 +816,7 @@ reset_mocks
 sb=$(build_sandbox Linux x86_64 no no no)
 # 8.1 broken binary (nonzero --version) -> error, exit 1
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
 expect_match  "8.1 broken binary reported" "could not run|could not run\." "$out"
 expect_status "8.2 broken binary exits 1" 1 "$st"
 rm -rf "$h"
@@ -974,19 +826,19 @@ rm -rf "$h"
 #     agreed with the bug: the real loader error matched no branch and the
 #     operator got "the download may be corrupt" instead of the apt command.
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match MOCK_LDD=libhs.so.5 run_install "$sb" "$h" -- --no-prompt)
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match MOCK_LDD=libhs.so.5 run_install "$sb" "$h" -- --no-prompt)
 expect_match  "8.3 hyperscan hint shown for the real SONAME" "libhyperscan5|Hyperscan runtime" "$out"
 rm -rf "$h"
 # 8.3b distribution alias spellings resolve to the same remediation.
 for soname in libhyperscan.so.5 libvectorscan.so.5; do
     h=$(newhome)
-    out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match MOCK_LDD="$soname" run_install "$sb" "$h" -- --no-prompt)
+    out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match MOCK_LDD="$soname" run_install "$sb" "$h" -- --no-prompt)
     expect_match  "8.3b hyperscan hint shown for $soname" "libhyperscan5|Hyperscan runtime" "$out"
     rm -rf "$h"
 done
 # 8.4 missing libssl -> hint
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match MOCK_LDD=libssl.so.3 run_install "$sb" "$h" -- --no-prompt)
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match MOCK_LDD=libssl.so.3 run_install "$sb" "$h" -- --no-prompt)
 expect_match  "8.4 openssl hint shown" "libssl3|OpenSSL runtime" "$out"
 rm -rf "$h"
 # 8.5 doctor UNHEALTHY (exit 4) -> install FAILS CLOSED + rolls back.
@@ -995,12 +847,23 @@ rm -rf "$h"
 #     exit-4 unhealthy verdict, removes the staged binary, and exits non-zero
 #     rather than silently leaving a scanner that cannot detect secrets.
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_doctor_fail" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_doctor_fail" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
 expect_match  "8.5 doctor-unhealthy reported" "UNHEALTHY \(exit 4\)|failed its own end-to-end scan self-test" "$out"
 expect_match  "8.5b doctor-unhealthy rolls back" "rolling back this install" "$out"
 expect_nomatch "8.5c doctor-unhealthy does not falsely claim installed" "may not be fully healthy" "$out"
 expect_status "8.6 doctor-unhealthy install fails closed" 1 "$st"
 expect_nofile "8.6b doctor-unhealthy leaves no binary on PATH" "$h/.local/bin/keyhog"
+rm -rf "$h"
+# 8.7 calibration succeeds but the primed cache cannot serve an ordinary scan.
+#     doctor is blind to this: its self-test scans with an explicit CPU backend,
+#     so it passes while the operator's first auto-routed scan exits 2. The
+#     install runs one plain scan after calibration and fails closed on it.
+h=$(newhome)
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_unroutable_scan" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_match  "8.7 unroutable post-calibration scan reported" "cannot serve an ordinary scan \(exit 2\)" "$out"
+expect_match  "8.7b unroutable scan surfaces the binary's reason" "autoroute calibration required" "$out"
+expect_status "8.7c unroutable install fails closed" 1 "$st"
+expect_nofile "8.7d unroutable leaves no binary on PATH" "$h/.local/bin/keyhog"
 rm -rf "$sb" "$h"
 
 # ======================================================================
@@ -1009,18 +872,9 @@ rm -rf "$sb" "$h"
 printf '\n[9] repair / diagnose / uninstall\n'
 reset_mocks
 sb=$(build_sandbox Linux x86_64 no no no)
-# 9.1 repair with no existing binary -> fresh install
-h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --repair --no-prompt); st=$?
-expect_match  "9.1 repair w/o binary installs fresh" "No existing keyhog|Installing fresh" "$out"
-expect_exec   "9.2 repair produced a binary" "$h/.local/bin/keyhog"
-# 9.3 repair with healthy existing binary -> re-downloads
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --repair --no-prompt)
-expect_match  "9.3 repair verifies before replacing healthy binary" "download and verify|Repair complete" "$out"
-rm -rf "$h"
 # 9.4 diagnose with no binary -> shell diagnostic, no writes
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --diagnose --no-color); st=$?
+out=$(run_install "$sb" "$h" -- --diagnose --no-color); st=$?
 expect_match  "9.4 diagnose shows host" "OS:" "$out"
 expect_match  "9.5 diagnose reports no install" "no keyhog found|does not run|no keyhog" "$out"
 expect_nofile "9.6 diagnose writes nothing" "$h/.local/bin/keyhog"
@@ -1034,7 +888,7 @@ out=$(run_install "$sb" "$h" -- --uninstall --no-color); st=$?
 expect_match  "9.9 uninstall no-op message" "Nothing to remove" "$out"
 expect_status "9.10 uninstall no-op exits 0" 0 "$st"
 # 9.11 uninstall removes an installed binary (--yes to auto-confirm)
-KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt >/dev/null 2>&1
+MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt >/dev/null 2>&1
 expect_file   "9.11 pre-uninstall binary exists" "$h/.local/bin/keyhog"
 mkdir -p "$h/.local/share/bash-completion/completions" "$h/.zfunc" \
     "$h/.config/fish/completions" "$h/.config/fish"
@@ -1079,24 +933,24 @@ reset_mocks
 sb=$(build_sandbox Linux x86_64 no no no)
 # 10.1 --no-color: no ANSI escapes in output
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --no-color)
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --no-color)
 if printf '%s' "$out" | grep -q "$(printf '\033')"; then _record_fail "10.1 --no-color strips ANSI" "found escape sequences"; else _record_pass "10.1 --no-color strips ANSI"; fi
 # 10.2 non-interactive (piped, no tty) defaults through without prompting
 expect_match "10.2 non-interactive completes" "Next steps:" "$out"
 rm -rf "$h"
 # 10.3 custom install dir honored
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --install-dir="$h/custom/dir")
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --install-dir="$h/custom/dir")
 expect_file "10.3 binary at custom --install-dir" "$h/custom/dir/keyhog"
 rm -rf "$h"
 # 10.4 install-dir helper uses the explicit flag path
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 INSTALL_DIR_OVERRIDE="$h/flagdir" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
+out=$(INSTALL_DIR_OVERRIDE="$h/flagdir" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
 expect_file "10.4 binary at explicit install dir" "$h/flagdir/keyhog"
 rm -rf "$h"
 # 10.5 spaces in install dir
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --install-dir="$h/dir with spaces")
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --install-dir="$h/dir with spaces")
 expect_file "10.5 binary installs to path with spaces" "$h/dir with spaces/keyhog"
 rm -rf "$sb" "$h"
 
@@ -1106,8 +960,8 @@ rm -rf "$sb" "$h"
 printf '\n[11] idempotent re-install\n'
 reset_mocks
 sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
-KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt >/dev/null 2>&1
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt >/dev/null 2>&1
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
 expect_status "11.1 second install exits 0" 0 "$st"
 expect_match  "11.2 second install shows existing" "Existing:" "$out"
 expect_exec   "11.3 binary still good" "$h/.local/bin/keyhog"
@@ -1125,7 +979,7 @@ reset_mocks
 # exercised when shasum exists.
 if command -v shasum >/dev/null 2>&1; then
     sb=$(build_sandbox Linux x86_64 no no no); rm -f "$sb/bin/sha256sum"; h=$(newhome)
-    out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+    out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
     expect_match  "12.1 shasum fallback verifies" "SHA256 verified" "$out"
     expect_status "12.2 shasum fallback installs" 0 "$st"
     rm -rf "$sb" "$h"
@@ -1135,13 +989,13 @@ else
 fi
 # 12.3 no sha tool at all -> fail closed unless explicit insecure override.
 sb=$(build_sandbox Linux x86_64 no no no); rm -f "$sb/bin/sha256sum" "$sb/bin/shasum"; h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
 expect_match  "12.3 no sha tool refuses" "No sha256sum or shasum|Refusing to install an unverified" "$out"
 expect_status "12.4 no sha tool exits 1" 1 "$st"
 expect_nofile "12.5 no binary written without checksum tool" "$h/.local/bin/keyhog"
 rm -rf "$sb" "$h"
 sb=$(build_sandbox Linux x86_64 no no no); rm -f "$sb/bin/sha256sum" "$sb/bin/shasum"; h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --insecure); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --insecure); st=$?
 expect_match  "12.6 no sha tool insecure override is loud" "INSECURE" "$out"
 expect_status "12.7 no sha tool insecure override installs" 0 "$st"
 expect_exec   "12.8 binary present after insecure override" "$h/.local/bin/keyhog"
@@ -1154,45 +1008,13 @@ printf '\n[13] empty download guard\n'
 reset_mocks
 sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
 : > "$FIX_DIR/empty_asset"
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/empty_asset" MOCK_SHA=absent run_install "$sb" "$h" -- --no-prompt); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/empty_asset" MOCK_SHA=absent run_install "$sb" "$h" -- --no-prompt); st=$?
 expect_match  "13.1 empty download refused" "is empty \(0 bytes\)" "$out"
 expect_status "13.2 empty download exits 1" 1 "$st"
 expect_nofile "13.3 no binary written for empty download" "$h/.local/bin/keyhog"
 rm -rf "$sb" "$h"
 
-# ======================================================================
-# 14. version pin formats
-# ======================================================================
-printf '\n[14] version pin formats\n'
-reset_mocks
-sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
-out=$(KEYHOG_VERSION=v1.2.3 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
-expect_match "14.1 v-prefixed tag used verbatim" "Release tag:   v1.2.3" "$out"
-rm -rf "$h"; h=$(newhome)
-# A bare numeric --version normalises to the v-prefixed release tag. keyhog
-# tags are all vX.Y.Z, so honoring "2.0.0" verbatim built a 404 download URL 
-# the regression that failed the Windows install smoke. The resolved tag must
-# carry the v.
-out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --version=2.0.0 --no-prompt)
-expect_match "14.2 bare numeric tag normalises to v-prefixed" "Release tag:   v2.0.0" "$out"
-rm -rf "$h"; h=$(newhome)
-out=$(MOCK_RELEASES="$FIX_DIR/releases_normal.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --version= --no-prompt)
-expect_match "14.3 empty --version resolves latest to concrete tag" "Release tag:   v9.9.9" "$out"
-expect_nofile "14.4 empty --version skips GitHub API when latest redirect proves tag" "$h/github-api-called"
-rm -rf "$sb" "$h"
 
-# ======================================================================
-# 15. unsupported arch on supported OS
-# ======================================================================
-printf '\n[15] unsupported arch\n'
-reset_mocks
-for arch in aarch64 arm64 armv7l i686 ppc64le; do
-    sb=$(build_sandbox Linux "$arch" no no no); h=$(newhome)
-    out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --diagnose --no-color); st=$?
-    expect_match  "15.$arch reports unsupported" "Unsupported platform" "$out"
-    expect_status "15.$arch exits 1" 1 "$st"
-    rm -rf "$sb" "$h"
-done
 
 # ======================================================================
 # 16. arg vs env precedence + short flags
@@ -1201,28 +1023,16 @@ printf '\n[16] arg precedence + short flags\n'
 reset_mocks
 sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
 # later --install-dir beats an earlier install-dir helper flag
-out=$(KEYHOG_VERSION=v9.9.9 INSTALL_DIR_OVERRIDE="$h/firstdir" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --install-dir="$h/flagdir")
+out=$(INSTALL_DIR_OVERRIDE="$h/firstdir" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --install-dir="$h/flagdir")
 expect_file   "16.1 later --install-dir wins" "$h/flagdir/keyhog"
 expect_nofile "16.2 earlier install-dir unused when later flag set" "$h/firstdir/keyhog"
 rm -rf "$h"; h=$(newhome)
 # -y short flag accepted (no unknown-arg error)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- -y); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- -y); st=$?
 expect_status "16.3 -y short flag accepted" 0 "$st"
 expect_nomatch "16.4 -y not treated as unknown" "Unknown argument" "$out"
 rm -rf "$sb" "$h"
 
-# ======================================================================
-# 17. repair replaces a broken existing binary
-# ======================================================================
-printf '\n[17] repair replaces broken binary\n'
-reset_mocks
-sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
-mkdir -p "$h/.local/bin"; printf '#!/bin/sh\nexit 1\n' > "$h/.local/bin/keyhog"; chmod +x "$h/.local/bin/keyhog"
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --repair --no-prompt); st=$?
-expect_match  "17.1 repair detects broken binary" "does not run|Replacing" "$out"
-expect_match  "17.2 repair completes" "Repair complete" "$out"
-expect_status "17.3 repair exits 0" 0 "$st"
-rm -rf "$sb" "$h"
 
 # ======================================================================
 # 18. diagnose with a runnable installed binary uses keyhog doctor
@@ -1231,9 +1041,8 @@ printf '\n[18] diagnose defers to keyhog doctor when a binary runs\n'
 reset_mocks
 sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
 mkdir -p "$h/.local/bin"; cp "$FIX_DIR/fake_keyhog_healthy" "$h/.local/bin/keyhog"; chmod +x "$h/.local/bin/keyhog"
-out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --diagnose --no-color); st=$?
+out=$(run_install "$sb" "$h" -- --diagnose --no-color); st=$?
 expect_match  "18.1 diagnose runs keyhog doctor" "mock doctor: healthy" "$out"
-expect_match  "18.2 diagnose appends latest release" "Would install:" "$out"
 expect_status "18.3 diagnose exits 0" 0 "$st"
 rm -rf "$sb" "$h"
 
@@ -1370,12 +1179,12 @@ signal_out="$h/signal.out"
 env -i PATH="$sb/bin" HOME="$h" \
     TMPDIR="$signal_tmp" \
     MOCK_STATE_DIR="$signal_state" \
-    MOCK_RELEASES="$FIX_DIR/releases_normal.json" \
+    \
     MOCK_ASSET="$FIX_DIR/fake_keyhog_slow_scan" \
     MOCK_SHA=match \
     MOCK_LDD=ok \
-    KEYHOG_VERSION=v9.9.9 \
-    sh "$INSTALL_SH" --install-dir="$h/.local/bin" --no-prompt --no-color >"$signal_out" 2>&1 &
+    \
+    sh "$INSTALL_SH" --from-file="$FIX_DIR/fake_keyhog_slow_scan" --install-dir="$h/.local/bin" --no-prompt --no-color >"$signal_out" 2>&1 &
 signal_pid=$!
 i=0
 while [ "$i" -lt 200 ]; do
@@ -1422,7 +1231,7 @@ if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2
     repo="$h/repo"
     mkdir -p "$repo"
     "$sb/bin/git" -C "$repo" init -q
-    wizard_cmd="cd $repo && env -i PATH=$h/.local/bin:$sb/bin HOME=$h SHELL=/bin/bash MOCK_STATE_DIR=$h/state MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_wizard_fail MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9 sh $INSTALL_SH --install-dir=$h/.local/bin --no-color"
+    wizard_cmd="cd $repo && env -i PATH=$h/.local/bin:$sb/bin HOME=$h SHELL=/bin/bash MOCK_STATE_DIR=$h/state MOCK_ASSET=$FIX_DIR/fake_keyhog_wizard_fail MOCK_SHA=match MOCK_LDD=ok sh $INSTALL_SH --from-file=$FIX_DIR/fake_keyhog_wizard_fail --install-dir=$h/.local/bin --no-color"
     out=$(printf 'y\ny\ny\ny\n' | script -qefc "$wizard_cmd" /dev/null 2>&1); st=$?
     expect_status "19.19 interactive wizard failure test exits 0" 0 "$st"
     expect_match  "19.20 completion wizard surfaces real stderr" "completion generation failed: completion disk denied" "$out"
@@ -1499,7 +1308,7 @@ installed_version() { "$1/.local/bin/keyhog" --version 2>/dev/null; }
 # the working binary must be restored, the install must report failure, and no
 # staging/backup turds may be left behind.
 h=$(newhome); preinstall_good "$h"
-out=$(KEYHOG_VERSION=v2.0.0 MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --no-color); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --no-color); st=$?
 expect_status "20.1 botched upgrade exits nonzero" 1 "$st"
 expect_exec   "20.2 binary still present after botched upgrade" "$h/.local/bin/keyhog"
 if printf '%s' "$(installed_version "$h")" | grep -q "preexisting-good"; then
@@ -1520,7 +1329,7 @@ rm -rf "$h"
 # on an upgrade the OLD binary ran, so even a "correct but unlinkable" new one
 # must roll back (the user keeps a keyhog that works on this host).
 h=$(newhome); preinstall_good "$h"
-out=$(KEYHOG_VERSION=v2.0.0 MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match MOCK_LDD=libhyperscan.so.5 run_install "$sb" "$h" -- --no-prompt --no-color); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match MOCK_LDD=libhyperscan.so.5 run_install "$sb" "$h" -- --no-prompt --no-color); st=$?
 expect_status "20.5 missing-lib upgrade exits nonzero" 1 "$st"
 if printf '%s' "$(installed_version "$h")" | grep -q "preexisting-good"; then
     _record_pass "20.6 missing-lib upgrade rolls back to working binary"
@@ -1532,7 +1341,7 @@ rm -rf "$h"
 # 20.7-20.8 UPGRADE over a working binary, new download is HEALTHY: it upgrades
 # cleanly and the backup is dropped (no turds).
 h=$(newhome); preinstall_good "$h"
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --no-color); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --no-color); st=$?
 expect_status "20.7 healthy upgrade exits 0" 0 "$st"
 if printf '%s' "$(installed_version "$h")" | grep -q "v9.9.9"; then
     _record_pass "20.8 healthy upgrade actually replaced the binary"
@@ -1550,7 +1359,7 @@ rm -rf "$h"
 # nothing was overwritten, so the non-runnable download is removed - leaving a
 # binary that errors on every call would be worse than leaving none.
 h=$(newhome)
-out=$(KEYHOG_VERSION=v2.0.0 MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --no-color); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --no-color); st=$?
 expect_status "20.10 fresh broken install exits nonzero" 1 "$st"
 expect_nofile "20.11 non-runnable fresh download is removed" "$h/.local/bin/keyhog"
 rm -rf "$h"
@@ -1559,7 +1368,7 @@ rm -rf "$h"
 # keep it on disk (it is the right binary) and print the actionable hint, so
 # the user installs the lib instead of being told to re-download.
 h=$(newhome)
-out=$(KEYHOG_VERSION=v2.0.0 MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match MOCK_LDD=libhyperscan.so.5 run_install "$sb" "$h" -- --no-prompt --no-color); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match MOCK_LDD=libhyperscan.so.5 run_install "$sb" "$h" -- --no-prompt --no-color); st=$?
 expect_status  "20.12 fresh missing-lib install exits nonzero" 1 "$st"
 expect_exec    "20.13 correct-but-unlinkable binary is kept for the user to fix" "$h/.local/bin/keyhog"
 expect_match   "20.13b missing-lib hint shown" "libhyperscan5|Hyperscan runtime" "$out"
@@ -1569,7 +1378,7 @@ rm -rf "$h"
 # must never even begin, so the working binary is untouched (not merely
 # restored - never replaced).
 h=$(newhome); preinstall_good "$h"
-out=$(KEYHOG_VERSION=v2.0.0 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=mismatch run_install "$sb" "$h" -- --no-prompt --no-color); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=mismatch run_install "$sb" "$h" -- --no-prompt --no-color); st=$?
 expect_status "20.14 checksum-mismatch upgrade exits 1" 1 "$st"
 if printf '%s' "$(installed_version "$h")" | grep -q "preexisting-good"; then
     _record_pass "20.15 checksum mismatch leaves working binary untouched"
@@ -1582,7 +1391,7 @@ rm -rf "$h"
 # - the empty-guard fires before any overwrite.
 h=$(newhome); preinstall_good "$h"
 : > "$FIX_DIR/empty_asset"
-out=$(KEYHOG_VERSION=v2.0.0 MOCK_ASSET="$FIX_DIR/empty_asset" MOCK_SHA=absent run_install "$sb" "$h" -- --no-prompt --no-color); st=$?
+out=$(MOCK_ASSET="$FIX_DIR/empty_asset" MOCK_SHA=absent run_install "$sb" "$h" -- --no-prompt --no-color); st=$?
 expect_status "20.16 empty-download upgrade exits 1" 1 "$st"
 if printf '%s' "$(installed_version "$h")" | grep -q "preexisting-good"; then
     _record_pass "20.17 empty download leaves working binary untouched"
@@ -1591,16 +1400,16 @@ else
 fi
 rm -rf "$h"
 
-# 20.18-20.20 REPAIR over a working binary with a BROKEN new download: repair
-# must also roll back (this is the "botched repair, unrecoverable" class).
+# 20.18-20.19 --repair was REMOVED with the binary-asset release channel it
+# drove. It must be rejected as an unknown flag, and rejecting it must not
+# touch a working install.
 h=$(newhome); preinstall_good "$h"
-out=$(KEYHOG_VERSION=v2.0.0 MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match run_install "$sb" "$h" -- --repair --no-prompt --no-color); st=$?
-expect_status "20.18 botched repair exits nonzero" 1 "$st"
-expect_exec   "20.19 binary present after botched repair" "$h/.local/bin/keyhog"
+out=$(run_install "$sb" "$h" -- --repair --no-prompt --no-color); st=$?
+expect_status "20.18 retired --repair exits nonzero" 1 "$st"
 if printf '%s' "$(installed_version "$h")" | grep -q "preexisting-good"; then
-    _record_pass "20.20 botched repair rolls back to working binary"
+    _record_pass "20.19 rejecting --repair leaves the working binary untouched"
 else
-    _record_fail "20.20 botched repair rolls back to working binary" "version now: $(installed_version "$h")"
+    _record_fail "20.19 rejecting --repair leaves the working binary untouched" "version now: $(installed_version "$h")"
 fi
 rm -rf "$h"
 rm -rf "$sb"
@@ -1612,9 +1421,9 @@ printf '\n[21] PATH setup idempotency and macOS bash rc target\n'
 if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2>&1; then
     reset_mocks
     sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
-    path_env="PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9"
-    path_cmd1="env -i $path_env MOCK_STATE_DIR=$h/state-1 sh $INSTALL_SH --install-dir=$h/.local/bin --no-color"
-    path_cmd2="env -i $path_env MOCK_STATE_DIR=$h/state-2 sh $INSTALL_SH --install-dir=$h/.local/bin --no-color"
+    path_env="PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_SHA=match MOCK_LDD=ok"
+    path_cmd1="env -i $path_env MOCK_STATE_DIR=$h/state-1 sh $INSTALL_SH --from-file=$FIX_DIR/fake_keyhog_healthy --install-dir=$h/.local/bin --no-color"
+    path_cmd2="env -i $path_env MOCK_STATE_DIR=$h/state-2 sh $INSTALL_SH --from-file=$FIX_DIR/fake_keyhog_healthy --install-dir=$h/.local/bin --no-color"
     out=$(printf 'y\ny\ny\nn\nn\n' | script -qefc "$path_cmd1" /dev/null 2>&1); st=$?
     expect_status "21.1 first bash PATH setup install exits 0" 0 "$st"
     out=$(printf 'y\ny\nn\nn\n' | script -qefc "$path_cmd2" /dev/null 2>&1); st=$?
@@ -1632,7 +1441,7 @@ if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2
 
     reset_mocks
     sb=$(build_sandbox Darwin x86_64 no no no); h=$(newhome)
-    mac_cmd="env -i PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_STATE_DIR=$h/state MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9 sh $INSTALL_SH --install-dir=$h/.local/bin --no-color"
+    mac_cmd="env -i PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_STATE_DIR=$h/state MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_SHA=match MOCK_LDD=ok sh $INSTALL_SH --from-file=$FIX_DIR/fake_keyhog_healthy --install-dir=$h/.local/bin --no-color"
     out=$(printf 'y\ny\ny\nn\nn\n' | script -qefc "$mac_cmd" /dev/null 2>&1); st=$?
     expect_status "21.5 macOS bash PATH setup install exits 0" 0 "$st"
     expect_file   "21.6 macOS bash PATH setup writes login profile" "$h/.bash_profile"
@@ -1641,9 +1450,9 @@ if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2
 
     reset_mocks
     sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
-    zsh_env="PATH=$sb/bin HOME=$h SHELL=/bin/zsh MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9"
-    zsh_cmd1="env -i $zsh_env MOCK_STATE_DIR=$h/zsh-state-1 sh $INSTALL_SH --install-dir=$h/.local/bin --no-color"
-    zsh_cmd2="env -i $zsh_env MOCK_STATE_DIR=$h/zsh-state-2 sh $INSTALL_SH --install-dir=$h/.local/bin --no-color"
+    zsh_env="PATH=$sb/bin HOME=$h SHELL=/bin/zsh MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_SHA=match MOCK_LDD=ok"
+    zsh_cmd1="env -i $zsh_env MOCK_STATE_DIR=$h/zsh-state-1 sh $INSTALL_SH --from-file=$FIX_DIR/fake_keyhog_healthy --install-dir=$h/.local/bin --no-color"
+    zsh_cmd2="env -i $zsh_env MOCK_STATE_DIR=$h/zsh-state-2 sh $INSTALL_SH --from-file=$FIX_DIR/fake_keyhog_healthy --install-dir=$h/.local/bin --no-color"
     out=$(printf 'y\ny\ny\ny\nn\n' | script -qefc "$zsh_cmd1" /dev/null 2>&1); st=$?
     expect_status "21.8 zsh completion setup install exits 0" 0 "$st"
     expect_file   "21.9 zsh completion file is written" "$h/.zfunc/_keyhog"
@@ -1671,8 +1480,8 @@ if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2
     # Pre-seed .bashrc with a $HOME-form keyhog block, literal '$HOME' preserved
     # by the single-quoted printf format string.
     printf '\n# keyhog\nexport PATH="$HOME/.local/bin:$PATH"\n' > "$h/.bashrc"
-    home_env="PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9"
-    home_cmd="env -i $home_env MOCK_STATE_DIR=$h/home-state sh $INSTALL_SH --install-dir=$h/.local/bin --no-color"
+    home_env="PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_SHA=match MOCK_LDD=ok"
+    home_cmd="env -i $home_env MOCK_STATE_DIR=$h/home-state sh $INSTALL_SH --from-file=$FIX_DIR/fake_keyhog_healthy --install-dir=$h/.local/bin --no-color"
     out=$(printf 'y\ny\ny\nn\nn\n' | script -qefc "$home_cmd" /dev/null 2>&1); st=$?
     expect_status "21.14 install over a \$HOME-form rc exits 0" 0 "$st"
     expect_match  "21.15 \$HOME-form PATH entry recognized as already configured" "PATH already configured" "$out"
@@ -1690,7 +1499,7 @@ if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2
     # off, and no input is consumed.
     reset_mocks
     sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
-    yes_cmd="cd $h && env -i PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_STATE_DIR=$h/yes-state MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9 sh $INSTALL_SH --install-dir=$h/.local/bin --no-color --yes --no-prompt"
+    yes_cmd="cd $h && env -i PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_STATE_DIR=$h/yes-state MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_SHA=match MOCK_LDD=ok sh $INSTALL_SH --from-file=$FIX_DIR/fake_keyhog_healthy --install-dir=$h/.local/bin --no-color --yes --no-prompt"
     out=$(script -qefc "$yes_cmd" /dev/null 2>&1); st=$?
     expect_status "21.17 --yes install exits without reading input" 0 "$st" "$out"
     expect_match  "21.18 --yes accepts the PATH default" "export PATH=\"$h/.local/bin:" "$(cat "$h/.bashrc" 2>/dev/null)"
@@ -1743,6 +1552,22 @@ else
     skip "22.1 install.sh pins a minisign public key" "install.ps1 not found"
     skip "22.2 install.ps1 pins a minisign public key" "install.ps1 not found"
     skip "22.3 both installers pin the SAME minisign key (no drift)" "install.ps1 not found"
+fi
+
+# ======================================================================
+# 23. Network tripwire
+# ======================================================================
+# WHY: install.sh acquires every artifact from --from-file plus its local
+# sidecars. The sandbox PATH carries a curl that only records and fails, so a
+# reintroduced fetch cannot silently succeed against a live network. This
+# checks the recording across the whole battery, not one scenario, because the
+# defect class is "some path started downloading again", not "this path did".
+printf '\n[23] network tripwire\n'
+if [ -f "$FIX_DIR/network-attempted" ]; then
+    _record_fail "23.1 install.sh never invokes curl" \
+        "$(head -5 "$FIX_DIR/network-attempted")"
+else
+    _record_pass "23.1 install.sh never invokes curl"
 fi
 
 # ======================================================================
