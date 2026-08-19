@@ -265,3 +265,43 @@ def test_snapshot_loader_rejects_unknown_schema(tmp_path) -> None:
 
     with pytest.raises(readme_matrix.MatrixError, match="unsupported"):
         readme_matrix.load_snapshot(snapshot)
+
+
+def test_render_accuracy_renders_multi_corpus_snapshot_dynamically(tmp_path) -> None:
+    """Accuracy panel must derive all rows and headings dynamically from snapshot."""
+    config_results, daemon_results, daemon_corpus = _matrix_fixture(tmp_path)
+    snapshot = readme_matrix.capture_snapshot(
+        config_results,
+        daemon_results,
+        daemon_corpus,
+        "clean",
+    )
+    mirror_row = snapshot["configuration_rows"][0]
+    homefield_row = dict(mirror_row)
+    homefield_row["corpus"] = {
+        "name": "homefield",
+        "fixture_count": 2399,
+        "labeled_positives": 1057,
+        "bytes": 772974,
+        "workload_sha256": "9" * 64,
+    }
+    homefield_row["detection"] = {
+        "precision": 0.9582,
+        "recall": 0.8874,
+        "f1": 0.9214,
+        "tp": 938,
+        "fp": 41,
+        "fn": 119,
+    }
+    snapshot["accuracy_rows"] = [mirror_row, homefield_row]
+
+    accuracy_md = readme_matrix.render_accuracy(snapshot)
+    assert "| **mirror** |" in accuracy_md
+    assert "| **homefield** | 2,399 | 1,057 | 773 KB | 0.9582 | 0.8874 | 0.9214 | 938 | 41 | 119 |" in accuracy_md
+    assert "both the synthetic **mirror** corpus and competitor **homefield** rule ground-truth" in accuracy_md
+
+
+def test_render_accuracy_fails_closed_on_missing_default_row() -> None:
+    """Accuracy renderer must raise MatrixError when default rows are missing."""
+    with pytest.raises(readme_matrix.MatrixError, match="lacks the default Hyperscan/SIMD accuracy row"):
+        readme_matrix.render_accuracy({"configuration_rows": []})
