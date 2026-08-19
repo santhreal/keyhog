@@ -39,15 +39,11 @@ pub fn binary_unreadable() -> usize {
     BINARY_UNREADABLE.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-const ALL_BINARY_COUNTERS: [&std::sync::atomic::AtomicUsize; 2] =
-    [&GHIDRA_DEGRADED_TO_STRINGS, &BINARY_UNREADABLE];
-
 /// Reset both binary-source counters. Public so test fixtures baselining
 /// between runs in one process clear them.
 pub fn reset_binary_counters() {
-    for counter in ALL_BINARY_COUNTERS {
-        counter.store(0, std::sync::atomic::Ordering::Relaxed);
-    }
+    GHIDRA_DEGRADED_TO_STRINGS.store(0, std::sync::atomic::Ordering::Relaxed);
+    BINARY_UNREADABLE.store(0, std::sync::atomic::Ordering::Relaxed);
 }
 
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};

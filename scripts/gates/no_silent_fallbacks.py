@@ -247,13 +247,15 @@ def update_baseline_ratchet(
     without modifying the baseline file.
     If candidate count <= existing count, writes the candidate set and returns (0, []).
     """
+    if not baseline_path.exists():
+        write_baseline(current, baseline_path)
+        return 0, []
     baseline = load_baseline(baseline_path)
     is_growth, added = check_baseline_growth(current, baseline)
     if is_growth:
         return 1, added
     write_baseline(current, baseline_path)
     return 0, []
-
 def _line_is_candidate(line: str, next_line: str = "") -> bool:
     """True if `line` would be flagged (mirrors the per-line logic in collect)."""
     return _snippet_is_candidate([line, next_line] if next_line else [line])
