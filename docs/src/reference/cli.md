@@ -410,7 +410,7 @@ keyhog explain stripe-secret-key
 | `-d`, `--detectors` | `DETECTORS` | `detectors` | Detector TOML directory. When omitted, KeyHog discovers an installed corpus or uses the embedded corpus. An explicitly named missing path is an error |
 <!-- /keyhog-generated: cli-reference command="explain" -->
 
-## `keyhog guard <add|remove|up|down|list|status|reconcile|rebuild>`
+## `keyhog guard <add|remove|up|down|list|status|reconcile|rebuild|feed>`
 
 Manages perpetual repository and filesystem guard protection. Connects to
 the daemon and sends guard control frames. When no daemon is available,
@@ -422,6 +422,7 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 |------------|---------|-------------|
 | `add` |  | Register a repository or filesystem root for continuous guard protection. Waits for initial reconciliation to complete before returning. When guarding a Git repository in `repo` mode, also attempts to install the managed pre-commit hook (skipped if a foreign hook already exists, or if `--no-hook` is passed) |
 | `down` |  | Stop the background guard daemon cleanly. Persisted root registrations and durable indexes remain on disk and resume on the next `guard up` |
+| `feed` | `events`, `log`, `transitions` | Expose continuous transition feed and event log with causes across guarded roots |
 | `help` |  | Print this message or the help of the given subcommand(s) |
 | `list` |  | List all registered guard roots and their current states |
 | `rebuild` |  | Delete and recreate the durable guard store for a root. Use after store corruption or when the persisted state is irrecoverably stale. The root is re-registered and a full reconciliation is triggered |
@@ -443,6 +444,15 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 
 | Argument | Value | Default | Description |
 |----------|-------|---------|-------------|
+| `--socket` | `PATH` |  | Override the socket path |
+
+### `keyhog guard feed`
+
+| Argument | Value | Default | Description |
+|----------|-------|---------|-------------|
+| `--format` | `FORMAT` | `human` | Output format: `human` or `json` |
+| `--limit` | `LIMIT` | `50` | Maximum number of recent transitions to display (default 50) |
+| `--root` | `ROOT` |  | Filter feed to a specific root path |
 | `--socket` | `PATH` |  | Override the socket path |
 
 ### `keyhog guard help`
@@ -482,7 +492,7 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 
 | Argument | Value | Default | Description |
 |----------|-------|---------|-------------|
-| `<ROOT>` *(required)* | `ROOT` |  | Root path to inspect |
+| `[ROOT]` | `ROOT` |  | Root path to inspect (optional; inspects all roots when omitted) |
 | `--format` | `FORMAT` | `human` | Output format: `human` or `json` |
 | `--socket` | `PATH` |  | Override the socket path |
 
@@ -925,7 +935,7 @@ and binds the request to the identical returned release tag before downloading.
 `keyhog update` reports one of three verdicts. `PASS` means the channel's
 newest asset is exactly this build. `WARN` means this build is newer than the
 newest asset, so the channel cannot tell you whether a newer KeyHog exists;
-update with `cargo install --locked --force keyhog` instead. Otherwise it
+update with `cargo install --locked --force keyhog` followed by `keyhog doctor` instead. Otherwise it
 reports the newer asset and, under `--check`, exits `10`. Both `PASS` and
 `WARN` exit `0`, because neither installs anything.
 

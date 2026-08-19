@@ -57,3 +57,8 @@ rusty-fork = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 toml = { workspace = true }
 fs2 = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "verifier_evaluation"
+harness = false

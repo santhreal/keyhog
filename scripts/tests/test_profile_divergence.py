@@ -66,6 +66,8 @@ class ProfileClassificationTests(unittest.TestCase):
             "release": {
                 "panic": "abort",
                 "overflow-checks": True,
+                "strip": "symbols",
+                "debug": False,
             }
         }
         errors, _ = pd.classify_profile_keys(profiles)
@@ -78,11 +80,41 @@ class ProfileClassificationTests(unittest.TestCase):
             "release": {
                 "panic": "unwind",
                 "overflow-checks": False,
+                "strip": "symbols",
+                "debug": False,
             }
         }
         errors, _ = pd.classify_profile_keys(profiles)
         self.assertTrue(
             any("overflow-checks must be true" in e for e in errors)
+        )
+
+    def test_release_strip_unstripped_fails(self) -> None:
+        profiles = {
+            "release": {
+                "panic": "unwind",
+                "overflow-checks": True,
+                "strip": "none",
+                "debug": False,
+            }
+        }
+        errors, _ = pd.classify_profile_keys(profiles)
+        self.assertTrue(
+            any("strip must be 'symbols'" in e for e in errors)
+        )
+
+    def test_release_debug_true_fails(self) -> None:
+        profiles = {
+            "release": {
+                "panic": "unwind",
+                "overflow-checks": True,
+                "strip": "symbols",
+                "debug": True,
+            }
+        }
+        errors, _ = pd.classify_profile_keys(profiles)
+        self.assertTrue(
+            any("debug must be false" in e for e in errors)
         )
 
     def test_missing_release_profile_fails(self) -> None:

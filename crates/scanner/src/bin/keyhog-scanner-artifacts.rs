@@ -3,7 +3,6 @@ use keyhog_scanner::{compile_gpu_literal_artifacts_default, GpuLiteralArtifact};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::ffi::{OsStr, OsString};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 type DynResult<T> = Result<T, Box<dyn std::error::Error>>;
@@ -80,7 +79,7 @@ fn main() -> DynResult<()> {
     };
     let manifest_bytes = serde_json::to_vec_pretty(&manifest)?;
     let manifest_path = args.out_dir.join("manifest.json");
-    write_bytes_atomic(&manifest_path, &manifest_bytes).map_err(|source| {
+    keyhog_core::state_file::write_atomically(&manifest_path, &manifest_bytes).map_err(|source| {
         io_error_with_context(
             source,
             format!(
@@ -204,7 +203,7 @@ fn write_artifact(
 ) -> DynResult<ArtifactManifestEntry> {
     let file_name = format!("{}.bin", artifact.cache_key);
     let path = out_dir.join(&file_name);
-    write_bytes_atomic(&path, &artifact.bytes).map_err(|source| {
+    keyhog_core::state_file::write_atomically(&path, &artifact.bytes).map_err(|source| {
         io_error_with_context(
             source,
             format!("failed to write GPU literal artifact {}", path.display()),
@@ -221,17 +220,6 @@ fn write_artifact(
     })
 }
 
-fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let parent = match path.parent().filter(|path| !path.as_os_str().is_empty()) {
-        Some(parent) => parent,
-        None => Path::new("."), // LAW10: parentless explicit output names are created relative to the current directory, matching std::fs::write.
-    };
-    std::fs::create_dir_all(parent)?;
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-    tmp.write_all(bytes)?;
-    tmp.as_file().sync_all()?;
-    tmp.persist(path).map(drop).map_err(|error| error.error)
-}
 
 fn invalid_input(message: impl Into<String>) -> Box<dyn std::error::Error> {
     Box::new(std::io::Error::new(

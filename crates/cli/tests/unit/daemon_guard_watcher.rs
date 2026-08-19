@@ -209,3 +209,69 @@ fn add_root_fails_when_watcher_disconnected() {
     assert!(res.is_err());
     assert!(res.unwrap_err().contains("watcher backend disconnected"));
 }
+
+#[test]
+fn excluded_directory_paths_filtered_in_unit_watcher() {
+    let config = GuardReconciliationConfig::default();
+    let (mut watcher, tx) = GuardWatcher::new_with_channel(config);
+    let root = PathBuf::from("/srv/unit_root");
+    watcher.add_root(root.clone()).unwrap();
+
+    let git_file = root.join(".git/index");
+    let target_file = root.join("target/debug/foo");
+    let nm_file = root.join("node_modules/pkg/index.js");
+    let lock_file = root.join("Cargo.lock");
+    let code_file = root.join("src/lib.rs");
+
+    let mut event = notify::Event::new(EventKind::Modify(notify::event::ModifyKind::Any));
+    event.paths.push(git_file);
+    event.paths.push(target_file);
+    event.paths.push(nm_file);
+    event.paths.push(lock_file);
+    event.paths.push(code_file.clone());
+
+    tx.send(Ok(event)).unwrap();
+
+    let polled = watcher.poll_events();
+    let map: HashMap<PathBuf, Vec<GuardEvent>> = polled.into_iter().collect();
+    assert_eq!(map.len(), 1);
+    assert_eq!(
+        map.get(&root).unwrap(),
+        &vec![GuardEvent::Modify(code_file)]
+    );
+}
+
+#[test]
+fn custom_ignore_paths_filtered_in_unit_watcher() {
+    let config = GuardReconciliationConfig::default();
+    let (mut watcher, tx) = GuardWatcher::new_with_channel(config);
+    let root = PathBuf::from("/srv/custom_root");
+    watcher
+        .add_root_with_exclusions(root.clone(), vec!["*.log".into(), "build/**".into()], true)
+        .unwrap();
+
+    assert_eq!(
+        watcher.root_ignore_paths(&root).unwrap(),
+        &["*.log", "build/**"]
+    );
+    assert_eq!(watcher.root_respects_default_excludes(&root), Some(true));
+
+    let log_file = root.join("app.log");
+    let build_file = root.join("build/out.bin");
+    let normal_file = root.join("src/main.rs");
+
+    let mut event = notify::Event::new(EventKind::Create(notify::event::CreateKind::File));
+    event.paths.push(log_file);
+    event.paths.push(build_file);
+    event.paths.push(normal_file.clone());
+
+    tx.send(Ok(event)).unwrap();
+
+    let polled = watcher.poll_events();
+    let map: HashMap<PathBuf, Vec<GuardEvent>> = polled.into_iter().collect();
+    assert_eq!(map.len(), 1);
+    assert_eq!(
+        map.get(&root).unwrap(),
+        &vec![GuardEvent::Create(normal_file)]
+    );
+}
