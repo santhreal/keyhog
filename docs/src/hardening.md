@@ -95,7 +95,7 @@ release checksum and minisign signature before replacing an executable.
 
 Automatic releases publish crates.io packages only. They do not produce the
 assets consumed by these legacy commands. Update a current Cargo installation
-with `cargo install --locked --force keyhog`; see [Install](./install.md).
+with `cargo install --locked --force keyhog && keyhog doctor`; see [Install](./install.md).
 
 ## Related operator references
 

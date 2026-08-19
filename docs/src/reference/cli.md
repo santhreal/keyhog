@@ -925,7 +925,7 @@ and binds the request to the identical returned release tag before downloading.
 `keyhog update` reports one of three verdicts. `PASS` means the channel's
 newest asset is exactly this build. `WARN` means this build is newer than the
 newest asset, so the channel cannot tell you whether a newer KeyHog exists;
-update with `cargo install --locked --force keyhog` instead. Otherwise it
+update with `cargo install --locked --force keyhog && keyhog doctor` instead. Otherwise it
 reports the newer asset and, under `--check`, exits `10`. Both `PASS` and
 `WARN` exit `0`, because neither installs anything.
 
