@@ -427,6 +427,9 @@ async fn run_status(
             initial_reconciliation_time,
             last_reconciliation_time,
             scanner_residency,
+            watcher_backend,
+            watcher_latency_tier,
+            watcher_poll_interval_ms,
             backend_route_label,
             build_identity_short,
             detector_digest_short,
@@ -461,6 +464,9 @@ async fn run_status(
                     "initial_reconciliation_time": initial_reconciliation_time,
                     "last_reconciliation_time": last_reconciliation_time,
                     "scanner_residency": scanner_residency,
+                    "watcher_backend": watcher_backend,
+                    "watcher_latency_tier": watcher_latency_tier,
+                    "watcher_poll_interval_ms": watcher_poll_interval_ms,
                     "backend_route_label": backend_route_label,
                     "build_identity_short": build_identity_short,
                     "detector_digest_short": detector_digest_short,
@@ -494,6 +500,10 @@ async fn run_status(
                     println!("last recon:     {t}");
                 }
                 println!("residency:      {scanner_residency}");
+                println!("watcher:        {watcher_backend} ({watcher_latency_tier})");
+                if let Some(poll_ms) = watcher_poll_interval_ms {
+                    println!("poll interval:  {poll_ms}ms");
+                }
                 println!("backend route:  {backend_route_label}");
                 if !build_identity_short.is_empty() {
                     println!("build digest:   {build_identity_short}");

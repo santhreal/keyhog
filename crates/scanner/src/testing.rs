@@ -5264,6 +5264,11 @@ pub fn region_presence_scratch_retention_limit() -> usize {
     crate::engine::gpu_region_batch::region_presence_scratch_retention_limit()
 }
 
+#[cfg(feature = "gpu")]
+pub use crate::engine::gpu_region_dispatch::pool::{
+    GpuResidentExecutionPermit, GpuResidentExecutionPool,
+};
+
 pub mod unicode_hardening {
     use std::borrow::Cow;
 

@@ -58,11 +58,7 @@ fn shape_suppression_silent_path_returns_before_scoped_telemetry_or_hashing() {
     let dogfood_gate = body
         .find("if !is_dogfood_enabled() {\n        return;\n    }")
         .expect("dogfood early return");
-    for expensive in [
-        "current_scan_telemetry",
-        "record_shape_suppression_in",
-        "cell()",
-    ] {
+    for expensive in ["current_scan_telemetry", "record_shape_suppression_in"] {
         let expensive_at = body
             .find(expensive)
             .unwrap_or_else(|| panic!("missing {expensive}"));

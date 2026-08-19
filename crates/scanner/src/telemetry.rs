@@ -406,9 +406,11 @@ pub struct ScanTelemetrySnapshot {
     pub static_recovery_status: StaticRecoveryStatus,
 }
 
+static DEFAULT_PROCESS_TELEMETRY: std::sync::LazyLock<Arc<ScanTelemetry>> =
+    std::sync::LazyLock::new(|| Arc::new(ScanTelemetry::new()));
+
 thread_local! {
     static CURRENT_SCAN_TELEMETRY: RefCell<Option<Arc<ScanTelemetry>>> = const { RefCell::new(None) };
-    static DEFAULT_THREAD_TELEMETRY: Arc<ScanTelemetry> = Arc::new(ScanTelemetry::new());
 }
 
 pub struct ScanTelemetryRestore {
@@ -447,7 +449,7 @@ pub fn current_scan_telemetry() -> Arc<ScanTelemetry> {
         if let Some(current) = &*slot.borrow() {
             Arc::clone(current)
         } else {
-            DEFAULT_THREAD_TELEMETRY.with(|default| Arc::clone(default))
+            Arc::clone(&DEFAULT_PROCESS_TELEMETRY)
         }
     })
 }
