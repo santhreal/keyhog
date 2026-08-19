@@ -107,12 +107,51 @@ fn legacy_candidate_binary_probe_skips_generation_compilation_safely() {
     fs::write(current_packs.join("manifest.json"), b"prior-generation").expect("write manifest");
     fs::write(&current_cache, b"prior-autoroute").expect("write autoroute");
 
-    // 1. Rollback test: when uncommitted transaction drops, prior artifacts are restored
-    {
-        let tx = keyhog::testing::API.install_execution_generation(&mock_bin);
-        // Note: install_execution_generation on API commits, so test directly via rollback closure:
-        assert!(tx.is_ok(), "probe on legacy binary must succeed");
-    }
+    let target_bin = test_dir.path().join("target_keyhog");
+    fs::write(&target_bin, b"original-bin").expect("write target bin");
+
+    // 1. Rollback test: when install_with_rollback_checked fails on a legacy binary,
+    // prior artifacts and original binary must be restored.
+    let res = keyhog::testing::API.install_with_rollback_checked(
+        &target_bin,
+        b"legacy-bin",
+        |candidate| {
+            let tx = keyhog::testing::API.install_execution_generation(candidate);
+            assert!(tx.is_ok(), "probe on legacy binary must succeed");
+            Err(anyhow::anyhow!(
+                "simulated post-install health verification failure"
+            ))
+        },
+    );
+    assert!(res.is_err(), "failed verification must return Err");
+    assert_eq!(
+        fs::read(&target_bin).expect("read target bin"),
+        b"original-bin",
+        "target binary must be rolled back on failure"
+    );
+    assert_eq!(
+        fs::read(current_packs.join("manifest.json")).expect("read manifest"),
+        b"prior-generation",
+        "prior execution packs must be restored on rollback"
+    );
+    assert_eq!(
+        fs::read(&current_cache).expect("read autoroute"),
+        b"prior-autoroute",
+        "prior autoroute cache must be restored on rollback"
+    );
+
+    // 2. Commit test: when legacy binary install commits, stale artifacts are removed
+    // so they do not linger for the legacy binary version.
+    let tx = keyhog::testing::API.install_execution_generation(&mock_bin);
+    assert!(tx.is_ok(), "probe on legacy binary must succeed");
+    assert!(
+        !current_packs.exists(),
+        "stale execution packs must be cleared when legacy binary commits"
+    );
+    assert!(
+        !current_cache.exists(),
+        "stale autoroute cache must be cleared when legacy binary commits"
+    );
 
     // Restore environment
     if let Some(val) = prev_cache {
@@ -199,6 +238,32 @@ esac
         fs::read(&current_cache).expect("read autoroute"),
         b"prior-autoroute",
         "prior autoroute cache must be restored on failure"
+    );
+
+    // 2. Test successful install and commit: new artifacts are generated and published
+    let res = keyhog::testing::API.install_with_rollback_checked(
+        &target_bin,
+        b"new-bin-bytes",
+        |candidate| {
+            keyhog::testing::API.install_execution_generation(candidate)?;
+            Ok(())
+        },
+    );
+    assert!(res.is_ok(), "successful install must succeed");
+    assert_eq!(
+        fs::read(&target_bin).expect("read target bin"),
+        b"new-bin-bytes",
+        "target binary must be updated on commit"
+    );
+    let manifest_bytes = fs::read(current_packs.join("manifest.json")).expect("read new manifest");
+    assert!(
+        String::from_utf8_lossy(&manifest_bytes).contains("mock-pack-data"),
+        "new execution packs must be published on commit"
+    );
+    let autoroute_bytes = fs::read(&current_cache).expect("read new autoroute");
+    assert!(
+        String::from_utf8_lossy(&autoroute_bytes).contains("mock-autoroute-data"),
+        "new autoroute cache must be published on commit"
     );
 
     // Restore environment
