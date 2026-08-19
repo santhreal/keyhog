@@ -1919,6 +1919,7 @@ impl ScanOrchestrator {
                 reader_threads,
                 fused_batch,
                 fused_depth,
+                window_overlap: keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES,
                 gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy::Auto,
                 autoroute_gpu: false,
                 autoroute_calibration: false,

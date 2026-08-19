@@ -235,6 +235,10 @@ run "Unified byte size parser self-test: single canonical byte size parser and z
   python3 -B scripts/gates/unified_byte_size_parser.py --self-test
 run "Unified byte size parser: canonical value_parsers::parse_byte_size ownership" \
   python3 -B scripts/gates/unified_byte_size_parser.py
+run "Unified operational constants self-test: configuration schema reflection and range validation" \
+  python3 -B scripts/gates/unified_operational_constants.py --self-test
+run "Unified operational constants: Tier-A operational performance knobs governance" \
+  python3 -B scripts/gates/unified_operational_constants.py
 run "Timing log profile identity self-test: diagnostic log lines without profile identity are detected" \
   python3 -B scripts/gates/timing_log_profile_identity.py --self-test
 run "Timing log profile identity: all diagnostic timing figures derive from registered profile metrics" \

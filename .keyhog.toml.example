@@ -157,6 +157,7 @@ exclude = ["**/test/fixtures/**", "vendor/"]
 # reader_threads = 2              # default: derived from scan workers
 # fused_batch = 1024
 # fused_depth = 0                 # default: rendezvous, no queued batches
+# window_overlap = "128KB"        # default: 128 KiB
 # per_chunk_timeout_ms = 30000    # default: no chunk deadline
 dedup = "credential"              # credential | file | none
 # Incremental mode persists a BLAKE3 Merkle index and skips unchanged files.

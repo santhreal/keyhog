@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+pub use crate::config::{OperationalKnob, OperationalUnit};
 /// Zero-sized handle for integration tests that need crate-internal seams.
 pub struct TestApi;
 

@@ -8,6 +8,8 @@ mod policy;
 mod scan;
 pub(crate) mod schema;
 mod sections;
+pub mod operational;
+pub use operational::{OperationalKnob, OperationalUnit};
 
 pub(crate) use policy::ConfigOutcome;
 use policy::{base_config_outcome, config_file_error, resolve_policy_outcome};
@@ -35,6 +37,7 @@ const RETIRED_FLAT_SCAN_KEYS: &[&str] = &[
     "gpu_batch_input_limit",
     "decode_depth",
     "entropy_threshold",
+    "window_overlap",
     "entropy_bpe_max_bytes_per_token",
     "min_secret_len",
     "exclude_paths",

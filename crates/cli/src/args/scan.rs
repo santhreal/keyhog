@@ -925,6 +925,10 @@ pub struct ScanArgs {
     #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_usize)]
     pub fused_depth: Option<usize>,
 
+    /// Streaming window overlap size in bytes (default: 128KB).
+    #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
+    pub window_overlap: Option<usize>,
+
     /// Hard deadline per chunk scan in milliseconds. Default unset = no
     /// operator deadline; decode still has its internal bomb guard.
     #[arg(long, value_name = "MS", value_parser = crate::value_parsers::parse_positive_millis)]
