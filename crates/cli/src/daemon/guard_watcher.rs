@@ -231,7 +231,10 @@ impl GuardWatcher {
     }
 
     pub fn new_null(config: GuardReconciliationConfig) -> Result<Self, String> {
-        let (_tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+        let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+        // Retain the sender so the null watcher's empty channel is never
+        // mistaken for a dead backend by poll_events().
+        std::mem::forget(tx);
         let watcher = notify::NullWatcher;
         Ok(Self {
             watcher: Some(ActiveWatcherHandle::Null(watcher)),
@@ -240,7 +243,7 @@ impl GuardWatcher {
             rx,
             roots: HashMap::new(),
             config,
-            disabled: false,
+            disabled: true,
             disconnection_reason: parking_lot::Mutex::new(None),
         })
     }
