@@ -12,6 +12,7 @@ use crate::scanner_config::ResolvedScannerTuningConfig;
 use aho_corasick::AhoCorasick;
 use dispatch_plan::{BatchMatcher, DispatchConfig, DispatchPlan, PrefilterScope};
 use gating::{combined_gate_decision, CombinedGateDecision};
+use keyhog_profile::{add_counter, CounterId};
 use std::sync::atomic::Ordering::Relaxed;
 
 pub(crate) fn canonical_phase2_scope_indices(
@@ -833,7 +834,7 @@ impl Phase2AlwaysActivePrefilter {
         let prof = phase2_pattern_prof_enabled();
         if prof {
             GATE_CALLS.fetch_add(1, Relaxed);
-            keyhog_profile::add_counter(keyhog_profile::CounterId::Phase2PrefilterMarkCalls, 1);
+            add_counter(CounterId::Phase2PrefilterMarkCalls, 1);
         }
         for batch in &portable.batches {
             if plan.skip_homoglyph_batch(batch) {
@@ -842,10 +843,7 @@ impl Phase2AlwaysActivePrefilter {
             if batch.gateable && !plan.run_gateable_batch(batch, !batch.case_insensitive, &gates) {
                 if prof {
                     GATE_BATCH_SKIPS.fetch_add(1, Relaxed);
-                    keyhog_profile::add_counter(
-                        keyhog_profile::CounterId::Phase2PrefilterGateSkips,
-                        1,
-                    );
+                    add_counter(CounterId::Phase2PrefilterGateSkips, 1);
                 }
                 continue;
             }

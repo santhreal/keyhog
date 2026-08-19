@@ -1016,6 +1016,9 @@ impl Runtime {
         parent_slot: Option<usize>,
         worker_id: u64,
     ) -> (Option<SpanTrace>, Option<usize>) {
+        if !self.inner.session_recording {
+            return (None, None);
+        }
         let stack_slot = ACTIVE_SPANS.with(|stack| stack.borrow().iter().position(Option::is_none));
         let Some(stack_slot) = stack_slot else {
             self.inner
@@ -2645,6 +2648,22 @@ pub fn record_cache_hit(cache: crate::CacheId) {
 pub fn record_cache_miss(cache: crate::CacheId) {
     if let Some(runtime) = current_runtime() {
         runtime.record_cache_outcome(cache, false);
+    }
+}
+
+/// Read the number of cache hits recorded for `cache` in the current profile runtime.
+#[inline]
+pub fn cache_hits(cache: crate::CacheId) -> u64 {
+    if let Some(runtime) = current_runtime() {
+        let shards = runtime.inner.sorted_shards();
+        let index = cache.index();
+        let mut hits = 0_u64;
+        for shard in &shards {
+            hits = hits.saturating_add(shard.cache_hits[index].load(Ordering::Relaxed));
+        }
+        hits
+    } else {
+        0
     }
 }
 

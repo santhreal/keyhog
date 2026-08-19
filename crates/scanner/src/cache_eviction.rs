@@ -78,12 +78,21 @@ pub fn evict_cache_dir_with_policy(
         let over_bytes = current_bytes > policy.max_bytes && (!is_newest || retained_count > 0);
 
         if over_count || over_bytes {
-            if std::fs::remove_file(&entry.path).is_ok() {
-                report.evicted_count += 1;
-                report.evicted_bytes += entry.bytes;
-                current_bytes = current_bytes.saturating_sub(entry.bytes);
-                remaining_count = remaining_count.saturating_sub(1);
-                continue;
+            match std::fs::remove_file(&entry.path) {
+                Ok(()) => {
+                    report.evicted_count += 1;
+                    report.evicted_bytes += entry.bytes;
+                    current_bytes = current_bytes.saturating_sub(entry.bytes);
+                    remaining_count = remaining_count.saturating_sub(1);
+                    continue;
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    current_bytes = current_bytes.saturating_sub(entry.bytes);
+                    remaining_count = remaining_count.saturating_sub(1);
+                    continue;
+                }
+                // LAW10: file cannot be removed due to permissions or io; it is retained in cache accounting
+                Err(_) => {}
             }
         }
         retained_count += 1;

@@ -495,7 +495,21 @@ pub(crate) fn report_compiled_cache_summary(
                 let state = if count > 0 { "hit" } else { "compiled" };
                 (state, count)
             }
-            keyhog_core::CacheKind::DetectorPlans => ("compiled", 0),
+            keyhog_core::CacheKind::DetectorPlans => {
+                let dir = cache_base.as_ref().map(|b| b.join("keyhog"));
+                let count = dir.as_deref().map_or(0, |d| {
+                    keyhog_scanner::cache_eviction::count_matching_entries(d, *kind)
+                });
+                let hits = keyhog_profile::cache_hits(keyhog_profile::CacheId::DetectorPlan);
+                let state = if hits > 0 {
+                    "hit"
+                } else if count > 0 {
+                    "cached"
+                } else {
+                    "compiled"
+                };
+                (state, count)
+            }
             keyhog_core::CacheKind::LockFiles => {
                 let dir = cache_base.as_ref().map(|b| b.join("keyhog"));
                 let count = dir.as_deref().map_or(0, |d| {
