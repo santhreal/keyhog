@@ -493,6 +493,10 @@ fn isolated_policy_argv(
         argv.push(OsString::from("--execution-packs"));
         argv.push(packs.as_os_str().to_owned());
     }
+    if let Some(key) = args.signing_key.as_deref() {
+        argv.push(OsString::from("--signing-key"));
+        argv.push(key.as_os_str().to_owned());
+    }
     argv
 }
 
@@ -560,7 +564,10 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
         measured_routes.extend(policy_receipts);
     }
 
-    if let Some(binding) = resolve_execution_pack_binding(args.execution_packs.as_deref())? {
+    if let Some(binding) = resolve_execution_pack_binding(
+        args.execution_packs.as_deref(),
+        args.signing_key.as_deref(),
+    )? {
         crate::orchestrator::bind_autoroute_cache_to_execution_packs(&staged_cache_path, binding)
             .context("binding all-policy calibration evidence to exact execution packs")?;
     }
@@ -653,9 +660,10 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
 /// does.
 fn resolve_execution_pack_binding(
     requested: Option<&Path>,
+    signing_key: Option<&Path>,
 ) -> Result<Option<crate::execution_pack_install::ExecutionPackGenerationBinding>> {
     if let Some(directory) = requested {
-        return crate::execution_pack_install::load_authenticated_binding(directory)
+        return crate::execution_pack_install::load_authenticated_binding(directory, signing_key)
             .map(Some)
             .context("loading authenticated execution-pack generation for calibration");
     }
@@ -664,7 +672,9 @@ fn resolve_execution_pack_binding(
     if !installed.exists() {
         return Ok(None);
     }
-    Ok(crate::execution_pack_install::load_authenticated_binding(&installed).ok())
+    Ok(
+        crate::execution_pack_install::load_authenticated_binding(&installed, signing_key).ok(),
+    )
 }
 
 pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
@@ -683,7 +693,10 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
              default cache, or pass a writable file path."
         );
     }
-    let execution_pack_binding = resolve_execution_pack_binding(args.execution_packs.as_deref())?;
+    let execution_pack_binding = resolve_execution_pack_binding(
+        args.execution_packs.as_deref(),
+        args.signing_key.as_deref(),
+    )?;
     if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
         if !args.quiet {
             println!(

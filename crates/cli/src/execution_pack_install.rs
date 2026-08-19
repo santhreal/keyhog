@@ -266,7 +266,7 @@ impl InstalledArtifactRegistry {
                 manifest_path.display()
             );
         }
-        let (_bytes, manifest, key) = load_manifest(&current_packs)?;
+        let (_bytes, manifest, key) = load_manifest(&current_packs, None)?;
         if manifest.packs.is_empty() {
             bail!("execution-pack manifest contains no packs");
         }
@@ -603,7 +603,7 @@ pub(crate) fn load_installed_execution_pack(
     backend: ExecutionPackBackend,
 ) -> Result<ExecutionPack> {
     let directory = installed_execution_pack_directory()?;
-    let (_, manifest, signing_key) = load_manifest(&directory)?;
+    let (_, manifest, signing_key) = load_manifest(&directory, None)?;
     let row = manifest
         .packs
         .iter()
@@ -623,7 +623,7 @@ pub(crate) fn load_installed_preferred_matcher_pack(
     policy: ExecutionPackPolicy,
 ) -> Result<ExecutionPack> {
     let directory = installed_execution_pack_directory()?;
-    let (_, manifest, signing_key) = load_manifest(&directory)?;
+    let (_, manifest, signing_key) = load_manifest(&directory, None)?;
     let policy = policy.lowercase_name();
     let row = manifest
         .packs
@@ -655,8 +655,9 @@ pub(crate) fn load_installed_preferred_detector_execution_pack(
 
 pub(crate) fn load_authenticated_binding(
     directory: &Path,
+    explicit_key: Option<&Path>,
 ) -> Result<ExecutionPackGenerationBinding> {
-    let (bytes, manifest, signing_key) = load_manifest(directory)?;
+    let (bytes, manifest, signing_key) = load_manifest(directory, explicit_key)?;
     let mut identities = BTreeSet::new();
     for row in &manifest.packs {
         if !identities.insert((row.policy.as_str(), row.backend.as_str())) {
@@ -681,6 +682,7 @@ pub(crate) fn load_authenticated_binding(
 
 fn load_manifest(
     directory: &Path,
+    explicit_key: Option<&Path>,
 ) -> Result<(Vec<u8>, InstallPackManifest, ExecutionPackSigningKey)> {
     let manifest_path = directory.join("manifest.json");
     let metadata = fs::symlink_metadata(&manifest_path).with_context(|| {
@@ -757,9 +759,13 @@ fn load_manifest(
             );
         }
     }
-    let key_path = directory
-        .parent()
-        .map(|parent| parent.join("signing.key"))
+    let key_path = explicit_key
+        .map(PathBuf::from)
+        .or_else(|| {
+            directory
+                .parent()
+                .map(|parent| parent.join("signing.key"))
+        })
         .filter(|path| path.is_file())
         .ok_or_else(|| {
             anyhow::anyhow!(

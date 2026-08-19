@@ -529,7 +529,7 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
         execution_pack_dir.display()
     );
     let installed_pack_binding = if execution_pack_dir.exists() {
-        match crate::execution_pack_install::load_authenticated_binding(&execution_pack_dir) {
+        match crate::execution_pack_install::load_authenticated_binding(&execution_pack_dir, None) {
             Ok(binding) => {
                 println!(
                     "  pack state     {green}AUTHENTICATED{reset}  {dim}{} policy/backend pack(s), manifest {}{reset}",

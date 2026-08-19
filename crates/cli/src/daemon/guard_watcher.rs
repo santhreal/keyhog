@@ -384,7 +384,7 @@ impl GuardWatcher {
             rx,
             roots: HashMap::new(),
             config,
-            disabled: false,
+            disabled: true,
             disconnection_reason: parking_lot::Mutex::new(None),
             skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
         })

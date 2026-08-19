@@ -49,6 +49,9 @@ pub struct CalibrateAutorouteArgs {
     /// fails closed when the directory does not authenticate.
     #[arg(long, value_name = "DIR")]
     pub execution_packs: Option<PathBuf>,
+    /// Execution pack verification key used to authenticate staged execution packs.
+    #[arg(long, value_name = "PATH", hide = true)]
+    pub signing_key: Option<PathBuf>,
     /// Internal receipt sink used by the all-policy parent transaction.
     #[arg(long, value_name = "PATH", hide = true)]
     pub measurement_receipts: Option<PathBuf>,
