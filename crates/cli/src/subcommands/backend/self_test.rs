@@ -264,7 +264,17 @@ pub(super) fn unavailable_gpu_self_test_report(
     require_gpu: bool,
 ) -> BackendSelfTestReport {
     let reason = if !hw.gpu_available {
-        "no GPU adapter detected"
+        if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
+            if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
+                "compiled without GPU backend / single compiled backend"
+            } else {
+                "compiled without GPU backend"
+            }
+        } else if hw.gpu_name.is_some() {
+            "GPU runtime backend unavailable"
+        } else {
+            "no GPU adapter detected"
+        }
     } else {
         "only software adapter (llvmpipe/lavapipe/swiftshader): won't be used for scans"
     };

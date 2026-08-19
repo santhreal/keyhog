@@ -18,6 +18,7 @@
 - feat(artifacts): fail closed with EXIT_USER_ERROR and repair command on stale execution-pack identity inputs (Row 129).
 - feat(hook): utilize prepared execution pack in pre-commit hook run for zero runtime compilations and sub-second execution (Row 145).
 - feat(gates): consolidate structural assertions into unified workspace gates and eliminate duplicate per-crate gap tests (Row 149).
+- fix(backend): GPU route explanation parity reporting compiled-in feature state when GPU hardware is physically present rather than false probe misses (Row 156).
 - feat(compiler): install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata (Row 128).
 - feat(cache): load-only scan execution and zero compilation fallback on prepared artifact caches (Row 127).
 - feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).

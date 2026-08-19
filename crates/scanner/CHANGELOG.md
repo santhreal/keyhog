@@ -8,6 +8,7 @@
 - refactor(scanner): route matcher artifact storage through keyhog_core::state_file atomic durable write (Row 148).
 - feat(scanner): install-time compilation and scan-time loading for entropy policy, assignment keyword matcher, and detector plan metadata surfaces (Row 128).
 - feat(entropy): refine BPE entropy evaluations and token boundary chunking to support backtick quotes, preserve internal ampersands and punctuation in quoted secret keys, expand character class filters with tildes and trigger bytes, admit mixed-case alphanumeric tokens via detector-owned special length under credential context, and add generic-high-entropy-string detector and contract specification (Row 154).
+- fix(backend): GPU route explanation parity reporting compiled-in feature state when GPU hardware is physically present rather than false probe misses (Row 156).
 - feat(scanner): instrument compile surface invocations and prepared artifact loads across 13 compile entrypoints (Row 125).
 - feat(parallelism): unify scanner execution width with keyhog_profile host parallelism (Row 110/137).
 - refactor(scanner): move rayon to dev-dependencies and replace internal usages with standard iterators (Row 119).

@@ -306,16 +306,37 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
         hw.physical_cores, hw.logical_cores
     );
     println!("  simd           {simd}");
-    let gpu = if !hw.gpu_available {
-        if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
-            format!("{dim}not detected (binary built without --features gpu){reset}")
+    let gpu = if hw.gpu_available {
+        if hw.gpu_is_software {
+            format!("{yellow}software renderer (disabled for scans){reset}")
         } else {
-            format!("{dim}not detected (CPU/SIMD path){reset}")
+            format!("{green}{}{reset}", hw.gpu_name.as_deref().unwrap_or("yes"))
+            // LAW10: absent name/label => display default; reporting-only, recall-safe
         }
-    } else if hw.gpu_is_software {
-        format!("{yellow}software renderer (disabled for scans){reset}")
+    } else if let Some(name) = hw.gpu_name.as_deref() {
+        if hw.gpu_is_software {
+            format!("{yellow}{name} (software renderer: disabled for scans){reset}")
+        } else if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
+            if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
+                format!(
+                    "{dim}{name} (compiled without GPU backend / single compiled backend){reset}"
+                )
+            } else {
+                format!("{dim}{name} (compiled without GPU backend){reset}")
+            }
+        } else {
+            format!("{dim}{name} (runtime unavailable){reset}")
+        }
+    } else if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
+        if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
+            format!(
+                "{dim}not detected (compiled without GPU backend / single compiled backend){reset}"
+            )
+        } else {
+            format!("{dim}not detected (binary built without --features gpu){reset}")
+        }
     } else {
-        format!("{green}{}{reset}", hw.gpu_name.as_deref().unwrap_or("yes")) // LAW10: absent name/label => display default; reporting-only, recall-safe
+        format!("{dim}not detected (CPU/SIMD path){reset}")
     };
     println!("  gpu            {gpu}");
     println!(

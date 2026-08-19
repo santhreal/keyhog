@@ -264,6 +264,7 @@ jobs:
         run: >
           cargo test -p keyhog --features gpu --profile ci-test
           --test regression_require_gpu_fails_closed
+          --test regression_row_156_gpu_route_explanation_parity
 
   library-surface:
     name: Library surface

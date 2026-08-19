@@ -114,6 +114,15 @@ pub(crate) fn gpu_probe() -> GpuRuntimeProbe {
             is_software: gpu.is_software,
         };
     }
+    if let Some(physical_name) = crate::hw_probe::platform::detect_physical_gpu_name() {
+        return GpuRuntimeProbe {
+            available: false,
+            name: Some(physical_name),
+            buffer_limit_mb: None,
+            runtime_identity: None,
+            is_software: false,
+        };
+    }
     GpuRuntimeProbe::default()
 }
 
