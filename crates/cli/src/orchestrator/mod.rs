@@ -1410,6 +1410,14 @@ impl ScanOrchestrator {
                 match installed {
                     Ok(pack) => {
                         keyhog_profile::record_cache_hit(keyhog_profile::CacheId::DetectorPlan);
+                        if detectors_path.exists()
+                            && detectors_path != std::path::Path::new("detectors")
+                        {
+                            tracing::info!(
+                                detectors_path = %detectors_path.display(),
+                                "using installed execution pack for standard scan; pass `--detectors <path>` to scan with custom detectors directory"
+                            );
+                        }
                         (None, Some(pack))
                     }
                     Err(error) => {
