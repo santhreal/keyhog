@@ -558,6 +558,7 @@ pub(crate) fn subtract_excluded(delta: usize) {
     }
     let t = current_source_telemetry();
     let _ = t.counters[2].fetch_update(Relaxed, Relaxed, |current| {
+        // LAW10: closure always returns Some, so fetch_update cannot fail; no fallback path exists.
         Some(current.saturating_sub(delta))
     });
 }
