@@ -12,9 +12,9 @@
 //! WHAT IT DOES NOT CATCH:
 //! Physical disk detachment or hardware controller bus reset during in-flight DMA operations.
 
-use keyhog::daemon::guard_runtime::GuardRuntime;
-use keyhog::daemon::guard_watcher::GuardWatcher;
-use keyhog::daemon::server::{guard_event_action, GuardEventAction};
+use keyhog::testing::daemon::guard_runtime::GuardRuntime;
+use keyhog::testing::daemon::guard_watcher::GuardWatcher;
+use keyhog::testing::daemon::server::{guard_event_action, GuardEventAction};
 use keyhog_core::guard_state::{
     FilesystemIdentity, GuardRootMode, GuardRootState, GuardTransition,
 };

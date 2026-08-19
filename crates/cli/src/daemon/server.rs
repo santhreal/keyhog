@@ -844,6 +844,9 @@ fn scrub_guard_roots(
     let roots = state.guard.list_roots();
     let mut scrubbed = 0;
     let now = std::time::Instant::now();
+    let current_root_paths: std::collections::HashSet<_> =
+        roots.iter().map(|r| r.canonical_path.clone()).collect();
+    last_scrub_times.retain(|k, _| current_root_paths.contains(k));
     for record in roots {
         if record.state == GuardRootState::Current {
             let interval = if let Some(configured) = state.guard_scrub_interval {
@@ -869,21 +872,21 @@ fn scrub_guard_roots(
 
                 if should_scrub {
                     let path_str = String::from_utf8_lossy(&record.canonical_path);
-                    let _ = state // LAW10: best-effort transition to Stopped before ReconciliationStarted
+                    match state
                         .guard
-                        .transition_root(&record.canonical_path, &GuardTransition::Stopped);
-                    match state.guard.transition_root(
-                        &record.canonical_path,
-                        &GuardTransition::ReconciliationStarted,
-                    ) {
+                        .transition_root(&record.canonical_path, &GuardTransition::EventAccepted)
+                    {
                         Ok(_) => {
-                            tracing::info!("daemon: scrub: re-reconciling root {}", path_str);
+                            tracing::info!(
+                                "daemon: scrub: marked root {} dirty for re-verification",
+                                path_str
+                            );
                             scrubbed += 1;
                             last_scrub_times.insert(record.canonical_path.clone(), now);
                         }
                         Err(e) => {
                             tracing::warn!(
-                                "daemon: scrub: failed to start reconciliation for {}: {}",
+                                "daemon: scrub: failed to mark root {} dirty: {}",
                                 path_str,
                                 e
                             );
@@ -912,7 +915,7 @@ fn scrub_guard_roots(
 /// Reconciliation* transition illegal. Events on Dirty, Degraded,
 /// StalePolicy, and Stopped roots are no-ops: those states already
 /// account for unscanned changes.
-pub(crate) fn process_guard_events(
+fn process_guard_events(
     state: &ServerState,
     root: &Path,
     events: Vec<keyhog_sources::guard::GuardEvent>,
@@ -1226,6 +1229,7 @@ pub(crate) fn is_transient_accept_error(e: &std::io::Error) -> bool {
     false
 }
 
+#[allow(dead_code)]
 enum MassFilesystemMessage {
     Batch(Vec<Chunk>),
     Complete {

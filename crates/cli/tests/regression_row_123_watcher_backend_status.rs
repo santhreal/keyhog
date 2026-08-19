@@ -4,7 +4,7 @@
 //!
 //! What this does NOT catch: OS kernel dropping inotify/FSEvent events due to global memory pressure.
 
-use keyhog::daemon::guard_watcher::{GuardWatcher, GuardWatcherBackendKind};
+use keyhog::testing::daemon::guard_watcher::{GuardWatcher, GuardWatcherBackendKind};
 use keyhog_sources::guard::GuardReconciliationConfig;
 use notify::Watcher;
 use std::time::Duration;

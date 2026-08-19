@@ -7,7 +7,7 @@
 
 #![cfg(unix)]
 
-use keyhog::daemon::guard_watcher::{normalize_notify_event, GuardWatcher};
+use keyhog::testing::daemon::guard_watcher::{normalize_notify_event, GuardWatcher};
 use keyhog_sources::guard::{GuardEvent, GuardReconciliationConfig};
 use notify::event::{CreateKind, ModifyKind, RemoveKind, RenameMode};
 use notify::EventKind;
