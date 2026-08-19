@@ -27,11 +27,11 @@ fn row_153_compiled_scanner_baseline_scan_memory_bounds() {
 
 #[test]
 fn row_153_scanner_structure_layout_and_type_bounds() {
-    // Assert CsrU32 layout uses exact boxed slices (32 bytes on 64-bit platforms).
+    // Assert CsrU32 layout uses exact boxed slices (two Box<[u32]> fat pointers = 4 pointer words).
     assert_eq!(
         std::mem::size_of::<keyhog_scanner::testing::CsrU32>(),
-        32,
-        "CsrU32 must be 32 bytes (two Box slices: data + offsets)"
+        std::mem::size_of::<Box<[u32]>>() * 2,
+        "CsrU32 must be exactly two Box slices (data + offsets)"
     );
 
     // Assert CsrU32 from_pairs produces exact-sized storage with zero excess capacity
