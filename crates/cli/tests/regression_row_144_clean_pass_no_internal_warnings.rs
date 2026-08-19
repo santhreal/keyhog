@@ -205,6 +205,7 @@ fn clean_pass_json_and_sarif_formats_are_unpolluted() {
             .expect("run scan command");
 
         let stderr = String::from_utf8_lossy(&scan_output.stderr);
+
         assert_eq!(
             scan_output.status.code(),
             Some(i32::from(EXIT_SUCCESS)),

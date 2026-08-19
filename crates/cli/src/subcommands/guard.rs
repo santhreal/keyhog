@@ -1020,7 +1020,11 @@ async fn run_status_online(
     }
 }
 
-fn run_status_offline(root: Option<std::path::PathBuf>, format: &str) -> anyhow::Result<ExitCode> {
+fn run_status_offline(
+    root: Option<std::path::PathBuf>,
+    format: &str,
+    socket: &std::path::Path,
+) -> anyhow::Result<ExitCode> {
     let palette = style::for_stderr();
     if let Some(root_path) = root {
         let canonical = resolve_root_for_control(&root_path)?;
@@ -1030,8 +1034,9 @@ fn run_status_offline(root: Option<std::path::PathBuf>, format: &str) -> anyhow:
             Some(p) if p.exists() => p,
             _ => {
                 anyhow::bail!(
-                    "guard status: root not registered in durable store: {} (no daemon active)",
-                    canonical
+                    "guard status: root not registered in durable store: {} (no daemon active at {})",
+                    canonical,
+                    socket.display()
                 );
             }
         };
@@ -1046,8 +1051,9 @@ fn run_status_offline(root: Option<std::path::PathBuf>, format: &str) -> anyhow:
             Some(r) => r,
             None => {
                 anyhow::bail!(
-                    "guard status: root not registered in durable store: {} (no daemon active)",
-                    canonical
+                    "guard status: root not registered in durable store: {} (no daemon active at {})",
+                    canonical,
+                    socket.display()
                 );
             }
         };
@@ -1057,30 +1063,34 @@ fn run_status_offline(root: Option<std::path::PathBuf>, format: &str) -> anyhow:
         } else {
             view.print_human();
         }
-        Ok(exit_for_guard_state(&view.state, view.findings_count))
+        Ok(exit_code_for_guard_state(&view.state, view.findings_count).into())
     } else {
         let state_path = crate::config::load_guard_state_path(None);
-        let (roots, store_path_str) = match state_path.as_deref() {
-            Some(path) if path.exists() => {
-                let store = keyhog_core::guard_store::DurableGuardStore::open_read_only(path)
-                    .map_err(|e| {
-                        anyhow::anyhow!(
-                            "guard status: failed to read durable store at {}: {e}",
-                            path.display()
-                        )
-                    })?;
-                let registry = store.load_roots().map_err(|e| {
-                    anyhow::anyhow!(
-                        "guard status: failed to read durable store at {}: {e}",
-                        path.display()
-                    )
-                })?;
-                let mut list: Vec<_> = registry.list().into_iter().cloned().collect();
-                list.sort_by(|a, b| a.canonical_path.cmp(&b.canonical_path));
-                (list, path.display().to_string())
+        let path = match state_path {
+            Some(p) if p.exists() => p,
+            _ => {
+                anyhow::bail!(
+                    "guard status: no compatible daemon at {} (start one with 'keyhog guard up')",
+                    socket.display()
+                );
             }
-            _ => (Vec::new(), String::new()),
         };
+        let store =
+            keyhog_core::guard_store::DurableGuardStore::open_read_only(&path).map_err(|e| {
+                anyhow::anyhow!(
+                    "guard status: failed to read durable store at {}: {e}",
+                    path.display()
+                )
+            })?;
+        let registry = store.load_roots().map_err(|e| {
+            anyhow::anyhow!(
+                "guard status: failed to read durable store at {}: {e}",
+                path.display()
+            )
+        })?;
+        let mut roots: Vec<_> = registry.list().into_iter().cloned().collect();
+        roots.sort_by(|a, b| a.canonical_path.cmp(&b.canonical_path));
+        let store_path_str = path.display().to_string();
 
         if roots.is_empty() {
             if format == "json" {
@@ -1366,6 +1376,13 @@ async fn run_feed(
         root: canonical_root,
         limit: Some(limit),
     };
+
+    if format != "human" && format != "json" {
+        anyhow::bail!(
+            "guard feed: invalid format '{}': expected 'human' or 'json'",
+            format
+        );
+    }
 
     match conn.round_trip(&request).await? {
         Response::GuardFeedResult { transitions } => {

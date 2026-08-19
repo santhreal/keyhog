@@ -202,13 +202,17 @@ impl GuardRuntime {
         }
         root_map.insert(root_path.to_vec(), identity);
     }
+
+    /// Retrieve the policy identity for a specific root, falling back to the daemon default.
+    pub fn root_policy_identity(&self, root_path: &[u8]) -> Option<GuardPolicyIdentity> {
+        self.root_identities
+            .read()
+            .get(root_path)
+            .cloned()
+            .or_else(|| self.current_identity.read().clone())
+    }
     /// Get the policy identity for a specific root.
     pub fn get_root_policy_identity(&self, root_path: &[u8]) -> Option<GuardPolicyIdentity> {
-        self.root_identities.read().get(root_path).cloned()
-    }
-
-    /// Get the policy identity for a specific root, if set.
-    pub fn root_policy_identity(&self, root_path: &[u8]) -> Option<GuardPolicyIdentity> {
         self.root_identities.read().get(root_path).cloned()
     }
 
@@ -657,11 +661,6 @@ impl GuardRuntime {
     /// Get the current policy identity, if set.
     pub fn policy_identity(&self) -> Option<GuardPolicyIdentity> {
         self.current_identity.read().clone()
-    }
-
-    /// Get the policy identity for a specific root, if set.
-    pub fn root_policy_identity(&self, root_path: &[u8]) -> Option<GuardPolicyIdentity> {
-        self.root_identities.read().get(root_path).cloned()
     }
 
     /// Autoroute evidence status label for status display.

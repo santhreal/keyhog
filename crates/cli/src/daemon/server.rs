@@ -1091,6 +1091,8 @@ fn process_guard_events(
         GuardEventAction::Transition(transition) => {
             let cause = if has_overflow {
                 "watcher overflow: event buffer overflowed or channel disconnected".to_string()
+            } else if has_policy_change {
+                "policy change: configuration or suppression rules modified".to_string()
             } else {
                 format!(
                     "filesystem watcher: {} change events accepted",
