@@ -155,6 +155,7 @@ pub fn is_default_excluded_path(path: &str) -> bool {
 }
 
 /// Returns `true` if raw UTF-8 `path` matches any default exclusion rule.
+/// Returns `true` if path bytes match default exclude rules.
 pub fn is_default_excluded_path_bytes(path: &[u8]) -> bool {
     filter::is_default_excluded_bytes(path)
 }
