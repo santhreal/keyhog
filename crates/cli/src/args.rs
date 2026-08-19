@@ -31,8 +31,8 @@ pub use guard::{GuardAction, GuardArgs};
 pub use hook::HookCommand;
 pub use limits::SourceLimitArgs;
 pub use maintenance::{
-    BackendArgs, CompileExecutionPacksArgs, CompletionArgs, DoctorArgs, RepairArgs, UninstallArgs,
-    UpdateArgs,
+    BackendArgs, CompileExecutionPacksArgs, CompileGpuLiteralsArgs, CompletionArgs, DoctorArgs,
+    UninstallArgs,
 };
 pub use scan::{
     CliDedupScope, DaemonMode, DetectorMode, EvidencePolicy, OutputFormat, ScanArgs, SeverityFilter,
@@ -94,6 +94,10 @@ pub enum Command {
     #[command(verbatim_doc_comment, hide = true)]
     CompileExecutionPacks(CompileExecutionPacksArgs),
 
+    /// Compile the shipped detector corpus into host GPU literal matcher artifacts
+    #[command(verbatim_doc_comment, hide = true)]
+    CompileGpuLiterals(CompileGpuLiteralsArgs),
+
     /// Manage git pre-commit hooks
     #[command(verbatim_doc_comment)]
     Hook {
@@ -147,14 +151,6 @@ pub enum Command {
     /// Measure Bloom rejection and prove enabled-versus-bypassed finding parity
     #[command(verbatim_doc_comment)]
     BloomDiagnostic(BloomDiagnosticArgs),
-
-    /// Update from the GitHub binary-asset channel: verified download + self-replace
-    #[command(verbatim_doc_comment)]
-    Update(UpdateArgs),
-
-    /// Repair a broken install: reinstall a known-good binary asset, then verify
-    #[command(verbatim_doc_comment)]
-    Repair(RepairArgs),
 
     /// Uninstall keyhog: remove the binary (dry run unless --yes)
     #[command(verbatim_doc_comment)]

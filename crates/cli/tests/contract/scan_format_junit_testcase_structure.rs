@@ -11,7 +11,7 @@ fn scan_format_junit_testcase_structure() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            crate::support::DIAGNOSTIC_BACKEND,
             "--format",
             "junit",
             "--no-suppress-test-fixtures",

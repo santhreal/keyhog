@@ -13,7 +13,7 @@ fn scan_format_sarif_rules_indexed() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            crate::support::DIAGNOSTIC_BACKEND,
             "--format",
             "sarif",
             "--no-suppress-test-fixtures",

@@ -2,7 +2,7 @@
 //! when the daemon reports a DIFFERENT keyhog version than this client.
 //!
 //! The staleness bug this pins: a `keyhog daemon start` left running across a
-//! `keyhog update` keeps its OLD detector corpus + scan pipeline in memory.
+//! binary upgrade keeps its OLD detector corpus + scan pipeline in memory.
 //! The wire version can stay stable across such a release (e.g. 0.5.40 ->
 //! 0.5.41, with the same compatible wire), so the wire-version handshake alone does NOT catch
 //! it, the upgraded client would route scans to the stale daemon and silently
@@ -171,7 +171,7 @@ async fn connect_fails_closed_on_keyhog_version_mismatch() {
     let dir = tempfile::tempdir().unwrap();
     let socket = dir.path().join("stale.sock");
     // A daemon on the SAME wire version but an OLDER keyhog version: the exact
-    // post-`keyhog update` staleness case.
+    // post-upgrade staleness case.
     spawn_mock_daemon(socket.clone(), WIRE_VERSION, "0.0.1-stale".to_string()).await;
 
     let res = client::connect(&socket).await;
