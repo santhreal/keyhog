@@ -109,6 +109,7 @@ impl InstalledArtifactClass {
                 ArtifactIdentityInput::TargetHardwareDigest,
                 ArtifactIdentityInput::FeatureDigest,
                 ArtifactIdentityInput::DetectorCorpusDigest,
+                ArtifactIdentityInput::ConfigDigest,
             ],
             Self::VerificationKey => &[ArtifactIdentityInput::SigningKeyIdentity],
             Self::ExecutionPack => &[
@@ -116,6 +117,7 @@ impl InstalledArtifactClass {
                 ArtifactIdentityInput::TargetHardwareDigest,
                 ArtifactIdentityInput::FeatureDigest,
                 ArtifactIdentityInput::DetectorCorpusDigest,
+                ArtifactIdentityInput::ConfigDigest,
                 ArtifactIdentityInput::SigningKeyIdentity,
             ],
             Self::Signature => &[
@@ -133,11 +135,11 @@ impl InstalledArtifactClass {
                 ArtifactIdentityInput::TargetHardwareDigest,
                 ArtifactIdentityInput::FeatureDigest,
                 ArtifactIdentityInput::DetectorCorpusDigest,
+                ArtifactIdentityInput::ConfigDigest,
                 ArtifactIdentityInput::GpuDeviceIdentity,
             ],
         }
     }
-
     pub const fn is_produced_by_installer(self) -> bool {
         true
     }
@@ -293,15 +295,23 @@ pub(crate) fn installed_execution_pack_directory() -> Result<PathBuf> {
         .join("current"))
 }
 
-pub(crate) fn current_binary_digest() -> Result<[u8; 32]> {
-    let path = std::env::current_exe().context("resolving current KeyHog executable")?;
-    let mut file = File::open(&path).with_context(|| format!("opening {}", path.display()))?;
+pub fn current_binary_digest() -> Result<[u8; 32]> {
+    #[cfg(target_os = "linux")]
+    let mut file = File::open("/proc/self/exe").or_else(|_| {
+        let path = std::env::current_exe().context("resolving current KeyHog executable")?;
+        File::open(&path).with_context(|| format!("opening {}", path.display()))
+    })?;
+    #[cfg(not(target_os = "linux"))]
+    let mut file = {
+        let path = std::env::current_exe().context("resolving current KeyHog executable")?;
+        File::open(&path).with_context(|| format!("opening {}", path.display()))?
+    };
     let mut hasher = blake3::Hasher::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
         let read = file
             .read(&mut buffer)
-            .with_context(|| format!("hashing {}", path.display()))?;
+            .context("hashing current executable image")?;
         if read == 0 {
             break;
         }
@@ -369,6 +379,166 @@ fn digest_parts(parts: &[&[u8]]) -> [u8; 32] {
         hasher.update(part);
     }
     *hasher.finalize().as_bytes()
+}
+
+/// Status of installed artifact freshness across all identity dimensions.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ArtifactFreshnessStatus {
+    Fresh,
+    Missing {
+        detail: String,
+    },
+    Stale {
+        dimension: ArtifactIdentityInput,
+        actual: String,
+        expected: String,
+    },
+}
+
+pub fn current_embedded_detector_digest() -> Result<[u8; 32]> {
+    static EMBEDDED_DIGEST: std::sync::LazyLock<Result<[u8; 32], String>> =
+        std::sync::LazyLock::new(|| {
+            let detectors = keyhog_core::load_embedded_detectors_or_fail().map_err(|e| {
+                format!("loading embedded detectors for execution-pack detector digest: {e}")
+            })?;
+            let ir =
+                keyhog_scanner::execution_pack::CanonicalDetectorExecutionIr::compile(&detectors)
+                    .map_err(|e| {
+                    format!("compiling canonical detector execution IR for digest: {e}")
+                })?;
+            Ok(ir.digest())
+        });
+    (*EMBEDDED_DIGEST).clone().map_err(anyhow::Error::msg)
+}
+/// Invalidate installed execution packs and autoroute cache due to an identity change.
+pub fn invalidate_installed_artifacts(reason: &str) -> Result<()> {
+    invalidate_installed_artifacts_at(dirs::cache_dir().as_deref(), reason)
+}
+
+/// Invalidate installed execution packs and autoroute cache under a specific base cache directory.
+pub fn invalidate_installed_artifacts_at(
+    base_cache_dir: Option<&Path>,
+    reason: &str,
+) -> Result<()> {
+    tracing::info!(reason = %reason, "invalidating installed execution-pack artifacts");
+    let cache_dir = match base_cache_dir {
+        Some(dir) => dir.to_path_buf(),
+        None => match dirs::cache_dir() {
+            Some(dir) => dir,
+            None => return Ok(()),
+        },
+    };
+    let directory = cache_dir
+        .join("keyhog")
+        .join("execution-packs")
+        .join("current");
+    if directory.exists() {
+        if let Err(error) = fs::remove_dir_all(&directory) {
+            tracing::warn!(
+                error = %error,
+                "failed to remove stale execution-pack directory {}",
+                directory.display()
+            );
+        }
+    }
+    let autoroute_cache = cache_dir.join("keyhog").join("autoroute.json");
+    if autoroute_cache.exists() {
+        if let Err(error) = fs::remove_file(&autoroute_cache) {
+            tracing::warn!(
+                error = %error,
+                "failed to remove stale autoroute cache {}",
+                autoroute_cache.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Check the freshness of installed artifacts against current binary, target hardware,
+/// cargo features, and detector corpus.
+pub fn check_installed_artifacts_freshness() -> Result<ArtifactFreshnessStatus> {
+    check_installed_artifacts_freshness_at(dirs::cache_dir().as_deref())
+}
+
+/// Check the freshness of installed artifacts under a specific base cache directory.
+pub fn check_installed_artifacts_freshness_at(
+    base_cache_dir: Option<&Path>,
+) -> Result<ArtifactFreshnessStatus> {
+    let cache_dir = match base_cache_dir {
+        Some(dir) => dir.to_path_buf(),
+        None => match dirs::cache_dir() {
+            Some(dir) => dir,
+            None => {
+                return Ok(ArtifactFreshnessStatus::Missing {
+                    detail: "platform cache directory is unavailable".to_string(),
+                })
+            }
+        },
+    };
+    let directory = cache_dir
+        .join("keyhog")
+        .join("execution-packs")
+        .join("current");
+    let manifest_path = directory.join("manifest.json");
+    if !manifest_path.exists() {
+        return Ok(ArtifactFreshnessStatus::Missing {
+            detail: format!("manifest {} does not exist", manifest_path.display()),
+        });
+    }
+    let bytes = match fs::read(&manifest_path) {
+        Ok(b) => b,
+        Err(err) => {
+            return Ok(ArtifactFreshnessStatus::Missing {
+                detail: err.to_string(),
+            })
+        }
+    };
+    let manifest: InstallPackManifest = match serde_json::from_slice(&bytes) {
+        Ok(m) => m,
+        Err(err) => {
+            return Ok(ArtifactFreshnessStatus::Missing {
+                detail: err.to_string(),
+            })
+        }
+    };
+
+    let binary_expected = keyhog_core::hex_encode(&current_binary_digest()?);
+    if manifest.binary_digest != binary_expected {
+        return Ok(ArtifactFreshnessStatus::Stale {
+            dimension: ArtifactIdentityInput::BinaryDigest,
+            actual: manifest.binary_digest,
+            expected: binary_expected,
+        });
+    }
+
+    let target_expected = keyhog_core::hex_encode(&current_target_digest());
+    if manifest.target_digest != target_expected {
+        return Ok(ArtifactFreshnessStatus::Stale {
+            dimension: ArtifactIdentityInput::TargetHardwareDigest,
+            actual: manifest.target_digest,
+            expected: target_expected,
+        });
+    }
+
+    let feature_expected = keyhog_core::hex_encode(&current_feature_digest());
+    if manifest.feature_digest != feature_expected {
+        return Ok(ArtifactFreshnessStatus::Stale {
+            dimension: ArtifactIdentityInput::FeatureDigest,
+            actual: manifest.feature_digest,
+            expected: feature_expected,
+        });
+    }
+
+    let detector_expected = keyhog_core::hex_encode(&current_embedded_detector_digest()?);
+    if manifest.detector_digest != detector_expected {
+        return Ok(ArtifactFreshnessStatus::Stale {
+            dimension: ArtifactIdentityInput::DetectorCorpusDigest,
+            actual: manifest.detector_digest,
+            expected: detector_expected,
+        });
+    }
+
+    Ok(ArtifactFreshnessStatus::Fresh)
 }
 
 pub(crate) fn load_installed_execution_pack(
@@ -490,21 +660,42 @@ fn load_manifest(
     if manifest.packs.is_empty() {
         bail!("execution-pack manifest contains no packs. Fix: run `keyhog install` or `keyhog update`");
     }
+    let embedded_detectors = keyhog_core::load_embedded_detectors_or_fail()
+        .context("loading embedded detectors for execution-pack verification")?;
+    let embedded_ir =
+        keyhog_scanner::execution_pack::CanonicalDetectorExecutionIr::compile(&embedded_detectors)
+            .map_err(anyhow::Error::msg)
+            .context("compiling canonical detector execution IR for verification")?;
+    let expected_detector_digest = keyhog_core::hex_encode(&embedded_ir.digest());
+    let current_binary = keyhog_core::hex_encode(&current_binary_digest()?);
+    let current_target = keyhog_core::hex_encode(&current_target_digest());
+    let current_feature = keyhog_core::hex_encode(&current_feature_digest());
+
     for (name, actual, expected) in [
+        (
+            "detector",
+            manifest.detector_digest.as_str(),
+            expected_detector_digest.as_str(),
+        ),
         (
             "binary",
             manifest.binary_digest.as_str(),
-            keyhog_core::hex_encode(&current_binary_digest()?),
+            current_binary.as_str(),
         ),
         (
             "target",
             manifest.target_digest.as_str(),
-            keyhog_core::hex_encode(&current_target_digest()),
+            current_target.as_str(),
         ),
         (
             "feature",
             manifest.feature_digest.as_str(),
-            keyhog_core::hex_encode(&current_feature_digest()),
+            current_feature.as_str(),
+        ),
+        (
+            "detector",
+            manifest.detector_digest.as_str(),
+            keyhog_core::hex_encode(&current_embedded_detector_digest()?),
         ),
     ] {
         if actual != expected {

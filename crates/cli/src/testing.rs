@@ -420,6 +420,7 @@ pub trait CliTestApi {
     fn watch_resolve_roots(&self, requested: &[PathBuf]) -> Result<Vec<PathBuf>>;
     fn watch_roots_hint(&self, roots: &[PathBuf]) -> String;
 
+    fn install_execution_generation(&self, candidate: &Path) -> Result<bool>;
     fn max_resident_findings(&self) -> usize;
     fn parse_macos_mount_table_for_test(
         &self,
@@ -1157,6 +1158,10 @@ impl CliTestApi for TestApi {
         F: FnOnce(&Path) -> Result<()>,
     {
         crate::installer::install_with_rollback_checked(exe, bytes, verify)
+    }
+    fn install_execution_generation(&self, candidate: &Path) -> Result<bool> {
+        let tx = crate::installer::install_execution_generation(candidate)?;
+        Ok(tx.is_committed())
     }
 
     fn rewrite_detector_braces(&self, s: &str) -> (String, usize) {
