@@ -450,9 +450,9 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 
 | Argument | Value | Default | Description |
 |----------|-------|---------|-------------|
-| `--root` | `ROOT` |  | Filter feed to a specific root path |
-| `--limit` | `LIMIT` | `50` | Maximum number of recent transitions to display (default 50) |
 | `--format` | `FORMAT` | `human` | Output format: `human` or `json` |
+| `--limit` | `LIMIT` | `50` | Maximum number of recent transitions to display (default 50) |
+| `--root` | `ROOT` |  | Filter feed to a specific root path |
 | `--socket` | `PATH` |  | Override the socket path |
 
 ### `keyhog guard help`
