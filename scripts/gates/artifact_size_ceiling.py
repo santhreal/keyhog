@@ -39,13 +39,13 @@ def check_cargo_profiles(cargo_path: pathlib.Path) -> None:
     release = profile.get("release", {})
 
     strip_val = release.get("strip")
-    if strip_val != "symbols":
+    if strip_val != "symbols" and strip_val is not True:
         raise ValueError(
             f"Cargo.toml [profile.release] must specify `strip = \"symbols\"` (got {strip_val!r})"
         )
 
     debug_val = release.get("debug")
-    if debug_val is not False and debug_val != 0:
+    if debug_val is not False and debug_val != 0 and debug_val != "none":
         raise ValueError(
             f"Cargo.toml [profile.release] must specify `debug = false` (got {debug_val!r})"
         )
