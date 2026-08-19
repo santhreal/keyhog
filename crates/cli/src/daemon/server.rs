@@ -842,6 +842,10 @@ fn scrub_guard_roots(
 ) {
     use keyhog_core::guard_state::{GuardRootState, GuardTransition};
     let roots = state.guard.list_roots();
+    let current_root_paths: std::collections::HashSet<_> =
+        roots.iter().map(|r| r.canonical_path.clone()).collect();
+    last_scrub_times.retain(|k, _| current_root_paths.contains(k));
+
     let mut scrubbed = 0;
     let now = std::time::Instant::now();
     for record in roots {
@@ -869,21 +873,21 @@ fn scrub_guard_roots(
 
                 if should_scrub {
                     let path_str = String::from_utf8_lossy(&record.canonical_path);
-                    let _ = state // LAW10: no runtime effect: best-effort transition to Stopped before ReconciliationStarted
-                        .guard
-                        .transition_root(&record.canonical_path, &GuardTransition::Stopped);
                     match state.guard.transition_root(
                         &record.canonical_path,
-                        &GuardTransition::ReconciliationStarted,
+                        &GuardTransition::EventAccepted,
                     ) {
                         Ok(_) => {
-                            tracing::info!("daemon: scrub: re-reconciling root {}", path_str);
+                            tracing::info!(
+                                "daemon: scrub: mark root dirty for re-reconciliation: {}",
+                                path_str
+                            );
                             scrubbed += 1;
                             last_scrub_times.insert(record.canonical_path.clone(), now);
                         }
                         Err(e) => {
                             tracing::warn!(
-                                "daemon: scrub: failed to start reconciliation for {}: {}",
+                                "daemon: scrub: failed to transition root {} to dirty: {}",
                                 path_str,
                                 e
                             );

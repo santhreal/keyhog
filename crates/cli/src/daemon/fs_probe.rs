@@ -16,11 +16,13 @@ use std::path::Path;
 /// when no operator scrub interval is configured.
 pub const DEFAULT_UNAUTHORITATIVE_SCRUB_INTERVAL_SECS: u64 = 60;
 
-/// Environment variable for injecting filesystem authority in tests without root/remote mounts.
-/// Format: `type:authoritative` (e.g. `ext4:authoritative`) or
-/// `type:unauthoritative:reason` (e.g. `nfs:unauthoritative:network filesystem`).
-pub const TEST_FORCE_FS_AUTHORITY_ENV: &str = "KEYHOG_TEST_FORCE_FS_AUTHORITY";
+static TEST_FS_AUTHORITY_OVERRIDE: parking_lot::RwLock<Option<FilesystemAuthority>> =
+    parking_lot::RwLock::new(None);
 
+/// Set or clear in-memory filesystem authority override for tests.
+pub fn set_test_fs_authority_override(auth: Option<FilesystemAuthority>) {
+    *TEST_FS_AUTHORITY_OVERRIDE.write() = auth;
+}
 /// Assess whether a filesystem type string is authoritative for change notifications.
 #[must_use]
 pub fn classify_filesystem_type(fs_type: &str) -> FilesystemAuthority {
@@ -92,14 +94,8 @@ pub fn classify_filesystem_type(fs_type: &str) -> FilesystemAuthority {
 /// Probe the filesystem authority for a given path.
 #[must_use]
 pub fn probe_filesystem_authority(path: &Path) -> FilesystemAuthority {
-    #[cfg(any(test, debug_assertions))]
-    {
-        if let Ok(val) = std::env::var(TEST_FORCE_FS_AUTHORITY_ENV) {
-            // LAW10: test-only environment variable override for deterministic test fixtures
-            if let Some(auth) = parse_test_force_fs_authority(&val) {
-                return auth;
-            }
-        }
+    if let Some(auth) = TEST_FS_AUTHORITY_OVERRIDE.read().as_ref() {
+        return auth.clone();
     }
 
     #[cfg(target_os = "linux")]

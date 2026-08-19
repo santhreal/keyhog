@@ -525,6 +525,7 @@ pub(crate) enum Response {
         watcher_poll_interval_ms: Option<u64>,
         /// Backend route label used for the last scan.
         backend_route_label: String,
+        /// Build identity short digest (first 12 hex chars).
         build_identity_short: String,
         /// Detector digest short (first 12 hex chars).
         detector_digest_short: String,

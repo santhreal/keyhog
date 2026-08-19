@@ -6,8 +6,8 @@
 //! What this does NOT catch: physical block-device corruptions or hardware controller failures.
 
 use keyhog::testing::daemon::fs_probe::{
-    classify_filesystem_type, probe_filesystem_authority,
-    DEFAULT_UNAUTHORITATIVE_SCRUB_INTERVAL_SECS, TEST_FORCE_FS_AUTHORITY_ENV,
+    classify_filesystem_type, probe_filesystem_authority, set_test_fs_authority_override,
+    DEFAULT_UNAUTHORITATIVE_SCRUB_INTERVAL_SECS,
 };
 use keyhog::testing::daemon::guard_runtime::GuardRuntime;
 use keyhog_core::guard_state::{
@@ -110,21 +110,26 @@ fn row_132_unknown_filesystems_fail_closed_to_unauthoritative() {
 }
 
 #[test]
-fn row_132_test_force_fs_authority_env_override() {
+fn row_132_test_force_fs_authority_in_memory_override() {
     let dir = tempdir().expect("tempdir");
 
     // 1. Force authoritative
-    std::env::set_var(TEST_FORCE_FS_AUTHORITY_ENV, "nfs:authoritative");
+    set_test_fs_authority_override(Some(FilesystemAuthority {
+        filesystem_type: "nfs".to_string(),
+        authoritative: true,
+        unauthoritative_reason: None,
+    }));
     let auth = probe_filesystem_authority(dir.path());
     assert_eq!(auth.filesystem_type, "nfs");
     assert!(auth.authoritative);
     assert!(auth.unauthoritative_reason.is_none());
 
     // 2. Force unauthoritative with custom reason
-    std::env::set_var(
-        TEST_FORCE_FS_AUTHORITY_ENV,
-        "ext4:unauthoritative:test-simulated-network-mount",
-    );
+    set_test_fs_authority_override(Some(FilesystemAuthority {
+        filesystem_type: "ext4".to_string(),
+        authoritative: false,
+        unauthoritative_reason: Some("test-simulated-network-mount".to_string()),
+    }));
     let auth = probe_filesystem_authority(dir.path());
     assert_eq!(auth.filesystem_type, "ext4");
     assert!(!auth.authoritative);
@@ -133,13 +138,13 @@ fn row_132_test_force_fs_authority_env_override() {
         Some("test-simulated-network-mount")
     );
 
-    // Clean up env
-    std::env::remove_var(TEST_FORCE_FS_AUTHORITY_ENV);
+    // Clean up override
+    set_test_fs_authority_override(None);
 }
 
 #[test]
 fn row_132_local_path_probe_returns_authoritative_on_standard_mounts() {
-    std::env::remove_var(TEST_FORCE_FS_AUTHORITY_ENV);
+    set_test_fs_authority_override(None);
     let dir = tempdir().expect("tempdir");
     let auth = probe_filesystem_authority(dir.path());
 
