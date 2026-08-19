@@ -142,11 +142,25 @@ impl InstalledArtifactClass {
         }
     }
     pub const fn is_produced_by_installer(self) -> bool {
-        true
+        match self {
+            Self::Manifest => true,
+            Self::VerificationKey => true,
+            Self::ExecutionPack => true,
+            Self::Signature => true,
+            Self::GpuLiteralArtifact => true,
+            Self::AutorouteCalibration => true,
+        }
     }
 
     pub const fn is_consumed_by_scan(self) -> bool {
-        true
+        match self {
+            Self::Manifest => true,
+            Self::VerificationKey => true,
+            Self::ExecutionPack => true,
+            Self::Signature => true,
+            Self::GpuLiteralArtifact => true,
+            Self::AutorouteCalibration => true,
+        }
     }
 }
 

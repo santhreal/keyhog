@@ -324,6 +324,8 @@ pub struct GuardWatcher {
     disconnection_reason: parking_lot::Mutex<Option<String>>,
     /// Directory skip policy for guard event filtering.
     skip_dirs: crate::skip_dirs::SkipDirPolicy,
+    /// Retained sender to prevent premature channel disconnection in null/disabled modes.
+    _hold_tx: Option<mpsc::Sender<notify::Result<notify::Event>>>,
 }
 
 impl GuardWatcher {
@@ -347,6 +349,7 @@ impl GuardWatcher {
             disabled: false,
             disconnection_reason: parking_lot::Mutex::new(None),
             skip_dirs,
+            _hold_tx: None,
         })
     }
 
@@ -374,6 +377,7 @@ impl GuardWatcher {
             disabled: false,
             disconnection_reason: parking_lot::Mutex::new(None),
             skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
+            _hold_tx: None,
         })
     }
 
@@ -390,6 +394,7 @@ impl GuardWatcher {
             disabled: true,
             disconnection_reason: parking_lot::Mutex::new(None),
             skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
+            _hold_tx: None,
         })
     }
 
@@ -397,7 +402,7 @@ impl GuardWatcher {
     /// still works via commit transactions; it just loses advisory
     /// filesystem events.
     pub fn new_disabled() -> Self {
-        let (_tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+        let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
         Self {
             watcher: None,
             backend_kind: GuardWatcherBackendKind::Disabled,
@@ -408,6 +413,7 @@ impl GuardWatcher {
             disabled: true,
             disconnection_reason: parking_lot::Mutex::new(None),
             skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
+            _hold_tx: Some(tx),
         }
     }
 
@@ -427,6 +433,7 @@ impl GuardWatcher {
             disabled: false,
             disconnection_reason: parking_lot::Mutex::new(None),
             skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
+            _hold_tx: None,
         }
     }
     /// Create a guard watcher connected to a custom event channel.
@@ -446,6 +453,7 @@ impl GuardWatcher {
                 disabled: false,
                 disconnection_reason: parking_lot::Mutex::new(None),
                 skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
+                _hold_tx: None,
             },
             tx,
         )
