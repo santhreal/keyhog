@@ -206,6 +206,8 @@ pub trait CliTestApi {
     fn format_backend_probe_mb_metric(&self, value: Option<u64>) -> String;
     fn find_config_file(&self, start: Option<&Path>) -> Option<PathBuf>;
     fn apply_config_file_quiet(&self, args: &mut ScanArgs);
+    fn parse_config_file_from_str(&self, raw: &str) -> std::result::Result<(), String>;
+    fn parse_guard_section_from_str(&self, raw: &str) -> std::result::Result<(), String>;
     fn build_sources(
         &self,
         args: &ScanArgs,
@@ -702,6 +704,16 @@ impl CliTestApi for TestApi {
     }
     fn apply_config_file_quiet(&self, args: &mut ScanArgs) {
         let _outcome = crate::config::apply_config_file_quiet(args);
+    }
+    fn parse_config_file_from_str(&self, raw: &str) -> std::result::Result<(), String> {
+        toml::from_str::<crate::config::schema::ConfigFile>(raw)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    fn parse_guard_section_from_str(&self, raw: &str) -> std::result::Result<(), String> {
+        toml::from_str::<crate::config::schema::GuardSection>(raw)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
     fn build_sources(
         &self,
