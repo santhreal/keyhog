@@ -77,7 +77,8 @@ pub mod retry;
 mod safe_bin;
 mod source;
 mod spec;
-mod state_file;
+/// Bounded reads and atomic durable writes for on-disk KeyHog state artifacts.
+pub mod state_file;
 /// Shared paired performance statistics used by release gates and routing evidence.
 pub mod timing;
 /// Versioned redacted triage contracts and derived feedback artifacts.

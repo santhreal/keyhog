@@ -505,5 +505,5 @@ fn flatten_shards(index: &MerkleIndex) -> HashMap<CacheKey, CacheEntry> {
 }
 
 fn persist_atomically(path: &Path, serialized: &[u8]) -> std::io::Result<()> {
-    state_file::write_atomically(path, MERKLE_TMP_PREFIX, serialized)
+    state_file::write_atomically_with_prefix(path, MERKLE_TMP_PREFIX, serialized)
 }
