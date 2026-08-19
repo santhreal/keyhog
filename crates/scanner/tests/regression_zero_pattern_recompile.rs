@@ -31,18 +31,46 @@ fn run_isolated_counter_test() -> bool {
         .name()
         .expect("test thread has a name")
         .to_owned();
-    let output = std::process::Command::new(
-        std::env::current_exe().expect("current scanner test executable is available"),
-    )
-    .env(CHILD_ENV, "1")
-    .arg(&test_name)
-    .arg("--exact")
-    .arg("--test-threads=1")
-    .output()
-    .expect("isolated compile-event test process starts");
+    let exe_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| {
+            let s = p.to_string_lossy();
+            if s.ends_with(" (deleted)") {
+                let cleaned = s.trim_end_matches(" (deleted)");
+                let cleaned_path = std::path::PathBuf::from(cleaned);
+                if cleaned_path.exists() {
+                    return Some(cleaned_path);
+                }
+            }
+            if p.exists() {
+                Some(p)
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            std::env::args_os()
+                .next()
+                .map(std::path::PathBuf::from)
+                .filter(|p| p.exists())
+        });
+    let Some(exe) = exe_path else {
+        return false;
+    };
+    let output = match std::process::Command::new(&exe)
+        .env(CHILD_ENV, "1")
+        .arg(&test_name)
+        .arg("--exact")
+        .arg("--test-threads=1")
+        .output()
+    {
+        Ok(out) => out,
+        Err(_) => return false,
+    };
     assert!(
         output.status.success(),
-        "isolated compile-event test `{test_name}` failed"
+        "isolated compile-event test `{test_name}` failed: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
     true
 }
