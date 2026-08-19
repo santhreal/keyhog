@@ -46,7 +46,6 @@ fn test_tempdir() -> TempDir {
 struct TestEnv {
     dir: TempDir,
     store_path: PathBuf,
-    config_path: PathBuf,
     socket_path: PathBuf,
 }
 
@@ -63,7 +62,6 @@ impl TestEnv {
         Self {
             dir,
             store_path,
-            config_path,
             socket_path,
         }
     }

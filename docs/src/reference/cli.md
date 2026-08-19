@@ -482,7 +482,7 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 
 | Argument | Value | Default | Description |
 |----------|-------|---------|-------------|
-| `<ROOT>` *(required)* | `ROOT` |  | Root path to inspect |
+| `[ROOT]` | `ROOT` |  | Root path to inspect (optional; inspects all roots when omitted) |
 | `--format` | `FORMAT` | `human` | Output format: `human` or `json` |
 | `--socket` | `PATH` |  | Override the socket path |
 
