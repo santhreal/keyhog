@@ -294,14 +294,26 @@ pub(crate) fn installed_execution_pack_directory() -> Result<PathBuf> {
 }
 
 pub(crate) fn current_binary_digest() -> Result<[u8; 32]> {
-    let path = std::env::current_exe().context("resolving current KeyHog executable")?;
-    let mut file = File::open(&path).with_context(|| format!("opening {}", path.display()))?;
+    #[cfg(target_os = "linux")]
+    let mut file = File::open("/proc/self/exe")
+        .or_else(|_| {
+            let path = std::env::current_exe()?;
+            File::open(&path)
+        })
+        .context("opening current KeyHog executable for binary digest computation")?;
+
+    #[cfg(not(target_os = "linux"))]
+    let mut file = {
+        let path = std::env::current_exe().context("resolving current KeyHog executable")?;
+        File::open(&path).with_context(|| format!("opening {}", path.display()))?
+    };
+
     let mut hasher = blake3::Hasher::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
         let read = file
             .read(&mut buffer)
-            .with_context(|| format!("hashing {}", path.display()))?;
+            .context("hashing current executable")?;
         if read == 0 {
             break;
         }
@@ -360,6 +372,27 @@ pub(crate) fn current_feature_digest() -> [u8; 32] {
         },
         env!("CARGO_PKG_VERSION").as_bytes(),
     ])
+}
+
+static EMBEDDED_DETECTOR_DIGEST: std::sync::LazyLock<Result<String, String>> =
+    std::sync::LazyLock::new(|| {
+        let embedded_detectors = keyhog_core::load_embedded_detectors_or_fail()
+            .context("loading embedded detectors for execution-pack verification")
+            .map_err(|e| format!("{e:#}"))?;
+        let embedded_ir = keyhog_scanner::execution_pack::CanonicalDetectorExecutionIr::compile(
+            &embedded_detectors,
+        )
+        .map_err(anyhow::Error::msg)
+        .context("compiling canonical detector execution IR for verification")
+        .map_err(|e| format!("{e:#}"))?;
+        Ok(keyhog_core::hex_encode(&embedded_ir.digest()))
+    });
+
+pub(crate) fn current_embedded_detector_digest() -> Result<&'static str> {
+    EMBEDDED_DETECTOR_DIGEST
+        .as_ref()
+        .map(|s| s.as_str())
+        .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 fn digest_parts(parts: &[&[u8]]) -> [u8; 32] {
@@ -490,13 +523,7 @@ fn load_manifest(
     if manifest.packs.is_empty() {
         bail!("execution-pack manifest contains no packs. Fix: run `keyhog install` or `keyhog update`");
     }
-    let embedded_detectors = keyhog_core::load_embedded_detectors_or_fail()
-        .context("loading embedded detectors for execution-pack verification")?;
-    let embedded_ir =
-        keyhog_scanner::execution_pack::CanonicalDetectorExecutionIr::compile(&embedded_detectors)
-            .map_err(anyhow::Error::msg)
-            .context("compiling canonical detector execution IR for verification")?;
-    let expected_detector_digest = keyhog_core::hex_encode(&embedded_ir.digest());
+    let expected_detector_digest = current_embedded_detector_digest()?;
     let current_binary = keyhog_core::hex_encode(&current_binary_digest()?);
     let current_target = keyhog_core::hex_encode(&current_target_digest());
     let current_feature = keyhog_core::hex_encode(&current_feature_digest());
@@ -505,7 +532,7 @@ fn load_manifest(
         (
             "detector",
             manifest.detector_digest.as_str(),
-            expected_detector_digest.as_str(),
+            expected_detector_digest,
         ),
         (
             "binary",

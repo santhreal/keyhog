@@ -1088,6 +1088,14 @@ impl CompiledScanner {
         if scan_deadline_expired(deadline) {
             return Ok(Vec::new());
         }
+        if let Some(materialized) = self.selected_backend() {
+            if materialized != selected_backend {
+                return Err(crate::error::ScanError::BackendPlanMismatch {
+                    materialized: materialized.label(),
+                    requested: selected_backend.label(),
+                });
+            }
+        }
         // Direct-match prefilters: skip chunks that carry none of any
         // detector's literal bytes (`AlphabetScreen`) or bigrams (bloom). A
         // FULLY-ENCODED secret carries none of those - its plaintext prefix

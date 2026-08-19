@@ -120,8 +120,6 @@ fn small_compilers_install_and_scan_invariants() {
     let profile_json: serde_json::Value =
         serde_json::from_str(&profile_content).expect("parse profile json");
 
-    let monitored_surfaces = ["EntropyPolicy", "AssignmentKeywordMatcher", "DetectorPlan"];
-
     let compile_records = profile_json
         .get("compile_surfaces")
         .and_then(|v| v.as_array())
@@ -130,6 +128,16 @@ fn small_compilers_install_and_scan_invariants() {
         !compile_records.is_empty(),
         "compile_surfaces must not be empty"
     );
+
+    for monitored in ["EntropyPolicy", "AssignmentKeywordMatcher", "DetectorPlan"] {
+        let found = compile_records.iter().any(|r| {
+            r.get("name")
+                .or_else(|| r.get("surface"))
+                .and_then(|s| s.as_str())
+                == Some(monitored)
+        });
+        assert!(found, "monitored surface {monitored} must be reported");
+    }
 
     for record in compile_records {
         let surface = record

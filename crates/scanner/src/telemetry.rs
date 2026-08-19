@@ -443,6 +443,8 @@ pub fn with_scan_telemetry<R>(telemetry: &Arc<ScanTelemetry>, f: impl FnOnce() -
     f()
 }
 
+/// Return the active scan telemetry handle: the thread's current scope when one
+/// is entered, otherwise the shared process-wide default.
 pub fn current_scan_telemetry() -> Arc<ScanTelemetry> {
     CURRENT_SCAN_TELEMETRY.with(|slot| {
         if let Some(current) = &*slot.borrow() {
