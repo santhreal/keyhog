@@ -887,6 +887,7 @@ async fn run_status_online(
                 }
 
                 let mut views = Vec::with_capacity(roots.len());
+                let mut had_retrieval_failure = false;
                 for entry in &roots {
                     let req = Request::GuardStatus {
                         root: entry.root.clone(),

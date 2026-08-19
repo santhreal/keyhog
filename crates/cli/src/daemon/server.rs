@@ -1137,6 +1137,7 @@ pub fn guard_event_action_with_policy(
             Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
                 coverage_lost: true,
             },
+            Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
             Some(GuardRootState::Degraded) => GuardEventAction::Ignore,
             _ => GuardEventAction::Transition(GuardTransition::CoverageLost),
         }
@@ -2736,6 +2737,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             let bytes_hit = txn.bytes_hit;
             let terminal_state =
                 guard_commit_terminal_state(txn.blocking_findings_count, txn.coverage_gaps);
+            let identity = state.guard.root_policy_identity(txn.repo_path.as_bytes());
             let commit_root = match std::fs::canonicalize(&txn.repo_path) {
                 Ok(p) => p,
                 Err(_) => std::path::PathBuf::from(&txn.repo_path),
@@ -2997,6 +2999,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 } else {
                     0
                 };
+                let root_policy = state.guard.root_policy_identity(root.as_bytes());
                 Response::GuardStatusResult {
                     root: root.clone(),
                     mode: record.mode.label().to_string(),
