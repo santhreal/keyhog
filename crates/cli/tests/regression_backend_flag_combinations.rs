@@ -61,6 +61,21 @@ fn no_gpu_with_cpu_backends_is_accepted_at_parse_time() {
         );
     }
 }
+#[test]
+fn no_gpu_with_require_gpu_is_rejected_at_parse_time() {
+    let args = ["keyhog", "scan", "--no-gpu", "--require-gpu", "."];
+    let result = keyhog::args::try_parse_from(args);
+    assert!(
+        result.is_err(),
+        "--no-gpu with --require-gpu must be rejected at parse time"
+    );
+    let err = result.err().expect("must be error").to_string();
+    assert!(
+        err.contains("--no-gpu") && err.contains("--require-gpu"),
+        "error must name both conflicting flags: got: {}",
+        err
+    );
+}
 
 #[cfg(not(target_os = "macos"))]
 #[test]
