@@ -93,3 +93,23 @@ fn anchored_crlf_and_case_flags_mirror_the_two_branch_base_compile() {
         "case-insensitive anchored verifier mirrors crlf(true): dot excludes CR"
     );
 }
+
+#[test]
+fn anchored_regex_compilation_ticks_compile_event_counter() {
+    let ar = AnchoredRegex::new("KHTEST_[A-Z0-9]{12}", false);
+    let before_get = crate::types::lazy_regex_compile_events();
+    let _ = ar.get();
+    let after_get = crate::types::lazy_regex_compile_events();
+    assert!(
+        after_get >= before_get + 1,
+        "AnchoredRegex::get must tick lazy_regex_compile_events on cold compilation"
+    );
+
+    let before_ctx = crate::types::lazy_regex_compile_events();
+    let _ = ar.get_with_left_context();
+    let after_ctx = crate::types::lazy_regex_compile_events();
+    assert!(
+        after_ctx >= before_ctx + 1,
+        "AnchoredRegex::get_with_left_context must tick lazy_regex_compile_events on cold compilation"
+    );
+}

@@ -71,6 +71,11 @@ static REGEX_DFA_LIMIT_OVERRIDE: std::sync::atomic::AtomicUsize =
 static LAZY_REGEX_COMPILE_EVENTS: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
+#[inline]
+pub(crate) fn record_lazy_regex_compile() {
+    LAZY_REGEX_COMPILE_EVENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Snapshot of [`LAZY_REGEX_COMPILE_EVENTS`]: how many `LazyRegex` first-use
 /// compilations have happened process-wide so far. The zero-recompile regression
 /// gate snapshots this around repeated scans to prove steady-state scanning
@@ -445,7 +450,7 @@ impl LazyRegex {
                 // Cold-cache miss: this `LazyRegex` is compiling for the first
                 // time. Record it so the zero-recompile gate can prove that the
                 // scan hot path triggers none of these after warm-up.
-                LAZY_REGEX_COMPILE_EVENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                record_lazy_regex_compile();
                 let built = if self.state.case_insensitive {
                     crate::compiler::compiler_compile::shared_regex(&self.state.src)
                 } else if self.state.crlf {
