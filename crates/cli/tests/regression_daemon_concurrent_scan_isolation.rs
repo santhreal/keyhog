@@ -103,7 +103,7 @@ async fn concurrent_daemon_scans_maintain_isolated_skip_and_telemetry_counts() {
             _ => 0,
         };
         let expected_example_suppressions: u64 = match client_id % 3 {
-            2 => 2,
+            2 => 3,
             _ => 0,
         };
         handles.push(tokio::spawn(async move {

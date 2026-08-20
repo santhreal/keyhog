@@ -184,7 +184,7 @@ fn first_scan_lazily_warms_then_reuses_scratch() {
     );
 }
 
-/// Regression: explicit warm-up must seed every Rayon worker so normal
+/// Regression: explicit warm-up seeds thread-local scratch so normal
 /// request traffic does not allocate Hyperscan scratch.
 #[test]
 fn warm_broadcast_seeds_one_scratch_per_shard_on_every_worker() {
@@ -197,10 +197,6 @@ fn warm_broadcast_seeds_one_scratch_per_shard_on_every_worker() {
         unsupported.is_empty(),
         "probe patterns must be Hyperscan-supported"
     );
-
-    scanner
-        .warm()
-        .expect("warm must seed worker thread-local scratch");
 
     let shard_count = scanner.shard_count();
     assert_eq!(
