@@ -96,7 +96,11 @@ pub fn validate_and_tighten_matcher_artifact_cache_dir(
     let uid = current_uid();
     let temp_root = std::env::temp_dir();
     let tmp_user_dir = temp_root.join(format!("keyhog-cache-{uid}"));
-    if !(path.starts_with(&home) || path.starts_with(&tmp_user_dir)) {
+    let cache_dir = dirs::cache_dir();
+    if !(path.starts_with(&home)
+        || path.starts_with(&tmp_user_dir)
+        || cache_dir.as_ref().map_or(false, |c| path.starts_with(c)))
+    {
         return Err(format!(
             "matcher-artifact cache dir must be under {} or {}; configure with --matcher-cache <DIR>",
             home.display(),
@@ -763,7 +767,8 @@ pub fn store_matcher_artifact(
     if sections.backend != expected_backend {
         return Err("matcher artifact backend does not match identity".to_owned());
     }
-    validate_and_tighten_matcher_artifact_cache_dir(cache_dir, true)?;
+    let created_cache_dir = !cache_dir.exists();
+    validate_matcher_artifact_cache_dir(cache_dir)?;
     std::fs::create_dir_all(cache_dir).map_err(|error| {
         format!(
             "cannot create matcher-artifact cache dir {}: {error}",
@@ -771,7 +776,7 @@ pub fn store_matcher_artifact(
         )
     })?;
     #[cfg(unix)]
-    {
+    if created_cache_dir {
         use std::os::unix::fs::PermissionsExt;
         if let Ok(meta) = std::fs::symlink_metadata(cache_dir) {
             // LAW10: best-effort permissions check on newly created cache dir; failure surfaced if chmod fails

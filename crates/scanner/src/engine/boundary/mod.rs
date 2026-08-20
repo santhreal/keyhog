@@ -223,14 +223,9 @@ fn scan_one_pair(
     // boundaries since `Chunk.data` is `&str`-shaped (we splice bytes back into
     // a String below). For unbounded active generators, use the whole adjacent
     // pair and scan the synthetic buffer as one unit below.
-    let context_bytes = match context {
-        BoundaryContextBytes::Bounded(bytes) => bytes,
-        BoundaryContextBytes::FullAdjacentChunks => {
-            if a_bytes.len() > MAX_BOUNDARY_SEAM_BYTES || b_bytes.len() > MAX_BOUNDARY_SEAM_BYTES {
-                crate::telemetry::record_boundary_seam_truncation();
-            }
-            MAX_BOUNDARY_SEAM_BYTES
-        }
+    let (context_bytes, is_unbounded_context) = match context {
+        BoundaryContextBytes::Bounded(bytes) => (bytes, false),
+        BoundaryContextBytes::FullAdjacentChunks => (MAX_BOUNDARY_SEAM_BYTES, true),
     };
     let tail_start = a_bytes.len().saturating_sub(context_bytes);
     let tail_start = floor_char_boundary(a.data.as_ref(), tail_start);
@@ -239,6 +234,19 @@ fn scan_one_pair(
     let head_end = b_bytes.len().min(context_bytes);
     let head_end = floor_char_boundary(b.data.as_ref(), head_end);
     let head = &b.data.as_ref()[..head_end];
+    if is_unbounded_context {
+        let trimmed_a = tail_start > 0;
+        let trimmed_b = head_end < b_bytes.len();
+        if trimmed_a || trimmed_b {
+            let a_has_unbounded_candidate =
+                trimmed_a && memchr::memmem::find(&a_bytes[..tail_start], b"-----BEGIN").is_some();
+            let b_has_unbounded_candidate =
+                trimmed_b && memchr::memmem::find(&b_bytes[head_end..], b"-----END").is_some();
+            if a_has_unbounded_candidate || b_has_unbounded_candidate {
+                crate::telemetry::record_boundary_seam_truncation();
+            }
+        }
+    }
 
     if tail.is_empty() || head.is_empty() {
         return Ok(());

@@ -1037,6 +1037,9 @@ impl Runtime {
         parent_slot: Option<usize>,
         worker_id: u64,
     ) -> (Option<SpanTrace>, Option<usize>) {
+        if !self.inner.session_recording {
+            return (None, None);
+        }
         let stack_slot = ACTIVE_SPANS.with(|stack| stack.borrow().iter().position(Option::is_none));
         let Some(stack_slot) = stack_slot else {
             self.inner
