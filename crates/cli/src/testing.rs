@@ -145,6 +145,7 @@ pub trait CliTestApi {
     fn parse_dedup_scope(&self, s: &str) -> Option<crate::args::CliDedupScope>;
 
     fn format_gpu_summary(&self) -> String;
+    fn build_benchmark_chunk(&self, index: usize) -> keyhog_core::Chunk;
     fn build_benchmark_corpus(&self) -> Vec<keyhog_core::Chunk>;
     fn write_banner(&self, colors: bool, detector_count: usize) -> std::io::Result<Vec<u8>>;
     fn format_gpu_max_buffer(&self, max_buffer_mb: u64) -> String;
@@ -558,6 +559,9 @@ impl CliTestApi for TestApi {
 
     fn format_gpu_summary(&self) -> String {
         crate::benchmark::format_gpu_summary()
+    }
+    fn build_benchmark_chunk(&self, index: usize) -> keyhog_core::Chunk {
+        crate::benchmark::build_benchmark_chunk(index)
     }
     fn build_benchmark_corpus(&self) -> Vec<keyhog_core::Chunk> {
         crate::benchmark::build_benchmark_corpus()
