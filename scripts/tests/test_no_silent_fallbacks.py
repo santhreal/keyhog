@@ -85,6 +85,7 @@ class NoSilentFallbacksRatchetTests(unittest.TestCase):
         doc = nsf.__doc__ or ""
         m = re.search(r"(\d+)\s+audited violations", doc)
         self.assertIsNotNone(m, "docstring must state the audited violations count")
+        self.assertEqual(int(m.group(1)), len(nsf.load_baseline()))
     def test_cli_update_baseline_refuses_growth_with_names(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             test_baseline = pathlib.Path(td) / "silent_fallback_baseline.txt"

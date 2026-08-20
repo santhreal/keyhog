@@ -56,7 +56,7 @@ fn collect_detector_signatures(detectors: &[DetectorSpec]) -> std::collections::
 /// misspelled or missing detector IDs instead of treating them as configuration.
 fn filter_disabled_detectors(
     detectors: &mut Vec<DetectorSpec>,
-    disabled_detectors: &std::collections::HashSet<String>,
+    disabled_detectors: &mut std::collections::HashSet<String>,
 ) -> usize {
     let known_ids: std::collections::HashSet<String> = detectors
         .iter()
@@ -103,6 +103,7 @@ fn filter_disabled_detectors(
             .detector_relations
             .retain(|relation| !removed.contains(&relation.detector_id));
     }
+    disabled_detectors.extend(removed);
     before - detectors.len()
 }
 
@@ -1017,10 +1018,10 @@ fn setup_default_scan_runtime_with_rayon_policy(
 
     // Apply `[detector.<id>] enabled = false`: drop the disabled detectors before
     // compilation so they never fire (mirrors `ScanOrchestrator::new`).
-    let disabled_detectors = effective_config.disabled_detectors.clone();
+    let mut disabled_detectors = effective_config.disabled_detectors.clone();
     if !disabled_detectors.is_empty() {
         let before = detectors.len();
-        filter_disabled_detectors(&mut detectors, &disabled_detectors);
+        filter_disabled_detectors(&mut detectors, &mut disabled_detectors);
         if detectors.is_empty() && before > 0 {
             anyhow::bail!(
                 "all {before} loaded detector(s) were disabled by .keyhog.toml \
@@ -1535,9 +1536,10 @@ impl ScanOrchestrator {
         // Apply `[detector.<id>] enabled = false` from .keyhog.toml: drop the
         // disabled detectors from the corpus so they never compile or fire.
         // (Previously this config key was parsed and silently ignored.)
+        let mut disabled_detectors = effective_config.disabled_detectors.clone();
         if !disabled_detectors.is_empty() {
             let before = detectors.len();
-            let dropped = filter_disabled_detectors(&mut detectors, &disabled_detectors);
+            let dropped = filter_disabled_detectors(&mut detectors, &mut disabled_detectors);
             if dropped > 0 {
                 if detectors.is_empty() {
                     let mut disabled_ids: Vec<&str> =

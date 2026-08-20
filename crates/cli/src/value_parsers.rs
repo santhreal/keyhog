@@ -356,6 +356,18 @@ pub(crate) fn parse_decode_size_limit(s: &str) -> Result<usize, String> {
     Ok(size)
 }
 
+/// `--window-overlap SIZE`: must be a valid byte size in `[1KB, 16MB]`.
+pub(crate) fn parse_window_overlap(s: &str) -> Result<usize, String> {
+    let bytes = parse_byte_size(s)?;
+    if !(1024..=16 * 1024 * 1024).contains(&bytes) {
+        return Err(out_of_range(
+            "window overlap must be between 1KB and 16MB",
+            "128KB",
+        ));
+    }
+    Ok(bytes)
+}
+
 /// Parse a clap value enum, including aliases, without allocating a normalized
 /// copy of already canonical input.
 fn parse_value_enum<T: ValueEnum>(value: &str) -> Option<T> {

@@ -68,12 +68,39 @@ def check_binary_sizes() -> None:
 
 
 def self_test() -> int:
+    import tempfile
+
+    with tempfile.NamedTemporaryFile("w+", suffix=".toml") as tmp:
+        tmp.write('[profile.release]\npanic = "unwind"\n')
+        tmp.flush()
+        try:
+            check_cargo_profiles(pathlib.Path(tmp.name))
+            raise AssertionError("self_test failed: missing strip must be caught")
+        except ValueError:
+            pass
+
+    with tempfile.NamedTemporaryFile("w+", suffix=".toml") as tmp:
+        tmp.write('[profile.release]\nstrip = "symbols"\npanic = "abort"\n')
+        tmp.flush()
+        try:
+            check_cargo_profiles(pathlib.Path(tmp.name))
+            raise AssertionError("self_test failed: panic != unwind must be caught")
+        except ValueError:
+            pass
+
     check_cargo_profiles(CARGO_TOML)
     check_binary_sizes()
+    print("Artifact size ceiling self-test passed.")
     return 0
 
 
 def main(argv: list[str]) -> int:
+    if "--self-test" in argv:
+        try:
+            return self_test()
+        except Exception as e:
+            print(f"Artifact size ceiling self-test failed: {e}", file=sys.stderr)
+            return 1
     try:
         check_cargo_profiles(CARGO_TOML)
         check_binary_sizes()
@@ -82,7 +109,6 @@ def main(argv: list[str]) -> int:
     except Exception as e:
         print(f"Artifact size ceiling gate failed: {e}", file=sys.stderr)
         return 1
-
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
