@@ -426,6 +426,14 @@ pub(crate) fn build_sources(
             if let Some(idx) = merkle.as_ref() {
                 fs_source = fs_source.with_merkle_skip(idx.clone());
             }
+            if resolved.window_overlap > 0
+                && resolved.window_overlap < keyhog_core::DEFAULT_WINDOW_SIZE_BYTES
+            {
+                fs_source = fs_source.with_window_config(
+                    keyhog_core::DEFAULT_WINDOW_SIZE_BYTES,
+                    resolved.window_overlap,
+                );
+            }
             #[cfg(feature = "binary")]
             if args.binary {
                 sources.push(Box::new(
