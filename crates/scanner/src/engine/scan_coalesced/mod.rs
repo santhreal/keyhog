@@ -142,7 +142,10 @@ impl CompiledScanner {
         #[cfg(not(feature = "gpu"))] _recover_gpu_dispatch_faults: bool,
     ) -> crate::error::Result<super::CoalescedScanOutcome> {
         if let Some(materialized) = self.selected_backend() {
-            if (materialized.is_gpu() || backend.is_gpu()) && materialized != backend {
+            let compatible = materialized == backend
+                || (materialized == crate::hw_probe::ScanBackend::SimdCpu
+                    && backend == crate::hw_probe::ScanBackend::CpuFallback);
+            if !compatible {
                 return Err(crate::error::ScanError::BackendPlanMismatch {
                     materialized: materialized.label(),
                     requested: backend.label(),

@@ -45,6 +45,9 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
             match keyhog_scanner::validate_and_tighten_matcher_artifact_cache_dir(&path, true) {
                 Ok(()) => Ok(Some(path)),
                 Err(error) => {
+                    keyhog_scanner::set_matcher_artifact_cache_disable_reason(
+                        keyhog_scanner::MatcherArtifactCacheDisableReason::UnusableLocation,
+                    );
                     tracing::warn!(
                         error = %error,
                         path = %path.display(),
@@ -59,6 +62,9 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
             }
         }
         Err(error) => {
+            keyhog_scanner::set_matcher_artifact_cache_disable_reason(
+                keyhog_scanner::MatcherArtifactCacheDisableReason::UnusableLocation,
+            );
             tracing::warn!(
                 error = %error,
                 "matcher-artifact cache unusable: no default cache location"

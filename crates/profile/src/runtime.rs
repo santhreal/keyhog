@@ -2407,7 +2407,7 @@ impl Drop for AsyncSpan {
                 self_ns: elapsed_ns,
                 blocked: false,
                 serial: false,
-                outermost: true,
+                outermost: SPAN_DEPTH.with(|d| d.get() == 0),
             },
         );
         if let Some(trace) = self.trace {
@@ -2656,7 +2656,7 @@ impl DecisionTimer {
                         self_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
                         blocked: false,
                         serial: false,
-                        outermost: true,
+                        outermost: false,
                     },
                 );
             }
