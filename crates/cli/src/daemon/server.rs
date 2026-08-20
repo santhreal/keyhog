@@ -2030,6 +2030,7 @@ async fn handle_connection(
                         .to_string(),
                 };
                 let _ = state.record_backend_recovery(recovery); // LAW10: fault recording during panic recovery; no effect on scan findings
+                mass_session = None;
                 Response::Error {
                     message: "daemon: internal panic during request (isolated by catch_unwind)"
                         .to_string(),
