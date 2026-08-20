@@ -183,16 +183,6 @@ def validate_publish_tiers(
     return failures
 
 
-def validate_canonical_licenses(repo: Path) -> list[str]:
-    """Validate that repository root license files exist and are regular files."""
-    failures: list[str] = []
-    for name in LICENSE_NAMES:
-        path = repo / name
-        if not path.is_file():
-            failures.append(f"canonical repository license file missing: {path}")
-    return failures
-
-
 def canonical_licenses(repo: Path) -> dict[str, bytes]:
     payloads: dict[str, bytes] = {}
     for name in LICENSE_NAMES:
@@ -201,6 +191,7 @@ def canonical_licenses(repo: Path) -> dict[str, bytes]:
             raise ValueError(f"missing canonical license: {path}")
         payloads[name] = path.read_bytes()
     return payloads
+
 
 def verify_crate_roots(
     repo: Path, packages: list[Package], canonical: dict[str, bytes]
@@ -335,16 +326,11 @@ def main(argv: list[str]) -> int:
                 f"{len(args.publish_tier)} dependency-ordered tiers"
             )
             return 0
-        canonical_failures = validate_canonical_licenses(REPO)
-        if canonical_failures:
-            print("Package license verification failed:", file=sys.stderr)
-            for failure in canonical_failures:
-                print(f"- {failure}", file=sys.stderr)
-            return 1
         canonical = canonical_licenses(REPO)
     except (OSError, tomllib.TOMLDecodeError, ValueError) as error:
         print(f"package license gate could not load repository metadata: {error}", file=sys.stderr)
         return 1
+
     failures = verify_crate_roots(REPO, packages, canonical)
     checked_archives: set[str] = set()
     for raw_archive in args.archives:

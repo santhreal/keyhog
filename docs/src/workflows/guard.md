@@ -312,49 +312,6 @@ Future commit transactions matching all four elements skip payload re-scanning
 and return an instant cache hit. If a file is renamed, moved across source roles,
 or an alias is added, the attestation is invalidated. Persisted policy identity
 records contain no plaintext staged paths.
-## Guard configuration
-
-The guard runtime resolves settings from the `[guard]` table in `.keyhog.toml`:
-
-```toml
-[guard]
-# Periodic scrub interval for `current` roots (e.g. "5m", "24h").
-# Default: disabled.
-# scrub_interval = "5m"
-
-# Durable redb state database path (default: disabled, ephemeral memory).
-# state_path = "~/.local/state/keyhog/guard.redb"
-
-# Memory budget ceiling for hot clean attestation index (default: "64MB").
-# hot_index_memory = "64MB"
-
-# Maximum queued filesystem events per root before degraded status (default: 8192).
-# max_pending_events_per_root = 8192
-
-# Event coalescing window before applying state transitions (default: "100ms").
-# coalesce_window = "100ms"
-
-# Scanner idle timeout before reporting `idle-unload` residency (default: "5m").
-# scanner_idle_timeout = "5m"
-
-# Maximum files scanned during one subtree reconciliation (default: 10000).
-# subtree_max_files = 10000
-
-# Maximum directory depth during subtree reconciliation (default: 64).
-# subtree_max_depth = 64
-```
-
-| Setting | Type | Default | Description |
-|---|---|---|---|
-| `scrub_interval` | string | disabled | Periodic re-scan interval for `current` roots (e.g. `5m`, `24h`). Catches changes that filesystem events missed. |
-| `state_path` | string | disabled | Durable guard state path (e.g. `~/.local/state/keyhog/guard.redb`). Persists root records and attestations across daemon restarts. Ignored in lockdown mode (guard operates in ephemeral memory). |
-| `hot_index_memory` | string | 64MB | Hot clean attestation index memory budget (e.g. `64MB`). |
-| `max_pending_events_per_root` | integer | 8192 | Maximum queued filesystem events per root before degraded status. |
-| `coalesce_window` | string | 100ms | Event coalescing window before applying state transitions. |
-| `scanner_idle_timeout` | string | 5m | Scanner idle-unload timeout. After this duration without guard activity, residency reports `idle-unload`. |
-| `subtree_max_files` | integer | 10000 | Maximum files for one subtree reconciliation. |
-| `subtree_max_depth` | integer | 64 | Maximum depth for one subtree reconciliation. |
-
 ## Durable state persistence
 
 By default, guard state is held in daemon memory. To persist root registrations
@@ -386,23 +343,11 @@ repositories:
 scrub_interval = "24h"
 ```
 
-Scrubbing detects modifications made outside standard kernel filesystem events (such as
+Scrubbing detects modifications made outside standard filesystem events (such as
 NFS mounts, container volume mutations, or out-of-band Git object manipulation).
-
-### Unauthoritative filesystems
-
-When registering a root, KeyHog automatically probes the backing filesystem type.
-Local filesystems (such as `ext4`, `btrfs`, `xfs`, `apfs`, and `ntfs`) generate kernel change
-events reliably and are classified as authoritative.
-
-Network filesystems (`nfs`, `cifs`/`smb`, `9p`, `afs`, `ceph`), userspace/virtual filesystems
-(`fuse`, `overlay`), and unrecognized filesystem types do not reliably generate real-time local
-kernel notifications. When an unauthoritative filesystem is registered and no operator
-`scrub_interval` is configured, KeyHog enforces a default 60-second periodic scrub interval
-to guarantee that remote modifications are caught.
-
-When the scrub interval elapses, each `current` root automatically transitions to
+When the interval elapses, each `current` root automatically transitions to
 `indexing` for a full reconciliation.
+
 ## Recovering corrupted roots
 
 If a repository's durable state becomes corrupt or desynchronized, rebuild it:

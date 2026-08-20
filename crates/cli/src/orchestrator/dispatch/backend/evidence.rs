@@ -1257,8 +1257,8 @@ impl AutorouteDecision {
                 render_measured_route(measured_daemon),
             ));
         }
-        let expected_one_shot = reconciled_one_shot.unwrap_or(expected_one_shot); // LAW10: unreachable branch guarded above by is_none() Err check; calibration-route resolution
-        let expected_daemon = reconciled_daemon.unwrap_or(expected_daemon); // LAW10: unreachable branch guarded above by is_none() Err check; calibration-route resolution
+        let expected_one_shot = reconciled_one_shot.unwrap_or(expected_one_shot);
+        let expected_daemon = reconciled_daemon.unwrap_or(expected_daemon);
         for (runtime_label, persistent_runtime, expected_route) in [
             ("one-shot", false, expected_one_shot),
             ("daemon", true, expected_daemon),

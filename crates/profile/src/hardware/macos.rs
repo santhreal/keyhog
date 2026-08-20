@@ -228,7 +228,12 @@ pub(super) fn frequency_availability() -> Evidence<HardwareFieldSourceV2> {
 pub(super) fn capture_topology() -> TopologyEvidenceV2 {
     let logical_cpus = sysctl_u64(b"hw.ncpu\0")
         .and_then(|value| u32::try_from(value).ok())
-        .unwrap_or_else(crate::host_parallelism::logical_cpus);
+        .or_else(|| {
+            std::thread::available_parallelism()
+                .ok()
+                .map(|count| count.get() as u32)
+        })
+        .unwrap_or(1);
     let sysctl_u32 = |name: &'static [u8]| {
         sysctl_u64(name)
             .and_then(|value| u32::try_from(value).ok())

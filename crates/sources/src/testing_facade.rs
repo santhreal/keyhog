@@ -188,14 +188,11 @@ pub mod testing {
             let _event = crate::record_skip_events(crate::SourceSkipEvent::OverMaxSize, delta);
         }
 
-        pub fn bump_skipped_binary(&self, delta: usize) {
-            let _event = crate::record_skip_events(crate::SourceSkipEvent::Binary, delta);
-        }
-
         pub fn bump_git_object_unreadable(&self, delta: usize) {
             let _event =
                 crate::record_skip_events(crate::SourceSkipEvent::GitObjectUnreadable, delta);
         }
+
         pub fn read_stdin_test_input_with_limit(
             &self,
             input: &[u8],

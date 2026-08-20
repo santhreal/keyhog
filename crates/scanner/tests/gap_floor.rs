@@ -40,6 +40,10 @@ mod checksum_github;
 mod checksum_gitlab_npm_slack_stripe;
 #[path = "gap/compact_keyword_eq_and_ends_with_exact.rs"]
 mod compact_keyword_eq_and_ends_with_exact;
+#[path = "gap/compiler_inline_tests_in_src.rs"]
+mod compiler_inline_tests_in_src;
+#[path = "gap/compiler_prefix_inline_tests_in_src.rs"]
+mod compiler_prefix_inline_tests_in_src;
 #[path = "gap/compiler_prefix_tuning_thresholds_exact.rs"]
 mod compiler_prefix_tuning_thresholds_exact;
 #[path = "gap/confidence_calibration_uncalibrated_passthrough.rs"]
@@ -52,6 +56,8 @@ mod contains_evasion_single_owner_classification;
 mod context_cfg_test_attribute_marks_test_code;
 #[path = "gap/context_example_suffix_ascii_ci.rs"]
 mod context_example_suffix_ascii_ci;
+#[path = "gap/context_false_positive_inline_tests_in_src.rs"]
+mod context_false_positive_inline_tests_in_src;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]
 mod context_sequential_placeholder_strips_prefix;
 #[path = "gap/context_tokio_async_fn_test_body_is_test_code.rs"]
@@ -94,6 +100,8 @@ mod entropy_candidate_owned_by_named_assignment_composition_exact;
 mod entropy_keyword_anchor_lazy_lowercase;
 #[path = "gap/entropy_keyword_only_requires_keyword_line.rs"]
 mod entropy_keyword_only_requires_keyword_line;
+#[path = "gap/entropy_keywords_inline_tests_in_src.rs"]
+mod entropy_keywords_inline_tests_in_src;
 #[path = "gap/entropy_unique_byte_count_dedup.rs"]
 mod entropy_unique_byte_count_dedup;
 #[path = "gap/entropy_universal_rejection_rules_exact.rs"]
@@ -128,6 +136,9 @@ mod hcl_identifier_single_owner;
 mod homoglyph_expand_exact_and_reserved;
 #[path = "gap/hot_loop_deadline_cadence_single_owner.rs"]
 mod hot_loop_deadline_cadence_single_owner;
+#[allow(dead_code)]
+#[path = "gap/inline_gate.rs"]
+mod inline_gate;
 #[path = "gap/io_uring_kernel_version_gate_exact.rs"]
 mod io_uring_kernel_version_gate_exact;
 #[path = "gap/is_likely_concatenation_fragment_exact.rs"]
@@ -161,8 +172,13 @@ mod multiline_structural_template_resolve;
 mod nightly_exports_all_strict_env_vars;
 #[path = "gap/nightly_matrix_has_fourteen_runner_binaries.rs"]
 mod nightly_matrix_has_fourteen_runner_binaries;
+#[path = "gap/no_cwd_relative_source_reads.rs"]
+mod no_cwd_relative_source_reads;
 #[path = "gap/no_suppress_test_fixtures_clears_generic_fallback_haircut.rs"]
 mod no_suppress_test_fixtures_clears_generic_fallback_haircut;
+// KH-1308: folder-contract gate must run through gap_floor/all_tests.
+#[path = "gap/no_inline_tests_in_src.rs"]
+mod no_inline_tests_in_src;
 #[path = "gap/normalized_assignment_keyword_is_credential_exact.rs"]
 mod normalized_assignment_keyword_is_credential_exact;
 #[path = "gap/npm_checksum_token_structure.rs"]

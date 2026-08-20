@@ -13,8 +13,8 @@
 //! dispatch function talks to when a guard request arrives.
 
 use keyhog_core::guard_state::{
-    FilesystemAuthority, FilesystemIdentity, GitCleanAttestation, GitHashAlgorithm,
-    GuardPolicyIdentity, GuardRootMode, GuardRootRecord, GuardRootState, GuardTransition,
+    FilesystemIdentity, GitCleanAttestation, GitHashAlgorithm, GuardPolicyIdentity, GuardRootMode,
+    GuardRootRecord, GuardRootState, GuardTransition,
 };
 use keyhog_core::guard_store::{HotAttestationIndex, RootRegistry};
 use keyhog_core::RawMatch;
@@ -105,10 +105,6 @@ pub struct GuardRuntime {
     /// Roots that observed watcher overflow (lost events) while Indexing.
     /// Baseline completion must end Degraded rather than Current/Dirty.
     coverage_lost_during_indexing: parking_lot::Mutex<std::collections::HashSet<Vec<u8>>>,
-    /// Named reason if the watcher backend disconnected.
-    watcher_disconnection_reason: parking_lot::RwLock<Option<String>>,
-    /// Explicit watcher status description ("watching", "unmonitored", "disconnected: ...", etc.).
-    watcher_status: parking_lot::RwLock<Option<String>>,
 }
 
 /// Default scanner idle timeout in seconds (5 minutes).
@@ -132,8 +128,6 @@ impl GuardRuntime {
             scanner_idle_timeout_secs: Mutex::new(DEFAULT_SCANNER_IDLE_TIMEOUT_SECS),
             dirty_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
             coverage_lost_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
-            watcher_disconnection_reason: parking_lot::RwLock::new(None),
-            watcher_status: parking_lot::RwLock::new(None),
         }
     }
 
@@ -149,8 +143,6 @@ impl GuardRuntime {
             scanner_idle_timeout_secs: Mutex::new(DEFAULT_SCANNER_IDLE_TIMEOUT_SECS),
             dirty_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
             coverage_lost_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
-            watcher_disconnection_reason: parking_lot::RwLock::new(None),
-            watcher_status: parking_lot::RwLock::new(None),
         }
     }
 
@@ -202,7 +194,6 @@ impl GuardRuntime {
         &self,
         canonical_path: Vec<u8>,
         filesystem_identity: FilesystemIdentity,
-        filesystem_authority: FilesystemAuthority,
         mode: GuardRootMode,
     ) -> Result<GuardRootRecord, String> {
         let mut roots = self.roots.write();
@@ -212,12 +203,7 @@ impl GuardRuntime {
                 String::from_utf8_lossy(&canonical_path)
             ));
         }
-        let record = roots.register(
-            canonical_path,
-            filesystem_identity,
-            filesystem_authority,
-            mode,
-        );
+        let record = roots.register(canonical_path, filesystem_identity, mode);
         self.touch_activity();
         Ok(record)
     }
@@ -620,33 +606,6 @@ impl GuardRuntime {
         } else {
             "idle-unload"
         }
-    }
-
-    /// Record that the watcher backend disconnected with a named reason.
-    pub fn record_watcher_disconnection(&self, reason: impl Into<String>) {
-        let reason_str = reason.into();
-        *self.watcher_disconnection_reason.write() = Some(reason_str.clone());
-        *self.watcher_status.write() = Some(format!("disconnected: {}", reason_str));
-    }
-
-    /// Reason why the watcher backend disconnected, if any.
-    pub fn watcher_disconnection_reason(&self) -> Option<String> {
-        self.watcher_disconnection_reason.read().clone()
-    }
-
-    /// Whether the watcher backend is disconnected.
-    pub fn is_watcher_disconnected(&self) -> bool {
-        self.watcher_disconnection_reason.read().is_some()
-    }
-
-    /// Set the explicit watcher status label/description.
-    pub fn set_watcher_status(&self, status: impl Into<String>) {
-        *self.watcher_status.write() = Some(status.into());
-    }
-
-    /// Get the watcher status label/description.
-    pub fn watcher_status(&self) -> Option<String> {
-        self.watcher_status.read().clone()
     }
 }
 

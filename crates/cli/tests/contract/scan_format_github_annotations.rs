@@ -104,9 +104,7 @@ fn partial_scan_emits_github_coverage_warning() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("::warning title=keyhog coverage::partial scan coverage:")
-            && stdout.contains(
-                "exceeded a configured size cap (--max-file-size or the matching --limit-*-bytes)=1"
-            ),
+            && stdout.contains("exceeded a configured size cap (--max-file-size or the matching --limit-*-bytes)=1"),
         "GitHub annotations must surface partial coverage in the job log: {stdout:?}"
     );
 }

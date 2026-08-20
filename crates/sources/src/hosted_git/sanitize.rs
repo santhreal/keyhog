@@ -59,7 +59,6 @@ pub(crate) fn redact_with(
     let (Some(url_cred), Some(auth_header), Some(token_pat)) = (url_cred, auth_header, token_pat)
     else {
         REDACTION_COMPILE_FAILURES.fetch_add(1, Ordering::Relaxed);
-        keyhog_profile::add_counter(keyhog_profile::CounterId::StructuredParseFailures, 1);
         eprintln!(
             "keyhog: SECURITY - a git-error credential-redaction regex failed to \
              compile; refusing to surface raw git stderr"

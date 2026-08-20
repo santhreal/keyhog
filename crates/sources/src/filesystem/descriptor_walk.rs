@@ -83,7 +83,6 @@ fn open_child_directory(parent: &File, name: &OsString) -> std::io::Result<File>
             "filesystem path component contains a NUL byte",
         )
     })?;
-    // SAFETY: parent is a valid directory file descriptor, and name is a null-terminated C string.
     let fd = unsafe {
         libc::openat(
             parent.as_raw_fd(),
@@ -98,7 +97,6 @@ fn open_child_directory(parent: &File, name: &OsString) -> std::io::Result<File>
     if fd < 0 {
         return Err(std::io::Error::last_os_error());
     }
-    // SAFETY: fd is non-negative and newly opened by openat.
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 

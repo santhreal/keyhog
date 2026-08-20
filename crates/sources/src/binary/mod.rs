@@ -133,10 +133,6 @@ impl BinarySource {
             BinaryAnalysisOutcome::Degraded(degradation) => {
                 self.report_analysis_degradation(&degradation);
                 GHIDRA_DEGRADED_TO_STRINGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                keyhog_profile::add_counter(
-                    keyhog_profile::CounterId::BinaryGhidraDegradedToStrings,
-                    1,
-                );
                 Ok(self.strings_chunks())
             }
         }
@@ -201,7 +197,6 @@ impl BinarySource {
                 );
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                 BINARY_UNREADABLE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                keyhog_profile::add_counter(keyhog_profile::CounterId::BinaryUnreadable, 1);
                 return vec![Err(SourceError::Other(format!(
                     "failed to scan binary {}: cannot read file ({error}); it was not scanned for secrets",
                     self.path.display()

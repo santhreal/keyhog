@@ -79,14 +79,13 @@ pub(crate) mod assignment_keywords;
 pub mod aws;
 /// Secret-safe candidate producer and pattern provenance.
 pub(crate) mod candidate_provenance;
-/// Detector compilation into high-performance matching structures.
-pub mod capability_ledger;
 /// Service-specific credential checksum validation (GitHub, npm, Slack, etc.).
 pub mod checksum;
 /// Candidate-bounded source-code semantic roles.
 pub(crate) mod code_semantics;
 /// Compiled scanner construction and lifecycle implementation.
 mod compiled_scanner;
+/// Detector compilation into high-performance matching structures.
 pub(crate) mod compiler;
 /// Heuristic and ML-based confidence scoring for candidate matches.
 pub mod confidence;
@@ -115,7 +114,7 @@ pub(crate) mod detector_plan;
 /// Candidate-bounded documentation, roff, and shell semantic roles.
 pub(crate) mod documentation_semantics;
 /// Core scan execution engine.
-pub mod engine;
+pub(crate) mod engine;
 /// Shannon entropy analysis for secret detection.
 pub mod entropy;
 /// Tier-B per-family generic-detector entropy-floor calibration table.
@@ -171,7 +170,7 @@ pub(crate) mod segment_attribution;
 /// strings (file paths, commit SHAs).
 pub(crate) mod static_intern;
 /// Shared types for the scanner engine.
-pub mod types;
+pub(crate) mod types;
 
 // Internal modules.
 pub(crate) mod adjudicate;
@@ -262,7 +261,6 @@ pub(crate) mod simd;
 #[cfg(feature = "simdsieve")]
 mod simdsieve_prefilter;
 
-pub mod cache_eviction;
 pub(crate) mod shared_regexes;
 
 pub use api::*;
@@ -298,18 +296,6 @@ pub fn validate_matcher_artifact_cache_dir(
     path: &std::path::Path,
 ) -> std::result::Result<(), String> {
     matcher_artifact_cache::validate_matcher_artifact_cache_dir(path)
-}
-pub use cache_eviction::{
-    collect_stale_lock_files, evict_cache_dir_with_policy, reconcile_all_cache_kinds,
-    EvictionReport,
-};
-
-/// Validate a MatcherArtifact cache directory with optional auto-tightening for default locations.
-pub fn validate_and_tighten_matcher_artifact_cache_dir(
-    path: &std::path::Path,
-    auto_tighten: bool,
-) -> std::result::Result<(), String> {
-    matcher_artifact_cache::validate_and_tighten_matcher_artifact_cache_dir(path, auto_tighten)
 }
 
 /// True when `detector_id` names the pure-entropy fallback family (`"entropy"`

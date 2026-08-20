@@ -110,13 +110,27 @@ def resolve_keyhog_binary(explicit: str | None = None) -> str | None:
     """Canonical keyhog-binary locator shared by the bench AND the gate tests
     (recall matrix, backend-parity) so there is ONE resolution order, not
     several that drift: explicit arg / `KEYHOG_BIN` env, else the freshly-built
-    release binary resolved dynamically from `CARGO_TARGET_DIR` / host cargo
-    config / repo target. Returns None if no real binary exists (callers fail LOUDLY
+    release binary, else a `release`/`release-fast` binary in either known cargo
+    target dir. Returns None if no real binary exists (callers fail LOUDLY 
     never silently treat 'no binary' as 'no findings')."""
+    import pathlib as _pl
+    # An explicit arg / KEYHOG_BIN is honored unconditionally: the operator
+    # pointed at a specific binary, so a missing one must fail LOUDLY at exec 
+    # never be silently swapped for the freshly-built or archive binary (Law 10).
     cand = explicit or os.environ.get("KEYHOG_BIN")
     if cand:
         return cand
-    return _freshly_built_keyhog()
+    fresh = _freshly_built_keyhog()
+    if fresh:
+        return fresh
+    for base in ("/mnt/FlareTraining/santh-archive/cargo-target",
+                 str(_REPO_ROOT / "target")):
+        for profile in ("release", "release-fast"):
+            p = _pl.Path(base) / profile / "keyhog"
+            if p.exists():
+                return str(p)
+    return None
+
 
 def _normalize_keyhog(data: object) -> list[Finding]:
     if isinstance(data, list):
