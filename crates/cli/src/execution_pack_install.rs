@@ -24,7 +24,6 @@ pub enum ArtifactIdentityInput {
     TargetHardwareDigest,
     FeatureDigest,
     DetectorCorpusDigest,
-    ConfigDigest,
     SigningKeyIdentity,
     GpuDeviceIdentity,
 }
@@ -35,7 +34,6 @@ impl ArtifactIdentityInput {
         Self::TargetHardwareDigest,
         Self::FeatureDigest,
         Self::DetectorCorpusDigest,
-        Self::ConfigDigest,
         Self::SigningKeyIdentity,
         Self::GpuDeviceIdentity,
     ];
@@ -46,7 +44,6 @@ impl ArtifactIdentityInput {
             Self::TargetHardwareDigest => "target hardware digest",
             Self::FeatureDigest => "feature digest",
             Self::DetectorCorpusDigest => "detector corpus digest",
-            Self::ConfigDigest => "config digest",
             Self::SigningKeyIdentity => "signing key identity",
             Self::GpuDeviceIdentity => "GPU device identity",
         }
@@ -364,8 +361,19 @@ pub(crate) fn installed_execution_pack_directory() -> Result<PathBuf> {
 }
 
 pub fn current_binary_digest() -> Result<[u8; 32]> {
-    let path = std::env::current_exe().context("resolving current KeyHog executable")?;
-    let mut file = File::open(&path).with_context(|| format!("opening {}", path.display()))?;
+    #[cfg(target_os = "linux")]
+    let mut file = File::open("/proc/self/exe")
+        .or_else(|_| {
+            let path = std::env::current_exe()?;
+            File::open(&path)
+        })
+        .context("opening current executable image")?;
+
+    #[cfg(not(target_os = "linux"))]
+    let mut file = {
+        let path = std::env::current_exe().context("resolving current KeyHog executable")?;
+        File::open(&path).with_context(|| format!("opening {}", path.display()))?
+    };
     let mut hasher = blake3::Hasher::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
