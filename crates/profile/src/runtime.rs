@@ -1282,8 +1282,8 @@ impl Runtime {
                 Ordering::Relaxed,
             );
             // Every non-blocked stage carries its self-time (exclusive elapsed time) in attributed_ns.
-            // Blocked wait is never attributed execution.
-            if !outcome.blocked {
+            // Blocked wait and container stages are never attributed execution.
+            if !outcome.blocked && !stage.is_container() {
                 shard.attributed_ns[index].fetch_add(self_ns, Ordering::Relaxed);
                 shard.legacy_attributed_ns[index].fetch_add(self_ns, Ordering::Relaxed);
             }
@@ -1298,23 +1298,26 @@ impl Runtime {
             }
             // Worker occupancy is computed from self-time: a worker is credited once
             // for each nanosecond it actually spends executing or waiting in blocked state.
-            if outcome.outermost {
-                shard.top_level_calls.fetch_add(1, Ordering::Relaxed);
-            }
-            if outcome.blocked {
-                shard
-                    .top_level_blocked_ns
-                    .fetch_add(self_ns, Ordering::Relaxed);
-            } else {
-                shard
-                    .top_level_busy_ns
-                    .fetch_add(self_ns, Ordering::Relaxed);
+            // Container stages wrapping multi-threaded pipelines do not add to worker occupancy.
+            if !stage.is_container() {
+                if outcome.outermost {
+                    shard.top_level_calls.fetch_add(1, Ordering::Relaxed);
+                }
+                if outcome.blocked {
+                    shard
+                        .top_level_blocked_ns
+                        .fetch_add(self_ns, Ordering::Relaxed);
+                } else {
+                    shard
+                        .top_level_busy_ns
+                        .fetch_add(self_ns, Ordering::Relaxed);
+                }
             }
             return;
         }
         self.inner.elapsed_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
         self.inner.calls[index].fetch_add(1, Ordering::Relaxed);
-        if !outcome.blocked {
+        if !outcome.blocked && !stage.is_container() {
             self.inner.attributed_ns[index].fetch_add(self_ns, Ordering::Relaxed);
         }
     }

@@ -165,11 +165,19 @@ fn row_104_109_dynamic_stage_sweep_preserves_self_time_invariant() {
             "stage {:?} must have non-zero elapsed_ns",
             m.stage
         );
-        assert!(
-            m.attributed_ns > 0,
-            "stage {:?} must have non-zero attributed_ns for leaf execution",
-            m.stage
-        );
+        if !m.stage.is_container() {
+            assert!(
+                m.attributed_ns > 0,
+                "stage {:?} must have non-zero attributed_ns for leaf execution",
+                m.stage
+            );
+        } else {
+            assert_eq!(
+                m.attributed_ns, 0,
+                "container stage {:?} must have zero attributed_ns",
+                m.stage
+            );
+        }
         assert!(
             m.attributed_ns <= m.elapsed_ns,
             "stage {:?} attributed_ns ({}) must not exceed elapsed_ns ({})",
