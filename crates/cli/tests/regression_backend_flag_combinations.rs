@@ -81,3 +81,50 @@ fn metal_backend_on_non_macos_is_rejected_before_scan() {
         );
     }
 }
+#[test]
+fn require_gpu_with_auto_and_gpu_backends_is_accepted_at_parse_time() {
+    let accepted_backends = ["auto", "gpu-wgpu", "gpu-wgpu-region-presence"];
+    for &backend in &accepted_backends {
+        let args = ["keyhog", "scan", "--backend", backend, "--require-gpu", "."];
+        let result = keyhog::args::try_parse_from(args);
+        assert!(
+            result.is_ok(),
+            "--backend {} with --require-gpu should parse successfully: {:?}",
+            backend,
+            result.err()
+        );
+    }
+}
+
+#[test]
+fn require_gpu_with_explicit_non_gpu_backends_is_rejected_at_parse_time() {
+    let non_gpu_backends = ["cpu", "simd-regex"];
+    for &backend in &non_gpu_backends {
+        let args = ["keyhog", "scan", "--backend", backend, "--require-gpu", "."];
+        let result = keyhog::args::try_parse_from(args);
+        assert!(
+            result.is_err(),
+            "--backend {} with --require-gpu must be rejected at parse time",
+            backend
+        );
+        let err = result.err().expect("must be error").to_string();
+        assert!(
+            err.contains("--require-gpu") && err.contains("--backend"),
+            "error must name both conflicting flags: got: {}",
+            err
+        );
+    }
+}
+
+#[test]
+fn require_gpu_with_no_gpu_is_rejected_at_parse_time() {
+    let args = ["keyhog", "scan", "--require-gpu", "--no-gpu", "."];
+    let result = keyhog::args::try_parse_from(args);
+    assert!(result.is_err());
+    let err = result.err().expect("must be error").to_string();
+    assert!(
+        err.contains("--no-gpu") && err.contains("--require-gpu"),
+        "error must name both conflicting flags: got: {}",
+        err
+    );
+}

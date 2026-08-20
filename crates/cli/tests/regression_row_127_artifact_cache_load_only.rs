@@ -299,3 +299,41 @@ fn disabled_detector_and_its_dependent_produce_no_findings_under_prepared_pack()
         "disabling required detector `razorpay-key-secret` must silence both it and its dependent `razorpay-key-id`; stdout:\n{stdout_disabled}"
     );
 }
+
+#[test]
+fn scan_succeeds_when_local_detectors_folder_exists_by_loading_prepared_pack() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+
+    let cache_home = temp_dir.path().join("cache");
+    let (_pack_root, _output_dir) = clone_prepared_installation(&cache_home);
+
+    // Create a local `detectors/` folder in cwd that would be discovered by auto_discover_detectors
+    let detectors_dir = temp_dir.path().join("detectors");
+    fs::create_dir_all(&detectors_dir).expect("create detectors dir");
+
+    let scan_file = temp_dir.path().join("sample.txt");
+    fs::write(&scan_file, "sample payload for load only scan\n").expect("write scan file");
+
+    let scan_output = Command::new(env!("CARGO_BIN_EXE_keyhog"))
+        .current_dir(temp_dir.path())
+        .arg("scan")
+        .arg("--daemon=off")
+        .arg(&scan_file)
+        .env("XDG_CACHE_HOME", &cache_home)
+        .env("HOME", temp_dir.path())
+        .output()
+        .expect("run scan command");
+
+    assert_eq!(
+        scan_output.status.code(),
+        Some(EXIT_SUCCESS as i32),
+        "scan must succeed when local detectors folder exists by using prepared pack; stderr:\n{}",
+        String::from_utf8_lossy(&scan_output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&scan_output.stderr);
+    assert!(
+        stderr.contains("cache detector-plans: hit"),
+        "cache summary for detector-plans must report 'hit' under prepared pack; stderr:\n{stderr}"
+    );
+}

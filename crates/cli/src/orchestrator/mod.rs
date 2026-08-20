@@ -1397,7 +1397,7 @@ impl ScanOrchestrator {
         };
         let (mut loaded_corpus, detector_execution_pack) = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorLoad);
-            if !detectors_path.exists() && requested_detector_mode.is_none() {
+            if !args.detectors_cli_explicit && requested_detector_mode.is_none() {
                 let policy = execution_pack_policy_for_args(&args);
                 let installed = match effective_config.backend_override {
                     Some(backend) => {

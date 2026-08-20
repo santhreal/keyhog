@@ -263,7 +263,8 @@ pub(crate) fn validate_backend_and_gpu_flags(
                 format!("error: the argument '--no-gpu' cannot be used with '--backend {b}'\n"),
             ));
         }
-        if require_gpu && !is_gpu {
+        let b_normalized = b.trim().to_ascii_lowercase();
+        if require_gpu && !is_gpu && b_normalized != "auto" {
             return Err(clap::Error::raw(
                 clap::error::ErrorKind::ArgumentConflict,
                 format!(
