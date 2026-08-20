@@ -10,67 +10,81 @@
 use keyhog_core::Chunk;
 use keyhog_scanner::CompiledScanner;
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::cell::Cell;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 struct ScanCountingAllocator;
 
-thread_local! {
-    static COUNTING: Cell<bool> = const { Cell::new(false) };
-    static ALLOC_COUNT: Cell<usize> = const { Cell::new(0) };
-    static TOTAL_BYTES: Cell<usize> = const { Cell::new(0) };
-    static CURRENT_BYTES: Cell<usize> = const { Cell::new(0) };
-    static PEAK_BYTES: Cell<usize> = const { Cell::new(0) };
-}
+static COUNTING: AtomicBool = AtomicBool::new(false);
+static ALLOC_COUNT: AtomicUsize = AtomicUsize::new(0);
+static TOTAL_BYTES: AtomicUsize = AtomicUsize::new(0);
+static CURRENT_BYTES: AtomicUsize = AtomicUsize::new(0);
+static PEAK_BYTES: AtomicUsize = AtomicUsize::new(0);
 
 unsafe impl GlobalAlloc for ScanCountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let size = layout.size();
-        COUNTING.with(|counting| {
-            if counting.get() {
-                ALLOC_COUNT.set(ALLOC_COUNT.get() + 1);
-                TOTAL_BYTES.set(TOTAL_BYTES.get() + size);
-                let cur = CURRENT_BYTES.get() + size;
-                CURRENT_BYTES.set(cur);
-                if cur > PEAK_BYTES.get() {
-                    PEAK_BYTES.set(cur);
+        let ptr = unsafe { System.alloc(layout) };
+        if !ptr.is_null() && COUNTING.load(Ordering::Relaxed) {
+            ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
+            TOTAL_BYTES.fetch_add(size, Ordering::Relaxed);
+            let prev = CURRENT_BYTES.fetch_add(size, Ordering::Relaxed);
+            let cur = prev + size;
+            let mut peak = PEAK_BYTES.load(Ordering::Relaxed);
+            while cur > peak {
+                match PEAK_BYTES.compare_exchange_weak(
+                    peak,
+                    cur,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => break,
+                    Err(actual) => peak = actual,
                 }
             }
-        });
-        unsafe { System.alloc(layout) }
+        }
+        ptr
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let size = layout.size();
-        COUNTING.with(|counting| {
-            if counting.get() {
-                let cur = CURRENT_BYTES.get();
-                CURRENT_BYTES.set(cur.saturating_sub(size));
-            }
-        });
-        unsafe { System.dealloc(ptr, layout) }
+        unsafe { System.dealloc(ptr, layout) };
+        if COUNTING.load(Ordering::Relaxed) {
+            let _ = CURRENT_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
+                Some(cur.saturating_sub(size))
+            });
+        }
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         let old_size = layout.size();
-        COUNTING.with(|counting| {
-            if counting.get() {
-                ALLOC_COUNT.set(ALLOC_COUNT.get() + 1);
-                if new_size > old_size {
-                    let diff = new_size - old_size;
-                    TOTAL_BYTES.set(TOTAL_BYTES.get() + diff);
-                    let cur = CURRENT_BYTES.get() + diff;
-                    CURRENT_BYTES.set(cur);
-                    if cur > PEAK_BYTES.get() {
-                        PEAK_BYTES.set(cur);
+        let new_ptr = unsafe { System.realloc(ptr, layout, new_size) };
+        if !new_ptr.is_null() && COUNTING.load(Ordering::Relaxed) {
+            ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
+            if new_size > old_size {
+                let diff = new_size - old_size;
+                TOTAL_BYTES.fetch_add(diff, Ordering::Relaxed);
+                let prev = CURRENT_BYTES.fetch_add(diff, Ordering::Relaxed);
+                let cur = prev + diff;
+                let mut peak = PEAK_BYTES.load(Ordering::Relaxed);
+                while cur > peak {
+                    match PEAK_BYTES.compare_exchange_weak(
+                        peak,
+                        cur,
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    ) {
+                        Ok(_) => break,
+                        Err(actual) => peak = actual,
                     }
-                } else if old_size > new_size {
-                    let diff = old_size - new_size;
-                    let cur = CURRENT_BYTES.get();
-                    CURRENT_BYTES.set(cur.saturating_sub(diff));
                 }
+            } else if old_size > new_size {
+                let diff = old_size - new_size;
+                let _ = CURRENT_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
+                    Some(cur.saturating_sub(diff))
+                });
             }
-        });
-        unsafe { System.realloc(ptr, layout, new_size) }
+        }
+        new_ptr
     }
 }
 
@@ -78,20 +92,20 @@ unsafe impl GlobalAlloc for ScanCountingAllocator {
 static ALLOCATOR: ScanCountingAllocator = ScanCountingAllocator;
 
 fn reset_instrument() {
-    ALLOC_COUNT.set(0);
-    TOTAL_BYTES.set(0);
-    CURRENT_BYTES.set(0);
-    PEAK_BYTES.set(0);
+    ALLOC_COUNT.store(0, Ordering::SeqCst);
+    TOTAL_BYTES.store(0, Ordering::SeqCst);
+    CURRENT_BYTES.store(0, Ordering::SeqCst);
+    PEAK_BYTES.store(0, Ordering::SeqCst);
 }
 
 fn measure_scan<T>(f: impl FnOnce() -> T) -> (T, usize, usize, usize) {
     reset_instrument();
-    COUNTING.set(true);
+    COUNTING.store(true, Ordering::SeqCst);
     let res = f();
-    COUNTING.set(false);
-    let count = ALLOC_COUNT.get();
-    let total = TOTAL_BYTES.get();
-    let peak = PEAK_BYTES.get();
+    COUNTING.store(false, Ordering::SeqCst);
+    let count = ALLOC_COUNT.load(Ordering::SeqCst);
+    let total = TOTAL_BYTES.load(Ordering::SeqCst);
+    let peak = PEAK_BYTES.load(Ordering::SeqCst);
     (res, count, total, peak)
 }
 
