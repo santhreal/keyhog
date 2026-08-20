@@ -264,24 +264,24 @@ fn fresh_installation_yields_scan_with_zero_runtime_compilations() {
     let compile_records = profile_json
         .get("compile_surfaces")
         .and_then(|v| v.as_array())
-        .expect("compile_surfaces array must be present in profile JSON");
+        .expect("profile json must contain compile_surfaces array");
     assert!(
         !compile_records.is_empty(),
-        "compile_surfaces array must not be empty"
+        "compile_surfaces array in profile json must not be empty"
     );
     for record in compile_records {
         let surface = record
             .get("name")
             .or_else(|| record.get("surface"))
             .and_then(|s| s.as_str())
-            .unwrap_or_default();
+            .unwrap_or("unknown");
         let runtime_compiles = record
             .get("runtime_compiles")
             .and_then(|c| c.as_u64())
             .unwrap_or(0);
         assert_eq!(
             runtime_compiles, 0,
-            "Scan phase must have ZERO compile surface invocations for surface {surface}; found runtime_compiles={runtime_compiles}"
+            "Scan path must have ZERO runtime compiles for surface {surface}; found {runtime_compiles}"
         );
     }
 }
