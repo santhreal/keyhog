@@ -92,18 +92,41 @@ def generate_daemon_corpus(path: pathlib.Path, size: int = DAEMON_CORPUS_BYTES) 
     return digest.hexdigest()
 
 
-def _index_results(path: pathlib.Path) -> dict[str, Any]:
-    """Index KeyHog result rows by configuration ID."""
+def _index_results(path: pathlib.Path) -> tuple[dict[str, Any], list[Any]]:
+    """Index KeyHog result rows by configuration ID and collect accuracy rows."""
     rows = load_results(path)
     selected: dict[str, Any] = {}
+    accuracy_candidates: list[Any] = []
     for row in rows:
         if row.scanner.name != "keyhog":
             continue
+        cname = row.corpus.name or ""
         config_id = row.scanner.config_id
-        if config_id in selected:
-            raise MatrixError(f"{path}: duplicate KeyHog config {config_id!r}")
-        selected[config_id] = row
-    return selected
+        if config_id == "simd-nocache-nodaemon-full" and not cname.startswith("daemon"):
+            accuracy_candidates.append(row)
+        if cname == "mirror" or not cname or cname not in ("homefield",):
+            if config_id in selected:
+                if row.corpus.name == "mirror":
+                    selected[config_id] = row
+            else:
+                selected[config_id] = row
+        elif config_id not in selected:
+            selected[config_id] = row
+
+    def _acc_sort_key(r: Any) -> tuple[int, str]:
+        name = r.corpus.name or ""
+        return (0 if name == "mirror" else 1, name)
+
+    accuracy_candidates.sort(key=_acc_sort_key)
+    seen_corpora: set[str] = set()
+    deduped_accuracy: list[Any] = []
+    for r in accuracy_candidates:
+        name = r.corpus.name or ""
+        if name not in seen_corpora:
+            seen_corpora.add(name)
+            deduped_accuracy.append(r)
+
+    return selected, deduped_accuracy
 
 
 def _select(index: dict[str, Any], required: set[str], label: str) -> list[Any]:
@@ -180,8 +203,8 @@ def capture_snapshot(
     """Reduce raw matrix runs to the exact rows used by README panels."""
     if source_state not in {"clean", "developer-dirty"}:
         raise MatrixError("source state must be clean or developer-dirty")
-    config_index = _index_results(config_results)
-    daemon_index = _index_results(daemon_results)
+    config_index, accuracy_rows_results = _index_results(config_results)
+    daemon_index, _ = _index_results(daemon_results)
     config_rows = _select(config_index, REQUIRED_CONFIGS, "configuration")
     daemon_rows = _select(daemon_index, set(DAEMON_CONFIGS), "daemon")
     _assert_common_identity(config_rows, daemon_rows)
@@ -205,6 +228,8 @@ def capture_snapshot(
     selected_daemon_ids = sorted(DAEMON_CONFIGS)
     cat_file = BENCH_ROOT / "workload-catalog.toml"
     cat_digest = _sha256_file(cat_file) if cat_file.exists() else None
+    if not accuracy_rows_results and "simd-nocache-nodaemon-full" in config_index:
+        accuracy_rows_results = [config_index["simd-nocache-nodaemon-full"]]
     return {
         "schema_version": SNAPSHOT_SCHEMA,
         "source_state": source_state,
@@ -213,6 +238,9 @@ def capture_snapshot(
             "bytes": corpus_size,
             "sha256": corpus_sha256,
         },
+        "accuracy_rows": [
+            _snapshot_row(r) for r in accuracy_rows_results
+        ],
         "configuration_rows": [
             _snapshot_row(config_index[config]) for config in selected_config_ids
         ],
@@ -341,8 +369,8 @@ def render_accuracy(snapshot: dict[str, Any]) -> str:
             raise MatrixError("snapshot accuracy row missing corpus or detection data")
         size_bytes = corpus.get("bytes", 0)
         size_str = (
-            f"{size_bytes / (1024 * 1024):.2f} MB"
-            if size_bytes >= 1024 * 1024
+            f"{size_bytes / 1_000_000:.2f} MB"
+            if size_bytes >= 1_000_000
             else f"{round(size_bytes / 1000):,} KB"
         )
         lines.append(

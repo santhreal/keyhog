@@ -122,6 +122,14 @@ pub(super) fn mib_per_second(bytes: usize, elapsed: std::time::Duration) -> f64 
     }
 }
 
+#[allow(dead_code)]
+pub(super) fn mib_per_second(bytes: usize, elapsed: std::time::Duration) -> f64 {
+    if bytes == 0 || elapsed.is_zero() {
+        return 0.0;
+    }
+    bytes as f64 / (1024.0 * 1024.0) / elapsed.as_secs_f64()
+}
+
 #[cfg(test)]
 thread_local! {
     static TEST_WINDOW_REDUCTION_ALLOCATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };

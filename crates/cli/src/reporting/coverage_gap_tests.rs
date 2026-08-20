@@ -642,7 +642,7 @@ fn warn_severity_set_is_exact() {
 }
 
 /// Locks out leaving a coverage-gap kind unclassified after adding a new
-/// fail-closed category to the canonical 27-kind partition.
+/// fail-closed category to the canonical 28-kind partition.
 #[test]
 fn severity_partition_totals_all_kinds() {
     // 17 FAIL + 11 WARN = 28. ScannerLineOffsetMismatch is fail-closed because

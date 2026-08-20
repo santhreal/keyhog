@@ -436,7 +436,25 @@ pub(crate) fn report_scanner_materialization_summary(
         }
         None => "scanner: materialization unknown".to_string(),
     };
-    eprintln!("{}INFO{} {line}", palette.cyan, palette.reset);
+    let palette = terminal_palette(ansi, false);
+    match mat {
+        crate::orchestrator::ScannerMaterialization::MappedPack { generation } => {
+            if ansi {
+                eprintln!(
+                    "{}INFO{} scanner: mapped from execution pack {generation}",
+                    palette.cyan, palette.reset
+                );
+            }
+        }
+        crate::orchestrator::ScannerMaterialization::Compiled { matcher_outcome } => {
+            eprintln!(
+                "{}WARN{} scanner: compiled in process (developer escape hatch active; matcher-artifact: {})",
+                palette.yellow,
+                palette.reset,
+                matcher_outcome.as_str()
+            );
+        }
+    }
 }
 
 /// Report cache status and entry counts for every registered cache kind.
