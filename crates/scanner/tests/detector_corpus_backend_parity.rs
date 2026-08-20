@@ -59,7 +59,7 @@ fn unicode_rule_detector(id: &str, regex: &str, group: usize) -> DetectorSpec {
 /// must all produce the same detector-id set on both production CPU routes.
 #[test]
 fn unicode_regex_semantics_are_backend_invariant() {
-    let scanner = CompiledScanner::compile(vec![
+    let scanner = CompiledScanner::compile_with_runtime_policy(vec![
         unicode_rule_detector("unicode-digit", r"(?-i)udigit(\d{2})END", 1),
         unicode_rule_detector("unicode-casefold", r"(?i)casekey:([A-F0-9]{16})", 1),
         unicode_rule_detector("unicode-codepoint", r"(?-i)multi.([A-F0-9]{16})", 1),
@@ -96,7 +96,8 @@ fn unicode_regex_semantics_are_backend_invariant() {
 #[test]
 fn cpu_and_simd_agree_on_every_detector_example() {
     let specs = keyhog_core::embedded_detector_specs().to_vec();
-    let scanner = CompiledScanner::compile(specs.clone()).expect("scanner compile");
+    let scanner =
+        CompiledScanner::compile_with_runtime_policy(specs.clone()).expect("scanner compile");
     let mut runner = TestRunner::deterministic();
 
     let mut checked = 0u32;

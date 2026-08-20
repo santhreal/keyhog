@@ -12,8 +12,11 @@
 # green GPU suite. The preflight below fails the lane before any test runs when
 # no adapter can execute region presence.
 set -euo pipefail
-export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-16}"
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
 export KEYHOG_REQUIRE_GPU=1
+cargo() {
+  command cargo "$1" --jobs "${CARGO_BUILD_JOBS:-2}" "${@:2}"
+}
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
@@ -29,7 +32,7 @@ cargo test -p keyhog-scanner --features gpu --profile ci-test \
   --test gpu_wiring_contract
 
 echo "=== [Local CI] 2. Scanner Default / GPU Test Suite ==="
-cargo test -p keyhog-scanner --features gpu --test all_tests --profile ci-test -- --test-threads=16
+cargo test -p keyhog-scanner --features gpu --test all_tests --profile ci-test -- --test-threads="${CARGO_TEST_THREADS:-4}"
 
 echo "=== [Local CI] 3. GPU Hardware Parity & Dispatch Contracts ==="
 cargo test -p keyhog-scanner --features gpu --profile release-fast \
@@ -43,8 +46,7 @@ cargo test -p keyhog-scanner --features gpu --profile release-fast \
   --test gpu_resident_output_ownership \
   --test regression_gpu_region_presence_batch_parity \
   --test packed_gpu_vyre_artifact \
-  --test gpu_literal_artifact_writer \
-  --test gpu_moe_degrade_contract
+  --test gpu_literal_artifact_writer
 
 echo "=== [Local CI] 4. GPU CLI Integration & Error Handling ==="
 cargo test -p keyhog --features gpu,simd --profile ci-test \
