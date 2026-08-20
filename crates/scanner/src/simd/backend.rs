@@ -494,7 +494,6 @@ impl HsScanner {
             shard_target: _,
             utf8,
             ucp,
-            parallel_prepare: _,
         } = opts;
         let mut h = Sha256::new();
         for p in hs_pats {
