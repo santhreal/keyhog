@@ -18,7 +18,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 echo "=== [Local CI] 1. Workspace check ==="
-cargo check --workspace --all-targets -j "${CARGO_BUILD_JOBS:-1}"
+for pkg in keyhog-core keyhog-profile keyhog-sources keyhog-verifier keyhog-scanner keyhog; do
+  cargo check -p "$pkg" --all-targets -j "${CARGO_BUILD_JOBS:-1}"
+done
 
 echo "=== [Local CI] 1b. GPU hardware preflight (fails closed with no adapter) ==="
 cargo run -j "${CARGO_BUILD_JOBS:-1}" -p keyhog --features gpu,simd --profile release-fast -- \
