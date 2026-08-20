@@ -283,8 +283,7 @@ fn autoroute_config_digest_includes_min_secret_len() {
         .expect("resolved min_secret_len digest");
 
     assert_ne!(
-        default_digest,
-        longer_digest,
+        default_digest, longer_digest,
         "autoroute cache identity must include min_secret_len because it changes entropy fallback candidate admission"
     );
 }

@@ -458,9 +458,9 @@ fn relative_system_trusted_bin_dir_is_config_error() {
         .expect_err("relative trusted bin dir must fail");
 
     assert!(
-        error
-            .to_string()
-            .contains("[system].trusted_bin_dirs: trusted binary directory relative-bin must be absolute"),
+        error.to_string().contains(
+            "[system].trusted_bin_dirs: trusted binary directory relative-bin must be absolute"
+        ),
         "relative trusted binary directories must fail closed with an actionable config error: {error}"
     );
 }
