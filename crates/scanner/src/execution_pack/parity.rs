@@ -79,6 +79,7 @@ impl PackFindingParityEvidence {
         })
     }
 
+    /// Validates that this evidence proves exact scalar parity for the given backend, detector, generation, and route.
     pub fn validate(
         &self,
         backend: ExecutionPackBackend,

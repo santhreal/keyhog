@@ -2,6 +2,8 @@
 
 
 ## 0.5.80 - 2026-08-17
+- feat(scanner): expose `PackFindingParityEvidence::validate` with doc comments for parity validation across routes and generations.
+- test(scanner): add benchmark corpus and synthetic pack finding parity regression coverage (Row 162).
 
 - fix(scanner): clamp decode-through window overlap to enforce strictly advancing window progress across UTF-8 scalar boundaries in release builds.
 - style: format guard massive diff test and git sources modules.
