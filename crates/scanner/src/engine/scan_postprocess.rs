@@ -56,7 +56,7 @@ impl CompiledScanner {
         matches: &mut Vec<RawMatch>,
         deadline: Option<std::time::Instant>,
         route: crate::ScanExecutionRoute,
-        #[cfg_attr(not(feature = "decode"), allow(unused_variables))] decoder_absence: bool,
+        _decoder_absence: bool,
     ) -> crate::error::Result<()> {
         if crate::deadline::expired(deadline) {
             return Ok(());
@@ -208,7 +208,7 @@ impl CompiledScanner {
                 Ok(())
             };
             if chunk.data.len() <= self.config.max_decode_bytes
-                && self.chunk_needs_decode_postprocess_with_absence(chunk, decoder_absence)
+                && self.chunk_needs_decode_postprocess_with_absence(chunk, _decoder_absence)
             {
                 decode_parent(chunk, matches)?;
             } else if self.chunk_uses_bounded_decode_windows(chunk) {

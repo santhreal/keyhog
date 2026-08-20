@@ -28,11 +28,17 @@ impl CompiledNativeBackendPrograms {
     }
 
     pub fn artifacts(&self) -> Vec<BackendProgramArtifact<'_>> {
-        #[allow(unused_mut)]
-        let mut artifacts = vec![BackendProgramArtifact::Cpu(&self.cpu)];
         #[cfg(feature = "simd")]
-        artifacts.push(BackendProgramArtifact::Simd(&self.simd));
-        artifacts
+        {
+            vec![
+                BackendProgramArtifact::Cpu(&self.cpu),
+                BackendProgramArtifact::Simd(&self.simd),
+            ]
+        }
+        #[cfg(not(feature = "simd"))]
+        {
+            vec![BackendProgramArtifact::Cpu(&self.cpu)]
+        }
     }
 
     pub fn cpu_bytes(&self) -> &[u8] {

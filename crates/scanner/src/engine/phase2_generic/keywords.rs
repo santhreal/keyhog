@@ -493,3 +493,38 @@ mod position_line_mapping_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/phase2_generic_keyword_tables.rs"]
 mod strong_anchor_tests;
+const MAX_IDLE_KEYWORD_LINE_BUFFERS: usize = 4;
+static KEYWORD_LINES_POOL: parking_lot::Mutex<Vec<Vec<u32>>> = parking_lot::Mutex::new(Vec::new());
+
+fn normalize_keyword_lines_scratch(lines: &mut Vec<u32>) {
+    lines.clear();
+    if lines.capacity().saturating_mul(std::mem::size_of::<u32>())
+        > crate::engine::MAX_RETAINED_WORKER_SCRATCH_BYTES
+    {
+        *lines = Vec::new();
+    }
+}
+
+pub(crate) fn take_keyword_lines_scratch() -> Vec<u32> {
+    // LAW10: no idle buffer means a fresh empty scratch vector with identical matching behavior.
+    KEYWORD_LINES_POOL.lock().pop().unwrap_or_default()
+}
+
+pub(crate) fn release_keyword_lines_scratch(mut lines: Vec<u32>) {
+    normalize_keyword_lines_scratch(&mut lines);
+    if lines.capacity() == 0 {
+        return;
+    }
+    let mut pool = KEYWORD_LINES_POOL.lock();
+    if pool.len() < MAX_IDLE_KEYWORD_LINE_BUFFERS {
+        pool.push(lines);
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn retained_keyword_line_bytes_after_for_test(requested_bytes: usize) -> usize {
+    let elements = requested_bytes.div_ceil(std::mem::size_of::<u32>());
+    let mut lines = Vec::with_capacity(elements);
+    normalize_keyword_lines_scratch(&mut lines);
+    lines.capacity().saturating_mul(std::mem::size_of::<u32>())
+}

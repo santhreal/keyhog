@@ -50,7 +50,7 @@ impl CompiledScanner {
         &'a self,
         chunk: &'a Chunk,
         normalization_passthrough: bool,
-        #[cfg_attr(not(feature = "multiline"), allow(unused_variables))] multiline_absence: bool,
+        _multiline_absence: bool,
         line_context_index: Option<&std::sync::Arc<crate::context::LineContextIndex>>,
     ) -> PreparedChunk<'a> {
         let _g = super::super::profile::span(keyhog_profile::Stage::Preprocess);
@@ -90,13 +90,13 @@ impl CompiledScanner {
             #[cfg(feature = "multiline")]
             {
                 #[cfg(debug_assertions)]
-                if !multiline_absence {
+                if !_multiline_absence {
                     self.multiline_admission_scanned_bytes.fetch_add(
                         u64::try_from(data_to_pp.len()).unwrap_or(u64::MAX), // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; multiline admission accounting is unchanged.
                         std::sync::atomic::Ordering::Relaxed,
                     );
                 }
-                let has_multiline_candidate = !multiline_absence
+                let has_multiline_candidate = !_multiline_absence
                     && crate::multiline::config::has_concatenation_indicators_with_keyword_gate(
                         &data_to_pp,
                         |bytes| {
@@ -232,7 +232,7 @@ impl SimdPhase1Prefilter {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn has_recovery(&self) -> bool {
         self.recovery.is_some()
     }

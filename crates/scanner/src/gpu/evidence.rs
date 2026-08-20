@@ -295,19 +295,12 @@ pub(crate) enum GpuHostDataMovementSite {
     RegionPresenceScratchScrub,
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 impl GpuHostDataMovementSite {
     pub(crate) const ALL: &'static [Self] = &[
         Self::RegionPresenceScratchCoalesce,
         Self::RegionPresenceScratchScrub,
     ];
-
-    pub(crate) const fn label(self) -> &'static str {
-        match self {
-            Self::RegionPresenceScratchCoalesce => "region-presence-scratch-coalesce",
-            Self::RegionPresenceScratchScrub => "region-presence-scratch-scrub",
-        }
-    }
 }
 
 static HOST_COPIED_BYTES: [AtomicU64; 2] = [AtomicU64::new(0), AtomicU64::new(0)];
@@ -359,22 +352,10 @@ pub(crate) fn reset_host_data_movement_counters() {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-#[allow(dead_code)]
 pub(crate) enum GpuApiKind {
     Cuda,
     Metal,
     Wgpu,
-}
-
-#[allow(dead_code)]
-impl GpuApiKind {
-    pub(crate) const fn label(self) -> &'static str {
-        match self {
-            Self::Cuda => "cuda",
-            Self::Metal => "metal",
-            Self::Wgpu => "wgpu",
-        }
-    }
 }
 
 static INITIALIZED_GPU_APIS: [AtomicU64; 3] =
@@ -390,7 +371,6 @@ pub(crate) fn record_gpu_api_initialized(api: GpuApiKind) {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 pub(crate) fn initialized_gpu_api_count() -> usize {
     INITIALIZED_GPU_APIS
         .iter()
@@ -399,7 +379,6 @@ pub(crate) fn initialized_gpu_api_count() -> usize {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 pub(crate) fn initialized_gpu_api_counts() -> (u64, u64, u64) {
     (
         INITIALIZED_GPU_APIS[0].load(Ordering::Relaxed),
@@ -409,7 +388,6 @@ pub(crate) fn initialized_gpu_api_counts() -> (u64, u64, u64) {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 pub(crate) fn reset_initialized_gpu_api_counters() {
     for a in &INITIALIZED_GPU_APIS {
         a.store(0, Ordering::Relaxed);
