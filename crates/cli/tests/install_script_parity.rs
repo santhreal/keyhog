@@ -320,14 +320,14 @@ fn skipping_calibration_is_implemented_on_both_platforms() {
             &sh_content,
             "Skipped autoroute calibration by explicit --no-calibrate.",
             "SKIP_CALIBRATION",
-            "prime_autoroute_cache",
+            "calibrate_and_verify",
         ),
         (
             "install.ps1",
             &ps1_content,
             "Skipped autoroute calibration by explicit -NoCalibrate.",
             "$NoCalibrate",
-            "Invoke-AutorouteCalibration",
+            "Invoke-CalibrateAndVerify",
         ),
     ] {
         let lines: Vec<&str> = content.lines().collect();
@@ -350,17 +350,21 @@ fn skipping_calibration_is_implemented_on_both_platforms() {
         );
 
         // Forwards: the opposite arm is the calibration the flag replaces.
-        let alternative = lines[notice_at + 1..]
+        let arm = lines[notice_at + 1..]
             .iter()
-            .take(4)
-            .find(|line| line.contains("elif") || line.contains("elseif"))
+            .take(6)
+            .position(|line| {
+                line.contains("elif") || line.contains("elseif") || line.contains("else")
+            })
             .unwrap_or_else(|| {
                 panic!("{name}: the skip notice must be one arm of the calibration branch")
             });
         assert!(
-            alternative.contains(call),
-            "{name}: the arm opposite the skip notice must be the {call} the flag replaces, \
-             found: {alternative}"
+            lines[notice_at + 1 + arm..]
+                .iter()
+                .take(3)
+                .any(|line| line.contains(call)),
+            "{name}: the arm opposite the skip notice must be the {call} the flag replaces"
         );
     }
 }
@@ -510,8 +514,10 @@ fn install_scripts_verify_a_plain_scan_after_calibration() {
     struct Wiring {
         script: &'static str,
         open: &'static str,
-        call_site: &'static str,
         findings_exit_is_success: &'static str,
+        neutral_runner: &'static str,
+        chain: &'static [&'static str],
+        runner_call_sites: usize,
     }
 
     let root = repo_root();
@@ -519,14 +525,28 @@ fn install_scripts_verify_a_plain_scan_after_calibration() {
         Wiring {
             script: "install.sh",
             open: "verify_autoroute_serves_a_scan() {",
-            call_site: "elif ! verify_autoroute_serves_a_scan \"$INSTALL_DIR/keyhog\"; then",
             findings_exit_is_success: "\"$check_status\" = \"1\"",
+            neutral_runner: "run_in_neutral_dir",
+            // Both entry points end in the calibration and then the check.
+            chain: &[
+                "calibrate_and_verify \"$bin\"",
+                "prime_autoroute_cache \"$bin\"",
+                "verify_autoroute_serves_a_scan \"$bin\"",
+            ],
+            // The install path and the standalone --calibrate mode.
+            runner_call_sites: 2,
         },
         Wiring {
             script: "install.ps1",
             open: "function Test-AutorouteServesAScan {",
-            call_site: "elseif (-not (Test-AutorouteServesAScan -BinPath $BinPath)) {",
             findings_exit_is_success: "$scanExit -eq 1",
+            neutral_runner: "Invoke-InNeutralDirectory",
+            chain: &[
+                "Invoke-CalibrateAndVerify -BinPath $BinPath",
+                "Invoke-AutorouteCalibration -BinPath $BinPath",
+                "Test-AutorouteServesAScan -BinPath $BinPath",
+            ],
+            runner_call_sites: 2,
         },
     ] {
         let name = wiring.script;
@@ -540,9 +560,23 @@ fn install_scripts_verify_a_plain_scan_after_calibration() {
             .unwrap_or_else(|| panic!("{name}: post-calibration check has no closing brace"))
             .0;
 
+        for link in wiring.chain {
+            assert!(
+                content.contains(link),
+                "{name}: the calibration chain must reach {link}"
+            );
+        }
+        // Both entry points (the install and the standalone calibrate mode) must
+        // hand their phase to the neutral-directory runner: a `detectors`
+        // directory or a `.keyhog.toml` in the operator's cwd otherwise decides
+        // which corpus and configuration every persisted decision is keyed by.
+        let runner_calls = content.matches(wiring.neutral_runner).count();
         assert!(
-            content.contains(wiring.call_site),
-            "{name} defines the post-calibration scan check but never runs it after calibration"
+            runner_calls >= wiring.runner_call_sites + 1,
+            "{name}: every calibration entry point must go through {} ({runner_calls} \
+             occurrence(s), expected the definition plus {} call site(s))",
+            wiring.neutral_runner,
+            wiring.runner_call_sites
         );
         assert!(
             body.contains("scan"),

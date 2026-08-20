@@ -892,31 +892,8 @@ verify_install() {
         # fallback past a failed self-test; and consistent with the autoroute
         # gate immediately below, which already refuses a broken default route).
         say ""
-        "$INSTALL_DIR/keyhog" doctor
-        doctor_status=$?
-        if [ "$doctor_status" -eq 4 ]; then
-            err "keyhog doctor reports the freshly-installed binary is UNHEALTHY (exit 4): it failed its own end-to-end scan self-test above."
-            err "Refusing to leave a scanner that cannot detect secrets on its default route; rolling back this install."
-            err "  If only the GPU route is broken, the CPU/SIMD paths still work - reinstall, then scan with an explicit '--backend cpu' or '--backend simd' override."
-            return 1
-        elif [ "$doctor_status" -ne 0 ]; then
-            err "keyhog doctor did not complete (exit $doctor_status): the installed binary could not even run its own health self-test."
-            err "Rolling back rather than leaving an install whose health is unknown."
-            return 1
-        fi
-        if ! publish_execution_packs "$INSTALL_DIR/keyhog"; then
-            return 1
-        fi
-        if [ "$SKIP_CALIBRATION" = "1" ]; then
-            warn "Skipped autoroute calibration by explicit --no-calibrate."
-            warn "Run install.sh --calibrate before relying on automatic routing; explicit --backend routes work immediately."
-        elif ! prime_autoroute_cache "$INSTALL_DIR/keyhog"; then
-            err "Autoroute calibration failed; refusing to leave an install whose default auto route is not usable."
-            return 1
-        elif ! verify_autoroute_serves_a_scan "$INSTALL_DIR/keyhog"; then
-            return 1
-        fi
-        return 0
+        run_in_neutral_dir post_install_health_and_calibration "$INSTALL_DIR/keyhog"
+        return $?
     fi
 
     err "Installed binary at $INSTALL_DIR/keyhog could not run."
@@ -1071,6 +1048,88 @@ publish_execution_packs() {
         err "  reason: $pack_reason"
     fi
     return 1
+}
+
+# `keyhog doctor`, execution-pack compilation, and autoroute calibration all
+# resolve the detector corpus and the scan configuration from the working
+# directory: a `detectors/` directory there replaces the embedded corpus and
+# changes the detector digest every persisted decision is keyed by, and a
+# `.keyhog.toml` on the walk-up changes the resolved config digest. install.sh
+# runs from wherever the operator started it, so an install begun inside a
+# scanner repository would compile packs and publish routing decisions for a
+# corpus no scan elsewhere resolves. Run every corpus-sensitive phase from an
+# empty directory instead.
+run_in_neutral_dir() {
+    neutral_fn="$1"
+    shift
+    if ! neutral_dir="$(mktemp -d -t keyhog-install-neutral-XXXXXX)"; then
+        err "Could not create the neutral install-phase directory with mktemp."
+        return 1
+    fi
+    neutral_prev="$(pwd)"
+    if ! cd "$neutral_dir"; then
+        err "Could not enter the neutral install-phase directory $neutral_dir."
+        rm -rf "$neutral_dir" 2>/dev/null || true
+        return 1
+    fi
+    neutral_status=0
+    "$neutral_fn" "$@" || neutral_status=$?
+    cd "$neutral_prev" || true
+    rm -rf "$neutral_dir" 2>/dev/null || true
+    return "$neutral_status"
+}
+
+# Health, packs, and calibration for a fresh install. Runs under
+# run_in_neutral_dir; every command here reads the corpus from the cwd.
+post_install_health_and_calibration() {
+    bin="$1"
+    # `keyhog doctor` reuses the same hw_probe the scanner uses and runs an
+    # end-to-end scan self-test: it plants a synthetic secret and confirms the
+    # freshly-installed binary detects it on THIS host. Exit 4 means UNHEALTHY,
+    # which is a disqualifying install condition, not a cosmetic warning.
+    "$bin" doctor
+    doctor_status=$?
+    if [ "$doctor_status" -eq 4 ]; then
+        err "keyhog doctor reports the freshly-installed binary is UNHEALTHY (exit 4): it failed its own end-to-end scan self-test above."
+        err "Refusing to leave a scanner that cannot detect secrets on its default route; rolling back this install."
+        err "  If only the GPU route is broken, the CPU/SIMD paths still work - reinstall, then scan with an explicit '--backend cpu' or '--backend simd' override."
+        return 1
+    elif [ "$doctor_status" -ne 0 ]; then
+        err "keyhog doctor did not complete (exit $doctor_status): the installed binary could not even run its own health self-test."
+        err "Rolling back rather than leaving an install whose health is unknown."
+        return 1
+    fi
+    if ! publish_execution_packs "$bin"; then
+        return 1
+    fi
+    if [ "$SKIP_CALIBRATION" = "1" ]; then
+        warn "Skipped autoroute calibration by explicit --no-calibrate."
+        warn "Run install.sh --calibrate before relying on automatic routing; explicit --backend routes work immediately."
+    elif ! calibrate_and_verify "$bin"; then
+        return 1
+    fi
+    return 0
+}
+
+# Packs, then calibration, then one ordinary scan: the standalone --calibrate
+# path. Packs come first because calibration measures buckets against the
+# resolved detector and config digests, and an installed generation changes both.
+publish_and_calibrate() {
+    bin="$1"
+    if ! publish_execution_packs "$bin"; then
+        return 1
+    fi
+    calibrate_and_verify "$bin"
+}
+
+# Measure the routing ladder, then prove the primed cache serves a plain scan.
+calibrate_and_verify() {
+    bin="$1"
+    if ! prime_autoroute_cache "$bin"; then
+        err "Autoroute calibration failed; refusing to leave an install whose default auto route is not usable."
+        return 1
+    fi
+    verify_autoroute_serves_a_scan "$bin"
 }
 
 # A primed cache is worth nothing unless the next ordinary scan can resolve a
@@ -2474,12 +2533,7 @@ do_calibrate() {
         err "No installed keyhog binary found to calibrate. Run install first."
         exit 1
     fi
-    # Packs first: calibration measures buckets against the resolved detector
-    # and config digests, and an installed generation changes both.
-    if ! publish_execution_packs "$bin"; then
-        exit 1
-    fi
-    if ! prime_autoroute_cache "$bin"; then
+    if ! run_in_neutral_dir publish_and_calibrate "$bin"; then
         exit 1
     fi
 }
