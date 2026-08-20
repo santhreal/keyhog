@@ -433,9 +433,12 @@ impl DurableGuardStore {
         store.ensure_schema()?;
         Ok(store)
     }
-    /// Open an existing durable store in read-only mode without mutating the file.
+    /// Open an existing durable store in read-only mode without mutating the file schema.
     ///
     /// Validates symlink safety and checks schema version compatibility.
+    ///
+    /// Note: `redb::Database::open` acquires an exclusive file lock, so this should only
+    /// be used in offline inspection paths when no live daemon process holds the database lock.
     pub fn open_read_only(path: &std::path::Path) -> Result<Self, GuardStoreError> {
         if !path.exists() {
             return Err(GuardStoreError::Io(format!(
