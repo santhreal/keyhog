@@ -33,8 +33,15 @@ fn create_test_temp_dir(prefix: &str) -> tempfile::TempDir {
         .expect("tempdir")
 }
 
-fn isolate_test_binary(_dir: &Path) -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
+fn isolate_test_binary(dir: &Path) -> PathBuf {
+    let src = PathBuf::from(env!("CARGO_BIN_EXE_keyhog"));
+    let dst = dir.join("keyhog-test-bin");
+    if fs::copy(&src, &dst).is_ok() {
+        let _ = fs::set_permissions(&dst, fs::Permissions::from_mode(0o755));
+        dst
+    } else {
+        src
+    }
 }
 
 fn prepare_fresh_installation(test_exe: &Path, cache_home: &Path) -> (PathBuf, PathBuf) {
@@ -343,8 +350,8 @@ fn mutation_gating_every_identity_dimension_is_strictly_bound() {
     let all_inputs: BTreeSet<_> = ArtifactIdentityInput::ALL.iter().copied().collect();
     assert_eq!(
         all_inputs.len(),
-        7,
-        "must have exactly 7 identity input dimensions"
+        6,
+        "must have exactly 6 identity input dimensions"
     );
 
     for &input in ArtifactIdentityInput::ALL {

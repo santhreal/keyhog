@@ -1152,7 +1152,9 @@ impl CliTestApi for TestApi {
     }
     fn install_execution_generation(&self, candidate: &Path) -> Result<bool> {
         let tx = crate::installer::install_execution_generation(candidate)?;
-        Ok(tx.is_committed())
+        let committed = tx.is_committed();
+        tx.commit();
+        Ok(committed)
     }
 
     fn rewrite_detector_braces(&self, s: &str) -> (String, usize) {
