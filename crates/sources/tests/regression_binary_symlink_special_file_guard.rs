@@ -29,11 +29,11 @@ mod support;
 use keyhog_core::Source;
 use keyhog_sources::testing::TestApi;
 use keyhog_sources::{binary_unreadable, reset_binary_counters, skip_counts};
-use parking_lot::{Mutex, MutexGuard};
 use std::os::unix::fs::symlink;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 use support::split_chunk_results;
 
@@ -48,8 +48,12 @@ const SENTINEL_B: &str = "KEYHOG_SECOND_SENTINEL_b7c2d4e6";
 
 /// Acquire the serialising lock and reset both counters to a clean slate. Every
 /// test calls this first, so concurrent refusals never pollute a count assertion.
+/// Poison is recovered (`into_inner`) so a single failing assert isolates to that
+/// test instead of cascading `PoisonError` through the rest of the binary.
 fn guarded() -> MutexGuard<'static, ()> {
-    let guard = COUNTER_LOCK.lock();
+    let guard = COUNTER_LOCK
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
     reset_binary_counters();
     TestApi.reset_skip_counters();
     guard
