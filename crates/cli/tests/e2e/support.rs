@@ -41,10 +41,18 @@ pub const DIAGNOSTIC_BACKEND_ROUTE: &str = "simd-regex";
 pub const DIAGNOSTIC_BACKEND_ROUTE: &str = "cpu-fallback";
 
 pub fn apply_default_scan_backend(cmd: &mut Command, args: &[&str]) {
-    if args.first() == Some(&"scan") && !args.iter().any(|arg| *arg == "--backend") {
-        cmd.arg("scan")
-            .args(["--backend", DIAGNOSTIC_BACKEND])
-            .args(&args[1..]);
+    if args.first() == Some(&"scan") {
+        cmd.arg("scan");
+        if !args.iter().any(|arg| *arg == "--backend") {
+            cmd.args(["--backend", DIAGNOSTIC_BACKEND]);
+        }
+        if !args
+            .iter()
+            .any(|arg| *arg == "--developer-compile-embedded-detectors")
+        {
+            cmd.arg("--developer-compile-embedded-detectors");
+        }
+        cmd.args(&args[1..]);
     } else {
         cmd.args(args);
     }
@@ -74,6 +82,7 @@ pub fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Op
         "json".into(),
         "--backend".into(),
         DIAGNOSTIC_BACKEND.into(),
+        "--developer-compile-embedded-detectors".into(),
     ];
     for arg in extra_args {
         cmd_args.push((*arg).into());
@@ -106,7 +115,8 @@ pub fn scan_path(path: &Path, extra_args: &[&str]) -> Output {
         "--format",
         "json",
         "--backend",
-        "simd",
+        DIAGNOSTIC_BACKEND,
+        "--developer-compile-embedded-detectors",
     ];
     args.extend(extra_args);
     args.push(path.to_str().expect("utf-8 path"));
