@@ -123,11 +123,9 @@ fn workspace_build_profile_comments_match_cli_feature_contract() {
             && full_features.contains(&"keyhog-scanner/entropy")
             && full_features.contains(&"keyhog-scanner/decode")
             && full_features.contains(&"keyhog-scanner/multiline")
-            && !full_features
-                .iter()
-                .any(|feature| *feature == "keyhog-scanner/gpu"
-                    || *feature == "keyhog-scanner/simd"
-                    || *feature == "keyhog-scanner/default"),
+            && !full_features.iter().any(|feature| *feature == "keyhog-scanner/gpu"
+                || *feature == "keyhog-scanner/simd"
+                || *feature == "keyhog-scanner/default"),
         "CLI full feature is the source/decompiler surface and must not be documented as all scanner accelerators"
     );
 

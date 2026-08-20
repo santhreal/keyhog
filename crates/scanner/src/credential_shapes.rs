@@ -156,9 +156,6 @@ impl CredentialShapeRule {
 pub(crate) fn compile_detector_shape_rule(
     detector: &DetectorSpec,
 ) -> Result<Option<CredentialShapeRule>, String> {
-    keyhog_profile::record_compile_surface_invocation(
-        keyhog_profile::CompileSurfaceId::CredentialShapes,
-    );
     let Some(shape) = detector.credential_shape.as_ref() else {
         return Ok(None);
     };
@@ -169,7 +166,6 @@ pub(crate) fn compile_detector_shape_rule(
 pub(crate) fn hydrate_detector_shape_rule(
     detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
 ) -> Result<Option<CredentialShapeRule>, String> {
-    keyhog_profile::record_compile_surface_load(keyhog_profile::CompileSurfaceId::CredentialShapes);
     let Some(shape) = detector.credential_shape.as_ref() else {
         return Ok(None);
     };

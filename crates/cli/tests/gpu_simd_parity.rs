@@ -44,7 +44,6 @@ fn findings(path: &str, backend: &str, no_gpu: bool) -> BTreeSet<(String, String
         "--evidence-policy",
         "paranoid",
         "--daemon=off",
-        "--developer-compile-embedded-detectors",
         "--backend",
         backend,
     ]);

@@ -14,9 +14,6 @@ pub(crate) struct CompiledDecodeTransformPolicy {
 
 impl CompiledDecodeTransformPolicy {
     pub(crate) fn compile(detectors: &[DetectorSpec]) -> Result<Self, String> {
-        keyhog_profile::record_compile_surface_invocation(
-            keyhog_profile::CompileSurfaceId::DecodePolicy,
-        );
         for detector in detectors {
             let issues = detector.decode_transforms.validate();
             if !issues.is_empty() {
@@ -39,7 +36,6 @@ impl CompiledDecodeTransformPolicy {
     pub(crate) fn hydrate_summaries(
         detectors: &[crate::detector_plan::StreamingDetectorPlanSummary],
     ) -> Result<Self, String> {
-        keyhog_profile::record_compile_surface_load(keyhog_profile::CompileSurfaceId::DecodePolicy);
         for detector in detectors {
             let issues = detector.decode_transforms.validate();
             if !issues.is_empty() {

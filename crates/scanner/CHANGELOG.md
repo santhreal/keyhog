@@ -2,25 +2,7 @@
 
 
 ## 0.5.80 - 2026-08-17
-- feat(scanner): instrument compile surface invocations and prepared artifact loads across 13 compile entrypoints (Row 125).
-- feat(parallelism): unify scanner execution width with keyhog_profile host parallelism (Row 110/137).
-- refactor(scanner): move rayon to dev-dependencies and replace internal usages with standard iterators (Row 119).
-- feat(gpu): resident accelerator execution pool for GPU region dispatch concurrency across CLI and daemon (Row 118).
-- perf(scanner): scratch buffer capacity retention under memory budget (Row 117).
-- perf(scanner): backend-derived dispatch byte limits for GPU region batching (Row 116).
-- perf(scanner): proportional scrub cost bounded to populated content bytes rather than reserved slot capacity (Row 115).
-- feat(scanner): single canonical owner of window overlap and size constants shared across reader, stdin, and scanner (Row 111).
-- feat(gpu): record positive upload and readback durations across all GPU dispatch modes to populate GpuUploadNs and GpuReadbackNs profile metrics.
-- feat(gpu): migrate GPU region dispatch timing from ad-hoc `Instant` stderr `perf-trace` lines into `keyhog_profile` typed metrics and render structured dispatch split during profile dumps.
-- fix(safety): enforce written `// SAFETY:` preconditions and release assertions across all `unsafe` blocks with `unsafe_guards.py` workspace gate.
-- fix(profile): separate Stage::ScanPipeline container from leaf Stage::BackendDispatch to prevent container-duration distortion in bottleneck and cost tables.
-- fix(runtime): enforce panic = "unwind" in release profile to enable catch_unwind GPU isolation boundaries and degradation in shipped release binaries.
-- fix(gpu): lazy-scope GPU API initialization to only the selected scan backend route and eliminate redundant WGPU enumeration during CUDA and CPU scans.
-- perf(gpu): eliminate intermediate host buffer copies and redundant scrubs on GPU region dispatch, enforcing <= 1 copy per dispatched byte with host data movement instrumentation.
-- perf(gpu): short-circuit phase-2 GPU regex-DFA admission and eliminate redundant backend dispatch spans when catalog covers zero patterns.
-- fix(router): eliminate inverted batch dominance heuristic in hardware probe backend selection and unify batch routing with measured threshold evaluation.
-- feat(cache): implement unified cache eviction engine (`cache_eviction`) and `CacheKind` layout reconciliation across Hyperscan, detector plan, GPU program, and matcher artifact caches with stale lock reclamation.
-- feat(cache): add `validate_and_tighten_matcher_artifact_cache_dir` to auto-repair loose default cache directory permissions to 0700 without disabling cache.
+
 - fix(scanner): clamp decode-through window overlap to enforce strictly advancing window progress across UTF-8 scalar boundaries in release builds.
 - style: format guard massive diff test and git sources modules.
 - fix(detectors): resolve evasion gaps, required literal routing, and Unicode whitespace boundary handling across 8 detector specifications (`apple-push-notification-key`, `google-artifact-registry-key`, `near-api-credentials`, `netrc-password`, `twitter-ads-api-credentials`, `webex-access-token`, `wechat-api-credentials`, `wordpress-api-token`).

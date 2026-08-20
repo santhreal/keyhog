@@ -16,6 +16,7 @@ pub mod duplicate_primitive_leads;
 pub mod inline_suppression_no_unwrap_expect;
 pub mod json_tests_fail_loud;
 pub mod main_no_unwrap_expect;
+pub mod no_inline_tests_in_src;
 pub mod numeric_env_knobs_loud_contract;
 pub mod orchestrator_config_no_unwrap_expect;
 pub mod orchestrator_dispatch_batch_producer;

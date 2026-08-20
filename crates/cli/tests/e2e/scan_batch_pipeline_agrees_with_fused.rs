@@ -128,8 +128,8 @@ fn batch_pipeline_report_is_stable_across_runs() {
 /// overlapping window, including absolute offsets and line numbers.
 #[test]
 fn repeated_window_reuse_matches_the_batch_pipeline() {
-    const WINDOW: usize = keyhog_core::DEFAULT_WINDOW_SIZE_BYTES;
-    const OVERLAP: usize = keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES;
+    const WINDOW: usize = 1024 * 1024;
+    const OVERLAP: usize = 128 * 1024;
     const STRIDE: usize = WINDOW - OVERLAP;
     const WINDOWS: usize = 20;
     const SECRET: &[u8] = b"AWS_ACCESS_KEY_ID=AKIAFD5HUC556YILCDMN\n";
@@ -158,8 +158,8 @@ fn repeated_window_reuse_matches_the_batch_pipeline() {
 /// identical bytes under different paths must still match the uncached path.
 #[test]
 fn repeated_window_reuse_rejects_collisions_and_preserves_metadata() {
-    const WINDOW: usize = keyhog_core::DEFAULT_WINDOW_SIZE_BYTES;
-    const OVERLAP: usize = keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES;
+    const WINDOW: usize = 1024 * 1024;
+    const OVERLAP: usize = 128 * 1024;
     const STRIDE: usize = WINDOW - OVERLAP;
     const SECRET: &[u8] = b"AWS_ACCESS_KEY_ID=AKIAFD5HUC556YILCDMN\n";
 
@@ -225,8 +225,8 @@ fn repeated_window_reuse_rejects_collisions_and_preserves_metadata() {
 #[cfg(feature = "simd")]
 #[test]
 fn repeated_window_reuse_matches_simd_batch_pipeline() {
-    const WINDOW: usize = keyhog_core::DEFAULT_WINDOW_SIZE_BYTES;
-    const OVERLAP: usize = keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES;
+    const WINDOW: usize = 1024 * 1024;
+    const OVERLAP: usize = 128 * 1024;
     const STRIDE: usize = WINDOW - OVERLAP;
     const SECRET: &[u8] = b"AWS_ACCESS_KEY_ID=AKIAFD5HUC556YILCDMN\n";
 
@@ -251,8 +251,8 @@ fn repeated_window_reuse_matches_simd_batch_pipeline() {
 /// state transitions directly comparable across cold and warm runs.
 #[test]
 fn repeated_windows_preserve_incremental_state_transitions() {
-    const WINDOW: usize = keyhog_core::DEFAULT_WINDOW_SIZE_BYTES;
-    const OVERLAP: usize = keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES;
+    const WINDOW: usize = 1024 * 1024;
+    const OVERLAP: usize = 128 * 1024;
     const STRIDE: usize = WINDOW - OVERLAP;
     const SECRET: &[u8] = b"AWS_ACCESS_KEY_ID=AKIAFD5HUC556YILCDMN\n";
 

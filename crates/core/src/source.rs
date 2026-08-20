@@ -8,17 +8,6 @@ use crate::SensitiveString;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, LazyLock};
 use thiserror::Error;
-/// Canonical default window size (1 MiB) for streaming source chunks.
-pub const DEFAULT_WINDOW_SIZE_BYTES: usize = 1024 * 1024;
-
-/// Canonical default window overlap (128 KiB) between adjacent streaming source windows.
-///
-/// Single canonical owner shared across scanner seam reassembly, filesystem chunking,
-/// stdin streaming, archive member extraction, and benchmark harnesses.
-///
-/// 128 KiB covers PEM-encoded RSA-8192 keys, large JWTs, and multi-line concatenated
-/// secrets with generous margin while bounding per-window re-scan overhead.
-pub const DEFAULT_WINDOW_OVERLAP_BYTES: usize = 128 * 1024;
 
 /// Machine-readable reason a requested source surface was not fully scanned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

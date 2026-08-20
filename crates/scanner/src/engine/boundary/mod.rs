@@ -33,7 +33,7 @@ use crate::types::CompiledPattern;
 /// side is already visible whole inside that chunk's own in-chunk scan. Sized
 /// at the FilesystemSource window overlap so the seam covers exactly the
 /// straddle range the overlap design already assumes catchable.
-pub const MAX_BOUNDARY_SEAM_BYTES: usize = crate::types::WINDOW_OVERLAP_BYTES;
+pub(crate) const MAX_BOUNDARY_SEAM_BYTES: usize = crate::types::WINDOW_OVERLAP_BYTES;
 
 /// Scanner-derived cross-seam context requirement for compiled detector regexes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -57,7 +57,7 @@ pub(crate) fn derive_pattern_boundary_context<'a>(
     BoundaryContextBytes::Bounded(max_bound)
 }
 
-pub fn regex_match_byte_upper_bound(source: &str) -> Option<usize> {
+pub(crate) fn regex_match_byte_upper_bound(source: &str) -> Option<usize> {
     let ast = match regex_syntax::ast::parse::Parser::new().parse(source) {
         Ok(ast) => ast,
         Err(_) => return None, // LAW10: regex bound parse failure => full adjacent-pair seam scan, recall-preserving
@@ -225,12 +225,7 @@ fn scan_one_pair(
     // pair and scan the synthetic buffer as one unit below.
     let context_bytes = match context {
         BoundaryContextBytes::Bounded(bytes) => bytes,
-        BoundaryContextBytes::FullAdjacentChunks => {
-            if a_bytes.len() > MAX_BOUNDARY_SEAM_BYTES || b_bytes.len() > MAX_BOUNDARY_SEAM_BYTES {
-                crate::telemetry::record_boundary_seam_truncation();
-            }
-            MAX_BOUNDARY_SEAM_BYTES
-        }
+        BoundaryContextBytes::FullAdjacentChunks => MAX_BOUNDARY_SEAM_BYTES,
     };
     let tail_start = a_bytes.len().saturating_sub(context_bytes);
     let tail_start = floor_char_boundary(a.data.as_ref(), tail_start);

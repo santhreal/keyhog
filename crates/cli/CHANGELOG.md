@@ -3,27 +3,6 @@
 ## 0.5.80 - 2026-08-17
 
 - feat(cli): optimize startup execution path for informational commands with fast zero-allocation dispatch, deferred runtime initialization, and zero detector corpus parsing (Row 138).
-- feat(installer): multi-dimensional artifact invalidation and regeneration across detector corpus changes, configuration updates, and calibration changes (Row 135).
-- feat(installer): update recommendation parity and complete artifact generation on binary replacement (Row 134).
-- feat(build): audit and enforce release binary symbol stripping and zero DWARF debuginfo bloat via Cargo.toml [profile.release] and profile divergence gates (Row 139).
-- feat(compiler): install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata (Row 128).
-- feat(cache): load-only scan execution and zero compilation fallback on prepared artifact caches (Row 127).
-- feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).
-- feat(profile): compile surface runtime counters across all 13 compiler surfaces (Row 125).
-- feat(gates): validate allowlists across reality and enforce meta-gate audit against unvalidated bypasses (Row 137).
-- feat(profile): directional queue attribution distinguishing producer backpressure from consumer starvation (Row 133).
-- feat(daemon): filesystem authority probe and default periodic scrub for unauthoritative filesystems (Row 132).
-- feat(config): add guard configuration section to example TOML and docs truth (Row 131).
-- feat(daemon): report active watcher backend, latency tier, and polling interval in guard status (Row 123).
-- fix(daemon): attribute multi-path watcher events across all enclosing roots and trigger subtree reconciliation on pathless events (Row 121).
-- fix(daemon): fail-closed reconciliation and root degradation on watcher channel disconnection (Row 120).
-- feat(cli): 3-layer configuration governance and runtime metadata enumeration for Tier-A operational performance constants (Row 113).
-- feat(cli): single canonical owner of byte size parsing across CLI, daemon, and config (Row 112).
-- fix(profile): wire queue depth tracking, blocked wait attribution, and per-worker blocked time across fused and coalesced dispatch pipelines (Row 107).
-- test(cli): assert incremental Merkle cache detection across four adversarial change kinds and verify interrupt recovery without state corruption (`incremental_rescan_reports_unchanged_secret`, `sigint_mid_scan_exits_130`).
-- test(cli): enforce exit code totality through real binary execution across all scan-reachable codes and assert corrective action guidance on error enum variants (`regression_exit_code_matrix`).
-- fix(daemon): wrap daemon request dispatch and filesystem drain in `catch_unwind` isolation boundaries under shipped `panic = "unwind"` release profile, preventing server crash on internal request panics.
-- feat(cache): hook detector plan save operations into `keyhog_scanner::evict_cache_dir_with_policy` using `CacheKind::DetectorPlans`.
 - Include known reason and repair command in daemon warm-route errors and startup banner instead of hiding them behind a generic fallback. Apply the same fix to the daemon status command. Make is_work_request exhaustive so adding a new Request variant causes a compile error. Add regression tests pinning daemon server pure-function behaviors before modularization.
 - Removed `keyhog update` and `keyhog repair`, and the download, signature-verification, asset-selection, self-replace, backup/rollback, and orphan-reaping code behind them. They installed from a signed binary-asset release channel that no workflow produces; because each searched backward for a release that still carried a complete bundle, the dead channel installed a 33-version-stale binary instead of failing. Update and repair with `cargo install --locked --force keyhog`. `EXIT_REPAIR_FAILED` and `EXIT_UPDATE_AVAILABLE` are gone; exit 4 is now produced by `doctor` and `backend --self-test` only.
 - Exit code 10 now means exactly one thing, a live credential confirmed by `scan --verify`. Its second meaning, a newer release found by `update --check`, went with the retired channel. Exit code 4 drops `repair` from its producer list.

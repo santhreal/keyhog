@@ -430,8 +430,4 @@ pub fn dump(label: &str) {
     if feature_ns != 0 || score_ns != 0 {
         eprintln!("{}", crate::gpu::format_ml_split(feature_ns, score_ns));
     }
-    let gpu_split = crate::gpu::gpu_dispatch_split_from_typed(&typed);
-    if gpu_split.any_recorded() {
-        eprintln!("{}", crate::gpu::format_gpu_dispatch_split(&gpu_split));
-    }
 }

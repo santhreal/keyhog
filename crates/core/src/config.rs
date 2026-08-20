@@ -175,31 +175,31 @@ fn default_entropy_bpe_max_bytes_per_token() -> f64 {
 #[derive(Debug, Error)]
 pub enum ConfigError {
     /// `min_confidence` was outside the closed unit interval `[0.0, 1.0]`.
-    #[error("min_confidence must be between 0.0 and 1.0, found {0}. Fix: pass a confidence threshold between 0.0 and 1.0 (e.g. 0.8)")]
+    #[error("min_confidence must be between 0.0 and 1.0, found {0}")]
     InvalidConfidence(f64),
     /// `max_decode_depth` exceeded the safety ceiling
     /// [`MAX_DECODE_DEPTH_LIMIT`].
-    #[error("max_decode_depth exceeds limit of {MAX_DECODE_DEPTH_LIMIT}, found {0}. Fix: reduce max_decode_depth to <= {MAX_DECODE_DEPTH_LIMIT}")]
+    #[error("max_decode_depth exceeds limit of {MAX_DECODE_DEPTH_LIMIT}, found {0}")]
     DepthTooHigh(usize),
     /// `ml_weight` was outside the closed unit interval `[0.0, 1.0]`. The score
     /// blend multiplies by this weight; a value above 1.0 over-weights the model
     /// and a negative one inverts it (both silently distort every confidence).
-    #[error("ml_weight must be between 0.0 and 1.0, found {0}. Fix: specify an ml_weight between 0.0 and 1.0")]
+    #[error("ml_weight must be between 0.0 and 1.0, found {0}")]
     InvalidMlWeight(f64),
     /// `entropy_bpe_max_bytes_per_token` was not a finite value strictly greater
     /// than zero. A `0.0` (or negative / NaN) bound treats EVERY candidate as
     /// word-like and suppresses the entire entropy/generic surface, a silent
     /// recall wipeout (the `#[serde(default)]` guards only configs that OMIT the
     /// key, not an explicit out-of-range value).
-    #[error("entropy_bpe_max_bytes_per_token must be a finite value > 0.0, found {0}. Fix: specify a finite positive number for entropy_bpe_max_bytes_per_token")]
+    #[error("entropy_bpe_max_bytes_per_token must be a finite value > 0.0, found {0}")]
     InvalidBpeBound(f64),
     /// `entropy_threshold` was not finite. A `NaN` threshold makes every
     /// `entropy >= threshold` comparison false, silently suppressing every
     /// entropy candidate; `±inf` is equally nonsensical as a bits-per-byte floor.
-    #[error("entropy_threshold must be a finite number, found {0}. Fix: specify a finite number for entropy_threshold")]
+    #[error("entropy_threshold must be a finite number, found {0}")]
     NonFiniteEntropyThreshold(f64),
     /// `entropy_threshold` exceeded the mathematical byte-entropy range.
-    #[error("entropy_threshold must be between 0.0 and 8.0 bits per byte, found {0}. Fix: set entropy_threshold between 0.0 and 8.0")]
+    #[error("entropy_threshold must be between 0.0 and 8.0 bits per byte, found {0}")]
     InvalidEntropyThreshold(f64),
     /// A field this config carries for schema completeness but the scanner
     /// never reads was set to something other than its default. Honouring it

@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-pub use crate::config::{OperationalKnob, OperationalUnit};
 /// Zero-sized handle for integration tests that need crate-internal seams.
 pub struct TestApi;
 
@@ -33,50 +32,6 @@ pub enum DaemonTerminalFixture {
     CleanShutdown,
     AcceptLoopPanic,
     FatalAccept(std::io::Error),
-}
-
-/// Enumeration of every door and entry point that parses human-readable byte sizes (Row 112).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ByteSizeParserDoor {
-    /// Canonical CLI value parser (`keyhog::value_parsers::parse_byte_size`).
-    CliValueParser,
-    /// Trait interface exposed on `CliTestApi::parse_byte_size`.
-    TestingApi,
-    /// System scanner space parser adapter (`keyhog::args::scan_system::parse_space_bytes`).
-    ScanSystemSpace,
-    /// Configuration loader parser (`keyhog::config::scan::parse_byte_size_field`).
-    ConfigField,
-}
-
-impl ByteSizeParserDoor {
-    /// All parser doors for exhaustive cross-entry-point property testing.
-    pub const ALL: [Self; 4] = [
-        Self::CliValueParser,
-        Self::TestingApi,
-        Self::ScanSystemSpace,
-        Self::ConfigField,
-    ];
-
-    /// Parse the input string through this specific door.
-    pub fn parse(self, input: &str) -> std::result::Result<usize, String> {
-        match self {
-            Self::CliValueParser => crate::value_parsers::parse_byte_size(input),
-            Self::TestingApi => API.parse_byte_size(input),
-            Self::ScanSystemSpace => {
-                crate::args::parse_space_bytes(input).map(|bytes| bytes as usize)
-            }
-            Self::ConfigField => {
-                let mut errors = Vec::new();
-                match crate::config::parse_config_byte_size(&mut errors, "test_field", input) {
-                    Some(val) => Ok(val),
-                    None => match errors.into_iter().next() {
-                        Some(err) => Err(err),
-                        None => Err("parse error".to_string()),
-                    },
-                }
-            }
-        }
-    }
 }
 
 static SCAN_RUNTIME_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -196,8 +151,6 @@ pub trait CliTestApi {
     fn format_backend_probe_mb_metric(&self, value: Option<u64>) -> String;
     fn find_config_file(&self, start: Option<&Path>) -> Option<PathBuf>;
     fn apply_config_file_quiet(&self, args: &mut ScanArgs);
-    fn parse_config_file_from_str(&self, raw: &str) -> std::result::Result<(), String>;
-    fn parse_guard_section_from_str(&self, raw: &str) -> std::result::Result<(), String>;
     fn build_sources(
         &self,
         args: &ScanArgs,
@@ -253,21 +206,6 @@ pub trait CliTestApi {
         socket_path: PathBuf,
         fixture: DaemonTerminalFixture,
     ) -> Pin<Box<dyn Future<Output = Result<()>>>>;
-    #[cfg(unix)]
-    fn set_daemon_panic_injection(&self, kind: Option<&str>);
-    #[cfg(unix)]
-    fn all_daemon_request_kinds(&self) -> &'static [&'static str];
-    #[cfg(unix)]
-    fn sample_daemon_request_for_kind(
-        &self,
-        kind: &str,
-    ) -> Option<crate::daemon::protocol::Request>;
-    #[cfg(unix)]
-    fn spawn_daemon_for_test(
-        &self,
-        socket_path: PathBuf,
-        detectors: Vec<keyhog_core::DetectorSpec>,
-    ) -> tokio::task::JoinHandle<Result<()>>;
     fn cli_error_exit_code(&self, error: &anyhow::Error) -> u8;
 
     fn baseline_version(&self) -> u32;
@@ -337,7 +275,6 @@ pub trait CliTestApi {
     fn watch_resolve_roots(&self, requested: &[PathBuf]) -> Result<Vec<PathBuf>>;
     fn watch_roots_hint(&self, roots: &[PathBuf]) -> String;
 
-    fn install_execution_generation(&self, candidate: &Path) -> Result<bool>;
     fn max_resident_findings(&self) -> usize;
     fn parse_macos_mount_table_for_test(
         &self,
@@ -641,16 +578,6 @@ impl CliTestApi for TestApi {
     fn apply_config_file_quiet(&self, args: &mut ScanArgs) {
         let _outcome = crate::config::apply_config_file_quiet(args);
     }
-    fn parse_config_file_from_str(&self, raw: &str) -> std::result::Result<(), String> {
-        toml::from_str::<crate::config::schema::ConfigFile>(raw)
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-    }
-    fn parse_guard_section_from_str(&self, raw: &str) -> std::result::Result<(), String> {
-        toml::from_str::<crate::config::schema::GuardSection>(raw)
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-    }
     fn build_sources(
         &self,
         args: &ScanArgs,
@@ -753,49 +680,6 @@ impl CliTestApi for TestApi {
         Box::pin(
             crate::daemon::server::testing::finish_daemon_service_for_test(socket_path, fixture),
         )
-    }
-    #[cfg(unix)]
-    fn set_daemon_panic_injection(&self, kind: Option<&str>) {
-        crate::daemon::server::set_test_panic_injection(kind);
-    }
-    #[cfg(unix)]
-    fn all_daemon_request_kinds(&self) -> &'static [&'static str] {
-        crate::daemon::protocol::ALL_REQUEST_KINDS
-    }
-    #[cfg(unix)]
-    fn sample_daemon_request_for_kind(
-        &self,
-        kind: &str,
-    ) -> Option<crate::daemon::protocol::Request> {
-        crate::daemon::protocol::sample_request_for_kind(kind)
-    }
-    #[cfg(unix)]
-    fn spawn_daemon_for_test(
-        &self,
-        socket_path: PathBuf,
-        detectors: Vec<keyhog_core::DetectorSpec>,
-    ) -> tokio::task::JoinHandle<Result<()>> {
-        tokio::spawn(async move {
-            let rules_digest = keyhog_core::detector_digest().to_owned();
-            let options = crate::daemon::server::ServerOptions {
-                request_read_timeout: std::time::Duration::from_secs(30),
-                mass_service: false,
-                mass_gpu_primary_required: false,
-            };
-            crate::daemon::server::run_with_backend_override(
-                socket_path,
-                detectors,
-                rules_digest,
-                options,
-                Some(keyhog_scanner::ScanBackend::CpuFallback),
-                None,
-                keyhog_sources::guard::GuardReconciliationConfig::default(),
-                None,
-                None,
-                None,
-            )
-            .await
-        })
     }
     fn cli_error_exit_code(&self, error: &anyhow::Error) -> u8 {
         crate::cli_error_exit_code(error)
@@ -1612,24 +1496,5 @@ impl StableHashProbe {
     /// Finalize to the 64-bit stable digest (mirrors `StableHasher::finish_u64`).
     pub fn finish(&self) -> u64 {
         self.inner.finish_u64()
-    }
-}
-
-#[cfg(unix)]
-pub mod daemon {
-    pub mod fs_probe {
-        pub use crate::daemon::fs_probe::*;
-    }
-    pub mod guard_runtime {
-        pub use crate::daemon::guard_runtime::*;
-    }
-    pub mod guard_watcher {
-        pub use crate::daemon::guard_watcher::*;
-    }
-    pub mod protocol {
-        pub use crate::daemon::protocol::*;
-    }
-    pub mod server {
-        pub use crate::daemon::server::*;
     }
 }

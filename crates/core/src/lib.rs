@@ -37,10 +37,6 @@ pub mod ascii_ci;
 /// of truth shared by the scanner's finding metadata and the verifier's
 /// suppress-live-verification-for-canaries gate).
 mod aws;
-/// Unified cache layout classification and eviction policy contracts.
-pub mod cache_layout;
-/// Compiled-artifact class model and canonical identity contracts.
-pub mod compiled_artifact;
 /// Configuration system for KeyHog scanning options.
 mod config;
 /// Cross-file credential correlation over an already-reported finding set.
@@ -86,17 +82,13 @@ pub mod triage;
 /// verifier.
 pub mod verification_domain;
 pub mod winpath;
-pub use cache_layout::{CacheEvictionPolicy, CacheKind};
 use std::borrow::Cow;
 
 pub use api::*;
-pub use compiled_artifact::{CompiledArtifactClass, CompiledArtifactIdentity};
 pub use detector_corpus::{
     compose_detector_corpus, compute_detector_corpus_digest,
     compute_detector_corpus_digest_for_schema, DetectorCorpusError, DetectorCorpusMode,
 };
-pub use guard_state::{GuardRootState, GuardTransition, ReceiptError, TransitionError};
-pub use guard_store::GuardStoreError;
 /// Auto-fix suggestion logic for SARIF output.
 mod auto_fix;
 /// Bayesian confidence calibration for detectors.

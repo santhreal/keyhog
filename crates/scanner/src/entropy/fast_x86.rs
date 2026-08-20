@@ -20,7 +20,6 @@ use crate::entropy::fast::{entropy_from_histogram, histogram_8way};
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
 #[allow(unsafe_op_in_unsafe_fn)]
-// SAFETY: Caller must ensure avx2 and fma features are supported at runtime.
 pub(crate) unsafe fn shannon_entropy_avx2(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;

@@ -29,7 +29,7 @@ sha2 = { workspace = true, optional = true }
 serde_json = { workspace = true }
 sysinfo = { workspace = true, optional = true }
 zeroize = { workspace = true, features = ["serde"] }
-parking_lot = { workspace = true }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = { workspace = true, optional = true }
 

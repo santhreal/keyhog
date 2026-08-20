@@ -2,9 +2,8 @@
 
 use super::allowlist::{load_allowlist, load_rule_suppressor};
 use super::reporting::{
-    dump_dogfood_trace, report_autoroute_cache_summary, report_compiled_cache_summary,
-    report_completion_summary, report_scanner_materialization_summary, report_skip_summary,
-    TickerGuard,
+    dump_dogfood_trace, report_autoroute_cache_summary, report_completion_summary,
+    report_skip_summary, TickerGuard,
 };
 use super::ScanOrchestrator;
 use crate::baseline::Baseline;
@@ -389,74 +388,11 @@ fn profiler_cache_identities(
         }),
     };
 
-    let hyperscan_path = orchestrator.effective_config.hyperscan_cache_dir.as_deref();
-    let hyperscan_state = match hyperscan_path {
-        None => CacheState::Disabled,
-        Some(path) if path.exists() => CacheState::Warm,
-        Some(_) => CacheState::Cold,
-    };
-    let hyperscan = CacheLayerV2 {
-        version: 1,
-        layer: CacheLayerKindV2::HyperscanShards,
-        state: hyperscan_state,
-        generation: hyperscan_path.map_or_else(
-            || unavailable_cache_evidence(EvidenceGap::CollectorDisabled),
-            |_| Evidence::recorded("hyperscan-shards".to_string()),
-        ),
-        digest: hyperscan_path.map_or_else(
-            || unavailable_cache_evidence(EvidenceGap::CollectorDisabled),
-            |path| {
-                if path.exists() {
-                    cache_file_digest(path)
-                } else {
-                    unavailable_cache_evidence(EvidenceGap::Unavailable)
-                }
-            },
-        ),
-    };
-
-    let matcher_state = match &orchestrator.scanner_materialization {
-        Some(super::ScannerMaterialization::Compiled { matcher_outcome }) => {
-            match matcher_outcome {
-                keyhog_scanner::MatcherArtifactCacheOutcome::Hit => CacheState::Warm,
-                keyhog_scanner::MatcherArtifactCacheOutcome::Miss => CacheState::Cold,
-                keyhog_scanner::MatcherArtifactCacheOutcome::Invalidated { .. } => CacheState::Cold,
-                keyhog_scanner::MatcherArtifactCacheOutcome::Disabled { .. } => {
-                    CacheState::Disabled
-                }
-            }
-        }
-        _ => CacheState::Disabled,
-    };
-    let matcher_artifacts = CacheLayerV2 {
-        version: 1,
-        layer: CacheLayerKindV2::MatcherArtifacts,
-        state: matcher_state,
-        generation: Evidence::recorded("matcher-artifacts".to_string()),
-        digest: unavailable_cache_evidence(EvidenceGap::Unavailable),
-    };
-
     vec![
         detector,
         merkle,
         autoroute,
         verifier,
-        hyperscan,
-        matcher_artifacts,
-        CacheLayerV2 {
-            version: 1,
-            layer: CacheLayerKindV2::GpuPrograms,
-            state: CacheState::Cold,
-            generation: unavailable_cache_evidence(EvidenceGap::Unavailable),
-            digest: unavailable_cache_evidence(EvidenceGap::Unavailable),
-        },
-        CacheLayerV2 {
-            version: 1,
-            layer: CacheLayerKindV2::LockFiles,
-            state: CacheState::Warm,
-            generation: unavailable_cache_evidence(EvidenceGap::Unavailable),
-            digest: unavailable_cache_evidence(EvidenceGap::Unavailable),
-        },
         CacheLayerV2 {
             version: 1,
             layer: CacheLayerKindV2::Daemon,
@@ -469,6 +405,7 @@ fn profiler_cache_identities(
             layer: CacheLayerKindV2::PageCache,
             state: CacheState::Unknown,
             generation: unavailable_cache_evidence(EvidenceGap::Unsupported),
+
             digest: unavailable_cache_evidence(EvidenceGap::Unsupported),
         },
     ]
@@ -481,10 +418,6 @@ fn profiler_cache_transitions(
     orchestrator: &ScanOrchestrator,
     merkle_status: Option<&keyhog_core::MerkleLoadStatus>,
 ) -> Vec<super::workflow_state::CacheTransitionRecord> {
-    let matcher_outcome = match &orchestrator.scanner_materialization {
-        Some(super::ScannerMaterialization::Compiled { matcher_outcome }) => Some(matcher_outcome),
-        _ => None,
-    };
     vec![
         super::workflow_state::detector_transition(),
         super::workflow_state::merkle_load_transition(merkle_status),
@@ -495,14 +428,6 @@ fn profiler_cache_transitions(
                 .as_deref(),
         ),
         super::workflow_state::verifier_transition(orchestrator.effective_config.report.verify, 0),
-        super::workflow_state::hyperscan_shard_transition(
-            orchestrator.effective_config.hyperscan_cache_dir.as_deref(),
-            0,
-            0,
-        ),
-        super::workflow_state::matcher_artifact_transition(matcher_outcome),
-        super::workflow_state::gpu_program_transition(0, 0),
-        super::workflow_state::lock_file_transition(),
         super::workflow_state::daemon_transition(),
     ]
 }
@@ -618,10 +543,6 @@ fn cache_layer_text(layer: keyhog_profile::CacheLayerKindV2) -> &'static str {
         keyhog_profile::CacheLayerKindV2::Verifier => "verifier",
         keyhog_profile::CacheLayerKindV2::Daemon => "daemon",
         keyhog_profile::CacheLayerKindV2::PageCache => "page-cache",
-        keyhog_profile::CacheLayerKindV2::HyperscanShards => "hyperscan-shards",
-        keyhog_profile::CacheLayerKindV2::MatcherArtifacts => "matcher-artifacts",
-        keyhog_profile::CacheLayerKindV2::GpuPrograms => "gpu-programs",
-        keyhog_profile::CacheLayerKindV2::LockFiles => "lock-files",
     }
 }
 
@@ -1560,7 +1481,7 @@ impl ScanOrchestrator {
 
         operator_profile.transition(keyhog_profile::RunState::Scanning);
         let all_matches = {
-            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ScanPipeline);
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::BackendDispatch);
             self.scan_sources(sources, show_progress, merkle, incremental_cache_path)?
         };
         operator_profile.transition(keyhog_profile::RunState::Resolving);
@@ -1904,11 +1825,6 @@ impl ScanOrchestrator {
             show_progress && progress_ansi,
             self.effective_config.backend_override.is_some(),
         );
-        report_scanner_materialization_summary(
-            show_progress && progress_ansi,
-            self.scanner_materialization.as_ref(),
-        );
-        report_compiled_cache_summary(show_progress && progress_ansi, &self);
         dump_dogfood_trace();
 
         tracing::info!(
