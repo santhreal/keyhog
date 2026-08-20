@@ -963,7 +963,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
     pack_generation: Option<&str>,
     runtime_identity: Option<&str>,
 ) -> Result<(CompiledScanner, MatcherArtifactCacheOutcome)> {
-    let cache_dir = configured_matcher_artifact_cache_dir();
+    let (cache_dir, configured_reason) = configured_matcher_artifact_cache_state();
     let Some(backend) = matcher_backend_for_gpu_policy(gpu_policy) else {
         return compile_without_matcher_artifact_cache(
             detectors,
@@ -1039,10 +1039,9 @@ pub fn compile_shared_with_matcher_artifact_cache(
             sorted,
             gpu_policy,
             tuning_config,
-            MatcherArtifactCacheDisableReason::ConfiguredOff,
+            configured_reason.unwrap_or(MatcherArtifactCacheDisableReason::ConfiguredOff),
         );
     };
-
     let path = cache_dir.join(identity.cache_filename());
     // When a structurally intact entry is not reusable for this live corpus
     // (hydrate/compile failure after a successful load), do not immediately

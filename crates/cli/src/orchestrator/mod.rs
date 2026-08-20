@@ -55,7 +55,8 @@ fn collect_detector_signatures(detectors: &[DetectorSpec]) -> std::collections::
 ///
 /// Unknown relation targets are preserved so corpus validation still rejects
 /// misspelled or missing detector IDs instead of treating them as configuration.
-fn filter_disabled_detectors(
+#[allow(dead_code)]
+pub(crate) fn filter_disabled_detectors(
     detectors: &mut Vec<DetectorSpec>,
     disabled_detectors: &mut std::collections::HashSet<String>,
 ) -> std::collections::HashSet<String> {

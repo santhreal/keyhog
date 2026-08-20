@@ -423,3 +423,66 @@ fn cache_enabled_and_disabled_compiles_produce_identical_digests_and_findings() 
         "finding contents must be identical"
     );
 }
+
+/// WHY: store_matcher_artifact must not modify permissions of a pre-existing directory,
+/// preserving operator/tooling ownership and access permissions.
+#[test]
+#[cfg(unix)]
+fn store_matcher_artifact_does_not_tighten_preexisting_directory() {
+    use std::os::unix::fs::MetadataExt;
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = allowlisted_tempdir();
+    let cache_dir = dir.path().join("preexisting-cache");
+    std::fs::create_dir(&cache_dir).expect("create dir");
+    std::fs::set_permissions(&cache_dir, std::fs::Permissions::from_mode(0o755))
+        .expect("set mode 0755");
+
+    let detectors = sample_detectors();
+    let ir = CanonicalDetectorExecutionIr::compile(&detectors).expect("ir");
+    let sections =
+        CompiledRouteMatcherSections::compile(&ir, ExecutionPackBackend::Cpu).expect("sections");
+    let identity = MatcherArtifactIdentity::new(
+        ir.digest(),
+        [11u8; 32],
+        None,
+        ExecutionPackBackend::Cpu,
+        None,
+    )
+    .expect("identity");
+
+    store_matcher_artifact(&cache_dir, &identity, &sections).expect("store");
+
+    let meta = std::fs::symlink_metadata(&cache_dir).expect("stat cache dir");
+    let mode = meta.mode() & 0o777;
+    assert_eq!(
+        mode, 0o755,
+        "pre-existing cache directory permissions must remain 0755, got {mode:#o}"
+    );
+}
+
+/// WHY: is_embedded_corpus must only match the exact static slice pointer, preventing
+/// custom or edited corpora from silently substituting embedded matcher artifacts.
+#[test]
+fn is_embedded_corpus_requires_exact_pointer_identity() {
+    let embedded = keyhog_core::embedded_detector_specs();
+    assert!(
+        CanonicalDetectorExecutionIr::is_embedded_corpus(embedded),
+        "static embedded detector slice must be recognized"
+    );
+
+    // Cloned or edited copy with same detector count and IDs must NOT be treated as embedded
+    let mut cloned = embedded.to_vec();
+    assert!(
+        !CanonicalDetectorExecutionIr::is_embedded_corpus(&cloned),
+        "cloned detector vector must NOT be recognized as embedded static slice"
+    );
+
+    if !cloned.is_empty() {
+        cloned[0].name = "modified name".to_string();
+        assert!(
+            !CanonicalDetectorExecutionIr::is_embedded_corpus(&cloned),
+            "modified detector vector must NOT be recognized as embedded"
+        );
+    }
+}
