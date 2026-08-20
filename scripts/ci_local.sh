@@ -12,7 +12,7 @@
 # green GPU suite. The preflight below fails the lane before any test runs when
 # no adapter can execute region presence.
 set -euo pipefail
-export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
 export KEYHOG_REQUIRE_GPU=1
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
