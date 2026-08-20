@@ -10,7 +10,7 @@
 //!   * quiet stderr is EMPTY (0 bytes) even while findings stream;
 //!   * noisy stderr carries the banner and the canonical watched-root path;
 //!   * the STDOUT finding line is identical under both modes
-//!     (`🔍 aws-access-key <path>:<line> CRITICAL (1.00)  AK...YA`);
+//!     (`🔍 aws-access-key <path>:<line> CRITICAL (1.00)  AK...YA sha256:<hex>`);
 //!   * the credential is redacted to `AK...YA`, never the full key;
 //!   * an invalid `--detectors` fails with exit code 2 regardless of `--quiet`.
 //!
@@ -39,6 +39,12 @@ const AWS_KEY: &str = "AKIAQYLPMN5HFIQR7XYA";
 /// `redact("AKIAQYLPMN5HFIQR7XYA")`: 20 ASCII chars, edge = (20/8).clamp(1,4)
 /// = 2 (yields first-2 + "..." + last-2. Deterministic, host-independent).
 const REDACTED: &str = "AK...YA";
+
+/// `sha256("AKIAQYLPMN5HFIQR7XYA")`, lower-case hex: the credential identity the
+/// watch line prints after the redacted value. Hardcoded rather than recomputed
+/// so a change to the hashing domain (salting, truncation, a different input
+/// string) turns this red instead of following the implementation.
+const CREDENTIAL_DIGEST: &str = "01c2c0cfbc4247225dbbe5fdbf59cecb4abdc6a1c6d78b7ff0c7a5b968fb40b2";
 
 /// Drain a child pipe line-by-line into a shared buffer until EOF (the OS
 /// closes the pipe when the killed child exits), so the child never blocks on a
@@ -393,7 +399,7 @@ fn quiet_and_noisy_emit_identical_finding_line() {
     // holds on hosts where the tempdir root is itself a symlink.
     let canon_file = file.canonicalize().expect("canonicalize planted file");
     let expected = format!(
-        "\u{1F50D} aws-access-key {}:1 CRITICAL (1.00)  {REDACTED}",
+        "\u{1F50D} aws-access-key {}:1 CRITICAL (1.00)  {REDACTED} sha256:{CREDENTIAL_DIGEST}",
         canon_file.display()
     );
     assert_eq!(

@@ -3,6 +3,7 @@
 ## 0.5.80 - 2026-08-17
 - refactor(core): unify atomic durable writes across state artifacts and scanner caches into keyhog_core::state_file (Row 148).
 - feat(guard): populate GuardPolicyIdentity with canonical default digests and digest calculation helpers for ignore files, suppressions, config, and source policy (Row 142).
+- feat(spec): export `load_detectors_with_gate` so audit surfaces can load a corpus without the fail-closed quality gate.
 
 - bench(core): add criterion benchmarks for detector corpus validation, suppression evaluation, Merkle index cache lookups, match deduplication, and finding correlation (Row 147).
 - feat(guard): add GuardTransitionRecord and continuous transition history tracking with causal attribution (Row 146).

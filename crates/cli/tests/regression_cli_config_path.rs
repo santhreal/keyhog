@@ -101,7 +101,7 @@ fn scan(scan_dir: &std::path::Path, extra: &[&str]) -> (Option<i32>, String, Str
 
 #[test]
 fn explicit_config_min_confidence_suppresses_below_threshold() {
-    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+    let dir = scan_dir_with("gh.env", GITHUB_PAT_LINE);
 
     // Baseline FIRST: with no config the 0.9-confidence PAT fires (exit 1). If
     // this regresses the suppression assertion below would be vacuous.
@@ -141,7 +141,7 @@ fn explicit_config_min_confidence_suppresses_below_threshold() {
 
 #[test]
 fn explicit_config_min_confidence_boundary_is_inclusive() {
-    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+    let dir = scan_dir_with("gh.env", GITHUB_PAT_LINE);
 
     // At the EXACT finding confidence (0.9) the filter is inclusive (>=), so the
     // finding is kept.
@@ -181,8 +181,8 @@ fn explicit_config_min_confidence_top_keeps_only_perfect_confidence() {
     // A `--config` min_confidence = 1.0 is the inclusive top: it keeps ONLY the
     // 1.0 finding and drops the 0.9 one.
     let dir = TempDir::new().expect("tempdir");
-    std::fs::write(dir.path().join("aws.txt"), AWS_KEY_LINE).expect("write aws");
-    std::fs::write(dir.path().join("gh.txt"), GITHUB_PAT_LINE).expect("write gh");
+    std::fs::write(dir.path().join("aws.env"), AWS_KEY_LINE).expect("write aws");
+    std::fs::write(dir.path().join("gh.env"), GITHUB_PAT_LINE).expect("write gh");
 
     let (_cfg, cfg_path) = config_file("[scan]\nmin_confidence = 1.0\n");
     let (code, stdout, stderr) = scan(
@@ -208,7 +208,7 @@ fn explicit_config_min_confidence_top_keeps_only_perfect_confidence() {
 
 #[test]
 fn explicit_config_severity_filter_drops_lower_severity() {
-    let dir = scan_dir_with("hook.txt", SLACK_WEBHOOK_LINE);
+    let dir = scan_dir_with("hook.env", SLACK_WEBHOOK_LINE);
 
     // Baseline: the high-severity slack webhook fires with no config.
     let (code, stdout, stderr) = scan(dir.path(), &["--format", "json"]);
@@ -249,7 +249,7 @@ fn explicit_config_severity_filter_drops_lower_severity() {
 
 #[test]
 fn explicit_config_severity_at_or_below_keeps_finding() {
-    let dir = scan_dir_with("hook.txt", SLACK_WEBHOOK_LINE);
+    let dir = scan_dir_with("hook.env", SLACK_WEBHOOK_LINE);
 
     // `severity = "high"` (== the finding's severity) keeps it; the floor is
     // inclusive of the named level.
@@ -295,7 +295,7 @@ fn explicit_config_severity_at_or_below_keeps_finding() {
 fn explicit_config_overrides_discovered_keyhog_toml() {
     // A `.keyhog.toml` in the scan dir sets min_confidence = 0.99 (would drop the
     // 0.9 PAT). An explicit `--config` at 0.5 must WIN → the PAT survives.
-    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+    let dir = scan_dir_with("gh.env", GITHUB_PAT_LINE);
     std::fs::write(
         dir.path().join(".keyhog.toml"),
         "[scan]\nmin_confidence = 0.99\n",
@@ -339,7 +339,7 @@ fn explicit_config_overrides_discovered_keyhog_toml() {
 fn cli_min_confidence_flag_overrides_config_value() {
     // Config asks for a low floor (0.5); the explicit `--min-confidence 0.99`
     // CLI flag is the highest-precedence layer and wins, dropping the 0.9 PAT.
-    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+    let dir = scan_dir_with("gh.env", GITHUB_PAT_LINE);
     let (_cfg, cfg_path) = config_file("[scan]\nmin_confidence = 0.5\n");
     let (code, stdout, stderr) = scan(
         dir.path(),
@@ -372,7 +372,7 @@ fn cli_min_confidence_flag_overrides_config_value() {
 
 #[test]
 fn explicit_config_missing_file_fails_closed_with_fix() {
-    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+    let dir = scan_dir_with("gh.env", GITHUB_PAT_LINE);
     let (code, _stdout, stderr) = scan(
         dir.path(),
         &[
@@ -408,7 +408,7 @@ fn explicit_config_missing_file_fails_closed_with_fix() {
 fn explicit_config_pointing_at_directory_fails_closed() {
     // Pointing `--config` at a directory is a distinct read failure ("Is a
     // directory") from a missing file, and must still fail closed with exit 2.
-    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+    let dir = scan_dir_with("gh.env", GITHUB_PAT_LINE);
     let cfg_dir = TempDir::new().expect("dir-as-config");
     let (code, _stdout, stderr) = scan(
         dir.path(),
@@ -439,7 +439,7 @@ fn explicit_config_unknown_field_fails_closed() {
     // `deny_unknown_fields`: a typo'd key in the --config file is a TOML parse
     // error, not a silent ignore, a mis-spelled security knob can never look
     // honored.
-    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+    let dir = scan_dir_with("gh.env", GITHUB_PAT_LINE);
     let (_cfg, cfg_path) = config_file("bogus_key = 1\n");
     let (code, _stdout, stderr) = scan(
         dir.path(),
@@ -469,7 +469,7 @@ fn explicit_config_unknown_field_fails_closed() {
 fn explicit_config_invalid_severity_value_lists_valid_values() {
     // A semantically invalid enum string TOML parsing cannot catch: fail closed
     // with a message that quotes the bad value and enumerates the valid ones.
-    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+    let dir = scan_dir_with("gh.env", GITHUB_PAT_LINE);
     let (_cfg, cfg_path) = config_file("[scan]\nseverity = \"nope\"\n");
     let (code, _stdout, stderr) = scan(
         dir.path(),
@@ -493,7 +493,7 @@ fn explicit_config_invalid_severity_value_lists_valid_values() {
 fn config_and_no_config_flags_are_mutually_exclusive() {
     // clap rejects `--config` together with `--no-config` before any scan runs;
     // this is a usage error (exit 2) with a message naming the conflict.
-    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+    let dir = scan_dir_with("gh.env", GITHUB_PAT_LINE);
     let (_cfg, cfg_path) = config_file("[scan]\nmin_confidence = 0.5\n");
     let output = Command::new(binary())
         .arg("scan")
@@ -531,7 +531,7 @@ fn min_confidence_range_validation_matches_between_cli_and_config() {
     // The CLI value_parser (`parse_min_confidence`) enforces [0.0, 1.0]: an
     // out-of-range 5.0 is REJECTED as a clap usage error (exit 2) naming the
     // bound.
-    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+    let dir = scan_dir_with("gh.env", GITHUB_PAT_LINE);
     let (code, _stdout, stderr) =
         scan(dir.path(), &["--min-confidence", "5.0", "--format", "json"]);
     assert_eq!(
@@ -573,7 +573,7 @@ fn min_confidence_range_validation_matches_between_cli_and_config() {
 
 #[test]
 fn config_min_confidence_boundaries_validate() {
-    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+    let dir = scan_dir_with("gh.env", GITHUB_PAT_LINE);
 
     // Negative values are rejected by the canonical scan key.
     let (_cfg, cfg_path) = config_file("[scan]\nmin_confidence = -0.5\n");
@@ -630,7 +630,7 @@ fn config_min_confidence_boundaries_validate() {
 
 #[test]
 fn ml_weight_range_validation_matches_between_cli_and_config() {
-    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+    let dir = scan_dir_with("gh.env", GITHUB_PAT_LINE);
 
     // CLI --ml-weight now enforces [0.0, 1.0] (it was previously UNVALIDATED, a
     // silent gap, unlike --min-confidence/--ml-threshold): an out-of-range 5.0 is
@@ -690,7 +690,7 @@ fn ml_weight_range_validation_matches_between_cli_and_config() {
 
 #[test]
 fn config_threads_zero_is_rejected_matching_reader_threads_and_cli() {
-    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+    let dir = scan_dir_with("gh.env", GITHUB_PAT_LINE);
 
     // CLI --threads 0 is rejected (parse_positive_thread_count: ">= 1").
     let (code, _stdout, stderr) = scan(dir.path(), &["--threads", "0", "--format", "json"]);
@@ -737,7 +737,7 @@ fn config_threads_zero_is_rejected_matching_reader_threads_and_cli() {
 /// `min_secret_len = 0` are genuine errors, not silent "disable" sentinels.
 #[test]
 fn every_positive_int_scan_config_knob_rejects_zero() {
-    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+    let dir = scan_dir_with("gh.env", GITHUB_PAT_LINE);
     for field in [
         "threads",
         "reader_threads",

@@ -5,6 +5,7 @@
 - Benchmark corpus synthetic packs & representative test coverage (Row 162). Fixed AWS Access Key token shape in the built-in benchmark corpus template to match 20-character credential length (`AKIA` + 16 chars). Added integration tests verifying benchmark corpus structure, metadata, planted credential shapes, and synthetic execution pack finding parity invariants.
 - fix(guard): `guard list` exits with a system error when a registered root cannot be queried instead of reporting success for the roots it did reach.
 - fix(cli): `--window-overlap` accepts 1KB up to strictly less than the 1MB window size. The previous 16MB ceiling accepted values the source reader rejects at runtime.
+- fix(cli): `detectors --audit` loads the corpus named by `--detectors` ungated, so it reports every failing detector instead of exiting 2 through the fail-closed corpus gate with no report. `EXIT_DETECTOR_AUDIT_FAILED` (3) is reachable again.
 
 - bench(cli): add criterion benchmarks for CLI startup latency, git hook execution lifecycle, and guard status protocol roundtrips (Row 147).
 - feat(guard): implement continuous guard transition feed / event log surface with causal attribution across registered roots (`keyhog guard feed`, `GuardFeed` protocol frame) (Row 146).

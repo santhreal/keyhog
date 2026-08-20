@@ -67,6 +67,12 @@ fn self_scan_segment_suppression_opt_out_reports_real_leak() {
         .arg("--backend")
         .arg("cpu")
         .arg("--no-suppress-test-fixtures")
+        // The opt-out stops the SUPPRESSION; the evidence tier stays
+        // `review/test-fixture`, which the default policy does not block.
+        // `paranoid` blocks `review` too, so the exit code below proves the
+        // recovered leak can fail a build and not just print.
+        .arg("--evidence-policy")
+        .arg("paranoid")
         .arg("--show-secrets")
         .arg(dir.path())
         .output()
