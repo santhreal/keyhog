@@ -95,14 +95,24 @@ fn recovered_phase2_tail(
     Phase2GpuAdmissionOutcome {
         admission,
         haystack_uploads,
-        recovered_rows: (remaining > 0)
-            .then_some(start..total_rows)
-            .into_iter()
-            .collect(),
+        recovered_rows: if remaining > 0 {
+            vec![start..total_rows]
+        } else {
+            Vec::new()
+        },
         fault: Some(fault),
     }
 }
 #[cfg(test)]
+#[inline]
+pub(super) fn mib_per_second(bytes: usize, elapsed: std::time::Duration) -> f64 {
+    if bytes == 0 || elapsed.is_zero() {
+        0.0
+    } else {
+        bytes as f64 / (1024.0 * 1024.0) / elapsed.as_secs_f64()
+    }
+}
+
 #[inline]
 pub(super) fn mib_per_second(bytes: usize, elapsed: std::time::Duration) -> f64 {
     if bytes == 0 || elapsed.is_zero() {
@@ -180,15 +190,15 @@ pub(super) fn append_phase2_gpu_admission(
     merged
         .admitted
         .try_reserve(shard.admitted.len())
-        .map_err(|error| format!("phase-2 GPU admitted-row merge reserve failed: {error}"))?;
+        .map_err(|e| format!("phase-2 GPU admitted-row merge reserve failed: {e}"))?;
     merged
         .complete
         .try_reserve(shard.complete.len())
-        .map_err(|error| format!("phase-2 GPU complete-row merge reserve failed: {error}"))?;
+        .map_err(|e| format!("phase-2 GPU complete-row merge reserve failed: {e}"))?;
     merged
         .candidate_bits
         .try_reserve(shard.candidate_bits.len())
-        .map_err(|error| format!("phase-2 GPU candidate merge reserve failed: {error}"))?;
+        .map_err(|e| format!("phase-2 GPU candidate merge reserve failed: {e}"))?;
     merged.admitted.append(&mut shard.admitted);
     merged.complete.append(&mut shard.complete);
     merged.candidate_bits.append(&mut shard.candidate_bits);
