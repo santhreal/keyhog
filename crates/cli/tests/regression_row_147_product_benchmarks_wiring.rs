@@ -21,10 +21,10 @@ use keyhog_core::{
     VerificationResult, VerifiedFinding,
 };
 use keyhog_sources::StagedManifest;
-use keyhog_verifier::sigv4::{aws_uri_encode, canonical_query_string};
 use keyhog_verifier::ssrf::{is_private_ip_addr, is_private_url};
 use keyhog_verifier::testing::{
-    TestApi, TestVerificationCache, VerifierTestApi, VerifierTestCache,
+    aws_uri_encode, canonical_query_string, TestApi, TestVerificationCache, VerifierTestApi,
+    VerifierTestCache,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -338,58 +338,27 @@ fn row_147_hook_execution_lifecycle_and_staged_scan_flow() {
 fn row_147_guard_status_protocol_and_state_transitions() {
     #[cfg(unix)]
     {
-        use keyhog::testing::daemon::guard_runtime::GuardRuntime;
-        use keyhog::testing::daemon::protocol::{response_kind, Request, Response};
-
-        let status_req = Request::GuardStatus {
-            root: "/srv/repo".to_string(),
+        use keyhog::testing::daemon::protocol::{
+            deserialize_status_request, deserialize_status_response, response_kind_classification,
+            sample_guard_status_result_frame, serialize_status_request, serialize_status_response,
         };
-        let encoded_req = serde_json::to_vec(&status_req).expect("serialize req");
-        let decoded_req: Request = serde_json::from_slice(&encoded_req).expect("deserialize req");
-        match decoded_req {
-            Request::GuardStatus { root } => assert_eq!(root, "/srv/repo"),
-            _ => panic!("expected GuardStatus"),
-        }
+        use keyhog::testing::daemon::GuardRuntime;
 
-        let status_resp = Response::GuardStatusResult {
-            root: "/srv/repo".to_string(),
-            mode: "repo".to_string(),
-            state: "current".to_string(),
-            terminal_sequence: 1,
-            accepted_event_sequence: 1,
-            completed_event_sequence: 1,
-            pending_events: 0,
-            files_scanned: 100,
-            bytes_scanned: 1024,
-            attestation_hits: 50,
-            attestation_misses: 50,
-            findings_count: 0,
-            coverage_gaps: 0,
-            initial_reconciliation_time: Some(1787140800),
-            last_reconciliation_time: Some(1787140800),
-            scanner_residency: "resident".to_string(),
-            backend_route_label: "cpu".to_string(),
-            build_identity_short: "abc123456789".to_string(),
-            detector_digest_short: "def123456789".to_string(),
-            suppression_digest_short: String::new(),
-            config_digest_short: "789123456789".to_string(),
-            autoroute_evidence_status: "valid".to_string(),
-            store_schema_version: 1,
-            store_path: "/srv/repo/.keyhog-guard.db".to_string(),
-            repair_command: "keyhog guard reconcile /srv/repo".to_string(),
-        };
+        let status_req_root = "/srv/repo";
+        let encoded_req = serialize_status_request(status_req_root);
+        let decoded_root = deserialize_status_request(&encoded_req).expect("deserialize req");
+        assert_eq!(decoded_root, "/srv/repo");
 
-        assert_eq!(response_kind(&status_resp), "GuardStatusResult");
-        let encoded_resp = serde_json::to_vec(&status_resp).expect("serialize resp");
-        let decoded_resp: Response =
-            serde_json::from_slice(&encoded_resp).expect("deserialize resp");
-        match decoded_resp {
-            Response::GuardStatusResult { root, state, .. } => {
-                assert_eq!(root, "/srv/repo");
-                assert_eq!(state, "current");
-            }
-            _ => panic!("expected GuardStatusResult"),
-        }
+        let status_resp_frame = sample_guard_status_result_frame("/srv/repo");
+        assert_eq!(
+            response_kind_classification(&status_resp_frame),
+            "GuardStatusResult"
+        );
+        let encoded_resp = serialize_status_response(&status_resp_frame);
+        let (decoded_root, decoded_state) =
+            deserialize_status_response(&encoded_resp).expect("deserialize resp");
+        assert_eq!(decoded_root, "/srv/repo");
+        assert_eq!(decoded_state, "current");
 
         // GuardRuntime verification
         let rt = GuardRuntime::new();

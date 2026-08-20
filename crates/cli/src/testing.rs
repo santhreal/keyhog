@@ -1511,17 +1511,271 @@ impl StableHashProbe {
     }
 }
 
+/// Seams for testing hook discovery and installation without widening production visibility.
+#[doc(hidden)]
 pub mod hook {
-    pub use crate::subcommands::hook::*;
+    use anyhow::Result;
+    use std::path::{Path, PathBuf};
+
+    /// Canonical scan arguments injected into git hooks.
+    pub const CANONICAL_SCAN_ARGS: &str = crate::subcommands::hook::CANONICAL_SCAN_ARGS;
+
+    /// Status of a hook installation attempt.
+    pub type HookInstallStatus = crate::subcommands::hook::HookInstallStatus;
+
+    /// Install or update the git pre-commit hook in the given repository.
+    pub fn install_at_repo(repo_root: &Path, force: bool) -> Result<(PathBuf, HookInstallStatus)> {
+        crate::subcommands::hook::install_at_repo(repo_root, force)
+    }
+
+    /// Resolve the hooks directory for a given repository.
+    pub fn find_hooks_dir_for_repo(repo_root: &Path) -> Result<PathBuf> {
+        crate::subcommands::hook::find_hooks_dir_for_repo(repo_root)
+    }
 }
 
 #[cfg(unix)]
+/// Seams for testing daemon runtime and framing without widening internal message types.
+#[doc(hidden)]
 pub mod daemon {
-    pub mod guard_runtime {
-        pub use crate::daemon::guard_runtime::*;
+    use anyhow::Result;
+    use keyhog_core::guard_state::{
+        FilesystemIdentity, GuardRootMode, GuardRootRecord, GuardRootState, GuardTransition,
+    };
+
+    /// Opaque wrapper over the internal GuardRuntime for integration tests and benchmarks.
+    pub struct GuardRuntime(crate::daemon::guard_runtime::GuardRuntime);
+
+    impl GuardRuntime {
+        /// Construct a fresh guard runtime.
+        pub fn new() -> Self {
+            Self(crate::daemon::guard_runtime::GuardRuntime::new())
+        }
+
+        /// Register a root with filesystem identity and mode.
+        pub fn add_root(
+            &self,
+            root_bytes: Vec<u8>,
+            fs_identity: FilesystemIdentity,
+            mode: GuardRootMode,
+        ) -> Result<()> {
+            self.0.add_root(root_bytes, fs_identity, mode)
+        }
+
+        /// Transition the state of a registered root.
+        pub fn transition_root(
+            &self,
+            root_bytes: &[u8],
+            transition: &GuardTransition,
+        ) -> Result<GuardRootState> {
+            self.0.transition_root(root_bytes, transition)
+        }
+
+        /// Query the record for a root.
+        pub fn root_record(&self, root_bytes: &[u8]) -> Option<GuardRootRecord> {
+            self.0.root_record(root_bytes)
+        }
+
+        /// Query the current state for a root.
+        pub fn root_state(&self, root_bytes: &[u8]) -> Option<GuardRootState> {
+            self.0.root_state(root_bytes)
+        }
+
+        /// List all registered roots and their states.
+        pub fn list_roots(&self) -> Vec<(Vec<u8>, GuardRootState)> {
+            self.0.list_roots()
+        }
     }
+
+    /// Benchmark and test fixtures for daemon framing without exposing internal message types.
     pub mod protocol {
-        pub use crate::daemon::protocol::*;
+        use serde::{Deserialize, Serialize};
+
+        /// Sample guard status request payload for framing benchmarks.
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+        pub struct GuardStatusRequestFrame {
+            /// Root directory path.
+            pub root: String,
+        }
+
+        /// Sample guard status result payload for framing benchmarks.
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+        pub struct GuardStatusResultFrame {
+            /// Root directory path.
+            pub root: String,
+            /// Operating mode: repo or filesystem.
+            pub mode: String,
+            /// Current guard state label.
+            pub state: String,
+            /// Terminal event sequence counter.
+            pub terminal_sequence: u64,
+            /// Accepted event sequence counter.
+            pub accepted_event_sequence: u64,
+            /// Completed event sequence counter.
+            pub completed_event_sequence: u64,
+            /// Pending events count.
+            pub pending_events: usize,
+            /// Total files scanned.
+            pub files_scanned: usize,
+            /// Total bytes scanned.
+            pub bytes_scanned: u64,
+            /// Cache hit count.
+            pub attestation_hits: usize,
+            /// Cache miss count.
+            pub attestation_misses: usize,
+            /// Total secret findings.
+            pub findings_count: usize,
+            /// Total coverage gaps.
+            pub coverage_gaps: usize,
+            /// Timestamp of initial reconciliation.
+            pub initial_reconciliation_time: Option<u64>,
+            /// Timestamp of last reconciliation.
+            pub last_reconciliation_time: Option<u64>,
+            /// Residency label.
+            pub scanner_residency: String,
+            /// Active backend route label.
+            pub backend_route_label: String,
+            /// Short build identity digest.
+            pub build_identity_short: String,
+            /// Short detector digest.
+            pub detector_digest_short: String,
+            /// Short suppression digest.
+            pub suppression_digest_short: String,
+            /// Short config digest.
+            pub config_digest_short: String,
+            /// Autoroute evidence status.
+            pub autoroute_evidence_status: String,
+            /// Store schema version.
+            pub store_schema_version: u32,
+            /// State store path.
+            pub store_path: String,
+            /// Operator repair command.
+            pub repair_command: String,
+        }
+
+        /// Serialize a guard status request frame to JSON bytes.
+        pub fn serialize_status_request(root: &str) -> Vec<u8> {
+            let req = crate::daemon::protocol::Request::GuardStatus {
+                root: root.to_string(),
+            };
+            serde_json::to_vec(&req).expect("serialize guard status request")
+        }
+
+        /// Deserialize a guard status request frame from JSON bytes.
+        pub fn deserialize_status_request(bytes: &[u8]) -> Result<String, serde_json::Error> {
+            let req: crate::daemon::protocol::Request = serde_json::from_slice(bytes)?;
+            match req {
+                crate::daemon::protocol::Request::GuardStatus { root } => Ok(root),
+                _ => panic!("unexpected request kind"),
+            }
+        }
+
+        /// Create a standard sample guard status result frame for benchmarks.
+        pub fn sample_guard_status_result_frame(root: &str) -> GuardStatusResultFrame {
+            GuardStatusResultFrame {
+                root: root.to_string(),
+                mode: "repo".to_string(),
+                state: "current".to_string(),
+                terminal_sequence: 42,
+                accepted_event_sequence: 42,
+                completed_event_sequence: 42,
+                pending_events: 0,
+                files_scanned: 1542,
+                bytes_scanned: 1048576,
+                attestation_hits: 1500,
+                attestation_misses: 42,
+                findings_count: 0,
+                coverage_gaps: 0,
+                initial_reconciliation_time: Some(1787140800),
+                last_reconciliation_time: Some(1787140800),
+                scanner_residency: "resident".to_string(),
+                backend_route_label: "cpu".to_string(),
+                build_identity_short: "abc123456789".to_string(),
+                detector_digest_short: "def123456789".to_string(),
+                suppression_digest_short: String::new(),
+                config_digest_short: "789123456789".to_string(),
+                autoroute_evidence_status: "valid".to_string(),
+                store_schema_version: 1,
+                store_path: "/var/repos/.keyhog-guard.db".to_string(),
+                repair_command: format!("keyhog guard reconcile {root}"),
+            }
+        }
+
+        /// Serialize a guard status response frame to JSON bytes.
+        pub fn serialize_status_response(frame: &GuardStatusResultFrame) -> Vec<u8> {
+            let resp = crate::daemon::protocol::Response::GuardStatusResult {
+                root: frame.root.clone(),
+                mode: frame.mode.clone(),
+                state: frame.state.clone(),
+                terminal_sequence: frame.terminal_sequence,
+                accepted_event_sequence: frame.accepted_event_sequence,
+                completed_event_sequence: frame.completed_event_sequence,
+                pending_events: frame.pending_events,
+                files_scanned: frame.files_scanned,
+                bytes_scanned: frame.bytes_scanned,
+                attestation_hits: frame.attestation_hits,
+                attestation_misses: frame.attestation_misses,
+                findings_count: frame.findings_count,
+                coverage_gaps: frame.coverage_gaps,
+                initial_reconciliation_time: frame.initial_reconciliation_time,
+                last_reconciliation_time: frame.last_reconciliation_time,
+                scanner_residency: frame.scanner_residency.clone(),
+                backend_route_label: frame.backend_route_label.clone(),
+                build_identity_short: frame.build_identity_short.clone(),
+                detector_digest_short: frame.detector_digest_short.clone(),
+                suppression_digest_short: frame.suppression_digest_short.clone(),
+                config_digest_short: frame.config_digest_short.clone(),
+                autoroute_evidence_status: frame.autoroute_evidence_status.clone(),
+                store_schema_version: frame.store_schema_version,
+                store_path: frame.store_path.clone(),
+                repair_command: frame.repair_command.clone(),
+            };
+            serde_json::to_vec(&resp).expect("serialize guard status response")
+        }
+
+        /// Deserialize a guard status response frame from JSON bytes.
+        pub fn deserialize_status_response(
+            bytes: &[u8],
+        ) -> Result<(String, String), serde_json::Error> {
+            let resp: crate::daemon::protocol::Response = serde_json::from_slice(bytes)?;
+            match resp {
+                crate::daemon::protocol::Response::GuardStatusResult { root, state, .. } => {
+                    Ok((root, state))
+                }
+                _ => panic!("unexpected response kind"),
+            }
+        }
+
+        /// Classify a response frame using the internal classifier.
+        pub fn response_kind_classification(frame: &GuardStatusResultFrame) -> &'static str {
+            let resp = crate::daemon::protocol::Response::GuardStatusResult {
+                root: frame.root.clone(),
+                mode: frame.mode.clone(),
+                state: frame.state.clone(),
+                terminal_sequence: frame.terminal_sequence,
+                accepted_event_sequence: frame.accepted_event_sequence,
+                completed_event_sequence: frame.completed_event_sequence,
+                pending_events: frame.pending_events,
+                files_scanned: frame.files_scanned,
+                bytes_scanned: frame.bytes_scanned,
+                attestation_hits: frame.attestation_hits,
+                attestation_misses: frame.attestation_misses,
+                findings_count: frame.findings_count,
+                coverage_gaps: frame.coverage_gaps,
+                initial_reconciliation_time: frame.initial_reconciliation_time,
+                last_reconciliation_time: frame.last_reconciliation_time,
+                scanner_residency: frame.scanner_residency.clone(),
+                backend_route_label: frame.backend_route_label.clone(),
+                build_identity_short: frame.build_identity_short.clone(),
+                detector_digest_short: frame.detector_digest_short.clone(),
+                suppression_digest_short: frame.suppression_digest_short.clone(),
+                config_digest_short: frame.config_digest_short.clone(),
+                autoroute_evidence_status: frame.autoroute_evidence_status.clone(),
+                store_schema_version: frame.store_schema_version,
+                store_path: frame.store_path.clone(),
+                repair_command: frame.repair_command.clone(),
+            };
+            crate::daemon::protocol::response_kind(&resp)
+        }
     }
-    pub use crate::daemon::*;
 }
