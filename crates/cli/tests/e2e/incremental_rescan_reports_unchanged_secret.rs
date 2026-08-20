@@ -175,6 +175,14 @@ fn incremental_cache_persist_failure_with_findings_keeps_finding_exit_and_warnin
         "cache persistence failure must not hide the reported secret; stdout={}",
         String::from_utf8_lossy(&output.stdout)
     );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("incremental cache")
+            || stderr.contains("could not be persisted")
+            || stderr.contains("failed to persist")
+            || stderr.contains("warning"),
+        "cache persistence failure must remain visible on stderr; stderr={stderr}"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

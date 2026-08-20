@@ -1628,6 +1628,7 @@ async fn handle_connection(
             let state_cloned = state.clone();
             let mass_session_ref = &mut mass_session;
             let streamed_result = std::panic::AssertUnwindSafe(async {
+                #[cfg(debug_assertions)]
                 if let Some(target_kind) = TEST_PANIC_INJECTION_KIND.read().as_deref() {
                     if target_kind == "MassFilesystemDrain" {
                         panic!("simulated test panic on daemon request kind: MassFilesystemDrain");
@@ -1683,6 +1684,7 @@ async fn handle_connection(
         let mass_session_ref = &mut mass_session;
 
         let dispatch_result = std::panic::AssertUnwindSafe(async {
+            #[cfg(debug_assertions)]
             if let Some(target_kind) = TEST_PANIC_INJECTION_KIND.read().as_deref() {
                 if target_kind == crate::daemon::protocol::request_kind(&request) {
                     panic!("simulated test panic on daemon request kind: {target_kind}");
