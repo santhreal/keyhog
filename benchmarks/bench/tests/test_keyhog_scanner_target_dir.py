@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pathlib
-import pytest
 
 from bench.scanners import keyhog as keyhog_adapter
 from bench.scanners.keyhog import _cargo_target_dir, _freshly_built_keyhog, resolve_keyhog_binary
