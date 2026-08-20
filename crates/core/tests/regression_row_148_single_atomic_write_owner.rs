@@ -15,7 +15,7 @@ use keyhog_core::state_file::{
     sweep_stale_tmp_siblings, write_atomically, write_atomically_with_prefix,
     write_atomically_with_writer, write_atomically_with_writer_and_prefix, DEFAULT_TMP_PREFIX,
 };
-use std::io::{ErrorKind, Write};
+use std::io::Write;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 use tempfile::TempDir;

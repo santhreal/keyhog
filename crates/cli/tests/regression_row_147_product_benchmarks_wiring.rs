@@ -386,6 +386,7 @@ fn row_147_guard_status_protocol_and_state_transitions() {
             store_schema_version: 1,
             store_path: "/srv/repo/.keyhog-guard.db".to_string(),
             repair_command: "keyhog guard reconcile /srv/repo".to_string(),
+            recent_transitions: Vec::new(),
         };
 
         assert_eq!(response_kind(&status_resp), "GuardStatusResult");

@@ -1141,6 +1141,9 @@ impl CliTestApi for TestApi {
             .map(|m| m.detector_id.as_ref().to_string())
             .collect())
     }
+    fn install_execution_generation(&self, _candidate: &Path) -> Result<bool> {
+        Ok(true)
+    }
     fn disabled_gpu_dispatch_for_test(
         &self,
         body: &str,

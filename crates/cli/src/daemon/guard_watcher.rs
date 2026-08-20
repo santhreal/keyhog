@@ -233,6 +233,7 @@ impl WatchedRoot {
         false
     }
 
+    #[allow(dead_code)]
     fn maybe_reload_ignore_matcher(&self, root: &std::path::Path, path: &std::path::Path) {
         if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
             if file_name == ".keyhogignore"
