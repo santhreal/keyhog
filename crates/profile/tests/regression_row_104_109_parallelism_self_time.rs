@@ -6,7 +6,12 @@
 //! What this does NOT catch: OS scheduler preemption delays or CPU frequency scaling occurring
 //! within a single leaf span.
 
-use keyhog_profile::{span, RunIdentity, RunState, Session, Stage};
+use keyhog_profile::{
+    decision_timer, instrument_future, span, RunIdentity, RunState, Session, Stage,
+};
+use std::future::Future;
+use std::sync::Arc;
+use std::task::{Context, Poll, Wake, Waker};
 use std::time::{Duration, Instant};
 
 fn test_identity(name: &str) -> RunIdentity {
@@ -173,4 +178,63 @@ fn row_104_109_dynamic_stage_sweep_preserves_self_time_invariant() {
             m.elapsed_ns
         );
     }
+}
+
+struct ThreadWake(std::thread::Thread);
+
+impl Wake for ThreadWake {
+    fn wake(self: Arc<Self>) {
+        self.0.unpark();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.unpark();
+    }
+}
+
+fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    let waker = Waker::from(Arc::new(ThreadWake(std::thread::current())));
+    let mut context = Context::from_waker(&waker);
+    let mut future = std::pin::pin!(future);
+    loop {
+        match future.as_mut().poll(&mut context) {
+            Poll::Ready(output) => return output,
+            Poll::Pending => std::thread::park(),
+        }
+    }
+}
+
+#[test]
+fn row_104_async_and_decision_timer_occupancy_bounded_without_double_counting() {
+    let session = Session::start(test_identity("row-104-async-occupancy")).expect("start session");
+    let runtime = session.runtime();
+
+    let start = Instant::now();
+
+    // Wrap synchronous span and decision timer inside instrumented future
+    let future = instrument_future(Stage::BackendDispatch, async {
+        let s = span(Stage::HotPatterns);
+        std::thread::sleep(Duration::from_millis(5));
+        let dt = decision_timer(Stage::BackendSelect);
+        std::thread::sleep(Duration::from_millis(5));
+        dt.finish();
+        drop(s);
+    });
+    block_on(future);
+
+    let wall_ns = u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX);
+    let occupancy = runtime.take_session_worker_occupancy();
+    assert!(occupancy.worker_count >= 1);
+
+    let total_busy_ns = occupancy.busy_ns;
+    let max_allowed = wall_ns.saturating_mul(occupancy.worker_count.max(1));
+    assert!(
+        total_busy_ns <= max_allowed,
+        "total busy ns ({total_busy_ns}) must not exceed wall * worker_count ({max_allowed})"
+    );
+
+    let _ = session.finish(RunState::Completed);
 }
