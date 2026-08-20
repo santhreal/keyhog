@@ -666,6 +666,7 @@ fn resolve_execution_pack_binding(
         return Ok(None);
     }
     Ok(crate::execution_pack_install::load_authenticated_binding(&installed).ok())
+    // LAW10: optional installed execution-pack binding; fallback to embedded detectors when absent; recall preserved
 }
 
 pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {

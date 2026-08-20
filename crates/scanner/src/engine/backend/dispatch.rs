@@ -180,7 +180,7 @@ impl CompiledScanner {
             })
         };
         let threshold = self.tuning.chunk_lane_threshold();
-        let workers = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+        let workers = keyhog_profile::logical_cpus() as usize;
 
         let mut results: Vec<Vec<RawMatch>> =
             if chunks.len() <= workers || chunks.iter().all(|chunk| chunk.data.len() > threshold) {

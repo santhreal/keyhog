@@ -358,6 +358,7 @@ jobs:
           --test stress_all
           --test tool_contract
           --test triage_cli
+          --test regression_row_107_queue_depth_and_blocked_waits
       - name: cli audit suites
         run: >
           cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test --no-fail-fast

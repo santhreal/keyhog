@@ -3,10 +3,9 @@ pub(crate) mod backend;
 pub(crate) mod batch_topology;
 mod boundary;
 pub(crate) use boundary::derive_pattern_boundary_context;
-pub use boundary::regex_match_byte_upper_bound;
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries as scan_chunk_boundaries_for_test;
-pub use boundary::MAX_BOUNDARY_SEAM_BYTES;
+pub use boundary::{regex_match_byte_upper_bound, MAX_BOUNDARY_SEAM_BYTES};
 mod csr;
 pub(crate) use csr::CsrU32;
 mod extract;
@@ -36,11 +35,7 @@ pub(crate) mod phase2_anchor;
 #[cfg(test)]
 pub(crate) use phase2_anchor::required_prefix_literals as phase2_required_prefix_literals_for_test;
 pub(crate) use phase2_anchor::Phase2AnchorIndex;
-// Always-on re-export (NOT cfg(test)) so `crate::testing`: which is compiled
-// even when the crate is linked as a dependency of the integration-test binary,
-// where `cfg(test)` is false for this crate, can classify confirmed patterns by
-// the SAME required-prefix predicate `ConfirmedAnchorIndex` uses (backlog 4786
-// localization-ceiling analysis).
+// Always-on re-export for crate::testing required-prefix predicate classification.
 pub(crate) use phase2_anchor::{
     required_prefix_literals_with_cap, CONFIRMED_MAX_LITERALS_PER_PATTERN,
 };

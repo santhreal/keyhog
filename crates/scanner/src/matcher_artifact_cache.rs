@@ -776,6 +776,7 @@ pub fn store_matcher_artifact(
         use std::os::unix::fs::PermissionsExt;
         if created_cache_dir {
             if let Ok(meta) = std::fs::symlink_metadata(cache_dir) {
+                // LAW10: newly-created cache dir metadata read for permission check; failure to read metadata skips tightening without error; recall-safe
                 if !meta.file_type().is_symlink() && (meta.permissions().mode() & 0o077 != 0) {
                     std::fs::set_permissions(cache_dir, std::fs::Permissions::from_mode(0o700))
                         .map_err(|error| {

@@ -303,6 +303,7 @@ impl ServerState {
         });
         let watcher_instance = crate::daemon::guard_watcher::GuardWatcher::new(guard_recon_config)
             .unwrap_or_else(|e| {
+                // LAW10: watcher creation failure => disabled unmonitored watcher; loud warning logged and watcher status set; fail-closed
                 tracing::warn!(
                     "daemon: guard watcher disabled: unmonitored (not watching): {}",
                     e
