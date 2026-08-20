@@ -125,6 +125,8 @@ jobs:
             --test regression_ml_scorer_features \
             --test phase2_no_hit_branch_recall \
             --test openai_html_comment_bug_62
+          cargo test -p keyhog --profile release-fast \
+            --test target_spec_org_contracts
 
       - name: "informational: Chunk-AD contract validation (nightly)"
         # `chunk_ad_runner` is a corpus harness, it validates the contract TOMLs
