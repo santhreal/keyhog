@@ -946,6 +946,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
             detectors,
             gpu_policy,
             tuning_config,
+            // LAW10: absent disable reason implies default configured-off cache policy (recall-irrelevant caching).
             configured_reason.unwrap_or(MatcherArtifactCacheDisableReason::ConfiguredOff),
         );
     }
@@ -1003,6 +1004,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
             sorted,
             gpu_policy,
             tuning_config,
+            // LAW10: absent disable reason implies default configured-off cache policy (recall-irrelevant caching).
             configured_reason.unwrap_or(MatcherArtifactCacheDisableReason::ConfiguredOff),
         );
     };

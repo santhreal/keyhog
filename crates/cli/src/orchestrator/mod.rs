@@ -1385,13 +1385,24 @@ impl ScanOrchestrator {
         args.threads = Some(worker_threads);
         effective_config.threads = Some(worker_threads);
 
-        let (requested_detector_mode, detectors_path) = {
+        let (requested_detector_mode, detectors_path, custom_corpus_requested) = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorValidate);
             let requested_detector_mode = args.detectors_mode.map(Into::into);
             validate_detector_mode_selection(args.detectors_cli_explicit, requested_detector_mode)?;
             validate_explicit_detector_path(&args.detectors, args.detectors_cli_explicit)?;
-            let detectors_path = auto_discover_detectors(&args.detectors)?;
-            (requested_detector_mode, detectors_path)
+            let custom_corpus_requested = args.detectors_cli_explicit
+                || args.detectors != std::path::Path::new("detectors")
+                || requested_detector_mode.is_some();
+            let detectors_path = if custom_corpus_requested {
+                auto_discover_detectors(&args.detectors)?
+            } else {
+                args.detectors.clone()
+            };
+            (
+                requested_detector_mode,
+                detectors_path,
+                custom_corpus_requested,
+            )
         };
         let resolved_config_digest =
             crate::orchestrator_config::matcher_resolved_config_digest(&effective_config);
@@ -1407,7 +1418,7 @@ impl ScanOrchestrator {
         };
         let (mut loaded_corpus, detector_execution_pack) = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorLoad);
-            if !detectors_path.exists() && requested_detector_mode.is_none() {
+            if !custom_corpus_requested {
                 let policy = execution_pack_policy_for_args(&args);
                 let installed = match effective_config.backend_override {
                     Some(backend) => {
@@ -1483,8 +1494,9 @@ impl ScanOrchestrator {
                 (Some(corpus), None)
             } else {
                 anyhow::bail!(
-                    "custom or embedded detector compilation on the scan path is disabled without `--developer-compile-embedded-detectors`. \
-                     Fix: run `keyhog install` or `keyhog update` to prepare execution packs or pass `--developer-compile-embedded-detectors`."
+                    "custom detector corpus ('{}') was requested, but in-process compilation on the scan path is disabled without `--developer-compile-embedded-detectors`. \
+                     Fix: run `keyhog install` or `keyhog update` to prepare execution packs or pass `--developer-compile-embedded-detectors`.",
+                    detectors_path.display()
                 );
             }
         };
