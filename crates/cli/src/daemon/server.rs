@@ -1708,11 +1708,6 @@ async fn stream_mass_filesystem(
                     },
                 }
             }
-            Some(MassFilesystemMessage::Error(message)) => {
-                session.incremental_unpublishable = true;
-                session.filesystem_batches = None;
-                Response::Error { message }
-            }
             None => {
                 session.incremental_unpublishable = true;
                 session.filesystem_batches = None;

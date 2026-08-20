@@ -793,6 +793,8 @@ pub fn store_matcher_artifact(
     if sections.backend != expected_backend {
         return Err("matcher artifact backend does not match identity".to_owned());
     }
+    // Only tighten mode on directories we create. Do not chmod a pre-existing
+    // operator-supplied path (for example $HOME or $HOME/.cache).
     let created_cache_dir = !cache_dir.exists();
     validate_and_tighten_matcher_artifact_cache_dir(cache_dir, created_cache_dir)?;
     std::fs::create_dir_all(cache_dir).map_err(|error| {

@@ -2474,6 +2474,8 @@ impl Drop for AsyncSpan {
                 self_ns: 0,
                 blocked: false,
                 serial: false,
+                // An async span can be polled on any thread, so it never
+                // owns a worker's outermost interval.
                 outermost: false,
             },
         );
@@ -2726,6 +2728,8 @@ impl DecisionTimer {
                         self_ns: 0,
                         blocked: false,
                         serial: false,
+                        // The caller owns the enclosing span, if any; a decision
+                        // timer never claims a worker's outermost interval.
                         outermost: false,
                     },
                 );

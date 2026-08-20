@@ -19,14 +19,6 @@ fn fmt_value_enum<T: ValueEnum>(
     }
 }
 
-fn parse_window_overlap(s: &str) -> std::result::Result<usize, String> {
-    let bytes = crate::value_parsers::parse_byte_size(s)?;
-    if !(1024..=16 * 1024 * 1024).contains(&bytes) {
-        return Err("window overlap must be between 1KB and 16MB".to_string());
-    }
-    Ok(bytes)
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum SeverityFilter {
     Info,
@@ -937,7 +929,7 @@ pub struct ScanArgs {
     pub fused_depth: Option<usize>,
 
     /// Streaming window overlap size in bytes (default: 128KB).
-    #[arg(long, value_name = "SIZE", value_parser = parse_window_overlap)]
+    #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_window_overlap)]
     pub window_overlap: Option<usize>,
 
     /// Hard deadline per chunk scan in milliseconds. Default unset = no
