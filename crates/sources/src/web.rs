@@ -415,6 +415,7 @@ impl Source for WebSource {
         let worker = std::thread::Builder::new()
             .name("keyhog-web-fetch".to_string())
             .spawn(move || {
+                let _attributed = worker_lease.enter();
                 let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
                 source.stream_all(sender, worker_lease);
             });
