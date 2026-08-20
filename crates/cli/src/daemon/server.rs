@@ -1115,17 +1115,7 @@ pub fn guard_event_action_with_policy(
     has_policy_change: bool,
 ) -> GuardEventAction {
     use keyhog_core::guard_state::{GuardRootState, GuardTransition};
-    if has_policy_change {
-        match current_state {
-            Some(GuardRootState::Stopped) | None => GuardEventAction::Ignore,
-            Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
-                coverage_lost: has_overflow,
-            },
-            Some(GuardRootState::Degraded) => GuardEventAction::Ignore,
-            Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
-            _ => GuardEventAction::Transition(GuardTransition::PolicyChanged),
-        }
-    } else if has_overflow {
+    if has_overflow {
         match current_state {
             Some(GuardRootState::Stopped) | None => GuardEventAction::Ignore,
             Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
@@ -1133,6 +1123,16 @@ pub fn guard_event_action_with_policy(
             },
             Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
             _ => GuardEventAction::Transition(GuardTransition::CoverageLost),
+        }
+    } else if has_policy_change {
+        match current_state {
+            Some(GuardRootState::Stopped) | None => GuardEventAction::Ignore,
+            Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
+                coverage_lost: false,
+            },
+            Some(GuardRootState::Degraded) => GuardEventAction::Ignore,
+            Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
+            _ => GuardEventAction::Transition(GuardTransition::PolicyChanged),
         }
     } else {
         match current_state {

@@ -79,15 +79,17 @@ fn main() -> DynResult<()> {
     };
     let manifest_bytes = serde_json::to_vec_pretty(&manifest)?;
     let manifest_path = args.out_dir.join("manifest.json");
-    keyhog_core::state_file::write_atomically(&manifest_path, &manifest_bytes).map_err(|source| {
-        io_error_with_context(
-            source,
-            format!(
-                "failed to write artifact manifest {}",
-                manifest_path.display()
-            ),
-        )
-    })?;
+    keyhog_core::state_file::write_atomically(&manifest_path, &manifest_bytes).map_err(
+        |source| {
+            io_error_with_context(
+                source,
+                format!(
+                    "failed to write artifact manifest {}",
+                    manifest_path.display()
+                ),
+            )
+        },
+    )?;
     println!("{}", args.out_dir.join("manifest.json").display());
     Ok(())
 }
@@ -219,7 +221,6 @@ fn write_artifact(
         wire_version: artifact.wire_version,
     })
 }
-
 
 fn invalid_input(message: impl Into<String>) -> Box<dyn std::error::Error> {
     Box::new(std::io::Error::new(

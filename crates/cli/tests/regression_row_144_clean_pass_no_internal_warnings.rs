@@ -105,9 +105,9 @@ fn assert_no_internal_execution_pack_warnings(stderr: &str) {
     );
 
     // Assert absence of raw ISO-8601 timestamps typically emitted by unconfigured tracing formatters
-    let contains_raw_iso_timestamp = stderr
-        .lines()
-        .any(|line| line.contains("Z  WARN") || line.contains("Z  INFO") || line.contains("Z  ERROR"));
+    let contains_raw_iso_timestamp = stderr.lines().any(|line| {
+        line.contains("Z  WARN") || line.contains("Z  INFO") || line.contains("Z  ERROR")
+    });
     assert!(
         !contains_raw_iso_timestamp,
         "stderr must not contain raw ISO-timestamped tracing lines: {stderr}"
@@ -212,10 +212,6 @@ fn clean_pass_json_and_sarif_formats_are_unpolluted() {
             Some(i32::from(EXIT_SUCCESS)),
             "clean {format} scan must exit with SUCCESS (0), stderr: {stderr}"
         );
-
-        let stdout = String::from_utf8_lossy(&scan_output.stdout);
-        let stderr = String::from_utf8_lossy(&scan_output.stderr);
-
         // Verify that stdout parses cleanly as valid JSON without leading/trailing garbage
         let parsed: Result<serde_json::Value, _> = serde_json::from_str(&stdout);
         assert!(

@@ -17,9 +17,9 @@ use keyhog_core::guard_state::{
 use keyhog_core::json_selector;
 use keyhog_core::suppression::RuleSuppressor;
 use keyhog_core::{
-    compute_detector_corpus_digest, correlate_findings, dedup_matches, load_detectors,
-    sha256_hash, validate_detector, DedupScope, MatchLocation, MerkleIndex, RawMatch,
-    SensitiveString, Severity, VerificationResult, VerifiedFinding,
+    compute_detector_corpus_digest, correlate_findings, dedup_matches, load_detectors, sha256_hash,
+    validate_detector, DedupScope, MatchLocation, MerkleIndex, RawMatch, SensitiveString, Severity,
+    VerificationResult, VerifiedFinding,
 };
 use keyhog_sources::StagedManifest;
 use keyhog_verifier::ssrf::{is_private_ip_addr, is_private_url};
@@ -95,10 +95,26 @@ fn row_147_benchmark_manifest_targets_and_files_exist() {
         .to_path_buf();
 
     let expected_benches = [
-        ("crates/cli/Cargo.toml", "crates/cli/benches/cli_startup.rs", "cli_startup"),
-        ("crates/cli/Cargo.toml", "crates/cli/benches/hook_execution.rs", "hook_execution"),
-        ("crates/cli/Cargo.toml", "crates/cli/benches/guard_status.rs", "guard_status"),
-        ("crates/core/Cargo.toml", "crates/core/benches/core_evaluation.rs", "core_evaluation"),
+        (
+            "crates/cli/Cargo.toml",
+            "crates/cli/benches/cli_startup.rs",
+            "cli_startup",
+        ),
+        (
+            "crates/cli/Cargo.toml",
+            "crates/cli/benches/hook_execution.rs",
+            "hook_execution",
+        ),
+        (
+            "crates/cli/Cargo.toml",
+            "crates/cli/benches/guard_status.rs",
+            "guard_status",
+        ),
+        (
+            "crates/core/Cargo.toml",
+            "crates/core/benches/core_evaluation.rs",
+            "core_evaluation",
+        ),
         (
             "crates/verifier/Cargo.toml",
             "crates/verifier/benches/verifier_evaluation.rs",
@@ -145,7 +161,14 @@ fn row_147_cli_startup_arg_parsing_and_config_resolution() {
         ("scan_dot", &["keyhog", "scan", "."]),
         (
             "scan_hook_canonical",
-            &["keyhog", "scan", "--fast", "--git-staged", "--backend", "cpu"],
+            &[
+                "keyhog",
+                "scan",
+                "--fast",
+                "--git-staged",
+                "--backend",
+                "cpu",
+            ],
         ),
         (
             "scan_flags_matrix",
@@ -205,7 +228,10 @@ coalesce_window = "100ms"
     std::fs::write(&config_path, sample_config).expect("write sample config");
 
     let parse_res = API.parse_config_file_from_str(sample_config);
-    assert!(parse_res.is_ok(), "config parsing must succeed: {parse_res:?}");
+    assert!(
+        parse_res.is_ok(),
+        "config parsing must succeed: {parse_res:?}"
+    );
 
     let found = API.find_config_file(Some(dir.path()));
     assert_eq!(
@@ -240,7 +266,10 @@ fn row_147_hook_execution_lifecycle_and_staged_scan_flow() {
         .collect();
     let parsed = Cli::try_parse_from(&raw_tokens).expect("parse canonical scan args");
     if let Some(Command::Scan(scan_args)) = parsed.command {
-        assert!(scan_args.fast, "canonical hook scan args must have fast=true");
+        assert!(
+            scan_args.fast,
+            "canonical hook scan args must have fast=true"
+        );
         assert!(
             scan_args.git_staged,
             "canonical hook scan args must have git_staged=true"
@@ -357,6 +386,7 @@ fn row_147_guard_status_protocol_and_state_transitions() {
             store_schema_version: 1,
             store_path: "/srv/repo/.keyhog-guard.db".to_string(),
             repair_command: "keyhog guard reconcile /srv/repo".to_string(),
+            recent_transitions: Vec::new(),
         };
 
         assert_eq!(response_kind(&status_resp), "GuardStatusResult");
@@ -445,7 +475,11 @@ fn row_147_core_evaluation_suppression_and_merkle_operations() {
     let all_detectors = load_detectors(&detectors_path).expect("load detectors");
     for spec in all_detectors.iter().take(20) {
         let issues = validate_detector(spec);
-        assert!(issues.is_empty(), "detector {} must validate cleanly", spec.id);
+        assert!(
+            issues.is_empty(),
+            "detector {} must validate cleanly",
+            spec.id
+        );
     }
     let digest = compute_detector_corpus_digest(&all_detectors).expect("compute corpus digest");
     assert_ne!(digest, [0u8; 32], "corpus digest must not be zero");
@@ -512,7 +546,10 @@ credential_hash = "{suppressed_hash_hex}"
         1024,
         content_hash.as_bytes(),
     );
-    assert!(second_check, "second encounter with identical metadata must be unchanged");
+    assert!(
+        second_check,
+        "second encounter with identical metadata must be unchanged"
+    );
 
     assert!(index.metadata_unchanged(&sample_path, 1_700_000_000, 1024));
     assert!(!index.metadata_unchanged(&sample_path, 1_700_000_001, 1024));
@@ -558,7 +595,11 @@ credential_hash = "{suppressed_hash_hex}"
         "AKIAIOSFODNN7EXAMPLE",
     );
     let correlated = correlate_findings(&[f_reuse_1, f_reuse_2]);
-    assert_eq!(correlated.len(), 1, "identical credentials across paths must form 1 reuse correlation");
+    assert_eq!(
+        correlated.len(),
+        1,
+        "identical credentials across paths must form 1 reuse correlation"
+    );
 }
 
 #[test]
@@ -577,11 +618,8 @@ fn row_147_verifier_evaluation_interpolation_ssrf_and_cache() {
         "https://api.corp.example.com/users/usr%5F123/keys/token%5Fxyz%5F456"
     );
 
-    let interpolated_header = TestApi.interpolate_http_value(
-        "Bearer {{match}}",
-        "token_xyz_456",
-        &companions,
-    );
+    let interpolated_header =
+        TestApi.interpolate_http_value("Bearer {{match}}", "token_xyz_456", &companions);
     assert_eq!(interpolated_header, "Bearer token_xyz_456");
 
     // 2. Response selector
@@ -596,7 +634,10 @@ fn row_147_verifier_evaluation_interpolation_ssrf_and_cache() {
     let selected = json_selector::select(&json_data, "$.data.account.id")
         .expect("select")
         .cloned();
-    assert_eq!(selected, Some(serde_json::Value::String("acc_789".to_string())));
+    assert_eq!(
+        selected,
+        Some(serde_json::Value::String("acc_789".to_string()))
+    );
 
     // 3. Verification Cache
     let cache = TestVerificationCache::new(std::time::Duration::from_secs(60));

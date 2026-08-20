@@ -676,7 +676,7 @@ pub struct GuardWireManifestEntry {
 /// One state transition entry in a guard transition feed or status result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct GuardTransitionWireEntry {
+pub struct GuardTransitionWireEntry {
     /// Canonical root path.
     pub root: String,
     /// Global transition sequence.
@@ -1078,7 +1078,7 @@ pub(crate) fn request_kind(request: &Request) -> &'static str {
     }
 }
 
-/// All 18 daemon request kinds.
+/// All 19 daemon request kinds.
 pub(crate) const ALL_REQUEST_KINDS: &[&str] = &[
     "Hello",
     "ScanText",

@@ -475,6 +475,7 @@ struct GuardStatusView {
     store_schema_version: u32,
     store_path: String,
     repair_command: String,
+    recent_transitions: Vec<crate::daemon::protocol::GuardTransitionWireEntry>,
 }
 
 impl GuardStatusView {
@@ -512,6 +513,7 @@ impl GuardStatusView {
             "store_schema_version": self.store_schema_version,
             "store_path": self.store_path,
             "repair_command": self.repair_command,
+            "recent_transitions": self.recent_transitions,
         })
     }
 
@@ -748,7 +750,10 @@ async fn run_status_online(
                 } else {
                     view.print_human();
                 }
-                Ok(exit_code_for_guard_state(&view.state, view.findings_count))
+                Ok(ExitCode::from(exit_code_for_guard_state(
+                    &view.state,
+                    view.findings_count,
+                )))
             }
             Response::Error { message } => {
                 anyhow::bail!("{message}");
@@ -782,46 +787,13 @@ async fn run_status_online(
                 }
 
                 let mut views = Vec::with_capacity(roots.len());
+                let mut overall_exit = exit_codes::EXIT_SUCCESS;
                 for entry in &roots {
                     let req = Request::GuardStatus {
                         root: entry.root.clone(),
                     };
-                    if let Ok(Response::GuardStatusResult {
-                        root,
-                        mode,
-                        state,
-                        filesystem_type,
-                        filesystem_authoritative,
-                        filesystem_unauthoritative_reason,
-                        scrub_interval_secs,
-                        terminal_sequence,
-                        accepted_event_sequence,
-                        completed_event_sequence,
-                        pending_events,
-                        files_scanned,
-                        bytes_scanned,
-                        attestation_hits,
-                        attestation_misses,
-                        findings_count,
-                        coverage_gaps,
-                        initial_reconciliation_time,
-                        last_reconciliation_time,
-                        scanner_residency,
-                        watcher_backend,
-                        watcher_latency_tier,
-                        watcher_poll_interval_ms,
-                        backend_route_label,
-                        build_identity_short,
-                        detector_digest_short,
-                        suppression_digest_short,
-                        config_digest_short,
-                        autoroute_evidence_status,
-                        store_schema_version,
-                        store_path,
-                        repair_command,
-                    }) = conn.round_trip(&req).await
-                    {
-                        views.push(GuardStatusView {
+                    match conn.round_trip(&req).await {
+                        Ok(Response::GuardStatusResult {
                             root,
                             mode,
                             state,
@@ -854,11 +826,57 @@ async fn run_status_online(
                             store_schema_version,
                             store_path,
                             repair_command,
-                        });
+                            recent_transitions,
+                        }) => {
+                            views.push(GuardStatusView {
+                                root,
+                                mode,
+                                state,
+                                filesystem_type,
+                                filesystem_authoritative,
+                                filesystem_unauthoritative_reason,
+                                scrub_interval_secs,
+                                terminal_sequence,
+                                accepted_event_sequence,
+                                completed_event_sequence,
+                                pending_events,
+                                files_scanned,
+                                bytes_scanned,
+                                attestation_hits,
+                                attestation_misses,
+                                findings_count,
+                                coverage_gaps,
+                                initial_reconciliation_time,
+                                last_reconciliation_time,
+                                scanner_residency,
+                                watcher_backend,
+                                watcher_latency_tier,
+                                watcher_poll_interval_ms,
+                                backend_route_label,
+                                build_identity_short,
+                                detector_digest_short,
+                                suppression_digest_short,
+                                config_digest_short,
+                                autoroute_evidence_status,
+                                store_schema_version,
+                                store_path,
+                                repair_command,
+                                recent_transitions,
+                            });
+                        }
+                        Ok(other) => {
+                            eprintln!(
+                                "failed to query guard status for {}: unexpected response {:?}",
+                                entry.root, other
+                            );
+                            overall_exit = exit_codes::EXIT_SOURCE_FAILED;
+                        }
+                        Err(error) => {
+                            eprintln!("failed to query guard status for {}: {error}", entry.root);
+                            overall_exit = exit_codes::EXIT_SOURCE_FAILED;
+                        }
                     }
                 }
-
-                let mut overall_exit = exit_codes::EXIT_SUCCESS;
                 for view in &views {
                     let code = exit_code_for_guard_state(&view.state, view.findings_count);
                     if code == exit_codes::EXIT_FINDINGS {

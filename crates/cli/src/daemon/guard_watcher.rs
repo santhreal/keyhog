@@ -589,6 +589,7 @@ impl GuardWatcher {
                             let roots = self.find_matching_roots_for_path(path);
                             for root in roots {
                                 if let Some(watched) = self.roots.get(&root) {
+                                    watched.maybe_reload_ignore_matcher(&root, path);
                                     if watched.is_path_excluded(&root, path, &self.skip_dirs) {
                                         continue;
                                     }
