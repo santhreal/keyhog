@@ -402,7 +402,7 @@ kernel notifications. When an unauthoritative filesystem is registered and no op
 to guarantee that remote modifications are caught.
 
 When the scrub interval elapses, each `current` root automatically transitions to
-`indexing` for a full reconciliation.
+`dirty` to invalidate cached clean attestations and trigger re-verification.
 ## Recovering corrupted roots
 
 If a repository's durable state becomes corrupt or desynchronized, rebuild it:

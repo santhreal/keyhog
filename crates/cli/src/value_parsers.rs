@@ -356,6 +356,31 @@ pub(crate) fn parse_decode_size_limit(s: &str) -> Result<usize, String> {
     Ok(size)
 }
 
+/// `--window-overlap SIZE`: must be a non-empty byte size between 1KB and 1MB (strictly less than 1MB).
+/// Rejects empty input, values below 1KB, and values >= 1MB (which must not equal or exceed
+/// the 1MB streaming window size) with a named error and corrective example.
+pub(crate) fn parse_window_overlap(s: &str) -> Result<usize, String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Err(
+            "window overlap cannot be empty. Expected a non-zero byte size between 1KB and 1MB; example: 128KB".to_string()
+        );
+    }
+    let size = parse_byte_size(trimmed)?;
+    if size < 1024 {
+        return Err(format!(
+            "window overlap '{trimmed}' is too small ({size} bytes). Minimum window overlap is 1KB; example: 128KB"
+        ));
+    }
+    if size >= keyhog_core::DEFAULT_WINDOW_SIZE_BYTES {
+        return Err(format!(
+            "window overlap '{trimmed}' ({size} bytes) must be strictly less than the 1MB window size ({} bytes); example: 128KB",
+            keyhog_core::DEFAULT_WINDOW_SIZE_BYTES
+        ));
+    }
+    Ok(size)
+}
+
 /// Parse a clap value enum, including aliases, without allocating a normalized
 /// copy of already canonical input.
 fn parse_value_enum<T: ValueEnum>(value: &str) -> Option<T> {

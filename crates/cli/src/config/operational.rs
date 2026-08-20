@@ -96,7 +96,7 @@ static OPERATIONAL_KNOBS: [OperationalKnob; 11] = [
         default_val: 131_072,
         unit: OperationalUnit::Bytes,
         min_val: 1_024,
-        max_val: 16_777_216,
+        max_val: 1_048_575,
         description: "Streaming window overlap size in bytes",
     },
     OperationalKnob {

@@ -687,14 +687,22 @@ def render_perf(results: list[RunResult], corpus: str | None = None) -> str:
     rows.sort(key=lambda r: r.speed.wall_ms)
     if not rows:
         return "_No timed runs yet._"
-    corpora_in_rows = sorted({r.corpus.name for r in rows if r.corpus.name and not r.corpus.name.startswith("daemon")})
+    corpora_in_rows = sorted({r.corpus.name for r in rows if r.corpus.name})
     if len(corpora_in_rows) > 1 and corpus is None:
         lines = []
         for c in corpora_in_rows:
             c_rows = [r for r in rows if r.corpus.name == c]
             c_rows.sort(key=lambda r: r.speed.wall_ms)
+            if c == "mirror":
+                heading = "#### Synthetic SecretBench-shape mirror corpus"
+            elif c.startswith("daemon"):
+                heading = f"#### Daemon {c.replace('_', ' ').replace('-', ' ')} workload corpus"
+            elif c.startswith("homefield"):
+                heading = f"#### Competitor {c} / home-turf rule corpus"
+            else:
+                heading = f"#### {c.replace('_', ' ').replace('-', ' ').title()} corpus"
             lines.extend([
-                f"#### {'Synthetic SecretBench-shape mirror corpus' if c == 'mirror' else f'Competitor {c} / home-turf rule corpus'}",
+                heading,
                 "",
                 "| Scanner | Config | Corpus | Wall | Throughput | Peak RSS |",
                 "|---|---|---|---|---|---|",
