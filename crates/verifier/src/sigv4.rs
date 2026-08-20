@@ -52,7 +52,7 @@ pub fn sign_request_authorization(
     Ok((authorization, amz_date, signed_headers))
 }
 
-pub(crate) fn canonical_query_string(pairs: &[(String, String)]) -> String {
+pub fn canonical_query_string(pairs: &[(String, String)]) -> String {
     let mut encoded = pairs
         .iter()
         .map(|(key, value)| (aws_uri_encode(key), aws_uri_encode(value)))
@@ -65,7 +65,7 @@ pub(crate) fn canonical_query_string(pairs: &[(String, String)]) -> String {
         .join("&")
 }
 
-pub(crate) fn aws_uri_encode(input: &str) -> String {
+pub fn aws_uri_encode(input: &str) -> String {
     // AWS SigV4 canonical-URI encoding: unreserved chars pass through, every
     // other byte becomes `%XX` with UPPERCASE hex. The escaped arm previously
     // built a throwaway `String` per byte via `format!("%{byte:02X}")`: a heap

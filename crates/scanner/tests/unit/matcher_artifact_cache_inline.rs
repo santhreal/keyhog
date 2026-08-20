@@ -37,7 +37,8 @@ fn atomic_writer_rejects_length_mismatch_before_publish() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("short.khm");
     let expected_len = 2usize;
-    let error = keyhog_core::state_file::write_atomically_with_writer(&path, |tmp| {
+    let error = write_matcher_artifact_atomically(&path, expected_len, |tmp| {
+        use std::io::Write as _;
         tmp.write_all(b"x")?;
         let actual_len = usize::try_from(tmp.as_file().metadata()?.len()).map_err(|_| {
             std::io::Error::new(

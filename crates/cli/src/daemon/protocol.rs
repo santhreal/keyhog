@@ -1083,7 +1083,7 @@ pub(crate) fn request_kind(request: &Request) -> &'static str {
     }
 }
 
-/// All 18 daemon request kinds.
+/// All 19 daemon request kinds.
 pub(crate) const ALL_REQUEST_KINDS: &[&str] = &[
     "Hello",
     "ScanText",

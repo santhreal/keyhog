@@ -864,7 +864,7 @@ pub fn store_matcher_artifact(
         sections.suppression_policy.len(),
     )?;
 
-    keyhog_core::state_file::write_atomically_with_writer(&path, |tmp| {
+    write_matcher_artifact_atomically(&path, artifact_len, |tmp| {
         use std::io::Write as _;
         tmp.write_all(MATCHER_ARTIFACT_MAGIC)?;
         tmp.write_all(&MATCHER_ARTIFACT_VERSION.to_le_bytes())?;
@@ -878,13 +878,30 @@ pub fn store_matcher_artifact(
         tmp.write_all(&sections.regex_programs)?;
         tmp.write_all(&suppression_len.to_le_bytes())?;
         tmp.write_all(&sections.suppression_policy)?;
+        Ok(())
+    })
+    .map_err(|error| format!("cannot write matcher artifact {}: {error}", path.display()))?;
+    evict_old_matcher_artifacts(cache_dir);
+    Ok(())
+}
+
+pub(crate) fn write_matcher_artifact_atomically<F>(
+    path: &Path,
+    expected_len: usize,
+    writer: F,
+) -> std::io::Result<()>
+where
+    F: FnOnce(&mut tempfile::NamedTempFile) -> std::io::Result<()>,
+{
+    keyhog_core::state_file::write_atomically_with_writer(path, |tmp| {
+        writer(tmp)?;
         let actual_len = usize::try_from(tmp.as_file().metadata()?.len()).map_err(|_| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "matcher artifact length exceeds usize",
             )
         })?;
-        if actual_len != artifact_len {
+        if actual_len != expected_len {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
@@ -894,9 +911,6 @@ pub fn store_matcher_artifact(
         }
         Ok(())
     })
-    .map_err(|error| format!("cannot write matcher artifact {}: {error}", path.display()))?;
-    evict_old_matcher_artifacts(cache_dir);
-    Ok(())
 }
 
 fn evict_old_matcher_artifacts(cache_dir: &Path) {
