@@ -314,6 +314,8 @@ pub struct GuardWatcher {
     poll_interval_ms: Option<u64>,
     /// Channel receiver for events from the native watcher.
     rx: mpsc::Receiver<notify::Result<notify::Event>>,
+    /// Retained sender for null/disabled watchers to keep the channel open.
+    _null_tx: Option<mpsc::Sender<notify::Result<notify::Event>>>,
     /// Tracked roots: canonical path -> watched root state.
     roots: HashMap<PathBuf, WatchedRoot>,
     /// Reconciliation config (bounds for subtree reconciliation).
@@ -344,6 +346,7 @@ impl GuardWatcher {
             backend_kind,
             poll_interval_ms,
             rx,
+            _null_tx: None,
             roots: HashMap::new(),
             config,
             disabled: false,
@@ -372,6 +375,7 @@ impl GuardWatcher {
             backend_kind: GuardWatcherBackendKind::PollWatcher,
             poll_interval_ms: Some(poll_interval.as_millis() as u64),
             rx,
+            _null_tx: None,
             roots: HashMap::new(),
             config,
             disabled: false,
@@ -389,6 +393,7 @@ impl GuardWatcher {
             backend_kind: GuardWatcherBackendKind::NullWatcher,
             poll_interval_ms: None,
             rx,
+            _null_tx: Some(tx),
             roots: HashMap::new(),
             config,
             disabled: true,
@@ -408,6 +413,7 @@ impl GuardWatcher {
             backend_kind: GuardWatcherBackendKind::Disabled,
             poll_interval_ms: None,
             rx,
+            _null_tx: Some(tx),
             roots: HashMap::new(),
             config: GuardReconciliationConfig::default(),
             disabled: true,
@@ -428,6 +434,7 @@ impl GuardWatcher {
             backend_kind: GuardWatcherBackendKind::CustomTest,
             poll_interval_ms: None,
             rx,
+            _null_tx: None,
             roots: HashMap::new(),
             config,
             disabled: false,
@@ -448,6 +455,7 @@ impl GuardWatcher {
                 backend_kind: GuardWatcherBackendKind::CustomTest,
                 poll_interval_ms: None,
                 rx,
+                _null_tx: None,
                 roots: HashMap::new(),
                 config,
                 disabled: false,
@@ -665,6 +673,12 @@ impl GuardWatcher {
             }
         }
         results.into_iter().collect()
+    }
+
+    /// Return the total number of queued events across all watched root buffers.
+    #[must_use]
+    pub fn total_pending_events(&self) -> usize {
+        self.roots.values().map(|r| r.buffer.lock().len()).sum()
     }
 
     /// Find all registered roots that are prefixes of a path.

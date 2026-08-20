@@ -222,3 +222,96 @@ fn row_132_unauthoritative_root_scrub_triggers_reconciliation_from_current() {
         .expect("scrub events clean");
     assert_eq!(rt.root_state(&root_path), Some(GuardRootState::Current));
 }
+
+#[test]
+fn row_132_null_watcher_does_not_disconnect_and_allows_add_root() {
+    use keyhog::testing::daemon::guard_watcher::GuardWatcher;
+    use keyhog_sources::guard::GuardReconciliationConfig;
+
+    let config = GuardReconciliationConfig::default();
+    let mut watcher = GuardWatcher::new_null(config).expect("create null watcher");
+
+    assert!(!watcher.is_disconnected());
+    assert_eq!(watcher.watcher_status(), "unmonitored");
+
+    let events = watcher.poll_events();
+    assert!(events.is_empty());
+    assert!(!watcher.is_disconnected());
+
+    let temp = tempdir().expect("tempdir");
+    let root_path = temp.path().join("watched_folder");
+    std::fs::create_dir_all(&root_path).expect("create dir");
+
+    assert!(watcher.add_root(root_path).is_ok());
+    assert!(!watcher.is_disconnected());
+}
+
+#[test]
+fn row_132_max_pending_events_total_triggers_overflow_reconcile() {
+    use keyhog::testing::daemon::guard_watcher::GuardWatcher;
+    use keyhog_sources::guard::{GuardEvent, GuardReconciliationConfig};
+    use std::path::PathBuf;
+
+    let mut config = GuardReconciliationConfig::default();
+    config.max_pending_events_per_root = 100;
+    config.max_pending_events_total = 4; // aggregate limit of 4
+
+    let (mut watcher, tx) = GuardWatcher::new_with_channel(config);
+
+    let root1 = PathBuf::from("/srv/root1");
+    let root2 = PathBuf::from("/srv/root2");
+    watcher.add_root(root1.clone()).expect("add root1");
+    watcher.add_root(root2.clone()).expect("add root2");
+
+    // Send 2 events for root1 and 2 events for root2 -> total = 4
+    for i in 0..2 {
+        let ev1 = notify::Event {
+            kind: notify::EventKind::Create(notify::event::CreateKind::File),
+            paths: vec![root1.join(format!("file_{i}.txt"))],
+            attrs: notify::event::EventAttributes::default(),
+        };
+        tx.send(Ok(ev1)).expect("send ev1");
+    }
+    for i in 0..2 {
+        let ev2 = notify::Event {
+            kind: notify::EventKind::Create(notify::event::CreateKind::File),
+            paths: vec![root2.join(format!("file_{i}.txt"))],
+            attrs: notify::event::EventAttributes::default(),
+        };
+        tx.send(Ok(ev2)).expect("send ev2");
+    }
+
+    // Send 1 more event that exceeds total cap of 4
+    let ev_overflow = notify::Event {
+        kind: notify::EventKind::Create(notify::event::CreateKind::File),
+        paths: vec![root1.join("file_overflow.txt")],
+        attrs: notify::event::EventAttributes::default(),
+    };
+    tx.send(Ok(ev_overflow)).expect("send ev_overflow");
+
+    let polled = watcher.poll_events();
+    let mut has_reconcile_root1 = false;
+    let mut has_reconcile_root2 = false;
+
+    for (_root, events) in polled {
+        for evt in events {
+            if let GuardEvent::ReconcileSubtree(r) = evt {
+                if r == root1 {
+                    has_reconcile_root1 = true;
+                }
+                if r == root2 {
+                    has_reconcile_root2 = true;
+                }
+            }
+        }
+    }
+
+    assert!(
+        has_reconcile_root1,
+        "root1 must receive ReconcileSubtree on total overflow"
+    );
+    assert!(
+        has_reconcile_root2,
+        "root2 must receive ReconcileSubtree on total overflow"
+    );
+}

@@ -413,6 +413,7 @@ pub(crate) fn build_sources(
         let roots = resolve_scan_roots(&requested_roots)?;
         for root in &roots {
             let mut fs_source = keyhog_sources::FilesystemSource::new(root.clone())
+                .with_window_overlap(resolved.window_overlap)
                 .with_ignore_paths(merged_ignore_paths.clone())
                 // Default excludes are source-owned. `--no-default-excludes` must
                 // toggle the actual file classifier, not a CLI-side glob mirror.

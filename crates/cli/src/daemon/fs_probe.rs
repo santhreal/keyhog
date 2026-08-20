@@ -184,6 +184,7 @@ fn decode_mount_path(s: &str) -> String {
             }
             if octal.len() == 3 {
                 if let Ok(byte) = u8::from_str_radix(&octal, 8) {
+                    // LAW10: recall-preserving fallback to literal character when octal mount escape decoding fails
                     out.push(byte as char);
                     continue;
                 }
