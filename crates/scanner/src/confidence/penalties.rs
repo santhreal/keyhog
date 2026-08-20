@@ -109,6 +109,20 @@ pub(crate) fn is_degenerate_repeat_at(credential: &str, minimum_run_length: usiz
     longest_repeat_run_len(credential) >= minimum_run_length
 }
 
+/// A credential body that documentation would print: a placeholder word, a
+/// placeholder inside a decoded envelope, or a degenerate identical-character
+/// run at the active detector plan's threshold. Owns the single definition
+/// consumed by every confidence FLOOR, so no floor can lift a doc sample back
+/// over the penalties that pushed it down.
+pub(crate) fn is_documentation_sample_body(
+    credential: &str,
+    degenerate_run_min_length: usize,
+) -> bool {
+    contains_placeholder_word(credential)
+        || crate::decode_structure::evidence(credential).decoded_contains_placeholder()
+        || is_degenerate_repeat_at(credential, degenerate_run_min_length)
+}
+
 /// Apply post-ML penalties based on placeholder, diversity, repetition, and
 /// decoded-envelope evidence.
 ///

@@ -17,5 +17,5 @@ regex = 'ABSK[A-Za-z0-9+/]{109,269}={0,2}'
 description = "AWS Bedrock long-lived API key (ABSK prefix, 109-269 base64 body)"
 
 [[detector.tests]]
-test_positive = "ABSKQmVkcm9ja0FQSUtleS1EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXM="
+test_positive = "ABSKh7ZsBnijAk9geoCGCQwuW0fF3cSLpXjdsv3plhdpxN9h8BvwE49uyiah+iO+Mkyi0zZDD6Msw7UqIiburZMMV71mI+vrHrwB6Bg6nYuBt8LvlxpdqsF/eg=="
 test_negative = "ABSKQmVkcm9ja0FQSUtleS1EXAMPLE"

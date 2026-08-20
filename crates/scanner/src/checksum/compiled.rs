@@ -98,6 +98,20 @@ enum CompiledValidatorKind {
     },
 }
 
+impl CompiledValidatorKind {
+    /// Whether a `Valid` verdict proves the body was minted by the issuer, not
+    /// merely that it has the right shape. Only the CRC32 layouts verify a
+    /// 32-bit digest computed over the body itself; a length, charset, UUID,
+    /// JWT, base64 or single-check-digit test is satisfied by hand-written
+    /// documentation text.
+    const fn proves_body_provenance(&self) -> bool {
+        matches!(
+            self,
+            Self::Crc32Base62 { .. } | Self::GithubFineGrainedCrc32 { .. }
+        )
+    }
+}
+
 #[derive(Debug)]
 struct CompiledValidator {
     prefixes: Box<[Box<str>]>,
@@ -269,7 +283,11 @@ impl CompiledValidator {
                 validate_luhn(payload, *min_len, *max_len)
             }
         };
-        ChecksumConfidenceDecision::new(result, self.confidence_floor)
+        ChecksumConfidenceDecision::new(
+            result,
+            self.confidence_floor,
+            self.kind.proves_body_provenance(),
+        )
     }
 }
 

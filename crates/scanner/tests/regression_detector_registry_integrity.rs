@@ -20,7 +20,7 @@ use keyhog_core::{
 /// of `detectors/*.toml` files (build.rs embeds every `.toml`, one detector per
 /// file). Assert the concrete value, a silent drift means the shipped binary
 /// scans with a different rule set than the tree claims.
-const EXPECTED_EMBEDDED_DETECTOR_COUNT: usize = 927;
+const EXPECTED_EMBEDDED_DETECTOR_COUNT: usize = 935;
 
 fn load_specs() -> Vec<DetectorSpec> {
     load_embedded_detectors_or_fail().expect("embedded detector corpus must load fail-closed")
@@ -34,7 +34,7 @@ fn spec_by_id<'a>(specs: &'a [DetectorSpec], id: &str) -> &'a DetectorSpec {
 }
 
 #[test]
-fn embedded_detector_count_is_exactly_927() {
+fn embedded_detector_count_is_exactly_935() {
     assert_eq!(
         embedded_detector_count(),
         EXPECTED_EMBEDDED_DETECTOR_COUNT,

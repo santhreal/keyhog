@@ -281,11 +281,15 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
         {
             return true;
         }
+        // A declared entropy shape relaxes the length minimum only for values
+        // of that shape; anything else uses the policy minimum.
         let special_min_len = context
             .entropy_shape
             .as_ref()
-            .map(|s| s.special_min_length)
-            .unwrap_or(context.mixed_alnum_min_len); // LAW10: no detector override uses the context minimum; scan behavior is unchanged
+            .filter(|shape| super::isolated::declared_entropy_shape_matches(value, Some(*shape)))
+            .map_or(context.mixed_alnum_min_len, |shape| {
+                shape.special_min_length
+            });
         if !has_symbol
             && has_upper
             && has_lower

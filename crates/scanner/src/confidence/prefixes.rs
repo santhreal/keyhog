@@ -52,10 +52,7 @@ pub(crate) fn known_prefix_confidence_floor(
     credential: &str,
     degenerate_run_min_length: usize,
 ) -> Option<f64> {
-    if super::penalties::contains_placeholder_word(credential)
-        || crate::decode_structure::evidence(credential).decoded_contains_placeholder()
-        || super::penalties::is_degenerate_repeat_at(credential, degenerate_run_min_length)
-    {
+    if super::penalties::is_documentation_sample_body(credential, degenerate_run_min_length) {
         return None;
     }
     if let Some(body) = known_prefix_body(credential) {

@@ -179,6 +179,9 @@ impl CompiledScanner {
         }
         self.simd_prefilter
             .get_or_init(|| {
+                // Materializing the Hyperscan database IS the backend runtime
+                // initialization the profiler reports as `backend-init`.
+                let _init_span = keyhog_profile::span(keyhog_profile::Stage::BackendInit);
                 let cold =
                     keyhog_profile::decision_timer(keyhog_profile::Stage::AutorouteCalibration);
                 let plan = self

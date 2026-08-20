@@ -350,7 +350,7 @@ fn declared_entropy_shape_floor_met(
     entropy >= shape.entropy_floor && declared_entropy_shape_matches(candidate, entropy_shape)
 }
 
-fn declared_entropy_shape_matches(
+pub(super) fn declared_entropy_shape_matches(
     candidate: &str,
     entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
 ) -> bool {

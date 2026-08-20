@@ -11552,6 +11552,41 @@ positive_fixture!(
     r#"generic-api-key.txt"#
 );
 contract_schema!(
+    generic_high_entropy_string_schema,
+    "generic-high-entropy-string",
+    "generic",
+    "medium",
+    None
+);
+positive_fixture!(
+    generic_high_entropy_string_positive_0,
+    "generic-high-entropy-string",
+    r#"api_secret=ufnlbbavawsdeecn"#,
+    r#"ufnlbbavawsdeecn"#,
+    r#"generic-high-entropy-string.txt"#
+);
+positive_fixture!(
+    generic_high_entropy_string_positive_1,
+    "generic-high-entropy-string",
+    r#"auth_secret = "kdheufnzbwqmaslr""#,
+    r#"kdheufnzbwqmaslr"#,
+    r#"generic-high-entropy-string.txt"#
+);
+negative_fixture!(
+    generic_high_entropy_string_negative_0,
+    "generic-high-entropy-string",
+    r#"api_secret=example"#,
+    r#"generic-high-entropy-string.txt"#,
+    false
+);
+positive_fixture!(
+    generic_high_entropy_string_evasion_0,
+    "generic-high-entropy-string",
+    r#"master_secret: "ufnlbbavawsdeecn""#,
+    r#"ufnlbbavawsdeecn"#,
+    r#"generic-high-entropy-string.txt"#
+);
+contract_schema!(
     generic_keyword_secret_schema,
     "generic-keyword-secret",
     "generic",
@@ -32386,15 +32421,15 @@ contract_schema!(
 positive_fixture!(
     supabase_anon_key_positive_0,
     "supabase-anon-key",
-    r#"SUPABASE_ANON_KEY=eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"#,
-    r#"eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"#,
+    r#"SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
+    r#"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
     r#"supabase-anon-key.txt"#
 );
 positive_fixture!(
     supabase_anon_key_positive_1,
     "supabase-anon-key",
-    r#"SUPABASE_ANON_KEY="eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ""#,
-    r#"eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"#,
+    r#"SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU""#,
+    r#"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
     r#"supabase-anon-key.txt"#
 );
 negative_fixture!(
@@ -32414,8 +32449,8 @@ negative_fixture!(
 positive_fixture!(
     supabase_anon_key_evasion_0,
     "supabase-anon-key",
-    r#"{"secret":"eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"}"#,
-    r#"eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"#,
+    r#"{"anon key":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"}"#,
+    r#"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
     r#"supabase-anon-key.txt"#
 );
 contract_schema!(
@@ -32575,15 +32610,15 @@ contract_schema!(
 positive_fixture!(
     supabase_service_key_positive_0,
     "supabase-service-key",
-    r#"SUPABASE_SERVICE_KEY=eyJ4pWJ7Z0IaxtZTdfU2cFSSw5znAxWtf3-HfoXJeFD0bcc5zE1smwbmdPqpQ1gPjHsI7kOxEA5WbH8PikNzX8o0Re5vz1Cq4.eyJZc7Ao-7s5EiTMGSg_pwIMw4eX40ezGTXRM5kVCfTRD27wyWR53Gr2l.xpT0SzBM-TakzTkMmGBf31e6nc03sD7OX0-GwVjAshVQ_HJGhkFUMSAN3Aa8SRX"#,
-    r#"eyJ4pWJ7Z0IaxtZTdfU2cFSSw5znAxWtf3-HfoXJeFD0bcc5zE1smwbmdPqpQ1gPjHsI7kOxEA5WbH8PikNzX8o0Re5vz1Cq4.eyJZc7Ao-7s5EiTMGSg_pwIMw4eX40ezGTXRM5kVCfTRD27wyWR53Gr2l.xpT0SzBM-TakzTkMmGBf31e6nc03sD7OX0-GwVjAshVQ_HJGhkFUMSAN3Aa8SRX"#,
+    r#"SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE2MDAwMDAwMDAsImV4cCI6MTkwMDAwMDAwMH0.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
+    r#"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE2MDAwMDAwMDAsImV4cCI6MTkwMDAwMDAwMH0.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
     r#"supabase-service-key.txt"#
 );
 positive_fixture!(
     supabase_service_key_positive_1,
     "supabase-service-key",
-    r#"SUPABASE_SERVICE_KEY="eyJ4pWJ7Z0IaxtZTdfU2cFSSw5znAxWtf3-HfoXJeFD0bcc5zE1smwbmdPqpQ1gPjHsI7kOxEA5WbH8PikNzX8o0Re5vz1Cq4.eyJZc7Ao-7s5EiTMGSg_pwIMw4eX40ezGTXRM5kVCfTRD27wyWR53Gr2l.xpT0SzBM-TakzTkMmGBf31e6nc03sD7OX0-GwVjAshVQ_HJGhkFUMSAN3Aa8SRX""#,
-    r#"eyJ4pWJ7Z0IaxtZTdfU2cFSSw5znAxWtf3-HfoXJeFD0bcc5zE1smwbmdPqpQ1gPjHsI7kOxEA5WbH8PikNzX8o0Re5vz1Cq4.eyJZc7Ao-7s5EiTMGSg_pwIMw4eX40ezGTXRM5kVCfTRD27wyWR53Gr2l.xpT0SzBM-TakzTkMmGBf31e6nc03sD7OX0-GwVjAshVQ_HJGhkFUMSAN3Aa8SRX"#,
+    r#"SUPABASE_SERVICE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE2MDAwMDAwMDAsImV4cCI6MTkwMDAwMDAwMH0.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU""#,
+    r#"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE2MDAwMDAwMDAsImV4cCI6MTkwMDAwMDAwMH0.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
     r#"supabase-service-key.txt"#
 );
 negative_fixture!(
@@ -32603,8 +32638,8 @@ negative_fixture!(
 positive_fixture!(
     supabase_service_key_evasion_0,
     "supabase-service-key",
-    r#"export SUPABASE_SERVICE_KEY=eyJ4pWJ7Z0IaxtZTdfU2cFSSw5znAxWtf3-HfoXJeFD0bcc5zE1smwbmdPqpQ1gPjHsI7kOxEA5WbH8PikNzX8o0Re5vz1Cq4.eyJZc7Ao-7s5EiTMGSg_pwIMw4eX40ezGTXRM5kVCfTRD27wyWR53Gr2l.xpT0SzBM-TakzTkMmGBf31e6nc03sD7OX0-GwVjAshVQ_HJGhkFUMSAN3Aa8SRX"#,
-    r#"eyJ4pWJ7Z0IaxtZTdfU2cFSSw5znAxWtf3-HfoXJeFD0bcc5zE1smwbmdPqpQ1gPjHsI7kOxEA5WbH8PikNzX8o0Re5vz1Cq4.eyJZc7Ao-7s5EiTMGSg_pwIMw4eX40ezGTXRM5kVCfTRD27wyWR53Gr2l.xpT0SzBM-TakzTkMmGBf31e6nc03sD7OX0-GwVjAshVQ_HJGhkFUMSAN3Aa8SRX"#,
+    r#"export SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE2MDAwMDAwMDAsImV4cCI6MTkwMDAwMDAwMH0.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
+    r#"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE2MDAwMDAwMDAsImV4cCI6MTkwMDAwMDAwMH0.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
     r#"supabase-service-key.txt"#
 );
 contract_schema!(
