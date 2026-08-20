@@ -155,7 +155,7 @@ fn find_mount_fs_type(mounts: &str, target_path: &Path) -> Option<String> {
                 let len = mount_point.as_os_str().len();
                 if best_match
                     .as_ref()
-                    .map_or(true, |(best_len, _)| len > *best_len)
+                    .map_or(true, |(best_len, _)| len >= *best_len)
                 {
                     best_match = Some((len, fs_type.to_string()));
                 }
