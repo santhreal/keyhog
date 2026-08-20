@@ -24,6 +24,7 @@
 - fix(router): eliminate inverted batch dominance heuristic in hardware probe backend selection and unify batch routing with measured threshold evaluation.
 - feat(cache): implement unified cache eviction engine (`cache_eviction`) and `CacheKind` layout reconciliation across Hyperscan, detector plan, GPU program, and matcher artifact caches with stale lock reclamation.
 - feat(cache): add `validate_and_tighten_matcher_artifact_cache_dir` to auto-repair loose default cache directory permissions to 0700 without disabling cache.
+- feat(compiled_artifact): wire `CompiledArtifactClass` and `canonical_identity` into scanner artifact producers (matcher_artifact_cache, execution_pack, gpu_literal_artifacts, compiled_scanner, simd backend, phase2_gpu_dfa).
 - fix(scanner): clamp decode-through window overlap to enforce strictly advancing window progress across UTF-8 scalar boundaries in release builds.
 - style: format guard massive diff test and git sources modules.
 - fix(detectors): resolve evasion gaps, required literal routing, and Unicode whitespace boundary handling across 8 detector specifications (`apple-push-notification-key`, `google-artifact-registry-key`, `near-api-credentials`, `netrc-password`, `twitter-ads-api-credentials`, `webex-access-token`, `wechat-api-credentials`, `wordpress-api-token`).

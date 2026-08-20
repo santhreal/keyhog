@@ -1,4 +1,8 @@
 use crate::hw_probe::ScanBackend;
+use keyhog_core::CompiledArtifactClass;
+
+/// The compiled artifact class for execution packs.
+pub const ARTIFACT_CLASS: CompiledArtifactClass = CompiledArtifactClass::ExecutionPack;
 
 use std::fmt;
 
@@ -203,6 +207,14 @@ pub struct ExecutionPackIdentity {
 }
 
 impl ExecutionPackIdentity {
+    /// The compiled artifact class for execution packs.
+    pub const ARTIFACT_CLASS: CompiledArtifactClass = CompiledArtifactClass::ExecutionPack;
+
+    /// Return the compiled artifact class for this identity.
+    pub const fn artifact_class(&self) -> CompiledArtifactClass {
+        CompiledArtifactClass::ExecutionPack
+    }
+
     pub const fn new(
         detector_digest: [u8; 32],
         config_digest: [u8; 32],

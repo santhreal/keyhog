@@ -34,6 +34,7 @@ pub use crate::matcher_artifact_cache::{
     MATCHER_ARTIFACT_FILE_BYTES, MATCHER_ARTIFACT_MAGIC, MATCHER_ARTIFACT_SUFFIX,
     MATCHER_ARTIFACT_VERSION,
 };
+pub use keyhog_core::{CompiledArtifactClass, CompiledArtifactIdentity};
 // The measurement switch is the profiler's, re-exported so a `keyhog-scanner`
 // consumer never has to reach past the scanner for it, and never gets a second
 // scanner-owned switch that can disagree with it.

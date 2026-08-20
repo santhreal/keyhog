@@ -3,6 +3,10 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
+/// The compiled artifact class for Hyperscan / Vectorscan compiled databases.
+#[allow(dead_code)]
+pub const ARTIFACT_CLASS: keyhog_core::CompiledArtifactClass =
+    keyhog_core::CompiledArtifactClass::HyperscanDatabase;
 mod scan;
 
 /// Target number of patterns per compile shard. The cold compile is a

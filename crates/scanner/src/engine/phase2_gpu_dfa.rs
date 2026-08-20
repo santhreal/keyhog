@@ -43,6 +43,11 @@ pub(super) use self::workload::{
 use super::*;
 use std::sync::OnceLock;
 
+/// The compiled artifact class for Phase-2 GPU DFA catalogs.
+#[allow(dead_code)]
+pub(crate) const ARTIFACT_CLASS: keyhog_core::CompiledArtifactClass =
+    keyhog_core::CompiledArtifactClass::Phase2GpuDfaCatalog;
+
 mod batch;
 mod candidates;
 mod lowering;

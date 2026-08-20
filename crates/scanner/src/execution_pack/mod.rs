@@ -31,7 +31,8 @@ pub use cpu_program::{
 pub use detector_plan::{CompiledDetectorPlanSection, DETECTOR_PLAN_SECTION_VERSION};
 pub use format::{
     ExecutionPackBackend, ExecutionPackIdentity, ExecutionPackPolicy, ExecutionPackSectionKind,
-    EXECUTION_PACK_COMPILER_ABI, EXECUTION_PACK_FORMAT_VERSION, EXECUTION_PACK_HEADER_LEN,
+    ARTIFACT_CLASS, EXECUTION_PACK_COMPILER_ABI, EXECUTION_PACK_FORMAT_VERSION,
+    EXECUTION_PACK_HEADER_LEN,
 };
 #[cfg(feature = "gpu")]
 pub use generation::CompiledVyreBackendProgram;
