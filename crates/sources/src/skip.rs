@@ -563,6 +563,7 @@ pub(crate) fn subtract_excluded(delta: usize) {
     let _ = t.counters[2].fetch_update(Relaxed, Relaxed, |current| {
         Some(current.saturating_sub(delta))
     });
+}
 
 pub(crate) fn store_skip_counts(counts: SkipCounts) {
     let t = current_source_telemetry();
