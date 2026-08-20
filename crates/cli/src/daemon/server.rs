@@ -885,7 +885,7 @@ fn scrub_guard_roots(state: &ServerState) {
 /// Reconciliation* transition illegal. Events on Dirty, Degraded,
 /// StalePolicy, and Stopped roots are no-ops: those states already
 /// account for unscanned changes.
-pub(crate) fn process_guard_events(
+fn process_guard_events(
     state: &ServerState,
     root: &Path,
     events: Vec<keyhog_sources::guard::GuardEvent>,
@@ -1205,7 +1205,6 @@ enum MassFilesystemMessage {
         source_coverage_gaps: SourceCoverageGaps,
         skipped_unchanged: usize,
     },
-    Error(String),
 }
 
 fn spawn_mass_filesystem_source(
@@ -1510,11 +1509,6 @@ async fn stream_mass_filesystem(
                         message: format!("daemon: cannot persist mass incremental cache: {error}"),
                     },
                 }
-            }
-            Some(MassFilesystemMessage::Error(message)) => {
-                session.incremental_unpublishable = true;
-                session.filesystem_batches = None;
-                Response::Error { message }
             }
             None => {
                 session.incremental_unpublishable = true;

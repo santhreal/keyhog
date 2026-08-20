@@ -500,7 +500,13 @@ async fn run_status(
                     println!("last recon:     {t}");
                 }
                 println!("residency:      {scanner_residency}");
-                println!("watcher:        {watcher_backend} ({watcher_latency_tier})");
+                if !watcher_backend.is_empty() {
+                    if !watcher_latency_tier.is_empty() {
+                        println!("watcher:        {watcher_backend} ({watcher_latency_tier})");
+                    } else {
+                        println!("watcher:        {watcher_backend}");
+                    }
+                }
                 if let Some(poll_ms) = watcher_poll_interval_ms {
                     println!("poll interval:  {poll_ms}ms");
                 }

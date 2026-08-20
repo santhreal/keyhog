@@ -1173,13 +1173,18 @@ mod tests {
         });
 
         let parsed: Result<Response, _> = serde_json::from_value(legacy_json);
-        assert!(parsed.is_ok(), "legacy payload without watcher fields must parse: {:?}", parsed);
+        assert!(
+            parsed.is_ok(),
+            "legacy payload without watcher fields must parse: {:?}",
+            parsed
+        );
         if let Ok(Response::GuardStatusResult {
             watcher_backend,
             watcher_latency_tier,
             watcher_poll_interval_ms,
             ..
-        }) = parsed {
+        }) = parsed
+        {
             assert_eq!(watcher_backend, "");
             assert_eq!(watcher_latency_tier, "");
             assert_eq!(watcher_poll_interval_ms, None);

@@ -144,7 +144,6 @@ fn row_123_null_watcher_reports_null_unmonitored() {
     assert!(!watcher.is_disconnected());
 }
 
-
 #[test]
 fn row_123_disabled_watcher_reports_disabled_unmonitored() {
     let watcher = GuardWatcher::new_disabled();

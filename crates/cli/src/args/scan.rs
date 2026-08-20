@@ -926,7 +926,7 @@ pub struct ScanArgs {
     pub fused_depth: Option<usize>,
 
     /// Streaming window overlap size in bytes (default: 128KB).
-    #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
+    #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_window_overlap)]
     pub window_overlap: Option<usize>,
 
     /// Hard deadline per chunk scan in milliseconds. Default unset = no

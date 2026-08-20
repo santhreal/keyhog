@@ -328,11 +328,6 @@ pub(crate) struct HsCompileOpts<'a> {
     pub(crate) shard_target: Option<usize>,
     pub(crate) utf8: bool,
     pub(crate) ucp: bool,
-    /// Allow Rayon to prepare pattern objects in parallel. Lazy phase-2
-    /// compilation disables this because it begins while a scan worker owns
-    /// thread-local phase-2 scratch; nested work stealing could re-enter that
-    /// non-reentrant scratch borrow.
-    pub(crate) parallel_prepare: bool,
 }
 
 impl Default for HsCompileOpts<'_> {
@@ -343,7 +338,6 @@ impl Default for HsCompileOpts<'_> {
             shard_target: None,
             utf8: false,
             ucp: false,
-            parallel_prepare: true,
         }
     }
 }
@@ -500,7 +494,6 @@ impl HsScanner {
             shard_target: _,
             utf8,
             ucp,
-            parallel_prepare: _,
         } = opts;
         let mut h = Sha256::new();
         for p in hs_pats {

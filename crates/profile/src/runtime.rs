@@ -2270,10 +2270,12 @@ impl Drop for AsyncSpan {
             SpanOutcome {
                 start_offset_ns: runtime.offset_ns(started),
                 elapsed_ns,
-                self_ns: elapsed_ns,
+                self_ns: 0,
                 blocked: false,
                 serial: false,
-                outermost: true,
+                // An async span can be polled on any thread, so it never
+                // owns a worker's outermost interval.
+                outermost: false,
             },
         );
         if let Some(trace) = self.trace {
@@ -2519,10 +2521,12 @@ impl DecisionTimer {
                     SpanOutcome {
                         start_offset_ns: runtime.offset_ns(self.started),
                         elapsed_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
-                        self_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
+                        self_ns: 0,
                         blocked: false,
                         serial: false,
-                        outermost: true,
+                        // The caller owns the enclosing span, if any; a decision
+                        // timer never claims a worker's outermost interval.
+                        outermost: false,
                     },
                 );
             }
