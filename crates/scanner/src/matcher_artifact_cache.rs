@@ -118,7 +118,11 @@ pub fn validate_and_tighten_matcher_artifact_cache_dir(
     let uid = current_uid();
     let temp_root = std::env::temp_dir();
     let tmp_user_dir = temp_root.join(format!("keyhog-cache-{uid}"));
-    if !(path.starts_with(&home) || path.starts_with(&tmp_user_dir)) {
+    let cache_dir = dirs::cache_dir();
+    if !(path.starts_with(&home)
+        || path.starts_with(&tmp_user_dir)
+        || cache_dir.as_ref().map_or(false, |c| path.starts_with(c)))
+    {
         return Err(format!(
             "matcher-artifact cache dir must be under {} or {}; configure with --matcher-cache <DIR>",
             home.display(),
