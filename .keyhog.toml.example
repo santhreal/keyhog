@@ -296,6 +296,8 @@ gpu_recall_floor = false
 # Maximum queued filesystem events per root before degraded status (default: 8192).
 # max_pending_events_per_root = 8192
 
+# Maximum total queued filesystem events across all roots before degraded status (default: 65536).
+# max_pending_events_total = 65536
 
 # Event coalescing window before applying state transitions (default: "100ms").
 # coalesce_window = "100ms"

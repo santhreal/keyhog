@@ -568,8 +568,9 @@ runtime. See [Guard workflow](../workflows/guard.md) for operational details.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `hot_index_memory` | string | unlimited | Memory budget for the clean attestation cache index (for example 64 megabytes). |
+| `hot_index_memory` | string | 64MB | Memory budget for the clean attestation cache index (for example 64 megabytes). |
 | `max_pending_events_per_root` | integer | 8192 | Maximum queued filesystem events per root. |
+| `max_pending_events_total` | integer | 65536 | Maximum queued filesystem events across all watched roots. |
 | `coalesce_window` | string | 100ms | Event coalescing window before applying state transitions. |
 | `scanner_idle_timeout` | string | 5m | Scanner idle-unload timeout. After this duration without guard activity, the residency label reports `idle-unload`. |
 | `scrub_interval` | string | disabled | Periodic re-scan interval for `current` roots. Catches changes that filesystem events missed. |

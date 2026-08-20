@@ -291,20 +291,43 @@ def render_accuracy(snapshot: dict[str, Any]) -> str:
     if row is None:
         raise MatrixError("snapshot lacks the default Hyperscan/SIMD accuracy row")
     host, scanner = _context(snapshot)
-    corpus = row["corpus"]
-    detection = row["detection"]
-    return "\n".join(
-        [
-            f"KeyHog `{scanner['version'].splitlines()[0]}` evaluated on both the synthetic **mirror** corpus and competitor **homefield** rule ground-truth on **{host['cpu']}** with the explicit Hyperscan/SIMD default route. The answer-key manifest was excluded from the scan tree.",
-            "",
-            "| Corpus | Fixtures | Positives | Input size | Precision | Recall | F1 | True positives | False positives | False negatives |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
-            f"| **{corpus['name']}** | {corpus['fixture_count']:,} | {corpus['labeled_positives']:,} | {corpus['bytes'] / (1024 * 1024):.2f} MB | {detection['precision']:.4f} | {detection['recall']:.4f} | {detection['f1']:.4f} | {detection['tp']:,} | {detection['fp']:,} | {detection['fn']:,} |",
-            "| **homefield** | 2,399 | 1,057 | 773 KB | 0.9582 | 0.8874 | 0.9214 | 938 | 41 | 119 |",
-            "",
-            _qualification(snapshot, scanner),
-        ]
+
+    accuracy_rows: list[dict[str, Any]] = []
+    seen_corpora: set[str] = set()
+    for conf_row in snapshot.get("configuration_rows", []):
+        c = conf_row.get("corpus", {})
+        c_name = c.get("name")
+        cfg_id = conf_row.get("scanner", {}).get("config_id")
+        if cfg_id == "simd-nocache-nodaemon-full" and c_name and c_name not in seen_corpora:
+            seen_corpora.add(c_name)
+            accuracy_rows.append(conf_row)
+
+    if not accuracy_rows:
+        accuracy_rows = [row]
+
+    has_competitor = len(accuracy_rows) > 1 or any(r["corpus"]["name"] != "mirror" for r in accuracy_rows)
+    eval_text = (
+        f"KeyHog `{scanner['version'].splitlines()[0]}` evaluated on both the synthetic **mirror** corpus and competitor **homefield** rule ground-truth on **{host['cpu']}** with the explicit Hyperscan/SIMD default route. The answer-key manifest was excluded from the scan tree."
+        if has_competitor
+        else f"KeyHog `{scanner['version'].splitlines()[0]}` evaluated on the synthetic **mirror** corpus on **{host['cpu']}** with the explicit Hyperscan/SIMD default route. The answer-key manifest was excluded from the scan tree."
     )
+
+    table_lines = [
+        eval_text,
+        "",
+        "| Corpus | Fixtures | Positives | Input size | Precision | Recall | F1 | True positives | False positives | False negatives |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in accuracy_rows:
+        c = r["corpus"]
+        d = r["detection"]
+        size_mb = c["bytes"] / (1024 * 1024)
+        size_str = f"{size_mb:.2f} MB"
+        table_lines.append(
+            f"| **{c['name']}** | {c['fixture_count']:,} | {c['labeled_positives']:,} | {size_str} | {d['precision']:.4f} | {d['recall']:.4f} | {d['f1']:.4f} | {d['tp']:,} | {d['fp']:,} | {d['fn']:,} |"
+        )
+    table_lines.extend(["", _qualification(snapshot, scanner)])
+    return "\n".join(table_lines)
 
 
 def render_configuration(snapshot: dict[str, Any]) -> str:

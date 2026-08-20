@@ -681,7 +681,7 @@ def render_perf(results: list[RunResult], corpus: str | None = None) -> str:
     rows.sort(key=lambda r: r.speed.wall_ms)
     if not rows:
         return "_No timed runs yet._"
-    corpora_in_rows = sorted({r.corpus.name for r in rows if r.corpus.name})
+    corpora_in_rows = sorted({r.corpus.name for r in rows if r.corpus.name and not r.corpus.name.startswith("daemon")})
     if len(corpora_in_rows) > 1 and corpus is None:
         lines = []
         for c in corpora_in_rows:
