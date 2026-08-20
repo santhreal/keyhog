@@ -40,6 +40,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - feat(daemon): report active watcher backend, latency tier, and polling interval in guard status (Row 123).
 
 ### Changed
+- **fix(backend): GPU route explanation parity reporting compiled-in feature state when GPU hardware is physically present rather than false probe misses (Row 156).**
 - **Benchmark corpus synthetic packs & representative test coverage (Row 162).** Fixed AWS Access Key token shape in the built-in benchmark corpus template to match 20-character credential length (`AKIA` + 16 chars). Added integration tests verifying benchmark corpus structure, metadata, planted credential shapes, and synthetic execution pack finding parity invariants.
 
 - perf(scanner): optimize startup memory floor and scanner structure layouts (Row 153). Pack LazyRegexState flags into a single atomic byte, shrink CsrU32 to exact boxed slices, flatten GenericKeywordStemSet byte buckets, dynamically scale LRU thread-local caches, scale DashMap absence cache shards dynamically with host parallelism, and box immutable compiled pattern slices.

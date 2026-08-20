@@ -24,12 +24,6 @@ pub fn startup_banner(caps: &HardwareCaps, detector_count: usize, pattern_count:
         } else {
             format!("GPU: {name} (not active)")
         }
-    } else if !super::gpu_backend_compiled() {
-        if !super::multiple_backends_compiled() {
-            "GPU: none (compiled without GPU backend / single compiled backend)".to_string()
-        } else {
-            "GPU: none (binary built without --features gpu)".to_string()
-        }
     } else {
         "GPU: none".to_string()
     };
