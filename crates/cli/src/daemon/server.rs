@@ -33,7 +33,7 @@ pub(crate) fn set_test_panic_injection(kind: Option<&str>) {
     HAS_TEST_PANIC_INJECTION.store(kind.is_some(), std::sync::atomic::Ordering::Release);
 }
 
-#[cfg(not(any(test, feature = "test-support", feature = "ci-lean")))]
+#[cfg(not(any(test, feature = "ci-lean")))]
 pub(crate) fn set_test_panic_injection(_kind: Option<&str>) {}
 
 const DEFAULT_REQUEST_READ_TIMEOUT_SECS: u64 = 300;
