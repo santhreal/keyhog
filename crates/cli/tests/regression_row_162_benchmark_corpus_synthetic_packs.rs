@@ -23,7 +23,7 @@ use keyhog_scanner::execution_pack::{
     ExecutionPackBackend, ExecutionPackError, ExecutionPackPolicy, PackFindingParityEvidence,
     PackGenerationIdentity, PACK_FINDING_PARITY_VERSION,
 };
-use keyhog_scanner::{probe_hardware, CompiledScanner, ScanBackend};
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 
 #[test]
 fn benchmark_corpus_structure_and_metadata_invariants() {
@@ -202,9 +202,8 @@ fn benchmark_corpus_scan_produces_consistent_findings() {
     assert!(detector_ids.contains("stripe-secret-key"));
     assert!(detector_ids.contains("aws-access-key"));
 
-    // Cross-backend parity check when hardware supports SIMD
-    let hw = probe_hardware();
-    if hw.has_avx512 || hw.has_avx2 || hw.has_neon {
+    // Cross-backend parity check when SIMD backend is compiled and ready
+    if scanner.warm_backend(ScanBackend::SimdCpu) {
         let simd_results = scanner
             .scan_chunks_with_backend(std::slice::from_ref(&sample_chunk), ScanBackend::SimdCpu)
             .expect("scan benchmark sample chunk on SimdCpu");
