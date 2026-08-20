@@ -83,9 +83,6 @@ async fn run_hook_scan(mut args: crate::args::ScanArgs) -> Result<ExitCode> {
     if !args.deep && !args.precision {
         args.fast = true;
     }
-    if args.backend.is_none() {
-        args.backend = Some("cpu".to_string());
-    }
     drop(_hook_span);
     crate::subcommands::scan::run(args).await
 }

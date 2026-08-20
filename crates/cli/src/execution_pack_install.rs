@@ -311,10 +311,12 @@ pub(crate) fn installed_execution_pack_directory() -> Result<PathBuf> {
 
 pub(crate) fn current_binary_digest() -> Result<[u8; 32]> {
     #[cfg(target_os = "linux")]
-    let mut file = File::open("/proc/self/exe").or_else(|_| {
-        let path = std::env::current_exe()?;
-        File::open(&path)
-    }).context("opening current KeyHog executable")?;
+    let mut file = File::open("/proc/self/exe")
+        .or_else(|_| {
+            let path = std::env::current_exe()?;
+            File::open(&path)
+        })
+        .context("opening current KeyHog executable")?;
 
     #[cfg(not(target_os = "linux"))]
     let path = std::env::current_exe().context("resolving current KeyHog executable")?;

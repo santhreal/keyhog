@@ -473,9 +473,7 @@ pub async fn cli_main() -> ExitCode {
                 args::HookCommand::Run(args) => args.profile,
                 _ => false,
             };
-            if profile_requested {
-                set_operator_profile_active(true);
-            }
+            set_operator_profile_active(profile_requested);
             let outcome = subcommands::hook::run(command).await;
             if profile_requested {
                 set_operator_profile_active(false);

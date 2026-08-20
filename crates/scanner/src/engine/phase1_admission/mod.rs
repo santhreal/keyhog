@@ -694,7 +694,7 @@ impl Phase1AdmissionSummary {
     }
 
     #[inline]
-    fn merge(self, other: Self) -> Self {
+    pub fn merge(self, other: Self) -> Self {
         Self {
             alphabet_rejected_chunks: self
                 .alphabet_rejected_chunks
