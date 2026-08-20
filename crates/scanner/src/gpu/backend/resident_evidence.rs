@@ -525,13 +525,11 @@ fn scan_gpu_literal_evidence_by_region_borrowed<R>(
                 Ok(output) => {
                     let elapsed_ns = dispatch_wall.elapsed().as_nanos() as u64;
                     evidence::record_dispatch_submitted();
-                    let upload_ns = (elapsed_ns / 2).max(1);
-                    let readback_ns = elapsed_ns.saturating_sub(upload_ns).max(1);
-                    evidence::record_upload(upload_bytes, Some(upload_ns));
+                    evidence::record_upload(upload_bytes, None);
                     evidence::record_submit_to_complete(elapsed_ns);
                     evidence::record_readback(
                         (output.len() * 4 + state.matches.len() * 12) as u64,
-                        Some(readback_ns),
+                        None,
                     );
                     state.output = output;
                     let consume = consume.take().ok_or_else(|| {
@@ -711,11 +709,7 @@ pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
             match dispatch {
                 Ok(timed) => {
                     evidence::record_dispatch_submitted();
-                    let upload_ns = timed
-                        .enqueue_ns
-                        .unwrap_or_else(|| (timed.wall_ns / 2).max(1)) // LAW10: enqueue latency defaults to half wall duration when backend does not split stages; reporting-only profiler duration.
-                        .max(1);
-                    evidence::record_upload(upload_bytes, Some(upload_ns));
+                    evidence::record_upload(upload_bytes, timed.enqueue_ns);
                     evidence::record_submit_to_complete(timed.wall_ns);
                     match timed.device_ns {
                         Some(device_ns) => {
@@ -729,13 +723,9 @@ pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
                             );
                         }
                     }
-                    let readback_ns = timed
-                        .wait_ns
-                        .unwrap_or_else(|| timed.wall_ns.saturating_sub(upload_ns).max(1)) // LAW10: wait latency defaults to remaining wall duration; reporting-only profiler duration.
-                        .max(1);
                     evidence::record_readback(
                         (guard.output.len() * 4 + guard.matches.len() * 12) as u64,
-                        Some(readback_ns),
+                        timed.wait_ns,
                     );
                     let consume = consume.take().ok_or_else(|| {
                         "GPU resident literal output consumer was already invoked".to_string()

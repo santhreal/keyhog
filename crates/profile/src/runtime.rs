@@ -2420,10 +2420,10 @@ impl Drop for AsyncSpan {
             SpanOutcome {
                 start_offset_ns: runtime.offset_ns(started),
                 elapsed_ns,
-                self_ns: elapsed_ns,
+                self_ns: 0,
                 blocked: false,
                 serial: false,
-                outermost: true,
+                outermost: false,
             },
         );
         if let Some(trace) = self.trace {

@@ -83,7 +83,9 @@ use std::collections::BTreeMap;
 ///   receipts carry exact protected findings and the default-policy blocking
 ///   count so daemon, staged-guard, and one-shot scans preserve finding output
 ///   and evidence-policy exits.
-pub(crate) const WIRE_VERSION: u32 = 15;
+/// * v16 - adds filesystem authority probe results, watcher backend details,
+///   and periodic scrub intervals to guard status replies.
+pub(crate) const WIRE_VERSION: u32 = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
