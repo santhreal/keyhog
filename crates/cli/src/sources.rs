@@ -416,7 +416,8 @@ pub(crate) fn build_sources(
                 .with_ignore_paths(merged_ignore_paths.clone())
                 // Default excludes are source-owned. `--no-default-excludes` must
                 // toggle the actual file classifier, not a CLI-side glob mirror.
-                .with_default_excludes(!resolved.no_default_excludes);
+                .with_default_excludes(!resolved.no_default_excludes)
+                .with_window_overlap(resolved.window_overlap);
             if let Some(limit) = resolved.max_file_size {
                 fs_source = fs_source.with_max_file_size(limit as u64);
             }

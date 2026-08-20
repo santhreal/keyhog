@@ -370,7 +370,8 @@ impl ScanTelemetry {
     }
 
     pub fn enable_dogfood(&self) {
-        self.dogfood_enabled.store(true, Ordering::Relaxed);
+        DOGFOOD_FAST_ENABLED.store(true, Ordering::Release);
+        self.dogfood_enabled.store(true, Ordering::Release);
     }
 
     pub fn is_dogfood_enabled(&self) -> bool {
@@ -409,6 +410,7 @@ pub struct ScanTelemetrySnapshot {
 static GLOBAL_SCAN_TELEMETRY: std::sync::LazyLock<Arc<ScanTelemetry>> =
     std::sync::LazyLock::new(|| Arc::new(ScanTelemetry::new()));
 
+static DOGFOOD_FAST_ENABLED: AtomicBool = AtomicBool::new(false);
 thread_local! {
     static CURRENT_SCAN_TELEMETRY: RefCell<Option<Arc<ScanTelemetry>>> = const { RefCell::new(None) };
 }
@@ -428,6 +430,9 @@ impl Drop for ScanTelemetryRestore {
 
 /// Enter a scan telemetry scope on this thread, restoring previous scope on drop.
 pub fn enter_scan_telemetry_scope(telemetry: &Arc<ScanTelemetry>) -> ScanTelemetryRestore {
+    if telemetry.is_dogfood_enabled() {
+        DOGFOOD_FAST_ENABLED.store(true, Ordering::Release);
+    }
     let previous = CURRENT_SCAN_TELEMETRY.with(|slot| {
         let mut slot = slot.borrow_mut();
         slot.replace(Arc::clone(telemetry))
@@ -634,10 +639,14 @@ pub(crate) fn record_scanner_coverage_gap(
 }
 
 pub fn enable_dogfood() {
+    DOGFOOD_FAST_ENABLED.store(true, Ordering::Release);
     current_scan_telemetry().enable_dogfood();
 }
 
 pub fn is_dogfood_enabled() -> bool {
+    if !DOGFOOD_FAST_ENABLED.load(Ordering::Relaxed) {
+        return false;
+    }
     current_scan_telemetry().is_dogfood_enabled()
 }
 /// Enable or disable the vendored/minified path suppression for this process.
@@ -1264,6 +1273,7 @@ pub(crate) fn record_gpu_dispatch() {
 
 /// Reset process-global telemetry that is scoped to one scan.
 pub fn reset_for_scan() {
+    DOGFOOD_FAST_ENABLED.store(false, Ordering::Release);
     GLOBAL_SCAN_TELEMETRY.reset();
     current_scan_telemetry().reset();
 }
