@@ -1,7 +1,6 @@
 # Changelog
 
 ## 0.5.80 - 2026-08-17
-- feat(guard): populate GuardPolicyIdentity with canonical default digests and digest calculation helpers for ignore files, suppressions, config, and source policy (Row 142).
 
 - bench(core): add criterion benchmarks for detector corpus validation, suppression evaluation, Merkle index cache lookups, match deduplication, and finding correlation (Row 147).
 - feat(guard): add GuardTransitionRecord and continuous transition history tracking with causal attribution (Row 146).

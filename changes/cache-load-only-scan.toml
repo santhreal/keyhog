@@ -1,0 +1,3 @@
+category = "Added"
+summary = "Load-only scan execution and zero compilation fallback on prepared artifact caches."
+crates = ["cli"]

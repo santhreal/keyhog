@@ -286,6 +286,7 @@ runs:
         ACTION_RELEASE_REQUIRED: ${{ steps.version.outputs.release_required }}
         ACTION_RUNTIME: ${{ steps.runtime.outputs.path }}
         ACTION_REPOSITORY: ${{ github.action_repository }}
+        ACTION_CACHE_HOME: ${{ steps.runtime.outputs.path }}/cache
       run: |
         set -euo pipefail
         version="${ACTION_RESOLVED_VERSION:-}"
@@ -337,6 +338,36 @@ runs:
           exit 2
         fi
         chmod 500 "$published_binary"
+        action_cache_home="${ACTION_CACHE_HOME:-${ACTION_RUNTIME:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}}/cache}"
+        case "${RUNNER_OS:-}" in
+          macOS)
+            export HOME="$action_cache_home/home"
+            pack_root="$HOME/Library/Caches/keyhog/execution-packs"
+            ;;
+          Windows)
+            export LOCALAPPDATA="$(cygpath -w "$action_cache_home/localappdata" 2>/dev/null || echo "$action_cache_home/localappdata")"
+            pack_root="$action_cache_home/localappdata/keyhog/execution-packs"
+            ;;
+          Linux | "")
+            export XDG_CACHE_HOME="$action_cache_home/xdg"
+            pack_root="$XDG_CACHE_HOME/keyhog/execution-packs"
+            ;;
+          *) echo "::error title=KeyHog::Unsupported runner for the isolated Action cache."; exit 2 ;;
+        esac
+        mkdir -p "$pack_root"
+        chmod 700 "$pack_root" 2>/dev/null || true
+        key_path="$pack_root/signing.key"
+        if [[ ! -f "$key_path" ]]; then
+          if command -v openssl >/dev/null 2>&1; then
+            openssl rand 32 > "$key_path"
+          elif [[ -c /dev/urandom ]]; then
+            head -c 32 /dev/urandom > "$key_path"
+          fi
+          chmod 600 "$key_path" 2>/dev/null || true
+        fi
+        if "$published_binary" compile-execution-packs --help >/dev/null 2>&1; then
+          "$published_binary" compile-execution-packs --output-dir "$pack_root/current" --signing-key "$key_path"
+        fi
         printf 'binary-dir=%s\nbinary-path=%s\n' "$install_root/bin" "$published_binary" >> "$GITHUB_OUTPUT"
 
     - name: Add keyhog to PATH

@@ -1,0 +1,3 @@
+category = "Added"
+summary = "Multi-dimensional artifact invalidation and regeneration across detector corpus changes, configuration updates, and calibration changes."
+crates = ["cli"]

@@ -1,0 +1,3 @@
+category = "Added"
+summary = "Optimize startup execution path for informational commands with fast zero-allocation dispatch, deferred runtime initialization, and zero detector corpus parsing."
+crates = ["cli"]

@@ -1,0 +1,3 @@
+category = "Added"
+summary = "Publish honest multi-corpus benchmark data across mirror and competitor corpora with transparent F1, precision, recall, runtime metrics, and drift-prevention gate coverage."
+crates = []
