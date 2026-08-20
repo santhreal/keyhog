@@ -242,3 +242,60 @@ fn developer_flow_reports_cache_disable_reasons_explicitly() {
         assert_eq!(outcome.disable_reason(), Some(reason));
     }
 }
+
+#[test]
+fn disabled_detector_and_its_dependent_produce_no_findings_under_prepared_pack() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+
+    let cache_home = temp_dir.path().join("cache");
+    let (_pack_root, _output_dir) = clone_prepared_installation(&cache_home);
+
+    let scan_file = temp_dir.path().join("razorpay_creds.txt");
+    fs::write(
+        &scan_file,
+        "RAZORPAY_KEY_ID=rzp_test_Kp4Qx7Rm2Sn5Tb\nRAZORPAY_KEY_SECRET=Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3\n",
+    )
+    .expect("write razorpay creds");
+
+    // 1. Scan with all detectors enabled: should find credentials
+    let output_enabled = Command::new(env!("CARGO_BIN_EXE_keyhog"))
+        .arg("scan")
+        .arg("--daemon=off")
+        .arg(&scan_file)
+        .env("XDG_CACHE_HOME", &cache_home)
+        .env("HOME", temp_dir.path())
+        .output()
+        .expect("run scan with detectors enabled");
+
+    let stdout_enabled = String::from_utf8_lossy(&output_enabled.stdout);
+    assert!(
+        stdout_enabled.contains("razorpay") || stdout_enabled.contains("RAZORPAY"),
+        "normal scan must detect razorpay credentials; stdout:\n{stdout_enabled}"
+    );
+
+    // 2. Disable `razorpay-key-secret` via `.keyhog.toml`
+    let config_path = temp_dir.path().join(".keyhog.toml");
+    fs::write(
+        &config_path,
+        "[detector.razorpay-key-secret]\nenabled = false\n",
+    )
+    .expect("write .keyhog.toml");
+
+    let output_disabled = Command::new(env!("CARGO_BIN_EXE_keyhog"))
+        .arg("scan")
+        .arg("--daemon=off")
+        .arg("--config")
+        .arg(&config_path)
+        .arg(&scan_file)
+        .env("XDG_CACHE_HOME", &cache_home)
+        .env("HOME", temp_dir.path())
+        .output()
+        .expect("run scan with disabled detector config");
+
+    let stdout_disabled = String::from_utf8_lossy(&output_disabled.stdout);
+    assert!(
+        !stdout_disabled.contains("razorpay-key-id")
+            && !stdout_disabled.contains("razorpay-key-secret"),
+        "disabling required detector `razorpay-key-secret` must silence both it and its dependent `razorpay-key-id`; stdout:\n{stdout_disabled}"
+    );
+}

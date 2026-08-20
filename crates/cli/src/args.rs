@@ -247,14 +247,28 @@ fn is_gpu_backend_str(backend: &str) -> bool {
 pub(crate) fn validate_backend_and_gpu_flags(
     backend: Option<&str>,
     no_gpu: bool,
-    _require_gpu: bool,
+    require_gpu: bool,
 ) -> Result<(), clap::Error> {
+    if no_gpu && require_gpu {
+        return Err(clap::Error::raw(
+            clap::error::ErrorKind::ArgumentConflict,
+            "error: the argument '--no-gpu' cannot be used with '--require-gpu'\n",
+        ));
+    }
     if let Some(b) = backend {
         let is_gpu = is_gpu_backend_str(b);
         if no_gpu && is_gpu {
             return Err(clap::Error::raw(
                 clap::error::ErrorKind::ArgumentConflict,
                 format!("error: the argument '--no-gpu' cannot be used with '--backend {b}'\n"),
+            ));
+        }
+        if require_gpu && !is_gpu {
+            return Err(clap::Error::raw(
+                clap::error::ErrorKind::ArgumentConflict,
+                format!(
+                    "error: the argument '--require-gpu' cannot be used with '--backend {b}'\n"
+                ),
             ));
         }
         let b_lower = b.to_ascii_lowercase();
@@ -285,6 +299,14 @@ fn validate_cli_args(cli: &Cli) -> Result<(), clap::Error> {
     match &cli.command {
         Some(Command::Scan(args)) => {
             validate_backend_and_gpu_flags(args.backend.as_deref(), args.no_gpu, args.require_gpu)?;
+            if let Some(overlap) = args.window_overlap {
+                if !(1024..=16 * 1024 * 1024).contains(&overlap) {
+                    return Err(clap::Error::raw(
+                        clap::error::ErrorKind::ValueValidation,
+                        format!("error: --window-overlap must be between 1KB and 16MB (got {overlap} bytes)\n"),
+                    ));
+                }
+            }
         }
         Some(Command::Config(args)) => {
             validate_backend_and_gpu_flags(
@@ -292,6 +314,14 @@ fn validate_cli_args(cli: &Cli) -> Result<(), clap::Error> {
                 args.scan.no_gpu,
                 args.scan.require_gpu,
             )?;
+            if let Some(overlap) = args.scan.window_overlap {
+                if !(1024..=16 * 1024 * 1024).contains(&overlap) {
+                    return Err(clap::Error::raw(
+                        clap::error::ErrorKind::ValueValidation,
+                        format!("error: --window-overlap must be between 1KB and 16MB (got {overlap} bytes)\n"),
+                    ));
+                }
+            }
         }
         Some(Command::Watch(args)) => {
             validate_backend_and_gpu_flags(args.backend.as_deref(), false, false)?;

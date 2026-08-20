@@ -821,6 +821,13 @@ impl FilesystemSource {
         self
     }
 
+    /// Configure streaming window overlap in bytes.
+    #[must_use]
+    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
+        self.window_overlap = overlap;
+        self
+    }
+
     /// Override the windowed-scan parameters. Production callers stick
     /// with the defaults (1 MiB / 128 KiB); tests use this to exercise
     /// the multi-window path on tiny fixtures. `window_size` must
