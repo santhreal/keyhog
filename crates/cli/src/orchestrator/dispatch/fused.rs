@@ -279,9 +279,8 @@ impl ScanOrchestrator {
     }
 
     /// Fused bounded read+scan: a dedicated reader emits 1 MiB batches.
-    /// Explicit CPU and SIMD routes let Rayon workers retire independent
-    /// batches concurrently; automatic and GPU-capable routing keeps one active
-    /// batch so resident accelerator state is never oversubscribed.
+    /// Non-calibrating scans retire independent batches concurrently in parallel waves;
+    /// autoroute calibration runs serially so backend timing measurements remain uncontended.
     pub(super) fn scan_sources_fused(
         &self,
         sources: Vec<Box<dyn Source>>,
@@ -699,7 +698,10 @@ impl ScanOrchestrator {
             };
             out
         };
-        let findings: Vec<RawMatch> = {
+        let findings: Vec<RawMatch> = if calibration_mode {
+            // Calibration requires quiet measurement without concurrent scan wave contention.
+            batches.flat_map(scan_batch).collect()
+        } else {
             let lane_width =
                 crate::orchestrator_config::fused_cpu_wave_width(rayon::current_num_threads());
             let mut batches = batches;

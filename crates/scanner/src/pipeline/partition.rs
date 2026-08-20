@@ -11,8 +11,9 @@ use crate::CompiledScanner;
 use keyhog_core::{Chunk, RawMatch};
 use std::collections::HashSet;
 
-/// Minimum chunk size (64 KiB) below which subdivision does not yield parallel gains.
-pub const DEFAULT_MIN_PARTITION_CHUNK_BYTES: usize = 64 * 1024;
+/// Minimum chunk size (256 KiB) below which subdivision does not yield parallel gains,
+/// and ensures the subdivision stride is at least 1x overlap (128 KiB).
+pub const DEFAULT_MIN_PARTITION_CHUNK_BYTES: usize = 256 * 1024;
 
 /// Default window overlap (128 KiB) matching `WINDOW_OVERLAP_BYTES` to ensure
 /// seam-straddling credentials are fully contained in at least one window.
@@ -62,6 +63,10 @@ pub fn partition_chunk(
         let mut sub_metadata = chunk.metadata.clone();
         sub_metadata.base_offset = chunk.metadata.base_offset.saturating_add(start);
         sub_metadata.base_line = chunk.metadata.base_line.saturating_add(newlines_before);
+        sub_metadata.size_bytes = Some(sub_text.len() as u64);
+        // Sub-chunks of a raw chunk have no parent decoded span; if the parent chunk
+        // was already decoded, clear `decoded_span` to avoid invalid splice rebasing.
+        sub_metadata.decoded_span = None;
         sub_chunks.push(Chunk {
             data: sub_text.to_string().into(),
             metadata: sub_metadata,
@@ -96,9 +101,12 @@ pub fn partition_chunk_for_workers(
         return vec![chunk.clone()];
     }
 
-    let target_window_bytes = (total_len / worker_count)
+    // Stride must be at least overlap_bytes so consecutive windows never overlap by more
+    // than a single seam, bounding total scanned bytes to total_len + (num_partitions - 1) * overlap.
+    let stride = (total_len / worker_count)
         .max(min_window_bytes)
-        .saturating_add(overlap_bytes);
+        .max(overlap_bytes);
+    let target_window_bytes = stride.saturating_add(overlap_bytes);
 
     partition_chunk(chunk, target_window_bytes, overlap_bytes)
 }
@@ -144,7 +152,7 @@ pub fn scan_chunk_partitioned(
     backend: ScanBackend,
     worker_count: usize,
 ) -> crate::error::Result<Vec<RawMatch>> {
-    let worker_count = worker_count.max(1);
+    let worker_count = worker_count.clamp(1, 64);
     if worker_count <= 1 || chunk.data.len() <= DEFAULT_MIN_PARTITION_CHUNK_BYTES {
         return scanner.scan_with_backend(chunk, backend);
     }

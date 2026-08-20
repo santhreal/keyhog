@@ -113,8 +113,8 @@ fn row_160_seam_straddling_secret_detected_across_boundaries() {
     let scanner = sample_scanner();
     let secret = concat!("AK", "IAQYLPMN5HFIQR7XYZ");
 
-    let pad_before = "x\n".repeat(32 * 1024);
-    let pad_after = "y\n".repeat(32 * 1024);
+    let pad_before = "x\n".repeat(128 * 1024);
+    let pad_after = "y\n".repeat(128 * 1024);
 
     // Embed the secret precisely where a window boundary would fall
     let mut full_text = pad_before.clone();
@@ -187,8 +187,8 @@ fn row_160_parallel_scan_parity_and_determinism() {
 
     let mut body = String::new();
     body.push_str("// Header comments and setup\n");
-    for i in 0..500 {
-        if i % 100 == 50 {
+    for i in 0..6000 {
+        if i % 1000 == 500 {
             body.push_str(&format!("aws_key_{i} = \"AKIAQYLPMN5HFIQR{i:04}\";\n"));
         } else {
             body.push_str(&format!(
@@ -321,4 +321,59 @@ fn row_160_deduplicate_partition_matches_orders_and_dedups() {
     assert_eq!(deduped[0].location.offset, 50);
     assert_eq!(deduped[1].location.offset, 100);
     assert_eq!(deduped[2].location.offset, 200);
+}
+#[test]
+fn row_160_partition_bounds_prevent_triple_scanning() {
+    let chunk_size = 2 * 1024 * 1024;
+    let body = "A".repeat(chunk_size);
+    let chunk = Chunk {
+        data: body.into(),
+        metadata: ChunkMetadata::default(),
+    };
+
+    for worker_count in [2, 4, 8, 16, 32, 64] {
+        let partitions = partition_chunk_for_workers(
+            &chunk,
+            worker_count,
+            keyhog_scanner::pipeline::DEFAULT_MIN_PARTITION_CHUNK_BYTES,
+            keyhog_scanner::pipeline::DEFAULT_PARTITION_OVERLAP_BYTES,
+        );
+        // Verify that for all partitions k and k+2, partition k end <= partition k+2 start
+        // proving no byte is scanned by 3 or more workers.
+        for i in 0..partitions.len().saturating_sub(2) {
+            let p0_end = partitions[i].metadata.base_offset + partitions[i].data.len();
+            let p2_start = partitions[i + 2].metadata.base_offset;
+            assert!(
+                p0_end <= p2_start,
+                "worker_count {worker_count}: partition {i} end ({p0_end}) must not overlap partition {} start ({p2_start})",
+                i + 2
+            );
+        }
+    }
+}
+
+#[test]
+fn row_160_subchunk_metadata_clears_decoded_span_and_updates_size() {
+    let body = "A\n".repeat(200_000);
+    let chunk = Chunk {
+        data: body.clone().into(),
+        metadata: ChunkMetadata {
+            path: Some("file.bin".into()),
+            source_type: "filesystem".into(),
+            base_offset: 1000,
+            base_line: 50,
+            commit: None,
+            author: None,
+            date: None,
+            mtime_ns: None,
+            size_bytes: Some(body.len() as u64),
+            decoded_span: Some((10, 500)),
+        },
+    };
+    let partitions = partition_chunk(&chunk, 64 * 1024, 16 * 1024);
+    assert!(partitions.len() > 1);
+    for p in &partitions {
+        assert_eq!(p.metadata.size_bytes, Some(p.data.len() as u64));
+        assert_eq!(p.metadata.decoded_span, None);
+    }
 }
