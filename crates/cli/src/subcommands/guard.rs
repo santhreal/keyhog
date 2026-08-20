@@ -1377,13 +1377,6 @@ async fn run_feed(
         limit: Some(limit),
     };
 
-    if format != "human" && format != "json" {
-        anyhow::bail!(
-            "guard feed: invalid format '{}': expected 'human' or 'json'",
-            format
-        );
-    }
-
     match conn.round_trip(&request).await? {
         Response::GuardFeedResult { transitions } => {
             if format == "json" {
