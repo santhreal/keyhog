@@ -292,14 +292,21 @@ pub(crate) type ScannerPreprocessedText<'a> = crate::multiline::PreprocessedText
 #[cfg(not(feature = "multiline"))]
 pub(crate) type ScannerPreprocessedText<'a> = PreprocessedText<'a>;
 
-// Bit-packed flags and tri-state memo bits stored in LazyRegexState.flags (AtomicU8).
+/// Flag indicating that regex matching is case-insensitive.
 const LAZY_REGEX_FLAG_CASE_INSENSITIVE: u8 = 1 << 0;
+/// Flag indicating that regex matching is CRLF-aware.
 const LAZY_REGEX_FLAG_CRLF: u8 = 1 << 1;
+/// Mask isolating the memoized literal prefix extraction state.
 const LAZY_REGEX_PREFIX_STATE_MASK: u8 = 0b11 << 2;
+/// Memoized state indicating literal prefix extraction yielded false.
 const LAZY_REGEX_PREFIX_STATE_FALSE: u8 = 1 << 2;
+/// Memoized state indicating literal prefix extraction yielded true.
 const LAZY_REGEX_PREFIX_STATE_TRUE: u8 = 2 << 2;
+/// Mask isolating the memoized required literal run state.
 const LAZY_REGEX_INFIX_STATE_MASK: u8 = 0b11 << 4;
+/// Memoized state indicating required literal run detection yielded false.
 const LAZY_REGEX_INFIX_STATE_FALSE: u8 = 1 << 4;
+/// Memoized state indicating required literal run detection yielded true.
 const LAZY_REGEX_INFIX_STATE_TRUE: u8 = 2 << 4;
 
 /// Internal shared state for [`LazyRegex`].
