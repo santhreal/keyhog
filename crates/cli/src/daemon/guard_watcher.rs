@@ -551,7 +551,12 @@ impl GuardWatcher {
     pub fn watcher_status(&self) -> &'static str {
         if self.is_disconnected() {
             "disconnected"
-        } else if self.disabled {
+        } else if self.disabled
+            || matches!(
+                self.backend_kind,
+                GuardWatcherBackendKind::Disabled | GuardWatcherBackendKind::NullWatcher
+            )
+        {
             "unmonitored"
         } else {
             "watching"
@@ -560,10 +565,15 @@ impl GuardWatcher {
 
     /// Whether the watcher is actively monitoring filesystem events.
     pub fn is_watching(&self) -> bool {
-        !self.disabled && !self.is_disconnected() && self.watcher.is_some()
+        !self.disabled
+            && !self.is_disconnected()
+            && self.watcher.is_some()
+            && !matches!(
+                self.backend_kind,
+                GuardWatcherBackendKind::Disabled | GuardWatcherBackendKind::NullWatcher
+            )
     }
 }
-
 /// Convert a notify::Event for a specific path into a normalized GuardEvent.
 fn normalize_notify_path_event(kind: &EventKind, path: &std::path::Path) -> GuardEvent {
     match kind {

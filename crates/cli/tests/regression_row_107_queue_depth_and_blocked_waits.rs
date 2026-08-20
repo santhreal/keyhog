@@ -106,11 +106,17 @@ fn row_107_declared_profile_collections_are_wired() {
         .arg(&scan_dir)
         .arg("--profile-out")
         .arg(&profile_out_path)
+        .arg("--backend")
+        .arg("cpu")
         .output()
         .expect("run scan with profile-out");
 
-    assert!(output.status.success());
-
+    assert!(
+        output.status.success(),
+        "scan command failed: stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     let profile_content = fs::read_to_string(&profile_out_path).expect("read profile");
     let profile: serde_json::Value =
         serde_json::from_str(&profile_content).expect("parse profile json");
