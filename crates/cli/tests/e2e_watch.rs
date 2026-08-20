@@ -29,12 +29,14 @@ fn watch_e2e_slot() -> std::sync::MutexGuard<'static, ()> {
 /// instead of racing a fixed sleep against ~900-detector debug-build compilation
 /// (the old `sleep(300ms)` sampled an empty window, the compile hadn't reached
 /// the banner yet (so a byte-length check passed vacuously on two empty outputs)).
+/// `--backend cpu` keeps these startup assertions independent of host autoroute
+/// state; an uncalibrated host fails watch closed before any banner prints.
 fn spawn_watch_streaming(
     extra: &[&str],
     dir: &std::path::Path,
 ) -> (std::process::Child, Arc<Mutex<String>>) {
     let mut cmd = Command::new(binary());
-    cmd.arg("watch").arg(dir);
+    cmd.arg("watch").arg(dir).args(["--backend", "cpu"]);
     for a in extra {
         cmd.arg(a);
     }
@@ -111,6 +113,7 @@ fn watch_path_starts_watching_directory() {
     let mut child = Command::new(binary())
         .arg("watch")
         .arg(watch_path)
+        .args(["--backend", "cpu"])
         .arg("--quiet")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -193,6 +196,7 @@ fn watch_detectors_flag_overrides_detector_directory() {
     let output = Command::new(binary())
         .arg("watch")
         .arg(dir.path())
+        .args(["--backend", "cpu"])
         .arg("--detectors")
         .arg(&nonexistent)
         .output()
@@ -342,6 +346,7 @@ fn watch_default_path_is_current_directory() {
     // Spawn watch with no explicit path from an isolated current directory.
     let mut child = Command::new(binary())
         .arg("watch")
+        .args(["--backend", "cpu"])
         .arg("--quiet")
         .current_dir(dir.path())
         .stdout(Stdio::piped())

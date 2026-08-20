@@ -57,10 +57,21 @@ const SEVERITY: &str = "critical";
 /// The default-redaction form (`first4…last4`) the masked report must emit.
 const REDACTED: &str = "ghp_...DSiF";
 
-/// Explicit operator-selectable backends. `auto` is covered by autoroute
-/// calibration tests because it
-/// correctly fails closed on hosts without persisted calibration evidence.
-const BACKENDS: &[&str] = &["simd", "cpu", "gpu-cuda-region-presence"];
+/// Explicit operator-selectable backends this build serves on any host. `auto`
+/// is covered by autoroute calibration tests because it correctly fails closed
+/// on hosts without persisted calibration evidence.
+const BACKENDS: &[&str] = &["simd", "cpu"];
+/// GPU backends. An explicit GPU `--backend` implies require-GPU, so a host
+/// with no usable adapter must exit `EXIT_REQUIRE_GPU_UNMET` instead of
+/// scanning on another route. `KEYHOG_REQUIRE_GPU=1` (set by
+/// `scripts/ci_local.sh`) says an adapter is mandatory, and then the same
+/// recall and exit contract as every peer backend applies.
+const GPU_BACKENDS: &[&str] = &["gpu-cuda-region-presence"];
+
+/// True when this lane runs on a host that must serve a GPU route.
+fn gpu_is_mandatory() -> bool {
+    std::env::var("KEYHOG_REQUIRE_GPU").is_ok_and(|value| value == "1")
+}
 /// Every output format the `--format` value-enum accepts.
 const FORMATS: &[&str] = &["text", "json", "jsonl", "sarif", "csv", "html", "junit"];
 
@@ -244,6 +255,43 @@ fn every_backend_surfaces_the_planted_secret_under_json() {
             reference,
             "--backend {backend} must surface the SAME credential hash as the default \
              route (backend choice must never change recall); stdout={stdout}"
+        );
+    }
+}
+
+#[test]
+fn an_explicit_gpu_backend_either_scans_or_fails_closed() {
+    let (_dir, path) = planted_fixture();
+    let reference = json_hashes(&scan(&path, &["--format", "json"]).1);
+    assert!(
+        !reference.is_empty(),
+        "reference scan must surface the planted finding"
+    );
+    for &backend in GPU_BACKENDS {
+        let (code, stdout, stderr) = scan(&path, &["--backend", backend, "--format", "json"]);
+        if code == Some(12) {
+            assert!(
+                !gpu_is_mandatory(),
+                "--backend {backend} exited EXIT_REQUIRE_GPU_UNMET on a lane that requires a \
+                 working adapter; stderr={stderr}"
+            );
+            assert!(
+                stderr.contains("GPU"),
+                "--backend {backend} must name the unmet GPU requirement; stderr={stderr}"
+            );
+            continue;
+        }
+        assert_eq!(
+            code,
+            Some(1),
+            "--backend {backend} either serves the scan (exit 1) or fails closed with exit 12; \
+             stderr={stderr}"
+        );
+        assert_eq!(
+            json_hashes(&stdout),
+            reference,
+            "--backend {backend} must surface the SAME credential hash as the default route; \
+             stdout={stdout}"
         );
     }
 }

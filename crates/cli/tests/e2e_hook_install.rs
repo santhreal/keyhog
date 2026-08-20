@@ -175,6 +175,10 @@ regex = '(?-i)demo_[A-Z0-9]{8}'
     .expect("write detector");
     let detector_path = detectors.path().to_string_lossy().to_string();
 
+    // Both scans pin `--evidence-policy paranoid`: the fixture is a `.txt` file,
+    // which the evidence classifier calls `unsupported-context` and reports in the
+    // `review` tier, and review alone exits 0 under the default policy. This test
+    // contrasts staged scope against working-tree scope, not evidence tiering.
     let staged = Command::new(binary())
         .args([
             "scan",
@@ -183,6 +187,8 @@ regex = '(?-i)demo_[A-Z0-9]{8}'
             "cpu",
             "--format",
             "json",
+            "--evidence-policy",
+            "paranoid",
             "--detectors",
             &detector_path,
             "--git-staged",
@@ -206,6 +212,8 @@ regex = '(?-i)demo_[A-Z0-9]{8}'
             "cpu",
             "--format",
             "json",
+            "--evidence-policy",
+            "paranoid",
             "--detectors",
             &detector_path,
             ".",
