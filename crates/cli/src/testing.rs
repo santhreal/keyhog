@@ -1558,7 +1558,7 @@ pub mod daemon {
             root_bytes: Vec<u8>,
             fs_identity: FilesystemIdentity,
             mode: GuardRootMode,
-        ) -> Result<()> {
+        ) -> std::result::Result<GuardRootRecord, String> {
             self.0.add_root(root_bytes, fs_identity, mode)
         }
 
@@ -1567,7 +1567,8 @@ pub mod daemon {
             &self,
             root_bytes: &[u8],
             transition: &GuardTransition,
-        ) -> Result<GuardRootState> {
+        ) -> std::result::Result<GuardRootState, keyhog_core::guard_state::TransitionError>
+        {
             self.0.transition_root(root_bytes, transition)
         }
 
@@ -1582,7 +1583,7 @@ pub mod daemon {
         }
 
         /// List all registered roots and their states.
-        pub fn list_roots(&self) -> Vec<(Vec<u8>, GuardRootState)> {
+        pub fn list_roots(&self) -> Vec<GuardRootRecord> {
             self.0.list_roots()
         }
     }
@@ -1614,19 +1615,19 @@ pub mod daemon {
             /// Completed event sequence counter.
             pub completed_event_sequence: u64,
             /// Pending events count.
-            pub pending_events: usize,
+            pub pending_events: u64,
             /// Total files scanned.
-            pub files_scanned: usize,
+            pub files_scanned: u64,
             /// Total bytes scanned.
             pub bytes_scanned: u64,
             /// Cache hit count.
-            pub attestation_hits: usize,
+            pub attestation_hits: u64,
             /// Cache miss count.
-            pub attestation_misses: usize,
+            pub attestation_misses: u64,
             /// Total secret findings.
-            pub findings_count: usize,
+            pub findings_count: u64,
             /// Total coverage gaps.
-            pub coverage_gaps: usize,
+            pub coverage_gaps: u64,
             /// Timestamp of initial reconciliation.
             pub initial_reconciliation_time: Option<u64>,
             /// Timestamp of last reconciliation.
