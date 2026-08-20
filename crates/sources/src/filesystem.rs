@@ -916,6 +916,16 @@ impl FilesystemSource {
         self
     }
 
+    /// Override the windowed-scan overlap parameter.
+    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
+        assert!(
+            self.window_size > overlap,
+            "window size must exceed overlap"
+        );
+        self.window_overlap = overlap;
+        self
+    }
+
     /// Wire the source up to a merkle index so `(path, mtime, size)`
     /// matches skip the file *before* it is read. The cache contents
     /// themselves are loaded by the orchestrator (which also handles
