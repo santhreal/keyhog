@@ -47,7 +47,12 @@ fn isolated_policy_children_inherit_the_parents_measurement_flags() {
                 let parent = CalibrateAutorouteArgs {
                     autoroute_cache: Some("/home/user/.cache/keyhog/autoroute.json".to_string()),
                     execution_packs: packs.clone(),
-                    signing_key: None,
+                    // Varied with `packs` so both the absent and present arms
+                    // of the forwarding branch are exercised without a fourth
+                    // nested loop.
+                    signing_key: packs
+                        .as_ref()
+                        .map(|_| PathBuf::from("/etc/keyhog/pack-signing.pem")),
                     measurement_receipts: None,
                     policy: AutorouteCalibrationPolicy::All,
                     no_config,
@@ -70,6 +75,7 @@ fn isolated_policy_children_inherit_the_parents_measurement_flags() {
                 );
                 assert_eq!(child.quiet, parent.quiet);
                 assert_eq!(child.execution_packs, parent.execution_packs);
+                assert_eq!(child.signing_key, parent.signing_key);
                 // Parent-owned: one policy per child, the parent's staged
                 // transaction rather than the live cache, one receipt sink.
                 assert_eq!(child.policy, AutorouteCalibrationPolicy::Fast);
@@ -89,7 +95,7 @@ fn every_calibration_flag_has_a_forwarding_decision() {
     use clap::CommandFactory;
 
     // Forwarded to every child: these change what gets measured or printed.
-    let forwarded = ["no-config", "quiet", "execution-packs"];
+    let forwarded = ["no-config", "quiet", "execution-packs", "signing-key"];
     // Owned by the parent: the child gets a different value by construction.
     let parent_owned = ["policy", "autoroute-cache", "measurement-receipts"];
 
@@ -361,14 +367,22 @@ fn plain_route_probe_has_sparse_real_phase2_work_without_changing_size() {
     );
 }
 
-/// The bounded E2E fixture must retain every bucket used by its post-calibration
-/// scans while leaving the complete production workload plan independently intact.
+/// The bounded E2E fixture must retain two size bands per decode state, because
+/// a route family pools the bands sharing a decode state and needs two of them
+/// to be reusable evidence. The complete production workload plan stays
+/// independently intact.
 #[test]
 fn bounded_e2e_workload_fixture_keeps_verified_buckets() {
     let plan = bounded_e2e_workload_plan(core_workload_plan()).expect("bounded workload fixture");
     assert_eq!(
         plan.iter().map(Workload::label).collect::<Vec<_>>(),
-        ["1 KiB workload", "4 KiB workload", "64 KiB workload"]
+        [
+            "1 KiB workload",
+            "4 KiB workload",
+            "64 KiB workload",
+            "decode-heavy 4 KiB workload",
+            "decode-heavy 64 KiB workload"
+        ]
     );
 }
 

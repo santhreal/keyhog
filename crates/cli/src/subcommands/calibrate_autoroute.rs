@@ -324,17 +324,28 @@ fn core_workload_plan() -> Vec<Workload> {
     workloads
 }
 
+/// The CI fixture plan: two size bands per decode state.
+///
+/// A route family pools the bands that share a decode state, and reuse needs at
+/// least two of them, so a plan that probes one decode state leaves every scan
+/// in the other state uncalibrated. Real content decodes, so a fixture without
+/// the decode-heavy bands failed closed on a planted `.env` while the full
+/// production ladder routed it.
 #[cfg(any(test, feature = "ci-lean"))]
 fn bounded_e2e_workload_plan(mut workloads: Vec<Workload>) -> Result<Vec<Workload>> {
     workloads.retain(|workload| {
         matches!(
             workload.label(),
-            "1 KiB workload" | "4 KiB workload" | "64 KiB workload"
+            "1 KiB workload"
+                | "4 KiB workload"
+                | "64 KiB workload"
+                | "decode-heavy 4 KiB workload"
+                | "decode-heavy 64 KiB workload"
         )
     });
-    if workloads.len() != 3 {
+    if workloads.len() != 5 {
         anyhow::bail!(
-            "bounded-e2e-v1 expected three canonical file workloads, found {}",
+            "bounded-e2e-v1 expected five canonical file workloads, found {}",
             workloads.len()
         );
     }
