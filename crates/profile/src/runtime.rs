@@ -1300,15 +1300,15 @@ impl Runtime {
             // for each nanosecond it actually spends executing or waiting in blocked state.
             if outcome.outermost {
                 shard.top_level_calls.fetch_add(1, Ordering::Relaxed);
-                if outcome.blocked {
-                    shard
-                        .top_level_blocked_ns
-                        .fetch_add(self_ns, Ordering::Relaxed);
-                } else {
-                    shard
-                        .top_level_busy_ns
-                        .fetch_add(self_ns, Ordering::Relaxed);
-                }
+            }
+            if outcome.blocked {
+                shard
+                    .top_level_blocked_ns
+                    .fetch_add(self_ns, Ordering::Relaxed);
+            } else {
+                shard
+                    .top_level_busy_ns
+                    .fetch_add(self_ns, Ordering::Relaxed);
             }
             return;
         }
