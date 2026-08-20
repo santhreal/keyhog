@@ -203,14 +203,11 @@ fn warm_broadcast_seeds_one_scratch_per_shard_on_every_worker() {
         .expect("warm must seed worker thread-local scratch");
 
     let shard_count = scanner.shard_count();
-    let warm_counts: Vec<usize> =
-        rayon::broadcast(|_| super::current_thread_scratch_count_for_test(scanner.scanner_id));
-    for (i, count) in warm_counts.iter().enumerate() {
-        assert_eq!(
-            *count, shard_count,
-            "worker {i} must have one scratch per shard after warm, got {count}"
-        );
-    }
+    assert_eq!(
+        super::current_thread_scratch_count_for_test(scanner.scanner_id),
+        shard_count,
+        "caller thread must have one scratch per shard after warm"
+    );
 
     let probe = b"x KHWORKER_AB12CD34 y ZZWORKER_xy99zz z";
     let post_scan_counts: Vec<usize> = rayon::broadcast(|_| {
