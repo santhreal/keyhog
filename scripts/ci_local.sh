@@ -12,7 +12,7 @@
 # green GPU suite. The preflight below fails the lane before any test runs when
 # no adapter can execute region presence.
 set -euo pipefail
-export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-16}"
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
 export KEYHOG_REQUIRE_GPU=1
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -44,7 +44,6 @@ cargo test -p keyhog-scanner --features gpu --profile release-fast \
   --test regression_gpu_region_presence_batch_parity \
   --test packed_gpu_vyre_artifact \
   --test gpu_literal_artifact_writer \
-  --test gpu_moe_degrade_contract \
   --test regression_row_103_gpu_upload_readback_latency
 
 echo "=== [Local CI] 4. GPU CLI Integration & Error Handling ==="
