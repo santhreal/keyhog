@@ -1258,6 +1258,12 @@ async fn run_feed(
     format: String,
     socket: Option<std::path::PathBuf>,
 ) -> anyhow::Result<ExitCode> {
+    if format != "human" && format != "json" {
+        anyhow::bail!(
+            "guard feed: invalid format '{}': expected 'human' or 'json'",
+            format
+        );
+    }
     let socket = socket.unwrap_or_else(default_socket_path);
     let mut conn = match client::connect(&socket).await {
         Ok(c) => c,
@@ -1278,13 +1284,6 @@ async fn run_feed(
         root: canonical_root,
         limit: Some(limit),
     };
-
-    if format != "human" && format != "json" {
-        anyhow::bail!(
-            "guard feed: invalid format '{}': expected 'human' or 'json'",
-            format
-        );
-    }
 
     match conn.round_trip(&request).await? {
         Response::GuardFeedResult { transitions } => {
