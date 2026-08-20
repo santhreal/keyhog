@@ -84,11 +84,11 @@ fn benchmark_harness_and_scripts_declare_simd_parity() {
     let cross_device = fs::read_to_string(root.join("benchmarks/cross_device.sh"))
         .expect("read benchmarks/cross_device.sh");
     assert!(
-        cross_device.contains(r#"Darwin*) KH_FEAT="--no-default-features --features portable""#),
+        cross_device.contains("KH_FEAT=\"--no-default-features --features portable\""),
         "cross_device.sh must specify portable for Darwin"
     );
     assert!(
-        cross_device.contains(r#"*)       KH_FEAT="--features simd""#),
+        cross_device.contains("KH_FEAT=\"--features simd\""),
         "cross_device.sh must default Linux remote installations to --features simd"
     );
 }

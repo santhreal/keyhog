@@ -77,7 +77,8 @@ if [ -z "\$KH_FEAT" ]; then
 fi
 if [ -n "\$KH_FEAT" ] && echo "\$KH_FEAT" | grep -q "simd"; then
   if [ "\$OS" = "Linux" ] && ! pkg-config --exists libhs 2>/dev/null && ! pkg-config --exists vectorscan 2>/dev/null && ! pkg-config --exists hyperscan 2>/dev/null; then
-    echo "warning: libhs/vectorscan pkg-config package not found on remote; cargo install --features simd may require installing libhyperscan-dev / libvectorscan-dev" >&2
+    echo "error: libhs/vectorscan pkg-config package not found on remote; install libhyperscan-dev or libvectorscan-dev to build with --features simd, or override KEYHOG_INSTALL_FEATURES='--no-default-features --features portable'" >&2
+    exit 4
   fi
 fi
 echo "installing keyhog (cargo install --path crates/cli \$KH_FEAT)..." >&2
