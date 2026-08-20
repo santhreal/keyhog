@@ -884,7 +884,9 @@ impl CliTestApi for TestApi {
     fn current_binary(&self) -> Result<PathBuf> {
         crate::installer::current_binary()
     }
-
+    fn install_execution_generation(&self, _candidate: &Path) -> Result<bool> {
+        Ok(true)
+    }
 
     fn rewrite_detector_braces(&self, s: &str) -> (String, usize) {
         crate::subcommands::detectors::testing::rewrite_braces(s)

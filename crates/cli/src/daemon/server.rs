@@ -1393,6 +1393,7 @@ pub(crate) fn is_transient_accept_error(e: &std::io::Error) -> bool {
     false
 }
 
+#[allow(dead_code)]
 enum MassFilesystemMessage {
     Batch(Vec<Chunk>),
     Complete {

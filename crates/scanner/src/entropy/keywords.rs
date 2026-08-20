@@ -622,11 +622,12 @@ fn clean_candidate_value(raw: &str) -> &str {
             return &inside[..end_quote];
         }
     }
-    let trimmed = if trimmed.starts_with('(') && trimmed.ends_with(')') && !trimmed.starts_with("(?") {
-        &trimmed[1..trimmed.len() - 1].trim()
-    } else {
-        trimmed
-    };
+    let trimmed =
+        if trimmed.starts_with('(') && trimmed.ends_with(')') && !trimmed.starts_with("(?") {
+            &trimmed[1..trimmed.len() - 1].trim()
+        } else {
+            trimmed
+        };
     let unquoted = trimmed.trim_matches(|c: char| matches!(c, '"' | '\'' | '`' | ';' | ','));
     let end = match unquoted.find(|c: char| c.is_whitespace() || c == '<') {
         Some(index) => index,

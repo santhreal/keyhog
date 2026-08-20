@@ -10,8 +10,7 @@
 
 use keyhog::testing::daemon::guard_runtime::GuardRuntime;
 use keyhog::testing::daemon::server::{
-    compute_config_digest, compute_keyhogignore_digest, compute_root_policy_identity,
-    compute_source_policy_digest, compute_suppression_digest, guard_event_action_with_policy,
+    compute_keyhogignore_digest, compute_root_policy_identity, guard_event_action_with_policy,
     is_policy_path, GuardEventAction, KEYHOG_VERSION,
 };
 use keyhog_core::guard_state::{
@@ -20,7 +19,7 @@ use keyhog_core::guard_state::{
     GUARD_DECODE_POLICY_VERSION, GUARD_REPORT_SEMANTICS_VERSION, GUARD_SCHEMA_VERSION,
 };
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tempfile::tempdir;
 
 fn sample_fs_identity() -> FilesystemIdentity {

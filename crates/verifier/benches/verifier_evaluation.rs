@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use keyhog_core::json_selector;
 use keyhog_core::VerificationResult;
 use keyhog_verifier::sigv4::{aws_uri_encode, canonical_query_string};

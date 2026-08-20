@@ -63,6 +63,7 @@ fn bench_guard_protocol_framing(c: &mut Criterion) {
         store_schema_version: 1,
         store_path: "/var/repos/.keyhog-guard.db".to_string(),
         repair_command: "keyhog guard reconcile /var/repos/service-backend".to_string(),
+        recent_transitions: Vec::new(),
     };
 
     group.bench_function("serialize_request_guard_status", |b| {
@@ -171,10 +172,10 @@ fn bench_guard_state_transitions(c: &mut Criterion) {
                 .transition(&GuardTransition::ReconciliationClean)
                 .expect("reconcile clean");
             state = state
-                .transition(&GuardTransition::FsEventReceived)
+                .transition(&GuardTransition::EventAccepted)
                 .expect("fs event");
             state = state
-                .transition(&GuardTransition::ReconciliationClean)
+                .transition(&GuardTransition::EventsClean)
                 .expect("reconcile clean");
             state = state.transition(&GuardTransition::Stopped).expect("stop");
             let _ = black_box(state);

@@ -63,6 +63,7 @@ fn sample_raw_match(detector_id: &str, file: &str, line: usize, secret: &str) ->
             author: None,
             date: None,
         },
+        entropy: None,
         confidence: Some(0.9),
         evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
@@ -329,9 +330,7 @@ fn bench_guard_state_and_policy(c: &mut Criterion) {
             let s3 = s2
                 .transition(&GuardTransition::EventAccepted)
                 .expect("event");
-            let s4 = s3
-                .transition(&GuardTransition::EventsClean)
-                .expect("clean");
+            let s4 = s3.transition(&GuardTransition::EventsClean).expect("clean");
             let _ = black_box(s4);
         });
     });
