@@ -124,14 +124,17 @@ fn daemon_is_unix_only_with_explicit_windows_guidance() {
     let src = read("crates/cli/src/lib.rs");
     assert!(
         src.contains("#[cfg(unix)]")
-            && src.contains(
+            && (src.contains(
                 "Some(args::Command::Daemon(args)) => subcommands::daemon::run(args).await"
-            ),
+            ) || src.contains(
+                "args::Command::Daemon(args) => run_async(|| subcommands::daemon::run(args))"
+            )),
         "lib.rs must route `daemon` only under #[cfg(unix)]"
     );
     assert!(
         src.contains("#[cfg(not(unix))]")
-            && src.contains("Some(args::Command::Daemon(_args))")
+            && (src.contains("Some(args::Command::Daemon(_args))")
+                || src.contains("args::Command::Daemon(_args)"))
             && src.contains("`keyhog daemon` is a unix-only command")
             && src.contains("No Windows daemon transport ships")
             && src.contains("keyhog scan <path>"),
@@ -158,8 +161,12 @@ fn daemon_is_unix_only_with_explicit_windows_guidance() {
 fn guard_is_unix_only_with_explicit_windows_guidance() {
     let lib = read("crates/cli/src/lib.rs");
     assert!(
-        lib.contains("Some(args::Command::Guard(args)) => subcommands::guard::run(args).await")
-            && lib.contains("Some(args::Command::Guard(_args))")
+        (lib.contains("Some(args::Command::Guard(args)) => subcommands::guard::run(args).await")
+            || lib.contains(
+                "args::Command::Guard(args) => run_async(|| subcommands::guard::run(args))"
+            ))
+            && (lib.contains("Some(args::Command::Guard(_args))")
+                || lib.contains("args::Command::Guard(_args)"))
             && lib.contains("`keyhog guard` requires the Unix daemon transport")
             && lib.contains("no guard daemon ships"),
         "guard dispatch must retain Unix execution and explicit Windows guidance"

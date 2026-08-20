@@ -54,4 +54,3 @@ pub mod regression_stable_hash_field_identity;
 pub mod regression_value_parser_fix_guidance;
 pub mod release_attestation_contract;
 pub mod release_floating_tag_predicate_single_owner;
-pub mod target_spec_org_contracts;

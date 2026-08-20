@@ -65,6 +65,10 @@ fn unicode_regex_semantics_are_backend_invariant() {
         unicode_rule_detector("unicode-codepoint", r"(?-i)multi.([A-F0-9]{16})", 1),
     ])
     .expect("Unicode parity scanner compiles");
+    if !scanner.simd_backend_available() {
+        eprintln!("SIMD backend not available in this build; skipping SIMD invariant test");
+        return;
+    }
     let cases: [(&str, &str, &[&str]); 5] = [
         ("positive", "udigit៤꘩END", &["unicode-digit"]),
         ("negative", "udigitABEND", &[]),
@@ -97,6 +101,10 @@ fn unicode_regex_semantics_are_backend_invariant() {
 fn cpu_and_simd_agree_on_every_detector_example() {
     let specs = keyhog_core::embedded_detector_specs().to_vec();
     let scanner = CompiledScanner::compile(specs.clone()).expect("scanner compile");
+    if !scanner.simd_backend_available() {
+        eprintln!("SIMD backend not available in this build; skipping SIMD corpus parity test");
+        return;
+    }
     let mut runner = TestRunner::deterministic();
 
     let mut checked = 0u32;
