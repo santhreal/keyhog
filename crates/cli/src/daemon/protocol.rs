@@ -85,7 +85,9 @@ use std::collections::BTreeMap;
 ///   and evidence-policy exits.
 /// * v16 - continuous guard transition feed and event log wire frames
 ///   (`GuardFeed`, `GuardFeedResult`) expose recent state transitions with
-///   causal attribution across registered roots.
+///   causal attribution across registered roots, and guard status replies add
+///   filesystem authority probe results, watcher backend details, and periodic
+///   scrub intervals.
 pub(crate) const WIRE_VERSION: u32 = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

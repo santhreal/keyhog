@@ -288,11 +288,10 @@ async fn daemon_frame_rejects_oversized_length_prefix() {
     );
 }
 
-/// Locks the v15 bump: daemon findings carry the same validated evidence
-/// verdict consumed by one-shot report and exit policy.
+/// Locks the v16 bump: guard status carries filesystem authority and watcher backend details.
 #[test]
-fn daemon_wire_version_is_v15_with_evidence_verdicts() {
-    assert_eq!(WIRE_VERSION, 15);
+fn daemon_wire_version_is_v16_with_guard_authority() {
+    assert_eq!(WIRE_VERSION, 16);
 }
 
 #[test]

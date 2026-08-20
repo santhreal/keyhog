@@ -884,7 +884,7 @@ fn scrub_guard_roots(
                                 path_str
                             );
                             scrubbed += 1;
-                            last_scrub_times.insert(record.canonical_path.clone(), now);
+                            last_scrub_times.remove(&record.canonical_path);
                         }
                         Err(e) => {
                             tracing::warn!(
@@ -896,6 +896,8 @@ fn scrub_guard_roots(
                     }
                 }
             }
+        } else {
+            last_scrub_times.remove(&record.canonical_path);
         }
     }
     if scrubbed > 0 {

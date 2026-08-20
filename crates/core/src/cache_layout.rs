@@ -64,17 +64,16 @@ impl CacheKind {
             return None;
         }
         if file_name.ends_with(".lock") {
-            let is_package_lock = matches!(
-                file_name,
-                "Cargo.lock"
-                    | "flake.lock"
-                    | "yarn.lock"
-                    | "pnpm-lock.yaml"
-                    | "composer.lock"
-                    | "Gemfile.lock"
-                    | "poetry.lock"
-                    | "Pipfile.lock"
-            );
+            let is_package_lock = file_name.eq_ignore_ascii_case("Cargo.lock")
+                || file_name.eq_ignore_ascii_case("flake.lock")
+                || file_name.eq_ignore_ascii_case("yarn.lock")
+                || file_name.eq_ignore_ascii_case("pnpm-lock.yaml")
+                || file_name.eq_ignore_ascii_case("composer.lock")
+                || file_name.eq_ignore_ascii_case("Gemfile.lock")
+                || file_name.eq_ignore_ascii_case("poetry.lock")
+                || file_name.eq_ignore_ascii_case("Pipfile.lock")
+                || file_name.eq_ignore_ascii_case("package.lock")
+                || file_name.eq_ignore_ascii_case("package-lock.json");
             if !is_package_lock {
                 return Some(Self::LockFiles);
             }
