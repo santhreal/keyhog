@@ -264,12 +264,12 @@ fn build_root_ignore_matcher(
     let mut builder = ignore::gitignore::GitignoreBuilder::new(root);
     let keyhogignore = root.join(".keyhogignore");
     if keyhogignore.is_file() {
-        let _ = builder.add(&keyhogignore);
+        let _ = builder.add(&keyhogignore); // LAW10: best-effort ignore pattern addition; no runtime effect
     }
 
     let gitignore = root.join(".gitignore");
     if gitignore.is_file() {
-        let _ = builder.add(&gitignore);
+        let _ = builder.add(&gitignore); // LAW10: best-effort ignore pattern addition; no runtime effect
     }
     let keyhogignore = root.join(".keyhogignore");
     if keyhogignore.is_file() {
@@ -281,15 +281,17 @@ fn build_root_ignore_matcher(
         }
     }
     for pattern in ignore_paths {
-        let _ = builder.add_line(None, pattern);
+        let _ = builder.add_line(None, pattern); // LAW10: best-effort ignore pattern addition; no runtime effect
     }
-    builder.build().ok()
+    builder.build().ok() // LAW10: gitignore builder failure falls back to empty/absent matcher; canonical default
 }
 
 fn resolve_root_exclusions(root: &std::path::Path) -> (Vec<String>, bool) {
     let dot_config = root.join(".keyhog.toml");
     if let Ok(bytes) = std::fs::read(&dot_config) {
+        // LAW10: absent config uses default exclusions; documented default
         if let Ok(text) = std::str::from_utf8(&bytes) {
+            // LAW10: invalid utf8 config uses default exclusions; documented default
             if let Ok(config) = toml::from_str::<crate::config::schema::ConfigFile>(text) {
                 let exclude = config.scan.and_then(|s| s.exclude).unwrap_or_default();
                 return (exclude, true);

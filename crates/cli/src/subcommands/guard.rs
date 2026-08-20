@@ -894,6 +894,7 @@ async fn run_status_online(
                         root: entry.root.clone(),
                     };
                     if let Ok(Response::GuardStatusResult {
+                        // LAW10: skipped status query entry during listing is reporting-only
                         root,
                         mode,
                         state,

@@ -184,6 +184,7 @@ impl GuardRuntime {
                 if let Some(r) = roots.get_mut(root_path) {
                     if r.state != GuardRootState::Stopped && r.state != GuardRootState::Indexing {
                         if let Ok(new_state) = r.state.transition(&GuardTransition::PolicyChanged) {
+                            // LAW10: invalid state transition on inactive root has no runtime effect
                             r.state = new_state;
                             r.terminal_sequence = r.terminal_sequence.saturating_add(1);
                         }

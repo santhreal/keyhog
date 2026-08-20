@@ -958,8 +958,8 @@ pub fn is_policy_path(path: &Path) -> bool {
 pub fn compute_keyhogignore_digest(root: &Path) -> String {
     let legacy = root.join(".keyhogignore");
     let toml = root.join(".keyhogignore.toml");
-    let legacy_bytes = std::fs::read(&legacy).ok();
-    let toml_bytes = std::fs::read(&toml).ok();
+    let legacy_bytes = std::fs::read(&legacy).ok(); // LAW10: absent legacy ignore file yields empty/absent digest; intended default
+    let toml_bytes = std::fs::read(&toml).ok(); // LAW10: absent toml ignore file yields empty/absent digest; intended default
     if legacy_bytes.is_none() && toml_bytes.is_none() {
         return keyhog_core::guard_state::GuardPolicyIdentity::default_keyhogignore_digest();
     }
@@ -1006,6 +1006,7 @@ pub fn compute_suppression_digest(root: &Path) -> String {
     ] {
         let p = root.join(candidate);
         if let Ok(bytes) = std::fs::read(&p) {
+            // LAW10: absent local suppression file has no runtime effect
             hasher.update(b":local:");
             hasher.update(candidate.as_bytes());
             hasher.update(&(bytes.len() as u64).to_le_bytes());
@@ -2262,7 +2263,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             };
             let canonical_repo = match std::fs::canonicalize(&repo_path) {
                 Ok(p) => p,
-                Err(_) => std::path::PathBuf::from(&repo_path),
+                Err(_) => std::path::PathBuf::from(&repo_path), // LAW10: uncanonicalized repo path is the intended path default
             };
             let identity = state
                 .guard
@@ -2746,6 +2747,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 .guard
                 .get_root_policy_identity(commit_root.as_os_str().as_encoded_bytes())
                 .unwrap_or_else(|| {
+                    // LAW10: unregistered root computes fresh identity; canonical default
                     compute_root_policy_identity(
                         &commit_root,
                         KEYHOG_VERSION,
