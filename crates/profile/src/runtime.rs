@@ -1258,15 +1258,15 @@ impl Runtime {
             // for each nanosecond it actually spends executing or waiting in blocked state.
             if outcome.outermost {
                 shard.top_level_calls.fetch_add(1, Ordering::Relaxed);
-                if outcome.blocked {
-                    shard
-                        .top_level_blocked_ns
-                        .fetch_add(self_ns, Ordering::Relaxed);
-                } else {
-                    shard
-                        .top_level_busy_ns
-                        .fetch_add(self_ns, Ordering::Relaxed);
-                }
+            }
+            if outcome.blocked {
+                shard
+                    .top_level_blocked_ns
+                    .fetch_add(self_ns, Ordering::Relaxed);
+            } else {
+                shard
+                    .top_level_busy_ns
+                    .fetch_add(self_ns, Ordering::Relaxed);
             }
             return;
         }
@@ -2408,7 +2408,7 @@ impl Drop for AsyncSpan {
             SpanOutcome {
                 start_offset_ns: runtime.offset_ns(started),
                 elapsed_ns,
-                self_ns: elapsed_ns,
+                self_ns: 0,
                 blocked: false,
                 serial: false,
                 outermost: false,
@@ -2657,7 +2657,7 @@ impl DecisionTimer {
                     SpanOutcome {
                         start_offset_ns: runtime.offset_ns(self.started),
                         elapsed_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
-                        self_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
+                        self_ns: 0,
                         blocked: false,
                         serial: false,
                         outermost: false,
