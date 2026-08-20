@@ -127,25 +127,20 @@ fn documentation_reflects_portable_and_simd_install_commands() {
 
 #[test]
 fn runtime_simd_parity_contract() {
-    use keyhog_core::{DetectorSpec, PatternSpec, Severity};
     use keyhog_scanner::CompiledScanner;
 
-    // Compile a minimal real non-empty DetectorSpec
-    let spec = DetectorSpec {
-        id: "test-simd-parity-detector".to_string(),
-        patterns: vec![PatternSpec {
-            pattern: "sk_live_[0-9a-zA-Z]{24}".to_string(),
-            anchored: false,
-            case_insensitive: false,
-            entropy_threshold: None,
-        }],
-        keywords: vec!["sk_live".to_string()],
-        description: "parity test spec".to_string(),
-        severity: Severity::High,
-        confidence_threshold: 0.0,
-    };
+    // Compile a minimal real non-empty DetectorSpec from embedded specs
+    let detectors = keyhog_core::embedded_detector_specs()
+        .iter()
+        .take(1)
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        !detectors.is_empty(),
+        "embedded detector specs must be non-empty"
+    );
 
-    let scanner = CompiledScanner::compile(vec![spec]).expect("compile scanner with test spec");
+    let scanner = CompiledScanner::compile(detectors).expect("compile scanner with detector spec");
 
     // Verify fail-closed behavior vs availability
     if scanner.simd_backend_available() {
