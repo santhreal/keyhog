@@ -263,7 +263,9 @@ fn powershell_installer_verifies_and_seeds_the_local_gpu_literal_sidecar() {
         cache_backup.contains("Copy-Item -Recurse -Force -Path $programsDir")
             && cache_backup.contains("$Script:GpuProgramsCacheWasMissing = $true")
             && cache_restore.contains("Remove-Item -Recurse -Force $programsDir")
-            && cache_restore.contains("Move-Item -Force -Path (Join-Path $Script:GpuProgramsCacheBackupPath 'programs')")
+            && cache_restore.contains(
+                "Move-Item -Force -Path (Join-Path $Script:GpuProgramsCacheBackupPath 'programs')"
+            )
             && cache_restore.contains("Clear-GpuProgramsCacheBackup"),
         "PowerShell installer must be able to roll back GPU literal cache state when final verification fails"
     );
