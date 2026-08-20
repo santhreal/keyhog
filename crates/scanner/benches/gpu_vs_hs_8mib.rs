@@ -48,8 +48,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-const MIB: usize = keyhog_core::DEFAULT_WINDOW_SIZE_BYTES;
-const WINDOW_OVERLAP: usize = keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES;
+const MIB: usize = 1024 * 1024;
+const WINDOW_OVERLAP: usize = 128 * 1024;
 // The measured crossover is close enough that smaller samples produced 95%
 // intervals spanning parity. This floor distinguishes a repeatable win from
 // noise without reusing peer-selection samples as held-out evidence.
@@ -833,7 +833,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chunks.len(),
             n_det,
             gpu_peer_labels,
-            keyhog_profile::logical_cpu_count(),
+            std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get),
             selection_rounds,
             iters,
         );

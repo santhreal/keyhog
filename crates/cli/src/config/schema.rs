@@ -102,8 +102,6 @@ pub struct ScanSection {
     pub incremental_cache: Option<PathBuf>,
     /// GPU region-presence batch byte budget.
     pub gpu_batch_input_limit: Option<String>,
-    /// Streaming window overlap size in bytes (e.g. "128KB").
-    pub window_overlap: Option<String>,
 }
 
 /// `[allowlist]` nested table.

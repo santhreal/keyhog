@@ -41,7 +41,7 @@ pub use keyhog_core::{CompiledArtifactClass, CompiledArtifactIdentity};
 pub use crate::scan_profile::{dump as profile_dump, reset as profile_reset};
 pub use crate::types::{
     regex_dfa_limit_default, set_regex_dfa_limit, ScanExecutionRoute, ScannerConfig,
-    ScannerTuningConfig, MAX_SCAN_CHUNK_BYTES, WINDOW_OVERLAP_BYTES,
+    ScannerTuningConfig,
 };
 pub use crate::util_hash::{FNV_OFFSET_BASIS, FNV_PRIME};
 pub use keyhog_profile::{detail as profile_detail, set_detail as set_profile_detail, Detail};

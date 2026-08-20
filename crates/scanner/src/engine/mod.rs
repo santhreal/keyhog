@@ -1,4 +1,57 @@
-//! Core scanning engine coordinating phase 1 trigger generation and shared phase 2 extraction.
+//! Core scanning engine.
+//!
+//! # The one flow
+//!
+//! Every scan is the same pipeline. The ONLY thing that varies is *phase 1*
+//! (which detectors could fire where), produced on the CPU by Hyperscan or on
+//! the GPU by VYRE's fused literal-evidence backend. Everything downstream is
+//! shared:
+//!
+//! ```text
+//!   files ─▶ phase 1: trigger production         (swappable backend)
+//!           ├─ CPU: compute_coalesced_triggers   (Hyperscan prefilter)   scan_coalesced.rs
+//!           └─ GPU: scan_coalesced_gpu_region_presence (fused presence + positions) gpu_region_dispatch.rs
+//!                       │  one bitmap per chunk plus optional localization evidence
+//!                       ▼
+//!           phase 2: scan_coalesced_phase2       (THE shared tail)        scan_coalesced.rs
+//!             • windowing (scan_windowed / triggered windows)               windowed.rs
+//!             • per-chunk extraction (scan_prepared_with_triggered)        backend/triggered.rs
+//!                 confirmed → phase2 capture → generic → entropy → ML
+//!             • post-process: suppression, dedup, confidence, decode/ML    scan_postprocess.rs
+//!             • cross-chunk boundary reassembly (scan_chunk_boundaries)    boundary.rs
+//! ```
+//!
+//! There is exactly ONE production on-GPU literal producer: the fused resident
+//! dispatch in [`gpu_region_dispatch`]. Selecting an exact GPU backend
+//! (`--backend gpu-cuda` or `--backend gpu-wgpu`)
+//! routes the batch path through it. The no-backend library API is the portable
+//! CPU reference; the CLI passes its persisted fastest-correct route explicitly.
+//! A requested GPU path never turns failure into an empty successful result.
+//!
+//! # Where each method lives
+//!
+//! `CompiledScanner` construction and public lifecycle methods live under
+//! `compiled_scanner/`. Execution methods live here, split by responsibility.
+//! To find a method, look here first:
+//!
+//! - `scan` / `scan_with_backend` / `scan_with_deadline*` .... compiled_scanner/runtime.rs
+//! - `scan_inner` ................................................................................ scan.rs
+//! - `scan_coalesced` / `compute_coalesced_triggers` / `scan_coalesced_phase2` .................. scan_coalesced.rs
+//! - `scan_chunks_with_backend_internal_admission_and_route` (CPU-vs-GPU batch routing) .. backend_dispatch.rs
+//! - `scan_coalesced_gpu_region_presence` (GPU trigger production) ... gpu_region_dispatch.rs
+//! - GPU region reporting/throughput helpers ................. gpu_region_dispatch_helpers.rs
+//! - triggered extraction ................................... backend/triggered.rs
+//! - trigger collection ............................ backend/trigger_collection.rs
+//! - `scan_windowed*` (the windowing contract) .............. windowed.rs
+//! - confirmed-pattern extraction ................................... extract.rs
+//! - phase-2 prefilter + keyword/anchor/generic/entropy passes ...... phase2*.rs
+//! - hot-pattern fast path (simdsieve) ............................. hot_patterns.rs
+//! - match confidence policy ...................................... confidence::policy
+//! - post-process (suppression, dedup, confidence, decode/ML) ...... scan_postprocess.rs, scan_postprocess/*
+//! - cross-chunk seam reassembly ................................... boundary.rs
+//! - loud GPU-degrade / fail-closed helpers ....................... gpu_forced.rs
+//! - compile (build the scanner, acquire backends) .... compiled_scanner/compile.rs
+
 pub(crate) mod backend;
 pub(crate) mod batch_topology;
 mod boundary;
@@ -21,9 +74,7 @@ mod gpu_literal_scratch;
 #[cfg(feature = "gpu")]
 pub(crate) mod gpu_region_batch;
 #[cfg(feature = "gpu")]
-pub mod gpu_region_dispatch;
-#[cfg(feature = "gpu")]
-pub use gpu_region_dispatch::{GpuResidentExecutionPermit, GpuResidentExecutionPool};
+mod gpu_region_dispatch;
 #[cfg(feature = "gpu")]
 mod gpu_region_dispatch_helpers;
 #[cfg(feature = "gpu")]
@@ -450,14 +501,6 @@ impl CompiledScanner {
     ) -> Option<&Arc<dyn vyre::VyreBackend>> {
         self.backend_state.gpu_backend(backend)
     }
-    /// Scanner-derived decode window overlap requirement in bytes.
-    #[inline]
-    pub fn decode_window_overlap_bytes(&self) -> usize {
-        match self.pattern_boundary_context {
-            boundary::BoundaryContextBytes::Bounded(bytes) => bytes,
-            _ => crate::types::WINDOW_OVERLAP_BYTES,
-        }
-    }
 
     /// End one caller-defined scan partition.
     ///
@@ -469,22 +512,6 @@ impl CompiledScanner {
         self.fragment_cache.clear();
         self.reusable_phase1_evidence.lock().clear();
         release_idle_candidate_scratch();
-    }
-
-    /// Return a reference to the scanner's resident accelerator execution pool (Row 118).
-    #[cfg(feature = "gpu")]
-    #[must_use]
-    pub fn gpu_resident_execution_pool(&self) -> &gpu_region_dispatch::GpuResidentExecutionPool {
-        &self.gpu_resident_execution_pool
-    }
-
-    /// Set an explicit capacity override for the resident accelerator execution pool (Row 118).
-    #[cfg(feature = "gpu")]
-    #[must_use]
-    pub fn with_gpu_resident_execution_pool_capacity(mut self, capacity: usize) -> Self {
-        self.gpu_resident_execution_pool =
-            gpu_region_dispatch::GpuResidentExecutionPool::new(capacity);
-        self
     }
 }
 

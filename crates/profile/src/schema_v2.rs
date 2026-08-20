@@ -18,8 +18,7 @@ pub const WORKER_OCCUPANCY_V2_VERSION: u16 = 1;
 pub const CACHE_EFFECTIVENESS_V2_VERSION: u16 = 1;
 pub const INDEXED_COUNTER_V2_VERSION: u16 = 1;
 pub const RETRY_RECORD_V2_VERSION: u16 = 1;
-pub const OBSERVER_EFFECT_V2_VERSION: u16 = 1;
-pub const ESTIMATED_NS_PER_SPAN_EVENT: u64 = 35;
+
 /// Why a v2 evidence field has no measured value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -46,13 +45,6 @@ impl<T> Evidence<T> {
 
     pub const fn unavailable(reason: EvidenceGap) -> Self {
         Self::Unavailable { reason }
-    }
-
-    pub fn value(&self) -> Option<&T> {
-        match self {
-            Self::Recorded { value } => Some(value),
-            Self::Unavailable { .. } => None,
-        }
     }
 }
 
@@ -254,10 +246,6 @@ pub enum CacheLayerKindV2 {
     Verifier,
     Daemon,
     PageCache,
-    HyperscanShards,
-    MatcherArtifacts,
-    GpuPrograms,
-    LockFiles,
 }
 
 /// State and generation identity for one cache layer.
@@ -568,20 +556,6 @@ pub struct BlockedWaitRecordV2 {
     pub calls: u64,
     pub blocked_ns: u64,
 }
-pub const COMPILE_SURFACE_RECORD_V2_VERSION: u16 = 1;
-
-/// Compilation and load metrics recorded for one compile surface class.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct CompileSurfaceRecordV2 {
-    pub version: u16,
-    pub surface: crate::CompileSurfaceId,
-    pub name: String,
-    pub runtime_compiles: u64,
-    pub loads: u64,
-    pub install_compiles: u64,
-    pub update_compiles: u64,
-    pub developer_compiles: u64,
-}
 
 /// One exact logarithmic latency bucket.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -610,74 +584,6 @@ pub struct LatencyDistributionV2 {
     /// Nearest-rank p99, represented by the retained logarithmic bucket's upper bound.
     pub p99_ns: u64,
     pub buckets: Vec<LatencyBucketV2>,
-}
-
-/// Estimated profiler observer effect and instrumentation overhead (Row 108).
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ObserverEffectV2 {
-    pub version: u16,
-    /// Estimated total nanoseconds spent in profiler instrumentation.
-    pub estimated_overhead_ns: u64,
-    /// Estimated fraction of wall time attributed to profiler overhead, in parts per million.
-    pub overhead_share_ppm: u64,
-    /// Total instrumentation events (spans, counters, annotations) counted.
-    pub total_instrumentation_events: u64,
-    /// Measured or calibrated per-event instrumentation cost in nanoseconds.
-    pub estimated_ns_per_event: u64,
-    /// Per-stage observer effect breakdown.
-    pub stage_overhead: Vec<StageOverheadV2>,
-}
-
-impl ObserverEffectV2 {
-    /// Estimate profiler observer effect from recorded stage calls and wall time.
-    pub fn estimate(stages: &[StageMeasurement], wall_time_ns: u64) -> Self {
-        let mut stage_overhead = Vec::with_capacity(stages.len());
-        let mut total_events = 0_u64;
-
-        for stage in stages {
-            total_events = total_events.saturating_add(stage.calls);
-            let estimated_overhead_ns = stage.calls.saturating_mul(ESTIMATED_NS_PER_SPAN_EVENT);
-            let overhead_share_ppm = if stage.elapsed_ns > 0 {
-                (estimated_overhead_ns as u128 * 1_000_000 / stage.elapsed_ns as u128)
-                    .min(1_000_000) as u64
-            } else {
-                0
-            };
-            stage_overhead.push(StageOverheadV2 {
-                version: OBSERVER_EFFECT_V2_VERSION,
-                stage: stage.stage,
-                calls: stage.calls,
-                estimated_overhead_ns,
-                overhead_share_ppm,
-            });
-        }
-
-        let total_overhead_ns = total_events.saturating_mul(ESTIMATED_NS_PER_SPAN_EVENT);
-        let overhead_share_ppm = if wall_time_ns > 0 {
-            (total_overhead_ns as u128 * 1_000_000 / wall_time_ns as u128).min(1_000_000) as u64
-        } else {
-            0
-        };
-
-        Self {
-            version: OBSERVER_EFFECT_V2_VERSION,
-            estimated_overhead_ns: total_overhead_ns,
-            overhead_share_ppm,
-            total_instrumentation_events: total_events,
-            estimated_ns_per_event: ESTIMATED_NS_PER_SPAN_EVENT,
-            stage_overhead,
-        }
-    }
-}
-
-/// Estimated observer effect for one stage based on its event/call frequency.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct StageOverheadV2 {
-    pub version: u16,
-    pub stage: crate::Stage,
-    pub calls: u64,
-    pub estimated_overhead_ns: u64,
-    pub overhead_share_ppm: u64,
 }
 
 /// One typed counter or gauge materialized from fixed runtime storage.
@@ -779,15 +685,9 @@ pub struct CausalProfileV2 {
     /// Retry attempts by cause; empty on profiles before 2.8.
     #[serde(default)]
     pub retries: Vec<RetryRecordV2>,
-    /// Compilation surface metrics by class and phase; empty on profiles before 2.9.
-    #[serde(default)]
-    pub compile_surfaces: Vec<CompileSurfaceRecordV2>,
     /// Derived bottleneck analysis; absent on profiles before 2.8.
     #[serde(default)]
     pub insight: Option<crate::insight::RunInsightV2>,
-    /// Estimated profiler observer effect; absent on profiles before 2.8.
-    #[serde(default)]
-    pub observer_effect: Option<ObserverEffectV2>,
     pub events: EventStreamV2,
     /// CPU hardware evidence collected across the run.
     #[serde(default = "legacy_gap")]
@@ -907,7 +807,6 @@ impl CausalProfileV2 {
             reader_threads_requested,
             reader_threads_resolved: legacy_gap(),
         };
-        let observer_effect = Some(ObserverEffectV2::estimate(&stages, wall_time_ns));
         Self {
             version: CAUSAL_PROFILE_V2_VERSION,
             envelope: ProfileEnvelopeV2 {
@@ -951,7 +850,6 @@ impl CausalProfileV2 {
                 compile_surfaces
             },
             insight: None,
-            observer_effect,
             events: EventStreamV2 {
                 version: 3,
                 availability: legacy_gap(),
@@ -967,181 +865,5 @@ impl CausalProfileV2 {
             hardware,
             system,
         }
-    }
-    /// Render a clean, tabular Markdown report for terminal and browser inspection (Row 108).
-    pub fn render_markdown(&self) -> String {
-        let mut out = String::with_capacity(4096);
-        let input_bytes = self.identity.workload.raw_source_bytes;
-        let input_units = self.identity.workload.source_units;
-        let throughput_mib_s = if self.wall_time_ns == 0 {
-            0.0
-        } else {
-            input_bytes as f64 * 1_000_000_000.0 / self.wall_time_ns as f64 / (1024.0 * 1024.0)
-        };
-
-        let backend_req = &self.identity.route.requested_backend;
-        let backend_sel = self
-            .identity
-            .route
-            .selected_backend
-            .value()
-            .map_or("unselected", |s| s.as_str());
-        let workload_class = &self.identity.workload.class;
-        let adapter = self
-            .identity
-            .source
-            .adapters
-            .first()
-            .map_or("unknown", |s| s.as_str());
-        let worker_count = self.worker_occupancy.as_ref().map_or(1, |w| w.worker_count);
-
-        out.push_str(&format!("# KeyHog Profile: {}\n\n", self.identity.run_id));
-        out.push_str(&format!(
-            "- **Status**: `{:?}`\n\
-             - **Source**: `{adapter}`\n\
-             - **Workload**: `{workload_class}`\n\
-             - **Backend**: requested=`{backend_req}` selected=`{backend_sel}`\n\
-             - **Wall Time**: {:.3} ms\n\
-             - **Throughput**: {throughput_mib_s:.3} MiB/s\n\
-             - **Input**: {input_bytes} bytes ({input_units} units)\n\
-             - **Hardware**: logical_cpus={} workers={worker_count}\n\n",
-            self.status,
-            self.wall_time_ns as f64 / 1_000_000.0,
-            self.identity.host.logical_cpus,
-        ));
-
-        out.push_str("## Stages\n\n");
-        out.push_str("| Stage | Calls | Elapsed (ms) | Self (ms) | Blocked (ms) | Concurrency | Queue Depth |\n");
-        out.push_str("| :--- | ---: | ---: | ---: | ---: | ---: | :--- |\n");
-
-        for stage in &self.stages {
-            let metric_id = crate::MetricId::from(stage.stage);
-            let blocked_rec = self
-                .blocked_waits
-                .iter()
-                .find(|bw| bw.metric_id == metric_id);
-            let concurrency_rec = self
-                .stage_concurrency
-                .iter()
-                .find(|sc| sc.metric_id == metric_id);
-
-            let matching_queue = match stage.stage {
-                crate::Stage::SourceQueueWait | crate::Stage::ScannerQueueWait => {
-                    Some(crate::QueueId::ScannerWork)
-                }
-                crate::Stage::BackendDispatch => Some(crate::QueueId::BackendBatch),
-                crate::Stage::Decode => Some(crate::QueueId::DecoderWork),
-                crate::Stage::LiveVerification => Some(crate::QueueId::LiveVerification),
-                _ => None,
-            };
-
-            let blocked_str = if let Some(bw) = blocked_rec {
-                if bw.blocked_ns > 0 {
-                    format!("{:.3}", bw.blocked_ns as f64 / 1_000_000.0)
-                } else {
-                    "-".to_string()
-                }
-            } else {
-                "-".to_string()
-            };
-
-            let concurrency_str = if let Some(sc) = concurrency_rec {
-                if sc.concurrency_milli > 0 {
-                    format!("{:.2}x", sc.concurrency_milli as f64 / 1000.0)
-                } else {
-                    "-".to_string()
-                }
-            } else {
-                "-".to_string()
-            };
-
-            let queue_depth_str = if let Some(qid) = matching_queue {
-                if let Some(q) = self.queue_depths.iter().find(|qd| qd.queue == qid) {
-                    format!("{}/{}", q.high_water, q.current)
-                } else {
-                    "-".to_string()
-                }
-            } else {
-                "-".to_string()
-            };
-
-            out.push_str(&format!(
-                "| {} | {} | {:.3} | {:.3} | {} | {} | {} |\n",
-                stage.stage.as_str(),
-                stage.calls,
-                stage.elapsed_ns as f64 / 1_000_000.0,
-                stage.attributed_ns as f64 / 1_000_000.0,
-                blocked_str,
-                concurrency_str,
-                queue_depth_str,
-            ));
-        }
-        out.push('\n');
-
-        if !self.queue_depths.is_empty() {
-            out.push_str("## Queue Depths\n\n");
-            out.push_str("| Queue | Current | Peak (High Water) | Enqueues | Dequeues |\n");
-            out.push_str("| :--- | ---: | ---: | ---: | ---: |\n");
-            for q in &self.queue_depths {
-                out.push_str(&format!(
-                    "| {} | {} | {} | {} | {} |\n",
-                    q.queue.as_str(),
-                    q.current,
-                    q.high_water,
-                    q.enqueues,
-                    q.dequeues,
-                ));
-            }
-            out.push('\n');
-        }
-
-        if !self.caches.is_empty() {
-            out.push_str("## Caches\n\n");
-            out.push_str("| Cache | Hits | Misses | Hit Rate |\n");
-            out.push_str("| :--- | ---: | ---: | ---: |\n");
-            for c in &self.caches {
-                let hit_pct = c.hit_rate_ppm as f64 / 10_000.0;
-                out.push_str(&format!(
-                    "| {} | {} | {} | {:.2}% |\n",
-                    c.cache.as_str(),
-                    c.hits,
-                    c.misses,
-                    hit_pct,
-                ));
-            }
-            out.push('\n');
-        }
-
-        if let Some(worker_occ) = &self.worker_occupancy {
-            out.push_str("## Worker Occupancy\n\n");
-            out.push_str(&format!(
-                "- **Registered Workers**: {}\n\
-                 - **Active Workers**: {}\n\
-                 - **Total Busy**: {:.3} ms\n\
-                 - **Total Blocked**: {:.3} ms\n\
-                 - **Busiest Worker**: {:.3} ms\n\n",
-                worker_occ.worker_count,
-                worker_occ.active_worker_count,
-                worker_occ.busy_ns as f64 / 1_000_000.0,
-                worker_occ.blocked_ns as f64 / 1_000_000.0,
-                worker_occ.busiest_busy_ns as f64 / 1_000_000.0,
-            ));
-            if !worker_occ.workers.is_empty() {
-                out.push_str("| Worker ID | Calls | Busy (ms) | Blocked (ms) |\n");
-                out.push_str("| ---: | ---: | ---: | ---: |\n");
-                for w in &worker_occ.workers {
-                    out.push_str(&format!(
-                        "| {} | {} | {:.3} | {:.3} |\n",
-                        w.worker_id,
-                        w.calls,
-                        w.busy_ns as f64 / 1_000_000.0,
-                        w.blocked_ns as f64 / 1_000_000.0,
-                    ));
-                }
-                out.push('\n');
-            }
-        }
-
-        out
     }
 }

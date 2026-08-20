@@ -363,6 +363,8 @@ pub(crate) fn score_precomputed_batch_on_cpu<T: MlScoreInput>(
     inputs: &[T],
     features: &[[f32; NUM_FEATURES]],
 ) -> Vec<f64> {
+    use rayon::prelude::*;
+
     assert_eq!(
         inputs.len(),
         features.len(),
@@ -370,8 +372,8 @@ pub(crate) fn score_precomputed_batch_on_cpu<T: MlScoreInput>(
     );
     let model = ml_weights::model();
     inputs
-        .iter()
-        .zip(features.iter())
+        .par_iter()
+        .zip(features.par_iter())
         .map(|(input, features)| {
             crate::confidence::policy::ml_score_for_candidate_text(input.ml_text(), || {
                 forward_pass_impl(model, features) as f64
@@ -438,13 +440,23 @@ pub(crate) fn score_input_batch<T: MlScoreInput>(
         return scores;
     }
 
+    use rayon::prelude::*;
     if !profile {
-        return score_input_batch_serial(inputs, config);
+        let model = ml_weights::model();
+        return inputs
+            .par_iter()
+            .map(|input| {
+                let features = input.ml_features(config);
+                crate::confidence::policy::ml_score_for_candidate_text(input.ml_text(), || {
+                    forward_pass_impl(model, &features) as f64
+                })
+            })
+            .collect();
     }
 
     let feature_started = std::time::Instant::now();
     let features: Vec<[f32; NUM_FEATURES]> = inputs
-        .iter()
+        .par_iter()
         .map(|input| input.ml_features(config))
         .collect();
     keyhog_profile::add_counter(

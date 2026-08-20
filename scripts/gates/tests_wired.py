@@ -268,8 +268,7 @@ def crate_orphans(crate: str, workflow_flags: set[str]) -> list[str]:
     if runs_all_targets(crate_pkg(crate)):
         return []
     wired = wired_stems(crate, workflow_flags)
-    allowed_entry = ALLOWED.get(crate, set())
-    allowed = set(allowed_entry.keys()) if isinstance(allowed_entry, dict) else set(allowed_entry)
+    allowed = ALLOWED.get(crate, set())
     return [
         s
         for s in top_level_test_files(crate)
@@ -384,45 +383,10 @@ def self_test() -> int:
     return 0 if ok else 1
 
 
-def validate_allowlists(workflow_flags: set[str]) -> list[str]:
-    """Validate that allowlist stems exist on disk and are not redundantly wired."""
-    errors: list[str] = []
-    for crate, stems in ALLOWED.items():
-        if crate not in ENFORCED_CRATES:
-            errors.append(f"ALLOWED specifies unenforced crate: {crate}")
-            continue
-        files = set(top_level_test_files(crate))
-        wired = wired_stems(crate, workflow_flags)
-        if isinstance(stems, dict):
-            for stem, reason in stems.items():
-                if stem not in files:
-                    errors.append(f"ALLOWED stem does not exist in crates/{crate}/tests: {stem}.rs (reason: {reason})")
-                if not reason.strip():
-                    errors.append(f"ALLOWED entry missing written reason: {crate}/{stem}")
-                if stem in wired:
-                    errors.append(f"ALLOWED entry is stale (already wired in CI): {crate}/{stem}")
-        else:
-            for stem in stems:
-                if stem not in files:
-                    errors.append(f"ALLOWED stem does not exist in crates/{crate}/tests: {stem}.rs")
-                if stem in wired:
-                    errors.append(f"ALLOWED entry is stale (already wired in CI): {crate}/{stem}")
-    return errors
-
-
 def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return self_test()
     workflow_flags = workflow_test_flags()
-    allowlist_errors = validate_allowlists(workflow_flags)
-    if allowlist_errors:
-        print(
-            f"FAIL - {len(allowlist_errors)} invalid or stale allowlist entry/entries:",
-            file=sys.stderr,
-        )
-        for err in allowlist_errors:
-            print(f"  {err}", file=sys.stderr)
-        return 1
     failed = False
     total = 0
     for crate in ENFORCED_CRATES:

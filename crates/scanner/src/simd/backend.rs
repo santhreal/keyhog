@@ -374,6 +374,8 @@ impl HsScanner {
         patterns: &[(usize, usize, &str, bool)],
         opts: HsCompileOpts<'_>,
     ) -> PreparedPatterns {
+        use rayon::prelude::*;
+
         enum PrepResult {
             Pattern {
                 input_index: usize,
@@ -413,7 +415,11 @@ impl HsScanner {
                     },
                 }
             };
-        let prepared: Vec<PrepResult> = patterns.iter().enumerate().map(prepare).collect();
+        let prepared: Vec<PrepResult> = if opts.parallel_prepare {
+            patterns.par_iter().enumerate().map(prepare).collect()
+        } else {
+            patterns.iter().enumerate().map(prepare).collect()
+        };
 
         let mut hs_pats = Vec::new();
         let mut pattern_map = Vec::new();
@@ -596,14 +602,26 @@ impl HsScanner {
         // lets that worker steal another scan job and re-enter the scratch
         // borrow. Compile inline on workers; cold startup keeps parallel shard
         // compilation when entered from a non-worker coordinator thread.
+        if shard_count == 1 || rayon::current_thread_index().is_some() {
+            return shard_pats
+                .into_iter()
+                .enumerate()
+                .map(|(shard_idx, pats)| {
+                    Self::compile_cached_shard(pats, shard_count, shard_idx, cache_key, cache_dir)
+                })
+                .collect();
+        }
+
+        use rayon::prelude::*;
         shard_pats
-            .into_iter()
+            .into_par_iter()
             .enumerate()
             .map(|(shard_idx, pats)| {
                 Self::compile_cached_shard(pats, shard_count, shard_idx, cache_key, cache_dir)
             })
             .collect()
     }
+
     fn compile_cached_shard(
         pats: Vec<Pattern>,
         shard_count: usize,
@@ -673,9 +691,6 @@ impl HsScanner {
                                 dropped = dropped.len(),
                                 "HS shard loaded from cache"
                             );
-                            keyhog_profile::record_cache_hit(
-                                keyhog_profile::CacheId::HyperscanShard,
-                            );
                             return Some((db, dropped));
                         }
                         Err(error) => {
@@ -706,7 +721,6 @@ impl HsScanner {
                 );
             }
         }
-        keyhog_profile::record_cache_miss(keyhog_profile::CacheId::HyperscanShard);
         None
     }
 
@@ -781,11 +795,6 @@ impl HsScanner {
             shard = shard_idx,
             dropped = dropped.len(),
             "HS shard cached"
-        );
-        crate::cache_eviction::evict_cache_dir_with_policy(
-            parent,
-            keyhog_core::CacheKind::HyperscanShards,
-            keyhog_core::CacheKind::HyperscanShards.default_policy(),
         );
     }
 
@@ -866,10 +875,14 @@ impl HsScanner {
     }
 
     /// Warm the scanner for steady-state execution: allocate one
-    /// Hyperscan scratch per shard on the current thread and retain
-    /// it in thread-local storage keyed by this scanner's identity.
+    /// Hyperscan scratch per shard on every Rayon worker thread and retain
+    /// them in thread-local storage keyed by this scanner's identity. After a
+    /// successful warm, ordinary scan requests reuse those scratches instead
+    /// of allocating on the request path.
     pub(crate) fn warm(&self) -> Result<(), String> {
-        self.scan_matches_result(b"", |_, _, _| {})?;
+        let results: Vec<Result<(), String>> =
+            rayon::broadcast(|_| self.scan_matches_result(b"", |_, _, _| {}));
+        results.into_iter().collect::<Result<Vec<()>, String>>()?;
         Ok(())
     }
 
@@ -888,9 +901,6 @@ impl HsScanner {
         opts: HsCompileOpts<'_>,
     ) -> Result<(Self, Vec<usize>), String> {
         COMPILE_WITH_OPTS_INVOCATIONS.fetch_add(1, Ordering::Relaxed);
-        keyhog_profile::record_compile_surface_invocation(
-            keyhog_profile::CompileSurfaceId::SimdProgram,
-        );
         Self::compile_with_opts_inner(patterns, opts, None)
     }
 

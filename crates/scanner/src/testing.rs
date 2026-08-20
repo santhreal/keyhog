@@ -60,10 +60,9 @@ pub(crate) const REGEX_SIZE_LIMIT_BYTES: usize = crate::types::REGEX_SIZE_LIMIT_
 pub fn decode_source_windows_for_test(
     limit: usize,
     chunk: &keyhog_core::Chunk,
-    overlap: usize,
     visit: impl FnMut(&keyhog_core::Chunk) -> crate::error::Result<()>,
 ) -> crate::error::Result<()> {
-    crate::engine::scan_postprocess::decode::decode_source_windows(limit, chunk, overlap, visit)
+    crate::engine::scan_postprocess::decode::decode_source_windows(limit, chunk, visit)
 }
 /// Complete defaults for programmatic named-detector fixtures.
 pub fn named_detector_fixture_defaults() -> keyhog_core::DetectorSpec {
@@ -1090,37 +1089,6 @@ pub fn keyword_line_ids_contain_for_test(keyword_line_ids: &[usize], line_index:
     crate::entropy::scanner::keyword_line_ids_contain(keyword_line_ids, line_index)
 }
 
-/// Helper to compile an assignment keyword matcher for testing.
-pub fn compile_assignment_keyword_matcher_for_test(
-    secret_keywords: &[String],
-    detector_policy_keywords: &[String],
-) -> Box<dyn Fn(&[u8]) -> bool + Send + Sync> {
-    let matcher = crate::assignment_keyword_matcher::AssignmentKeywordMatcher::compile(
-        secret_keywords,
-        detector_policy_keywords,
-    );
-    Box::new(move |line| matcher.matches(line))
-}
-
-/// Helper to hydrate an assignment keyword matcher for testing.
-pub fn hydrate_assignment_keyword_matcher_for_test(
-    secret_keywords: &[String],
-    detector_policy_keywords: &[String],
-) -> Box<dyn Fn(&[u8]) -> bool + Send + Sync> {
-    let matcher = crate::assignment_keyword_matcher::AssignmentKeywordMatcher::hydrate(
-        secret_keywords,
-        detector_policy_keywords,
-    );
-    Box::new(move |line| matcher.matches(line))
-}
-
-/// Helper to check whether entropy policy compiles for a detector spec.
-pub fn compile_entropy_policy_for_test(
-    detector: &keyhog_core::DetectorSpec,
-) -> Result<bool, String> {
-    crate::entropy::policy::compile_entropy_policy(detector).map(|opt| opt.is_some())
-}
-
 /// Returns the production lane topology as `(is_large, original_indices)`.
 pub fn chunk_lane_topology_for_test(
     chunk_sizes: &[usize],
@@ -1447,16 +1415,17 @@ pub fn credential_context_too_short_rejection_for_test(
 /// next scan's report.
 pub fn telemetry_reset_zeroes_all_seeded_gap_counters() -> bool {
     use crate::telemetry::ScannerCoverageGapEvent;
+    use std::sync::atomic::Ordering;
     for gap in ScannerCoverageGapEvent::ALL {
-        gap.store(9);
+        gap.counter().store(9, Ordering::Relaxed);
     }
     crate::telemetry::reset_for_scan();
     ScannerCoverageGapEvent::ALL
         .iter()
-        .all(|gap| gap.count() == 0)
+        .all(|gap| gap.counter().load(Ordering::Relaxed) == 0)
 }
 
-/// `(ALL.len(), all_ten_variants_present)` for `ScannerCoverageGapEvent::ALL`: the
+/// `(ALL.len(), all_nine_variants_present)` for `ScannerCoverageGapEvent::ALL`: the
 /// reset owner iterates `ALL`, so a new variant added without extending `ALL` would
 /// silently escape the per-scan reset. Encapsulates the private variant set in-crate.
 pub fn telemetry_coverage_gap_all_completeness() -> (usize, bool) {
@@ -1468,7 +1437,6 @@ pub fn telemetry_coverage_gap_all_completeness() -> (usize, bool) {
         E::DecodeOversizeSkip,
         E::InvalidPatternIndexSkip,
         E::BoundaryResultCardinalityMismatch,
-        E::BoundarySeamTruncation,
         E::LineOffsetMappingMismatch,
         E::ChunkDeadlineAbort,
         E::BinaryStringsNamedExclusion,
@@ -4965,25 +4933,19 @@ impl AlphabetMask {
     }
 
     #[cfg(target_arch = "aarch64")]
-    // SAFETY: target is aarch64 which baseline includes NEON.
     pub unsafe fn from_bytes_neon(bytes: &[u8]) -> Self {
-        // SAFETY: forwarded from the caller.
         Self(unsafe { crate::alphabet_filter::AlphabetMask::from_bytes_neon(bytes) })
     }
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
-    // SAFETY: caller must ensure AVX2 is supported.
     pub unsafe fn from_bytes_avx2(bytes: &[u8]) -> Self {
-        // SAFETY: forwarded from the caller.
         Self(unsafe { crate::alphabet_filter::AlphabetMask::from_bytes_avx2(bytes) })
     }
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse2")]
-    // SAFETY: caller must run on x86_64 CPU which baseline includes SSE2.
     pub unsafe fn from_bytes_sse2(bytes: &[u8]) -> Self {
-        // SAFETY: forwarded from the caller.
         Self(unsafe { crate::alphabet_filter::AlphabetMask::from_bytes_sse2(bytes) })
     }
 
@@ -5025,9 +4987,7 @@ impl AlphabetScreen {
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
-    // SAFETY: caller must ensure AVX2 is supported.
     pub unsafe fn screen_avx2(&self, data: &[u8]) -> bool {
-        // SAFETY: forwarded from caller.
         unsafe { self.0.screen_avx2(data) }
     }
 }
@@ -5043,12 +5003,10 @@ pub fn assert_alphabet_prefilter_backend_parity(targets: &[String], data: &[u8])
     #[cfg(target_arch = "x86_64")]
     {
         if is_x86_feature_detected!("avx2") {
-            // SAFETY: verified via is_x86_feature_detected! above.
             let mask_avx2 = unsafe { AlphabetMask::from_bytes_avx2(data) };
             assert_eq!(mask_scalar, mask_avx2, "AVX2 AlphabetMask parity failed");
         }
         if is_x86_feature_detected!("sse2") {
-            // SAFETY: verified via is_x86_feature_detected! above.
             let mask_sse2 = unsafe { AlphabetMask::from_bytes_sse2(data) };
             assert_eq!(mask_scalar, mask_sse2, "SSE2 AlphabetMask parity failed");
         }
@@ -5056,7 +5014,6 @@ pub fn assert_alphabet_prefilter_backend_parity(targets: &[String], data: &[u8])
 
     #[cfg(target_arch = "aarch64")]
     {
-        // SAFETY: aarch64 baseline includes NEON.
         let mask_neon = unsafe { AlphabetMask::from_bytes_neon(data) };
         assert_eq!(mask_scalar, mask_neon, "NEON AlphabetMask parity failed");
     }
@@ -5072,7 +5029,6 @@ pub fn assert_alphabet_prefilter_backend_parity(targets: &[String], data: &[u8])
     #[cfg(target_arch = "x86_64")]
     {
         if is_x86_feature_detected!("avx2") {
-            // SAFETY: verified via is_x86_feature_detected! above.
             let screen_avx2 = unsafe { screen.screen_avx2(data) };
             assert_eq!(
                 screen_scalar, screen_avx2,
@@ -5331,16 +5287,6 @@ pub fn region_presence_batch_capture(
 ) -> Result<(Vec<u8>, Vec<u32>, bool), String> {
     crate::engine::gpu_region_batch::region_presence_batch_capture(chunks)
 }
-
-#[cfg(feature = "gpu")]
-pub fn region_presence_scratch_retention_limit() -> usize {
-    crate::engine::gpu_region_batch::region_presence_scratch_retention_limit()
-}
-
-#[cfg(feature = "gpu")]
-pub use crate::engine::gpu_region_dispatch::pool::{
-    GpuResidentExecutionPermit, GpuResidentExecutionPool,
-};
 
 pub mod unicode_hardening {
     use std::borrow::Cow;
@@ -5987,11 +5933,9 @@ pub fn reverse_str(s: &str) -> String {
 /// (`E0425: cannot find calculate_shannon_entropy`), breaking the portable
 /// / macOS-arm64 build.
 #[cfg(test)]
-// SAFETY: caller must verify AVX512 support on x86_64 targets.
 pub(crate) unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
     #[cfg(target_arch = "x86_64")]
     {
-        // SAFETY: forwarded from caller.
         unsafe { crate::entropy::avx512::calculate_shannon_entropy(chunk) }
     }
     #[cfg(not(target_arch = "x86_64"))]

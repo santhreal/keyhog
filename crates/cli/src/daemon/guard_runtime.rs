@@ -238,7 +238,6 @@ impl GuardRuntime {
         &self,
         canonical_path: Vec<u8>,
         filesystem_identity: FilesystemIdentity,
-        filesystem_authority: FilesystemAuthority,
         mode: GuardRootMode,
     ) -> Result<GuardRootRecord, String> {
         let mut roots = self.roots.write();
@@ -248,12 +247,7 @@ impl GuardRuntime {
                 String::from_utf8_lossy(&canonical_path)
             ));
         }
-        let record = roots.register(
-            canonical_path,
-            filesystem_identity,
-            filesystem_authority,
-            mode,
-        );
+        let record = roots.register(canonical_path, filesystem_identity, mode);
         self.touch_activity();
         Ok(record)
     }
@@ -773,33 +767,6 @@ impl GuardRuntime {
         } else {
             "idle-unload"
         }
-    }
-
-    /// Record that the watcher backend disconnected with a named reason.
-    pub fn record_watcher_disconnection(&self, reason: impl Into<String>) {
-        let reason_str = reason.into();
-        *self.watcher_disconnection_reason.write() = Some(reason_str.clone());
-        *self.watcher_status.write() = Some(format!("disconnected: {}", reason_str));
-    }
-
-    /// Reason why the watcher backend disconnected, if any.
-    pub fn watcher_disconnection_reason(&self) -> Option<String> {
-        self.watcher_disconnection_reason.read().clone()
-    }
-
-    /// Whether the watcher backend is disconnected.
-    pub fn is_watcher_disconnected(&self) -> bool {
-        self.watcher_disconnection_reason.read().is_some()
-    }
-
-    /// Set the explicit watcher status label/description.
-    pub fn set_watcher_status(&self, status: impl Into<String>) {
-        *self.watcher_status.write() = Some(status.into());
-    }
-
-    /// Get the watcher status label/description.
-    pub fn watcher_status(&self) -> Option<String> {
-        self.watcher_status.read().clone()
     }
 }
 

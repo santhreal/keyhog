@@ -19,10 +19,10 @@ impl RegionPresenceScratch {
 
     #[cfg(test)]
     pub(super) fn reserve_outlier_for_test(&mut self) {
-        let ceiling = region_presence_scratch_retention_limit();
-        self.haystack.reserve_exact(ceiling + 1);
+        self.haystack
+            .reserve_exact(WGPU_BYTE_SCAN_DISPATCH_LIMIT + 1);
         self.region_starts
-            .reserve_exact(ceiling / std::mem::size_of::<u32>() + 1);
+            .reserve_exact(WGPU_BYTE_SCAN_DISPATCH_LIMIT / std::mem::size_of::<u32>() + 1);
     }
 
     #[cfg(test)]
@@ -47,7 +47,7 @@ thread_local! {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum RegionPresenceBatchMode {
+pub(super) enum RegionPresenceBatchMode {
     BorrowedSingleChunk,
     RawScratch,
     ShardedScratch,
@@ -114,8 +114,7 @@ impl Drop for ZeroRegionPresenceScratch<'_> {
         self.scratch.haystack.fill(0);
         self.scratch.haystack.clear();
         self.scratch.region_starts.clear();
-        let retention_limit = region_presence_scratch_retention_limit();
-        if self.scratch.haystack.capacity() > retention_limit {
+        if self.scratch.haystack.capacity() > WGPU_BYTE_SCAN_DISPATCH_LIMIT {
             self.scratch.haystack = Vec::new();
         }
         if self
@@ -123,7 +122,7 @@ impl Drop for ZeroRegionPresenceScratch<'_> {
             .region_starts
             .capacity()
             .saturating_mul(std::mem::size_of::<u32>())
-            > retention_limit
+            > WGPU_BYTE_SCAN_DISPATCH_LIMIT
         {
             self.scratch.region_starts = Vec::new();
         }
@@ -134,7 +133,10 @@ impl Drop for ZeroRegionPresenceScratch<'_> {
 pub(super) const REGION_PRESENCE_BATCH_BYTE_LIMIT: usize =
     vyre::scan::dispatch_io::DEFAULT_MAX_SCAN_BYTES as usize;
 
-/// Bound each WebGPU positioned-match shard to the portable 8 MiB grid (65,535 workgroups).
+/// Bound each positioned-match shard to the portable 8 MiB grid. CUDA can
+/// launch a larger byte grid, but dense real corpora can produce more than the
+/// bounded exact-match replay capacity in one larger dispatch. Equal shard
+/// ceilings keep both GPU backends exact without CPU substitution.
 pub(super) const WGPU_BYTE_SCAN_DISPATCH_LIMIT: usize = 65_535 * 128;
 
 /// CUDA launches large 1D grids, bounded by VYRE's 64 MiB scan ceiling.
@@ -223,12 +225,11 @@ pub(super) fn with_test_region_presence_byte_limit<R>(limit: usize, f: impl FnOn
 }
 
 fn region_presence_batch_byte_limit_for_input_budget(
-    backend_id: &str,
+    _backend_id: &str,
     input_budget: usize,
 ) -> usize {
-    let backend_limit = region_presence_batch_byte_limit_for_backend(backend_id);
     REGION_PRESENCE_BATCH_BYTE_LIMIT
-        .min(backend_limit)
+        .min(WGPU_BYTE_SCAN_DISPATCH_LIMIT)
         .min(input_budget)
 }
 
@@ -507,11 +508,6 @@ pub(super) fn build_region_presence_batch(
         scratch.region_starts.push(scratch.haystack.len() as u32);
         let bytes = chunk.data.as_bytes();
         scratch.haystack.extend_from_slice(bytes);
-        #[cfg(feature = "gpu")]
-        crate::gpu::evidence::record_host_byte_copy(
-            crate::gpu::evidence::GpuHostDataMovementSite::RegionPresenceScratchCoalesce,
-            bytes.len(),
-        );
         if idx + 1 != chunks.len() {
             scratch.haystack.push(0);
         }
@@ -677,7 +673,7 @@ pub(crate) fn region_presence_batch_capture(
     })
 }
 
-pub(crate) fn with_region_presence_batch<R>(
+pub(super) fn with_region_presence_batch<R>(
     chunks: &[keyhog_core::Chunk],
     f: impl FnOnce(&[u8], &[u32], RegionPresenceBatchMode) -> std::result::Result<R, String>,
 ) -> std::result::Result<R, String> {

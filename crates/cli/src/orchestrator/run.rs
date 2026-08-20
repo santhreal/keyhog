@@ -2,9 +2,8 @@
 
 use super::allowlist::{load_allowlist, load_rule_suppressor};
 use super::reporting::{
-    dump_dogfood_trace, report_autoroute_cache_summary, report_compiled_cache_summary,
-    report_completion_summary, report_scanner_materialization_summary, report_skip_summary,
-    TickerGuard,
+    dump_dogfood_trace, report_autoroute_cache_summary, report_completion_summary,
+    report_skip_summary, TickerGuard,
 };
 use super::ScanOrchestrator;
 use crate::baseline::Baseline;
@@ -446,22 +445,6 @@ fn profiler_cache_identities(
         merkle,
         autoroute,
         verifier,
-        hyperscan,
-        matcher_artifacts,
-        CacheLayerV2 {
-            version: 1,
-            layer: CacheLayerKindV2::GpuPrograms,
-            state: CacheState::Cold,
-            generation: unavailable_cache_evidence(EvidenceGap::Unavailable),
-            digest: unavailable_cache_evidence(EvidenceGap::Unavailable),
-        },
-        CacheLayerV2 {
-            version: 1,
-            layer: CacheLayerKindV2::LockFiles,
-            state: CacheState::Warm,
-            generation: unavailable_cache_evidence(EvidenceGap::Unavailable),
-            digest: unavailable_cache_evidence(EvidenceGap::Unavailable),
-        },
         CacheLayerV2 {
             version: 1,
             layer: CacheLayerKindV2::Daemon,
@@ -474,6 +457,7 @@ fn profiler_cache_identities(
             layer: CacheLayerKindV2::PageCache,
             state: CacheState::Unknown,
             generation: unavailable_cache_evidence(EvidenceGap::Unsupported),
+
             digest: unavailable_cache_evidence(EvidenceGap::Unsupported),
         },
     ]
@@ -486,10 +470,6 @@ fn profiler_cache_transitions(
     orchestrator: &ScanOrchestrator,
     merkle_status: Option<&keyhog_core::MerkleLoadStatus>,
 ) -> Vec<super::workflow_state::CacheTransitionRecord> {
-    let matcher_outcome = match &orchestrator.scanner_materialization {
-        Some(super::ScannerMaterialization::Compiled { matcher_outcome }) => Some(matcher_outcome),
-        _ => None,
-    };
     vec![
         super::workflow_state::detector_transition(),
         super::workflow_state::merkle_load_transition(merkle_status),
@@ -630,10 +610,6 @@ fn cache_layer_text(layer: keyhog_profile::CacheLayerKindV2) -> &'static str {
         keyhog_profile::CacheLayerKindV2::Verifier => "verifier",
         keyhog_profile::CacheLayerKindV2::Daemon => "daemon",
         keyhog_profile::CacheLayerKindV2::PageCache => "page-cache",
-        keyhog_profile::CacheLayerKindV2::HyperscanShards => "hyperscan-shards",
-        keyhog_profile::CacheLayerKindV2::MatcherArtifacts => "matcher-artifacts",
-        keyhog_profile::CacheLayerKindV2::GpuPrograms => "gpu-programs",
-        keyhog_profile::CacheLayerKindV2::LockFiles => "lock-files",
     }
 }
 
@@ -1573,7 +1549,7 @@ impl ScanOrchestrator {
 
         operator_profile.transition(keyhog_profile::RunState::Scanning);
         let all_matches = {
-            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ScanPipeline);
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::BackendDispatch);
             self.scan_sources(sources, show_progress, merkle, incremental_cache_path)?
         };
         operator_profile.transition(keyhog_profile::RunState::Resolving);

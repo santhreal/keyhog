@@ -292,7 +292,9 @@ impl ScanOrchestrator {
         use rayon::prelude::*;
         use std::sync::atomic::{AtomicUsize, Ordering};
 
-        keyhog_sources::reset_for_scan();
+        keyhog_sources::reset_skipped_over_max_size();
+        #[cfg(feature = "binary")]
+        keyhog_sources::reset_binary_counters();
 
         let progress_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let progress_handle = if show_progress && !self.args.stream {
@@ -383,14 +385,8 @@ impl ScanOrchestrator {
                     {
                         let send_result = {
                             let _profile_span =
-                                keyhog_profile::blocked(keyhog_profile::Stage::SourceQueueWait);
-                            let res = tx.send(std::mem::take(&mut batch));
-                            if res.is_ok() {
-                                keyhog_profile::record_queue_depth_enqueue(
-                                    keyhog_profile::QueueId::ScannerWork,
-                                );
-                            }
-                            res
+                                keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
+                            tx.send(std::mem::take(&mut batch))
                         };
                         route_state.clear();
                         batch_bytes = 0;
@@ -405,14 +401,8 @@ impl ScanOrchestrator {
                     if batch.len() >= fused_batch || batch_bytes >= fused_batch_bytes {
                         let send_result = {
                             let _profile_span =
-                                keyhog_profile::blocked(keyhog_profile::Stage::SourceQueueWait);
-                            let res = tx.send(std::mem::take(&mut batch));
-                            if res.is_ok() {
-                                keyhog_profile::record_queue_depth_enqueue(
-                                    keyhog_profile::QueueId::ScannerWork,
-                                );
-                            }
-                            res
+                                keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
+                            tx.send(std::mem::take(&mut batch))
                         };
                         route_state.clear();
                         batch_bytes = 0;
@@ -441,19 +431,12 @@ impl ScanOrchestrator {
                 }
             }
             if !batch.is_empty() {
-                let _profile_span = keyhog_profile::blocked(keyhog_profile::Stage::SourceQueueWait);
-                let res = tx.send(batch); // LAW10: unused-binding marker; no runtime effect, not a fallback
-                if res.is_ok() {
-                    keyhog_profile::record_queue_depth_enqueue(
-                        keyhog_profile::QueueId::ScannerWork,
-                    );
-                }
+                let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
+                let _ = tx.send(batch); // LAW10: unused-binding marker; no runtime effect, not a fallback
             }
         });
 
-        let mut batches = super::TimedBatches {
-            batches: rx.into_iter(),
-        };
+        let mut batches = rx.into_iter();
         let Some(first_batch) = batches.next() else {
             if drain.join().is_err() {
                 tracing::error!("fused source drain thread panicked before producing scanner work");
@@ -537,14 +520,7 @@ impl ScanOrchestrator {
                             c.data.as_bytes(),
                         );
                         if unchanged {
-                            keyhog_profile::record_cache_hit(
-                                keyhog_profile::CacheId::IncrementalUnchanged,
-                            );
                             skipped_ref.fetch_add(1, Ordering::Relaxed);
-                        } else {
-                            keyhog_profile::record_cache_miss(
-                                keyhog_profile::CacheId::IncrementalUnchanged,
-                            );
                         }
                         !unchanged
                     })

@@ -392,9 +392,6 @@ pub(crate) fn log_quality_warnings(warnings: &[String]) {
 pub(crate) fn compile_detector_companions(
     detector: &DetectorSpec,
 ) -> Result<Vec<CompiledCompanion>> {
-    keyhog_profile::record_compile_surface_invocation(
-        keyhog_profile::CompileSurfaceId::CompileState,
-    );
     detector
         .companions
         .iter()
@@ -409,9 +406,6 @@ pub(crate) fn compile_pattern(
     detector_id: &str,
     detector_keywords: &[String],
 ) -> Result<CompiledPattern> {
-    keyhog_profile::record_compile_surface_invocation(
-        keyhog_profile::CompileSurfaceId::CompileState,
-    );
     spec.validate_required_literals()
         .map_err(|reason| ScanError::DetectorPatternPolicy {
             detector_id: detector_id.to_string(),
@@ -618,9 +612,6 @@ pub(crate) fn compile_companion(
     spec: &CompanionSpec,
     detector_id: &str,
 ) -> Result<CompiledCompanion> {
-    keyhog_profile::record_compile_surface_invocation(
-        keyhog_profile::CompileSurfaceId::CompileState,
-    );
     let regex = companion_regex(&spec.regex).map_err(|e| ScanError::RegexCompile {
         detector_id: detector_id.to_string(),
         index: FIRST_CAPTURE_GROUP_INDEX,

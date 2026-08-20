@@ -834,9 +834,10 @@ impl HardwareSession {
             &self.utilization_samples,
             self.dropped_utilization_samples,
             wall_ns,
-            self.topology
-                .as_ref()
-                .map_or_else(crate::host_parallelism::logical_cpus, |t| t.logical_cpus),
+            self.topology.as_ref().map_or_else(
+                || std::thread::available_parallelism().map_or(1, |n| n.get() as u32),
+                |t| t.logical_cpus,
+            ),
             std::mem::take(&mut self.frequency_samples),
             self.dropped_frequency_samples,
         );
@@ -1131,7 +1132,8 @@ mod stubs {
 
     pub(super) fn capture_topology() -> TopologyEvidenceV2 {
         let reason = stub_reason();
-        let logical_cpus = crate::host_parallelism::logical_cpus();
+        let logical_cpus =
+            std::thread::available_parallelism().map_or(1, |count| count.get() as u32);
         TopologyEvidenceV2 {
             version: HARDWARE_EVIDENCE_V2_VERSION,
             logical_cpus,

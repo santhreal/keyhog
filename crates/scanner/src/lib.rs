@@ -79,8 +79,6 @@ pub(crate) mod assignment_keywords;
 pub mod aws;
 /// Secret-safe candidate producer and pattern provenance.
 pub(crate) mod candidate_provenance;
-/// Detector compilation into high-performance matching structures.
-pub mod capability_ledger;
 /// Service-specific credential checksum validation (GitHub, npm, Slack, etc.).
 pub mod checksum;
 /// Offline validator engine and checksum verification primitives.
@@ -120,7 +118,7 @@ pub(crate) mod detector_plan;
 /// Candidate-bounded documentation, roff, and shell semantic roles.
 pub(crate) mod documentation_semantics;
 /// Core scan execution engine.
-pub mod engine;
+pub(crate) mod engine;
 /// Shannon entropy analysis for secret detection.
 pub mod entropy;
 /// Tier-B per-family generic-detector entropy-floor calibration table.
@@ -176,7 +174,7 @@ pub(crate) mod segment_attribution;
 /// strings (file paths, commit SHAs).
 pub(crate) mod static_intern;
 /// Shared types for the scanner engine.
-pub mod types;
+pub(crate) mod types;
 
 // Internal modules.
 pub(crate) mod adjudicate;
@@ -267,7 +265,6 @@ pub(crate) mod simd;
 #[cfg(feature = "simdsieve")]
 mod simdsieve_prefilter;
 
-pub mod cache_eviction;
 pub(crate) mod shared_regexes;
 
 pub use api::*;

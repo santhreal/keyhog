@@ -394,7 +394,7 @@ repositories:
 scrub_interval = "24h"
 ```
 
-Scrubbing detects modifications made outside standard kernel filesystem events (such as
+Scrubbing detects modifications made outside standard filesystem events (such as
 NFS mounts, container volume mutations, or out-of-band Git object manipulation).
 
 ### Unauthoritative filesystems

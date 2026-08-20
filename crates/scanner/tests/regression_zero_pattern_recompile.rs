@@ -31,17 +31,15 @@ fn run_isolated_counter_test() -> bool {
         .name()
         .expect("test thread has a name")
         .to_owned();
-    #[cfg(target_os = "linux")]
-    let exe = std::path::PathBuf::from("/proc/self/exe");
-    #[cfg(not(target_os = "linux"))]
-    let exe = std::env::current_exe().expect("current scanner test executable is available");
-    let output = std::process::Command::new(exe)
-        .env(CHILD_ENV, "1")
-        .arg(&test_name)
-        .arg("--exact")
-        .arg("--test-threads=1")
-        .output()
-        .expect("isolated compile-event test process starts");
+    let output = std::process::Command::new(
+        std::env::current_exe().expect("current scanner test executable is available"),
+    )
+    .env(CHILD_ENV, "1")
+    .arg(&test_name)
+    .arg("--exact")
+    .arg("--test-threads=1")
+    .output()
+    .expect("isolated compile-event test process starts");
     assert!(
         output.status.success(),
         "isolated compile-event test `{test_name}` failed: {}",

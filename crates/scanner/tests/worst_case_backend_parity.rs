@@ -157,7 +157,7 @@ fn full_corpus_multi_backend_worst_case_parity() {
         detectors.len()
     );
 
-    let scanner = CompiledScanner::compile_with_runtime_policy(detectors).expect("scanner compile");
+    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
     let fixtures = synthetic_worst_case_fixtures();
 
     let backends = vec![

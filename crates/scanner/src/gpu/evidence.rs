@@ -185,8 +185,8 @@ pub(crate) fn report_counter_caps_unsupported(backend_code: u64) {
     }
 }
 
-/// Host-to-device upload evidence for one dispatch batch. `ns` is the upload
-/// transfer and staging latency in nanoseconds.
+/// Host-to-device upload evidence for one dispatch batch. `ns` is `None` when
+/// the upload latency is not separable from the enclosing vyre call.
 pub(crate) fn record_upload(bytes: u64, ns: Option<u64>) {
     keyhog_profile::add_counter(CounterId::GpuUploadBytes, bytes);
     if let Some(ns) = ns {
@@ -195,8 +195,8 @@ pub(crate) fn record_upload(bytes: u64, ns: Option<u64>) {
     }
 }
 
-/// Device-to-host readback evidence for one dispatch batch. `ns` is the readback
-/// transfer latency in nanoseconds.
+/// Device-to-host readback evidence for one dispatch batch. `ns` is `None`
+/// when the readback latency is not separable from the enclosing vyre call.
 pub(crate) fn record_readback(bytes: u64, ns: Option<u64>) {
     keyhog_profile::add_counter(CounterId::GpuReadbackBytes, bytes);
     if let Some(ns) = ns {

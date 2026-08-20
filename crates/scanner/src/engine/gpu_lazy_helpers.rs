@@ -4,16 +4,32 @@ static GPU_MATCHER_CACHE_UNAVAILABLE_WARNED: std::sync::OnceLock<()> = std::sync
 static GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
 fn report_gpu_matcher_cache_unavailable(error: &super::gpu_cache::GpuMatcherCacheDirError) {
-    tracing::warn!(target: "keyhog::routing", %error, "GPU matcher disk cache unavailable; compiling literal set without cache");
+    tracing::warn!(
+        target: "keyhog::routing",
+        %error,
+        "GPU matcher disk cache unavailable; compiling literal set without cache"
+    );
     if GPU_MATCHER_CACHE_UNAVAILABLE_WARNED.set(()).is_ok() {
-        eprintln!("keyhog: GPU matcher disk cache unavailable ({error}); compiling the matcher without persistence, so this process may pay the GPU matcher compile cost again. Fix the OS user cache directory or set XDG_CACHE_HOME to a writable directory.");
+        eprintln!(
+            "keyhog: GPU matcher disk cache unavailable ({error}); compiling the matcher \
+without persistence, so this process may pay the GPU matcher compile cost again. \
+Fix the OS user cache directory or set XDG_CACHE_HOME to a writable directory."
+        );
     }
 }
 
 pub(super) fn report_gpu_literal_matcher_unavailable(error: &crate::error::ScanError) {
-    tracing::warn!(target: "keyhog::routing", %error, "GPU literal matcher unavailable; CPU/SIMD routes remain authoritative");
+    tracing::warn!(
+        target: "keyhog::routing",
+        %error,
+        "GPU literal matcher unavailable; CPU/SIMD routes remain authoritative"
+    );
     if GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED.set(()).is_ok() {
-        eprintln!("keyhog: GPU literal matcher unavailable ({error}); this scanner cannot use that GPU matcher and will route through CPU/SIMD validation instead. Use --require-gpu when GPU acceleration is mandatory.");
+        eprintln!(
+            "keyhog: GPU literal matcher unavailable ({error}); this scanner \
+cannot use that GPU matcher and will route through CPU/SIMD validation instead. \
+Use --require-gpu when GPU acceleration is mandatory."
+        );
     }
 }
 
@@ -25,7 +41,11 @@ pub(super) fn compile_gpu_literal_set(
     let literal_refs: Vec<&[u8]> = literals.iter().map(|v| v.as_slice()).collect();
     let cache_key =
         super::gpu_cache::gpu_matcher_cache_key_with_prefix(cache_prefix, &literal_refs);
-    // Compiling the literal set is charged to the profiler's backend-dispatch stage.
+    // Compiling the literal set is backend preparation, so it is charged to the
+    // profiler's backend-dispatch stage. `gpu_matcher` resolves this lazily
+    // OUTSIDE the region-dispatch span, so without this span the compile was
+    // invisible to a profile and readable only as an `elapsed_ms` field on a
+    // debug log line.
     let _compile_span = keyhog_profile::span(keyhog_profile::Stage::BackendDispatch);
     let matcher = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         match super::gpu_cache::gpu_matcher_cache_dir() {
@@ -45,7 +65,6 @@ pub(super) fn compile_gpu_literal_set(
                 res
             }
             Err(error) => {
-                keyhog_profile::record_cache_miss(keyhog_profile::CacheId::GpuProgram);
                 report_gpu_matcher_cache_unavailable(&error);
                 vyre::scan::GpuLiteralSet::compile_case_insensitive(&literal_refs)
             }
@@ -58,6 +77,11 @@ pub(super) fn compile_gpu_literal_set(
             literal_refs.len()
         ))
     })?;
-    tracing::debug!(target: "keyhog::routing", patterns = literal_refs.len(), cache_prefix, "GpuLiteralSet ready (warm cache or compiled)");
+    tracing::debug!(
+        target: "keyhog::routing",
+        patterns = literal_refs.len(),
+        cache_prefix,
+        "GpuLiteralSet ready (warm cache or compiled)"
+    );
     Ok(matcher)
 }

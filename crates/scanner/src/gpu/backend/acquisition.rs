@@ -274,7 +274,6 @@ pub(super) fn run_cuda_after_preflight<T>(
 
 #[cfg(all(feature = "gpu", target_os = "linux"))]
 fn acquire_cuda_peer() -> Result<AcquiredGpuPeer, String> {
-    super::super::evidence::record_gpu_api_initialized(super::super::evidence::GpuApiKind::Cuda);
     let backend = run_cuda_after_preflight(
         ensure_cuda_driver_library_loadable,
         || {
@@ -305,7 +304,6 @@ fn acquire_cuda_peer() -> Result<AcquiredGpuPeer, String> {
 
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 fn acquire_metal_peer() -> Result<AcquiredGpuPeer, String> {
-    super::super::evidence::record_gpu_api_initialized(super::super::evidence::GpuApiKind::Metal);
     let backend = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
         vyre_driver_metal::acquire,
     ))
@@ -348,7 +346,6 @@ fn wgpu_resident_timed_dispatch_supported(features: wgpu::Features) -> bool {
 
 #[cfg(feature = "gpu")]
 fn acquire_wgpu_peer() -> Result<AcquiredGpuPeer, String> {
-    super::super::evidence::record_gpu_api_initialized(super::super::evidence::GpuApiKind::Wgpu);
     let backend = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
         vyre_driver_wgpu::WgpuBackend::shared,
     ))
@@ -428,7 +425,6 @@ fn ensure_cuda_driver_library_loadable() -> Result<(), String> {
 
 #[cfg(all(feature = "gpu", target_os = "linux"))]
 pub(crate) fn probe_cuda_peer() -> Result<vyre_driver_cuda::device::CudaDeviceCaps, String> {
-    super::super::evidence::record_gpu_api_initialized(super::super::evidence::GpuApiKind::Cuda);
     run_cuda_after_preflight(
         ensure_cuda_driver_library_loadable,
         || vyre_driver_cuda::device::CudaDeviceCaps::probe(0).map_err(|error| error.to_string()),

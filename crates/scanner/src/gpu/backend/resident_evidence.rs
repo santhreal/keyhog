@@ -121,6 +121,8 @@ impl GpuResidentPipelineConfig {
 
 struct GpuResidentLiteralSession {
     pipeline: Option<vyre::scan::ResidentFusedRegionScan>,
+    input: Vec<u8>,
+    region_starts: Vec<u32>,
     output: Vec<u32>,
     matches: Vec<vyre::scan::LiteralMatch>,
     scratch: Vec<u8>,
@@ -129,6 +131,10 @@ struct GpuResidentLiteralSession {
 }
 impl GpuResidentLiteralSession {
     fn clear_host_buffers(&mut self) {
+        self.input.zeroize();
+        self.input.clear();
+        self.region_starts.as_mut_slice().zeroize();
+        self.region_starts.clear();
         GpuResidentLiteralState::zero_output_contents(&mut self.output);
         self.matches.clear();
         GpuResidentLiteralState::zero_scratch_allocation(&mut self.scratch);
@@ -182,10 +188,11 @@ impl GpuBorrowedLiteralState {
     }
 
     fn clear_host_buffers(&mut self) {
-        GpuResidentLiteralState::zero_output_contents(&mut self.output);
+        self.output.as_mut_slice().zeroize();
+        self.output.clear();
         self.matches.clear();
-        GpuResidentLiteralState::zero_scratch_allocation(&mut self.scratch.haystack_bytes);
-        GpuResidentLiteralState::zero_scratch_allocation(&mut self.scratch.hit_bytes);
+        self.scratch.haystack_bytes.zeroize();
+        self.scratch.hit_bytes.zeroize();
     }
 }
 
@@ -261,7 +268,7 @@ impl ResidentLiteralCapacity {
             required_haystack_bytes,
             haystack_bytes,
             regions,
-            max_matches: pipeline.slot_match_capacity,
+            max_matches: GPU_FUSED_MATCH_CAP.min(pipeline.slot_match_capacity),
             presence_words,
             pipeline,
         }
@@ -399,30 +406,13 @@ impl Drop for ZeroResidentHostBuffers<'_> {
 }
 
 impl GpuResidentLiteralState {
-    pub(crate) fn zero_scratch_allocation(buffer: &mut Vec<u8>) {
-        let scrub_len = buffer.len();
-        if scrub_len > 0 {
-            #[cfg(feature = "gpu")]
-            crate::gpu::evidence::record_host_byte_scrub(
-                crate::gpu::evidence::GpuHostDataMovementSite::RegionPresenceScratchScrub,
-                scrub_len,
-            );
-            buffer.as_mut_slice().zeroize();
-            buffer.clear();
-        }
+    fn zero_scratch_allocation(buffer: &mut Vec<u8>) {
+        buffer.zeroize();
     }
 
-    pub(crate) fn zero_output_contents(buffer: &mut Vec<u32>) {
-        let scrub_len = buffer.len().saturating_mul(std::mem::size_of::<u32>());
-        if scrub_len > 0 {
-            #[cfg(feature = "gpu")]
-            crate::gpu::evidence::record_host_byte_scrub(
-                crate::gpu::evidence::GpuHostDataMovementSite::RegionPresenceScratchScrub,
-                scrub_len,
-            );
-            buffer.as_mut_slice().zeroize();
-            buffer.clear();
-        }
+    fn zero_output_contents(buffer: &mut Vec<u32>) {
+        buffer.as_mut_slice().zeroize();
+        buffer.clear();
     }
 
     fn clear_host_buffers(&mut self) {
@@ -509,7 +499,7 @@ fn scan_gpu_literal_evidence_by_region_borrowed<R>(
                         .to_string(),
                 );
             };
-            let dispatch_wall = std::time::Instant::now();
+            let dispatch_wall = keyhog_profile::enabled().then(std::time::Instant::now);
             let dispatch = matcher
                 .scan_presence_and_positions_by_region_with_scratch(
                     backend.as_ref(),
@@ -523,7 +513,6 @@ fn scan_gpu_literal_evidence_by_region_borrowed<R>(
                 .map_err(|error| error.to_string());
             match dispatch {
                 Ok(output) => {
-                    let elapsed_ns = dispatch_wall.elapsed().as_nanos() as u64;
                     evidence::record_dispatch_submitted();
                     evidence::record_upload(upload_bytes, None);
                     evidence::record_submit_to_complete(elapsed_ns);
@@ -788,6 +777,7 @@ pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
 #[must_use = "pending GPU resident evidence must be retired before its IO slot can be reused"]
 pub(crate) struct PendingGpuResidentLiteralEvidence<'a> {
     slot: &'a std::sync::Mutex<GpuResidentLiteralSlot>,
+    matcher: &'a vyre::scan::GpuLiteralSet,
     session_index: usize,
     backend_code: u64,
     pending: Option<vyre::scan::PendingResidentFusedRegion>,
@@ -1054,6 +1044,20 @@ pub(crate) fn submit_gpu_literal_evidence_by_region_resident<'a>(
     GpuResidentLiteralState::zero_output_contents(&mut session.output);
     session.matches.clear();
     GpuResidentLiteralState::zero_scratch_allocation(&mut session.scratch);
+    session.input.zeroize();
+    session.input.clear();
+    session.region_starts.as_mut_slice().zeroize();
+    session.region_starts.clear();
+    session
+        .input
+        .try_reserve_exact(haystack.len())
+        .map_err(|error| format!("GPU resident slot input reserve failed: {error}"))?;
+    session
+        .region_starts
+        .try_reserve_exact(region_starts.len())
+        .map_err(|error| format!("GPU resident slot region-start reserve failed: {error}"))?;
+    session.input.extend_from_slice(haystack);
+    session.region_starts.extend_from_slice(region_starts);
     #[cfg(test)]
     if injected_dispatch_failure() {
         evidence::record_fault(
@@ -1084,17 +1088,13 @@ pub(crate) fn submit_gpu_literal_evidence_by_region_resident<'a>(
             );
         }
     };
-    let upload_start = std::time::Instant::now();
     let submission = pipeline.scan_async(
         backend.as_ref(),
-        haystack,
-        region_starts,
+        session.input.as_slice(),
+        session.region_starts.as_slice(),
         0,
         &mut session.scratch,
     );
-    let upload_ns = u64::try_from(upload_start.elapsed().as_nanos())
-        .unwrap_or(u64::MAX) // LAW10: timing overflow defaults to max duration; reporting-only profiler duration.
-        .max(1);
     GpuResidentLiteralState::zero_scratch_allocation(&mut session.scratch);
     let pending = match submission {
         Ok(pending) => pending,
@@ -1122,10 +1122,11 @@ pub(crate) fn submit_gpu_literal_evidence_by_region_resident<'a>(
         });
     }
     evidence::record_dispatch_submitted();
-    evidence::record_upload(upload_bytes, Some(upload_ns));
+    evidence::record_upload(upload_bytes, None);
     Ok(PendingGpuResidentLiteralEvidence {
         backend_code: evidence::backend_code(backend.id()),
         slot,
+        matcher,
         session_index,
         pending: Some(pending),
         submitted_at,
@@ -1146,6 +1147,7 @@ pub(crate) fn finish_gpu_literal_evidence_by_region_resident<R>(
             "GPU resident literal pipeline disappeared before pending work was retired".to_string(),
         );
     };
+    let slot_match_capacity = state.config.slot_match_capacity;
     let session = state
         .sessions
         .get_mut(pending.session_index)
@@ -1155,67 +1157,175 @@ pub(crate) fn finish_gpu_literal_evidence_by_region_resident<R>(
     if !session.in_flight {
         return Err("GPU resident pending IO slot was already retired".to_string());
     }
-    let dispatch = pending
+    let mut dispatch = pending
         .pending
         .take()
         .ok_or_else(|| "GPU resident pending dispatch was already consumed".to_string())?;
-    let submitted_at = pending.submitted_at;
+    let mut submitted_at = pending.submitted_at;
     let mut consume = Some(consume);
 
-    let readback_start = std::time::Instant::now();
-    let timing = dispatch
-        .await_into_timed(&mut session.output, &mut session.matches)
-        .map_err(|error| format!("resident fused literal dispatch error: {error}"));
-    let readback_elapsed_ns = u64::try_from(readback_start.elapsed().as_nanos())
-        .unwrap_or(u64::MAX) // LAW10: readback duration overflow defaults to max duration; reporting-only profiler duration.
-        .max(1);
-    session.in_flight = false;
-    let complete_ns = u64::try_from(submitted_at.elapsed().as_nanos())
-        .map_err(|_| "GPU resident dispatch duration exceeds u64 nanoseconds".to_string())?;
-    match timing {
-        Ok(timing) => {
-            evidence::record_submit_to_complete(complete_ns);
-            match timing.device_ns {
-                Some(device_ns) => {
-                    evidence::record_kernel(device_ns);
-                    evidence::record_queue_wait(complete_ns.saturating_sub(device_ns));
+    for attempt in 0..2 {
+        let timing = dispatch
+            .await_into_timed(&mut session.output, &mut session.matches)
+            .map_err(|error| format!("resident fused literal dispatch error: {error}"));
+        session.in_flight = false;
+        let complete_ns = u64::try_from(submitted_at.elapsed().as_nanos())
+            .map_err(|_| "GPU resident dispatch duration exceeds u64 nanoseconds".to_string())?;
+        match timing {
+            Ok(timing) => {
+                evidence::record_submit_to_complete(complete_ns);
+                match timing.device_ns {
+                    Some(device_ns) => {
+                        evidence::record_kernel(device_ns);
+                        evidence::record_queue_wait(complete_ns.saturating_sub(device_ns));
+                    }
+                    None => evidence::report_capability_unsupported(
+                        evidence::backend_code(backend.id()),
+                        evidence::capability::KERNEL_TIMESTAMPS,
+                    ),
                 }
-                None => evidence::report_capability_unsupported(
-                    evidence::backend_code(backend.id()),
-                    evidence::capability::KERNEL_TIMESTAMPS,
-                ),
+                let output_bytes = u64::try_from(session.output.len())
+                    .ok()
+                    .and_then(|words| words.checked_mul(4))
+                    .and_then(|bytes| {
+                        u64::try_from(session.matches.len())
+                            .ok()
+                            .and_then(|matches| matches.checked_mul(12))
+                            .and_then(|match_bytes| bytes.checked_add(match_bytes))
+                    })
+                    .ok_or_else(|| {
+                        "GPU resident readback byte accounting exceeds u64".to_string()
+                    })?;
+                evidence::record_readback(output_bytes, None);
+                let consumer = consume.take().ok_or_else(|| {
+                    "GPU resident literal output consumer was already invoked".to_string()
+                })?;
+                let result = consumer(session.output.as_slice(), session.matches.as_slice());
+                session.input.zeroize();
+                session.input.clear();
+                session.region_starts.as_mut_slice().zeroize();
+                session.region_starts.clear();
+                GpuResidentLiteralState::zero_output_contents(&mut session.output);
+                session.matches.clear();
+                GpuResidentLiteralState::zero_scratch_allocation(&mut session.scratch);
+                return result;
             }
-            let output_bytes = u64::try_from(session.output.len())
-                .ok()
-                .and_then(|words| words.checked_mul(4))
-                .and_then(|bytes| {
-                    u64::try_from(session.matches.len())
-                        .ok()
-                        .and_then(|matches| matches.checked_mul(12))
-                        .and_then(|match_bytes| bytes.checked_add(match_bytes))
-                })
-                .ok_or_else(|| "GPU resident readback byte accounting exceeds u64".to_string())?;
-            let readback_ns = timing
-                .wait_ns
-                .unwrap_or(readback_elapsed_ns) // LAW10: backend wait timing defaults to measured host await duration; reporting-only profiler duration.
-                .max(1);
-            evidence::record_readback(output_bytes, Some(readback_ns));
-            let consumer = consume.take().ok_or_else(|| {
-                "GPU resident literal output consumer was already invoked".to_string()
-            })?;
-            let result = consumer(session.output.as_slice(), session.matches.as_slice());
-            session.clear_host_buffers();
-            result
-        }
-        Err(scan_error) => {
-            evidence::record_fault(
-                evidence::backend_code(backend.id()),
-                evidence::fault::DISPATCH,
-            );
-            session.clear_host_buffers();
-            Err(scan_error)
+            Err(scan_error) => {
+                evidence::record_fault(
+                    evidence::backend_code(backend.id()),
+                    evidence::fault::DISPATCH,
+                );
+                GpuResidentLiteralState::zero_output_contents(&mut session.output);
+                session.matches.clear();
+                if attempt == 1 {
+                    session.input.zeroize();
+                    session.input.clear();
+                    session.region_starts.as_mut_slice().zeroize();
+                    session.region_starts.clear();
+                    GpuResidentLiteralState::zero_scratch_allocation(&mut session.scratch);
+                    return Err(scan_error);
+                }
+
+                let exact_count = pending
+                    .matcher
+                    .count(backend.as_ref(), session.input.as_slice())
+                    .map_err(|count_error| {
+                        format!(
+                            "{scan_error}; exact GPU match-count diagnosis also failed: {count_error}"
+                        )
+                    })?;
+                let pipeline = session.pipeline.as_ref().ok_or_else(|| {
+                    "GPU resident literal session lost its pipeline during retirement".to_string()
+                })?;
+                let current_capacity = pipeline.max_matches();
+                if exact_count <= current_capacity {
+                    session.input.zeroize();
+                    session.input.clear();
+                    session.region_starts.as_mut_slice().zeroize();
+                    session.region_starts.clear();
+                    return Err(scan_error);
+                }
+                if exact_count > slot_match_capacity {
+                    session.input.zeroize();
+                    session.input.clear();
+                    session.region_starts.as_mut_slice().zeroize();
+                    session.region_starts.clear();
+                    return Err(format!(
+                        "{scan_error}; exact GPU match count {exact_count} exceeds the calibrated per-slot replay ceiling {slot_match_capacity}"
+                    ));
+                }
+                let haystack_capacity = pipeline.haystack_capacity();
+                let max_regions = pipeline.max_regions();
+                let old_pipeline = session.pipeline.take().ok_or_else(|| {
+                    "GPU resident literal session lost its pipeline before dense replay".to_string()
+                })?;
+                old_pipeline.free(backend.as_ref()).map_err(|error| {
+                    format!(
+                        "{scan_error}; failed to free the overflowed resident slot before replay: {error}"
+                    )
+                })?;
+                evidence::note_device_free(session.device_bytes);
+                let replay_pipeline = pending
+                    .matcher
+                    .prepare_resident_fused_scan(
+                        backend.as_ref(),
+                        haystack_capacity,
+                        max_regions,
+                        exact_count,
+                    )
+                    .map_err(|error| {
+                        session.input.zeroize();
+                        session.input.clear();
+                        session.region_starts.as_mut_slice().zeroize();
+                        session.region_starts.clear();
+                        format!(
+                            "{scan_error}; failed to rebuild the resident slot for exact dense replay at {exact_count} matches: {error}"
+                        )
+                    })?;
+                let added_match_bytes = u64::from(exact_count - current_capacity)
+                    .checked_mul(12)
+                    .ok_or_else(|| {
+                    "GPU resident replay device byte accounting overflowed".to_string()
+                })?;
+                session.device_bytes = session
+                    .device_bytes
+                    .checked_add(added_match_bytes)
+                    .ok_or_else(|| {
+                        "GPU resident replay aggregate byte accounting overflowed".to_string()
+                    })?;
+                evidence::note_device_alloc(session.device_bytes);
+                session.pipeline = Some(replay_pipeline);
+                let GpuResidentLiteralSession {
+                    pipeline,
+                    input,
+                    region_starts,
+                    scratch,
+                    ..
+                } = session;
+                let replay = pipeline
+                    .as_mut()
+                    .ok_or_else(|| {
+                        "GPU resident replay pipeline disappeared before submission".to_string()
+                    })?
+                    .scan_async(
+                        backend.as_ref(),
+                        input.as_slice(),
+                        region_starts.as_slice(),
+                        0,
+                        scratch,
+                    );
+                GpuResidentLiteralState::zero_scratch_allocation(scratch);
+                dispatch = replay.map_err(|error| {
+                    format!("resident fused literal dense-replay submission error: {error}")
+                })?;
+                session.in_flight = true;
+                submitted_at = std::time::Instant::now();
+                evidence::record_retry(1);
+                evidence::record_dispatch_submitted();
+            }
         }
     }
+    unreachable!("bounded resident dense replay loop returns from both attempts")
 }
 
 fn rebuild_resident_literal_state(
@@ -1269,6 +1379,8 @@ fn rebuild_resident_literal_state(
     let device_bytes = capacity.mutable_device_bytes()?;
     let new_session = |pipeline| GpuResidentLiteralSession {
         pipeline: Some(pipeline),
+        input: Vec::new(),
+        region_starts: Vec::new(),
         output: Vec::new(),
         matches: Vec::new(),
         scratch: Vec::new(),

@@ -646,15 +646,6 @@ fn the_timed_bridge_charges_time_spent_waiting_for_a_batch() {
         // LAW10: test-only producer may observe a closed consumer after assertion failure; no production result is suppressed.
     });
 
-    let identity = keyhog_profile::RunIdentity::new(
-        "0.5.80",
-        "detectors",
-        "config",
-        "filesystem",
-        "timed-bridge",
-        "scalar",
-    );
-    let _session = keyhog_profile::Session::start(identity).expect("start profile");
     keyhog_profile::set_detail(keyhog_profile::Detail::Stages);
     keyhog_profile::reset();
     let batches: Vec<Vec<Chunk>> = TimedBatches {

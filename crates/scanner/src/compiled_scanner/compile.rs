@@ -52,8 +52,8 @@ fn selected_gpu_peer(backend: crate::hw_probe::ScanBackend) -> SelectedGpuPeer {
                         caps.compute_capability.1,
                         caps.total_memory
                     );
-                    let runtime_identity = crate::gpu::linux_cuda_runtime_identity()
-                        .inspect_err(|diagnostic| {
+                    let runtime_identity = linux_cuda_runtime_identity()
+                        .map_err(|diagnostic| {
                             tracing::warn!(
                                 target: "keyhog::routing",
                                 %diagnostic,
@@ -909,7 +909,7 @@ impl CompiledScanner {
                                     caps.compute_capability.1,
                                     caps.total_memory
                                 ));
-                                match crate::gpu::linux_cuda_runtime_identity() {
+                                match linux_cuda_runtime_identity() {
                                     Ok(identity) => peers.cuda_runtime_identity = Some(identity),
                                     Err(diagnostic) => {
                                         tracing::warn!(
@@ -1123,15 +1123,23 @@ impl CompiledScanner {
         //     detector whose rare trailing literal (`.*<sitename>`) is absent
         //     skips its O(chunk) whole-chunk regex run.
         //   - confirmed_anchor_index: AC over the confirmed ac_map anchors.
-        let phase2_anchor_index = Phase2AnchorIndex::build_with_hints(
-            phase2_patterns,
-            &phase2_always_active_indices,
-            phase2_localization,
-        );
-        let (suffix_gate_ac, ac_suffix_gate) =
-            build_confirmed_suffix_gate_with_hints(ac_map, confirmed_suffixes);
-        let confirmed_anchor_index =
-            ConfirmedAnchorIndex::build_with_hints(ac_map, confirmed_prefixes);
+        let phase2_always_active_indices_ref = &phase2_always_active_indices;
+        let (phase2_anchor_index, ((suffix_gate_ac, ac_suffix_gate), confirmed_anchor_index)) =
+            rayon::join(
+                move || {
+                    Phase2AnchorIndex::build_with_hints(
+                        phase2_patterns,
+                        phase2_always_active_indices_ref,
+                        phase2_localization,
+                    )
+                },
+                move || {
+                    rayon::join(
+                        move || build_confirmed_suffix_gate_with_hints(ac_map, confirmed_suffixes),
+                        move || ConfirmedAnchorIndex::build_with_hints(ac_map, confirmed_prefixes),
+                    )
+                },
+            );
         let phase2_always_anchor_literal_count = phase2_anchor_index
             .as_ref()
             .map_or(0, |index| index.always_anchor_literals().len());
@@ -1299,8 +1307,8 @@ impl CompiledScanner {
         // index has consumed it; the lazy SIMD plan then shares one Arc owner
         // instead of cloning the complete table until first backend use.
         #[cfg(feature = "simd")]
-        let simd_compile_plan = if selected_backend.is_none()
-            || selected_backend == Some(crate::hw_probe::ScanBackend::SimdCpu)
+        let simd_compile_plan = if selected_backend
+            .is_none_or(|backend| backend == crate::hw_probe::ScanBackend::SimdCpu)
         {
             let ac_literals: std::sync::Arc<[String]> =
                 std::mem::take(&mut state.ac_literals).into();
@@ -1385,6 +1393,8 @@ impl CompiledScanner {
             #[cfg(feature = "gpu")]
             direct_gpu_resident_dispatch: parking_lot::Mutex::new(()),
             backend_state,
+            #[cfg(feature = "gpu")]
+            direct_gpu_resident_dispatch: std::sync::Mutex::new(()),
             quantized_confidence_authenticated,
             detector_digest,
             vocab_stage_absence_cache: dashmap::DashMap::with_capacity_and_hasher_and_shard_amount(
@@ -1405,18 +1415,10 @@ impl CompiledScanner {
             gpu_degrade_count: std::sync::atomic::AtomicU64::new(0),
             autoroute_gpu_shared_cold_ns: std::sync::atomic::AtomicU64::new(0),
             static_intern,
-            assignment_keyword_matcher: std::sync::Mutex::new(if packed_detector_plan.is_some() {
-                crate::assignment_keyword_matcher::AssignmentKeywordMatcherCache::new_hydrated(
-                    &[],
-                    detector_plans.generic_ownership().policy_keywords(),
-                )
-            } else {
-                crate::assignment_keyword_matcher::AssignmentKeywordMatcherCache::new_compiled(
-                    &[],
-                    detector_plans.generic_ownership().policy_keywords(),
-                )
-            }),
             detector_plans,
+            assignment_keyword_matcher: std::sync::Mutex::new(
+                crate::assignment_keyword_matcher::AssignmentKeywordMatcherCache::default(),
+            ),
             #[cfg(feature = "gpu")]
             ac_match_upper_bounds,
             suffix_gate_ac,
@@ -1533,5 +1535,17 @@ impl CompiledScanner {
             .apply_config(&config)
             .map_err(crate::error::ScanError::Config)?;
         Ok(self)
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "gpu"))]
+fn linux_cuda_runtime_identity() -> std::result::Result<String, String> {
+    let version = std::fs::read_to_string("/proc/driver/nvidia/version")
+        .map_err(|error| format!("cannot read /proc/driver/nvidia/version: {error}"))?;
+    let version = version.split_whitespace().collect::<Vec<_>>().join(" ");
+    if version.is_empty() {
+        Err("/proc/driver/nvidia/version contains no runtime identity".to_owned())
+    } else {
+        Ok(format!("nvidia-kernel:{version}"))
     }
 }

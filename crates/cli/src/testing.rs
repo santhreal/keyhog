@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-pub use crate::config::{OperationalKnob, OperationalUnit};
 /// Zero-sized handle for integration tests that need crate-internal seams.
 pub struct TestApi;
 
@@ -222,8 +221,6 @@ pub trait CliTestApi {
     fn format_backend_probe_mb_metric(&self, value: Option<u64>) -> String;
     fn find_config_file(&self, start: Option<&Path>) -> Option<PathBuf>;
     fn apply_config_file_quiet(&self, args: &mut ScanArgs);
-    fn parse_config_file_from_str(&self, raw: &str) -> std::result::Result<(), String>;
-    fn parse_guard_section_from_str(&self, raw: &str) -> std::result::Result<(), String>;
     fn build_sources(
         &self,
         args: &ScanArgs,
@@ -279,21 +276,6 @@ pub trait CliTestApi {
         socket_path: PathBuf,
         fixture: DaemonTerminalFixture,
     ) -> Pin<Box<dyn Future<Output = Result<()>>>>;
-    #[cfg(unix)]
-    fn set_daemon_panic_injection(&self, kind: Option<&str>);
-    #[cfg(unix)]
-    fn all_daemon_request_kinds(&self) -> &'static [&'static str];
-    #[cfg(unix)]
-    fn sample_daemon_request_for_kind(
-        &self,
-        kind: &str,
-    ) -> Option<crate::daemon::protocol::Request>;
-    #[cfg(unix)]
-    fn spawn_daemon_for_test(
-        &self,
-        socket_path: PathBuf,
-        detectors: Vec<keyhog_core::DetectorSpec>,
-    ) -> tokio::task::JoinHandle<Result<()>>;
     fn cli_error_exit_code(&self, error: &anyhow::Error) -> u8;
 
     fn baseline_version(&self) -> u32;
@@ -683,16 +665,6 @@ impl CliTestApi for TestApi {
     }
     fn apply_config_file_quiet(&self, args: &mut ScanArgs) {
         let _outcome = crate::config::apply_config_file_quiet(args);
-    }
-    fn parse_config_file_from_str(&self, raw: &str) -> std::result::Result<(), String> {
-        toml::from_str::<crate::config::schema::ConfigFile>(raw)
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-    }
-    fn parse_guard_section_from_str(&self, raw: &str) -> std::result::Result<(), String> {
-        toml::from_str::<crate::config::schema::GuardSection>(raw)
-            .map(|_| ())
-            .map_err(|e| e.to_string())
     }
     fn build_sources(
         &self,

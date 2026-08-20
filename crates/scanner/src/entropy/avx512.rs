@@ -58,7 +58,6 @@
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f,avx512bw")]
 #[allow(unsafe_op_in_unsafe_fn)]
-// SAFETY: Caller must ensure avx512f and avx512bw features are supported at runtime.
 pub(crate) unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
     if chunk.is_empty() {
         return 0.0;

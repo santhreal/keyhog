@@ -212,8 +212,7 @@ impl CompiledScanner {
             {
                 decode_parent(chunk, matches)?;
             } else if self.chunk_uses_bounded_decode_windows(chunk) {
-                let overlap = self.decode_window_overlap_bytes();
-                decode::decode_source_windows(self.config.max_decode_bytes, chunk, overlap, |w| {
+                decode::decode_source_windows(self.config.max_decode_bytes, chunk, |w| {
                     self.chunk_needs_decode_postprocess(w)
                         .then(|| decode_parent(w, matches))
                         .unwrap_or(Ok(()))

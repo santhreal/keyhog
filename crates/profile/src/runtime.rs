@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::future::{poll_fn, Future};
 use std::marker::PhantomData;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Instant;
 
@@ -121,14 +121,13 @@ impl EventLossCounts {
 struct ActiveSpan {
     runtime_key: usize,
     span_id: u64,
-    child_elapsed_ns: u64,
-    parent_slot: Option<usize>,
 }
 
 #[derive(Clone, Copy)]
 struct SpanTrace {
     record_index: usize,
     span_id: u64,
+    stack_slot: Option<usize>,
 }
 
 /// One completed span's recording payload, assembled on the guard's drop path.
@@ -136,7 +135,7 @@ struct SpanTrace {
 struct SpanOutcome {
     start_offset_ns: u64,
     elapsed_ns: u64,
-    self_ns: u64,
+    attributed: bool,
     blocked: bool,
     serial: bool,
     outermost: bool,
@@ -268,9 +267,6 @@ struct WorkerShard {
     indexed_counters: [[AtomicU64; crate::INDEXED_COUNTER_SLOTS]; crate::IndexedCounterId::COUNT],
     indexed_counter_dropped: AtomicU64,
     retries: [AtomicU64; crate::RetryCause::COUNT],
-    compile_surface_invocations:
-        [[AtomicU64; crate::CompilePhase::COUNT]; crate::CompileSurfaceId::COUNT],
-    compile_surface_loads: [AtomicU64; crate::CompileSurfaceId::COUNT],
 }
 
 const fn zero_counters() -> [AtomicU64; STAGE_COUNT] {
@@ -303,15 +299,6 @@ const fn max_counters() -> [AtomicU64; STAGE_COUNT] {
 
 const fn zero_cache_counters() -> [AtomicU64; crate::CacheId::COUNT] {
     [const { AtomicU64::new(0) }; crate::CacheId::COUNT]
-}
-const fn zero_compile_surface_invocations(
-) -> [[AtomicU64; crate::CompilePhase::COUNT]; crate::CompileSurfaceId::COUNT] {
-    [const { [const { AtomicU64::new(0) }; crate::CompilePhase::COUNT] };
-        crate::CompileSurfaceId::COUNT]
-}
-
-const fn zero_compile_surface_loads() -> [AtomicU64; crate::CompileSurfaceId::COUNT] {
-    [const { AtomicU64::new(0) }; crate::CompileSurfaceId::COUNT]
 }
 
 impl WorkerShard {
@@ -349,8 +336,6 @@ impl WorkerShard {
             indexed_counters: zero_indexed_counters(),
             indexed_counter_dropped: AtomicU64::new(0),
             retries: [const { AtomicU64::new(0) }; crate::RetryCause::COUNT],
-            compile_surface_invocations: zero_compile_surface_invocations(),
-            compile_surface_loads: zero_compile_surface_loads(),
         }
     }
 }
@@ -408,7 +393,7 @@ struct RuntimeInner {
     attributed_ns: [AtomicU64; STAGE_COUNT],
     session_shards: Mutex<Vec<Arc<WorkerShard>>>,
     session_gauge_values: [AtomicU64; crate::MetricId::COUNT],
-    session_gauge_present: [AtomicU64; GAUGE_PRESENT_WORDS],
+    session_gauge_present: [AtomicU64; 2],
     input_bytes: AtomicU64,
     input_units: AtomicU64,
     session_recording: bool,
@@ -441,10 +426,6 @@ struct RuntimeInner {
     distribution_buckets: [[AtomicU64; LATENCY_BUCKET_COUNT]; crate::MetricId::COUNT],
     distribution_min: [AtomicU64; crate::MetricId::COUNT],
     distribution_max: [AtomicU64; crate::MetricId::COUNT],
-    active_compile_phase: AtomicU8,
-    legacy_compile_surface_invocations:
-        [[AtomicU64; crate::CompilePhase::COUNT]; crate::CompileSurfaceId::COUNT],
-    legacy_compile_surface_loads: [AtomicU64; crate::CompileSurfaceId::COUNT],
 }
 
 const fn zero_queue_depths() -> [AtomicU64; crate::QueueId::COUNT] {
@@ -474,7 +455,7 @@ impl RuntimeInner {
             attributed_ns: zero_counters(),
             session_shards: Mutex::new(Vec::new()),
             session_gauge_values: zero_metric_values(),
-            session_gauge_present: [const { AtomicU64::new(0) }; GAUGE_PRESENT_WORDS],
+            session_gauge_present: [const { AtomicU64::new(0) }; 2],
             input_bytes: AtomicU64::new(0),
             input_units: AtomicU64::new(0),
             session_recording,
@@ -637,8 +618,6 @@ impl Runtime {
             stack.borrow_mut()[stack_slot] = Some(ActiveSpan {
                 runtime_key,
                 span_id,
-                child_elapsed_ns: 0,
-                parent_slot: None,
             });
         });
         Some(AsyncParentGuard {
@@ -899,8 +878,10 @@ impl Runtime {
             }
         }
         drop(shards);
-        let present: [u64; GAUGE_PRESENT_WORDS] =
-            std::array::from_fn(|i| self.inner.session_gauge_present[i].swap(0, Ordering::Relaxed));
+        let present = [
+            self.inner.session_gauge_present[0].swap(0, Ordering::Relaxed),
+            self.inner.session_gauge_present[1].swap(0, Ordering::Relaxed),
+        ];
         for gauge in crate::GaugeId::ALL {
             let metric_id = gauge.metric_id();
             let index = metric_id as usize;
@@ -951,32 +932,30 @@ impl Runtime {
         (events, annotations, loss)
     }
 
-    fn current_parent(&self) -> (Option<usize>, u64) {
-        let runtime_key = Arc::as_ptr(&self.inner) as usize;
-        let active = ACTIVE_SPANS.with(|stack| {
-            let stack = stack.borrow();
-            stack.iter().enumerate().rev().find_map(|(slot, active)| {
-                active
-                    .and_then(|a| (a.runtime_key == runtime_key).then_some((Some(slot), a.span_id)))
-            })
-        });
-        if let Some(pair) = active {
-            return pair;
-        }
-        let async_span_id = ASYNC_PARENT_SPANS.with(|stack| {
-            stack
-                .borrow()
-                .iter()
-                .rev()
-                .flatten()
-                .find(|active| active.runtime_key == runtime_key)
-                .map(|active| active.span_id)
-        });
-        (None, async_span_id.unwrap_or(0))
-    }
-
     fn current_parent_span_id(&self) -> u64 {
-        self.current_parent().1
+        let runtime_key = Arc::as_ptr(&self.inner) as usize;
+        ACTIVE_SPANS
+            .with(|stack| {
+                stack
+                    .borrow()
+                    .iter()
+                    .rev()
+                    .flatten()
+                    .find(|active| active.runtime_key == runtime_key)
+                    .map(|active| active.span_id)
+            })
+            .or_else(|| {
+                ASYNC_PARENT_SPANS.with(|stack| {
+                    stack
+                        .borrow()
+                        .iter()
+                        .rev()
+                        .flatten()
+                        .find(|active| active.runtime_key == runtime_key)
+                        .map(|active| active.span_id)
+                })
+            })
+            .unwrap_or(0)
     }
 
     fn reserve_span_with_id(
@@ -985,7 +964,7 @@ impl Runtime {
         stage: Stage,
         started: Instant,
         parent_span_id: u64,
-        _stack_slot: Option<usize>,
+        stack_slot: Option<usize>,
         worker_id: u64,
     ) -> Option<SpanTrace> {
         if !self.inner.session_recording {
@@ -1028,6 +1007,7 @@ impl Runtime {
         Some(SpanTrace {
             record_index,
             span_id,
+            stack_slot,
         })
     }
 
@@ -1059,7 +1039,6 @@ impl Runtime {
         stage: Stage,
         started: Instant,
         parent_span_id: u64,
-        parent_slot: Option<usize>,
         worker_id: u64,
     ) -> (Option<SpanTrace>, Option<usize>, u64) {
         let span_id = self
@@ -1090,9 +1069,7 @@ impl Runtime {
         ACTIVE_SPANS.with(|stack| {
             stack.borrow_mut()[stack_slot] = Some(ActiveSpan {
                 runtime_key,
-                span_id,
-                child_elapsed_ns: 0,
-                parent_slot,
+                span_id: trace.span_id,
             });
         });
         (trace, Some(stack_slot), span_id)
@@ -1128,6 +1105,7 @@ impl Runtime {
         });
         elapsed_ns.saturating_sub(child_elapsed_ns)
     }
+
     fn begin_async_span(
         &self,
         stage: Stage,
@@ -1142,6 +1120,14 @@ impl Runtime {
     }
 
     fn finish_span(&self, trace: SpanTrace, inclusive_ns: u64) {
+        if let Some(stack_slot) = trace.stack_slot {
+            ACTIVE_SPANS.with(|stack| {
+                let mut stack = stack.borrow_mut();
+                if stack[stack_slot].is_some_and(|active| active.span_id == trace.span_id) {
+                    stack[stack_slot] = None;
+                }
+            });
+        }
         let mut records = match self.inner.session_spans.lock() {
             Ok(records) => records,
             Err(poisoned) => poisoned.into_inner(),
@@ -1263,7 +1249,6 @@ impl Runtime {
     fn record(&self, shard: Option<&WorkerShard>, stage: Stage, outcome: SpanOutcome) {
         let index = stage.index();
         let elapsed_ns = outcome.elapsed_ns;
-        let self_ns = outcome.self_ns;
         if self.inner.session_recording {
             let Some(shard) = shard else {
                 return;
@@ -1281,13 +1266,10 @@ impl Runtime {
                 outcome.start_offset_ns.saturating_add(elapsed_ns),
                 Ordering::Relaxed,
             );
-            // Every non-blocked stage carries its self-time (exclusive elapsed time) in attributed_ns.
-            // Blocked wait is never attributed execution.
-            if !outcome.blocked {
-                shard.attributed_ns[index].fetch_add(self_ns, Ordering::Relaxed);
-                shard.legacy_attributed_ns[index].fetch_add(self_ns, Ordering::Relaxed);
+            if outcome.attributed {
+                shard.attributed_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
+                shard.legacy_attributed_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
             }
-
             if outcome.blocked {
                 shard.blocked_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
                 shard.blocked_calls[index].fetch_add(1, Ordering::Relaxed);
@@ -1296,26 +1278,26 @@ impl Runtime {
                 shard.serial_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
                 shard.serial_calls[index].fetch_add(1, Ordering::Relaxed);
             }
-            // Worker occupancy is computed from self-time: a worker is credited once
-            // for each nanosecond it actually spends executing or waiting in blocked state.
+            // Only the outermost span on a thread contributes occupancy, so a
+            // nested span never counts its parent's time a second time.
             if outcome.outermost {
                 shard.top_level_calls.fetch_add(1, Ordering::Relaxed);
-            }
-            if outcome.blocked {
-                shard
-                    .top_level_blocked_ns
-                    .fetch_add(self_ns, Ordering::Relaxed);
-            } else {
-                shard
-                    .top_level_busy_ns
-                    .fetch_add(self_ns, Ordering::Relaxed);
+                if outcome.blocked {
+                    shard
+                        .top_level_blocked_ns
+                        .fetch_add(elapsed_ns, Ordering::Relaxed);
+                } else {
+                    shard
+                        .top_level_busy_ns
+                        .fetch_add(elapsed_ns, Ordering::Relaxed);
+                }
             }
             return;
         }
         self.inner.elapsed_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
         self.inner.calls[index].fetch_add(1, Ordering::Relaxed);
-        if !outcome.blocked {
-            self.inner.attributed_ns[index].fetch_add(self_ns, Ordering::Relaxed);
+        if outcome.attributed {
+            self.inner.attributed_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
         }
     }
 
@@ -1425,119 +1407,6 @@ impl Runtime {
                 .backend_dispatched_bytes
                 .fetch_add(bytes, Ordering::Relaxed);
         }
-    }
-    pub fn set_compile_phase(&self, phase: crate::CompilePhase) {
-        self.inner
-            .active_compile_phase
-            .store(phase as u8, Ordering::Relaxed);
-    }
-
-    pub fn active_compile_phase(&self) -> crate::CompilePhase {
-        match self.inner.active_compile_phase.load(Ordering::Relaxed) {
-            0 => crate::CompilePhase::Install,
-            1 => crate::CompilePhase::Update,
-            2 => crate::CompilePhase::Scan,
-            _ => crate::CompilePhase::Developer,
-        }
-    }
-
-    pub fn record_compile_surface_invocation(&self, surface: crate::CompileSurfaceId) {
-        let phase = self.active_compile_phase();
-        self.record_compile_surface_invocation_with_phase(surface, phase);
-    }
-
-    pub fn record_compile_surface_invocation_with_phase(
-        &self,
-        surface: crate::CompileSurfaceId,
-        phase: crate::CompilePhase,
-    ) {
-        if let Some(shard) = self.worker_shard() {
-            shard.compile_surface_invocations[surface.index()][phase.index()]
-                .fetch_add(1, Ordering::Relaxed);
-        } else {
-            self.inner.legacy_compile_surface_invocations[surface.index()][phase.index()]
-                .fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    pub fn record_compile_surface_load(&self, surface: crate::CompileSurfaceId) {
-        if let Some(shard) = self.worker_shard() {
-            shard.compile_surface_loads[surface.index()].fetch_add(1, Ordering::Relaxed);
-        } else {
-            self.inner.legacy_compile_surface_loads[surface.index()]
-                .fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    pub fn total_runtime_compiles(&self) -> u64 {
-        let mut total = 0u64;
-        for surface in crate::CompileSurfaceId::ALL {
-            total = total.saturating_add(
-                self.compile_surface_invocations(surface, crate::CompilePhase::Scan),
-            );
-            total = total.saturating_add(
-                self.compile_surface_invocations(surface, crate::CompilePhase::Developer),
-            );
-        }
-        total
-    }
-
-    pub fn compile_surface_invocations(
-        &self,
-        surface: crate::CompileSurfaceId,
-        phase: crate::CompilePhase,
-    ) -> u64 {
-        let mut count = self.inner.legacy_compile_surface_invocations[surface.index()]
-            [phase.index()]
-        .load(Ordering::Relaxed);
-        let shards = self.inner.sorted_shards();
-        for shard in shards.iter() {
-            count = count.saturating_add(
-                shard.compile_surface_invocations[surface.index()][phase.index()]
-                    .load(Ordering::Relaxed),
-            );
-        }
-        count
-    }
-
-    pub fn compile_surface_loads(&self, surface: crate::CompileSurfaceId) -> u64 {
-        let mut count =
-            self.inner.legacy_compile_surface_loads[surface.index()].load(Ordering::Relaxed);
-        let shards = self.inner.sorted_shards();
-        for shard in shards.iter() {
-            count = count.saturating_add(
-                shard.compile_surface_loads[surface.index()].load(Ordering::Relaxed),
-            );
-        }
-        count
-    }
-
-    pub fn compile_surface_reports(&self) -> Vec<crate::schema_v2::CompileSurfaceRecordV2> {
-        crate::CompileSurfaceId::ALL
-            .iter()
-            .map(|&surface| {
-                let install_compiles =
-                    self.compile_surface_invocations(surface, crate::CompilePhase::Install);
-                let update_compiles =
-                    self.compile_surface_invocations(surface, crate::CompilePhase::Update);
-                let scan_compiles =
-                    self.compile_surface_invocations(surface, crate::CompilePhase::Scan);
-                let developer_compiles =
-                    self.compile_surface_invocations(surface, crate::CompilePhase::Developer);
-                let runtime_compiles = scan_compiles.saturating_add(developer_compiles);
-                let loads = self.compile_surface_loads(surface);
-                crate::schema_v2::CompileSurfaceRecordV2 {
-                    version: crate::schema_v2::COMPILE_SURFACE_RECORD_V2_VERSION,
-                    surface,
-                    name: surface.as_str().to_string(),
-                    runtime_compiles,
-                    loads,
-                    install_compiles,
-                    update_compiles,
-                    developer_compiles,
-                }
-            })
-            .collect()
     }
 
     pub(crate) fn drain_stage_counters(&self, session: bool) -> RawStageCounters {
@@ -2476,6 +2345,7 @@ struct AsyncSpan {
     stage: Stage,
     started: Option<Instant>,
     trace: Option<SpanTrace>,
+    attributed: bool,
 }
 
 impl Drop for AsyncSpan {
@@ -2533,6 +2403,7 @@ where
     let span_id = trace.map(|trace| trace.span_id);
     let origin = current_work_origin();
     let task_id = current_task_id();
+    let attributed = runtime.is_some() && origin.is_attributed_work();
     let poll_runtime = runtime.clone();
 
     async move {
@@ -2542,6 +2413,7 @@ where
             stage,
             started,
             trace,
+            attributed,
         };
         let mut future = std::pin::pin!(future);
         poll_fn(|context| {
@@ -2605,6 +2477,7 @@ pub struct Span {
     span_id: u64,
     blocked: bool,
     serial: bool,
+    outermost: bool,
 }
 
 impl Span {
@@ -2631,6 +2504,7 @@ fn span_impl(
             span_id: 0,
             blocked: false,
             serial: false,
+            outermost: false,
         };
     }
     let runtime = current_runtime();
@@ -2647,10 +2521,12 @@ fn span_impl(
                 Some(parent) if runtime.context_id() == parent.context_id() => parent.span_id(),
                 _ => current_parent_id,
             };
-            runtime.begin_span_with(stage, started, parent_span_id, parent_slot, worker_id)
+            runtime.begin_span_with(stage, started, parent_span_id, worker_id)
         }
         _ => (None, None, 0),
     };
+    // Blocked wait is never attributed execution.
+    let attributed = !blocked && runtime.is_some() && current_work_origin().is_attributed_work();
     if trace.is_some() {
         crate::allocation::stage_context_push(stage);
     }
@@ -2664,6 +2540,7 @@ fn span_impl(
         span_id,
         blocked,
         serial,
+        outermost,
     }
 }
 
@@ -2764,11 +2641,7 @@ impl Drop for Span {
         let (Some(runtime), Some(started)) = (&self.runtime, self.started) else {
             return;
         };
-        let outermost = SPAN_DEPTH.with(|depth| {
-            let next = depth.get().saturating_sub(1);
-            depth.set(next);
-            next == 0
-        });
+        SPAN_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
         let elapsed_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
         let self_ns = runtime.pop_active_span(self.stack_slot, self.span_id, elapsed_ns);
         runtime.record(
@@ -2777,10 +2650,10 @@ impl Drop for Span {
             SpanOutcome {
                 start_offset_ns: runtime.offset_ns(started),
                 elapsed_ns,
-                self_ns,
+                attributed: self.attributed,
                 blocked: self.blocked,
                 serial: self.serial,
-                outermost,
+                outermost: self.outermost,
             },
         );
         if let Some(trace) = self.trace {
