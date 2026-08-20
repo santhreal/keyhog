@@ -1632,21 +1632,22 @@ fn finish_guard_commit_scan(
         result.fingerprint_changed,
         result.coverage_gaps,
     );
-    if exit == 0 {
-        // Report cache hit statistics and pass gate summary to stderr with total elapsed time on clean pass.
-        let total_elapsed = guard_start.map(|start| start.elapsed());
-        eprintln!(
-            "{}",
-            crate::style::format_pass_gate_summary(
-                "guard",
-                result.cache_hits,
-                result.blobs_scanned,
-                result.bytes_scanned,
-                total_elapsed,
-                &palette,
-            )
-        );
-    }
+    let total_elapsed = if exit == 0 {
+        guard_start.map(|start| start.elapsed())
+    } else {
+        None
+    };
+    eprintln!(
+        "{}",
+        crate::style::format_pass_gate_summary(
+            "guard",
+            result.cache_hits,
+            result.blobs_scanned,
+            result.bytes_scanned,
+            total_elapsed,
+            &palette,
+        )
+    );
     if exit == EXIT_SOURCE_FAILED {
         if result.fingerprint_changed {
             eprintln!(

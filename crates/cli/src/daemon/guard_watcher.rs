@@ -164,7 +164,7 @@ struct WatchedRoot {
     /// Gitignore matcher combining root .keyhogignore, .gitignore, and explicit ignore_paths.
     ignore_matcher: parking_lot::RwLock<Option<ignore::gitignore::Gitignore>>,
     /// Whether default excludes (.git, target, node_modules, lockfiles, minified files, binary extensions) are respected.
-    respect_default_excludes: bool,
+    respect_default_excludes: std::sync::atomic::AtomicBool,
 }
 
 impl WatchedRoot {
@@ -181,7 +181,7 @@ impl WatchedRoot {
             buffer,
             ignore_paths: parking_lot::RwLock::new(ignore_paths),
             ignore_matcher,
-            respect_default_excludes,
+            respect_default_excludes: std::sync::atomic::AtomicBool::new(respect_default_excludes),
         }
     }
 
@@ -192,7 +192,10 @@ impl WatchedRoot {
         };
 
         // 1. Directory / path component exclusions matching source scan semantics.
-        if self.respect_default_excludes {
+        if self
+            .respect_default_excludes
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
             for component in rel_path.components() {
                 if let std::path::Component::Normal(os) = component {
                     if let Some(s) = os.to_str() {
@@ -244,7 +247,6 @@ impl WatchedRoot {
         if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
             if file_name == ".keyhogignore"
                 || file_name == ".gitignore"
-                || file_name == ".keyhog.toml"
             {
                 if file_name == ".keyhog.toml" {
                     let (new_ignore_paths, _) = resolve_root_exclusions(root);
@@ -558,7 +560,10 @@ impl GuardWatcher {
     /// Whether default excludes are respected for a watched root, if watched.
     #[must_use]
     pub fn root_respects_default_excludes(&self, root: &std::path::Path) -> Option<bool> {
-        self.roots.get(root).map(|w| w.respect_default_excludes)
+        self.roots.get(root).map(|w| {
+            w.respect_default_excludes
+                .load(std::sync::atomic::Ordering::Relaxed)
+        })
     }
 
     /// Remove a root from watching.

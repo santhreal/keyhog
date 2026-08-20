@@ -18,21 +18,21 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 echo "=== [Local CI] 1. Workspace check ==="
-cargo check --workspace --all-targets
+cargo check -j "${CARGO_BUILD_JOBS}" --workspace --all-targets
 
 echo "=== [Local CI] 1b. GPU hardware preflight (fails closed with no adapter) ==="
-cargo run -p keyhog --features gpu,simd --profile release-fast -- \
+cargo run -j "${CARGO_BUILD_JOBS}" -p keyhog --features gpu,simd --profile release-fast -- \
   backend --self-test --require-gpu
 
 echo "=== [Local CI] 1c. GPU wiring contract ==="
-cargo test -p keyhog-scanner --features gpu --profile ci-test \
+cargo test -j "${CARGO_BUILD_JOBS}" -p keyhog-scanner --features gpu --profile ci-test \
   --test gpu_wiring_contract
 
 echo "=== [Local CI] 2. Scanner Default / GPU Test Suite ==="
-cargo test -p keyhog-scanner --features gpu --test all_tests --profile ci-test -- --test-threads=16
+cargo test -j "${CARGO_BUILD_JOBS}" -p keyhog-scanner --features gpu --test all_tests --profile ci-test -- --test-threads=16
 
 echo "=== [Local CI] 3. GPU Hardware Parity & Dispatch Contracts ==="
-cargo test -p keyhog-scanner --features gpu --profile release-fast \
+cargo test -j "${CARGO_BUILD_JOBS}" -p keyhog-scanner --features gpu --profile release-fast \
   --test gpu_parity \
   --test gpu_ac_smoke \
   --test gpu_ac_recall_bug_56 \
@@ -47,7 +47,7 @@ cargo test -p keyhog-scanner --features gpu --profile release-fast \
   --test regression_row_103_gpu_upload_readback_latency
 
 echo "=== [Local CI] 4. GPU CLI Integration & Error Handling ==="
-cargo test -p keyhog --features gpu,simd --profile ci-test \
+cargo test -j "${CARGO_BUILD_JOBS}" -p keyhog --features gpu,simd --profile ci-test \
   --test regression_require_gpu_fails_closed \
   --test e2e_gpu_autoroute_optin \
   --test gpu_simd_parity
