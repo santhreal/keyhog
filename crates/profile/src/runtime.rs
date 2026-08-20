@@ -2651,7 +2651,6 @@ pub fn record_cache_miss(cache: crate::CacheId) {
     }
 }
 
-
 /// Add source bytes processed by the current profile.
 #[inline]
 pub fn add_input_bytes(bytes: u64) {

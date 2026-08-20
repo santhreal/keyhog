@@ -264,7 +264,10 @@ fn probe_windows(path: &Path) -> Option<FilesystemAuthority> {
     };
 
     if ok != 0 {
-        let len = fs_name_buf.iter().position(|&c| c == 0).unwrap_or(0); // LAW10: documented default fallback length if no nul terminator in buffer
+        let len = fs_name_buf
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(fs_name_buf.len()); // LAW10: documented default fallback length if no nul terminator in buffer
         let fs_name = String::from_utf16_lossy(&fs_name_buf[..len]);
         Some(classify_filesystem_type(&fs_name))
     } else {
