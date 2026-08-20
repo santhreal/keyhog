@@ -46,6 +46,7 @@ pub(crate) fn resolve_matcher_cache_path(
     resolve_matcher_cache_path_with_default(raw, dirs::cache_dir())
 }
 
+#[allow(dead_code)]
 pub(crate) fn resolve_matcher_cache_path_with_default(
     raw: Option<&str>,
     default_cache_dir: Option<PathBuf>,

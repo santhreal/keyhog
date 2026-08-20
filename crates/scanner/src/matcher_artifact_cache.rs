@@ -1035,6 +1035,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
     };
 
     let Some(cache_dir) = cache_dir.as_ref() else {
+        let disable_reason = configured_matcher_artifact_cache_disable_reason();
         return compile_without_matcher_artifact_cache(
             sorted,
             gpu_policy,
