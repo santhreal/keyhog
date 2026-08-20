@@ -23,7 +23,7 @@ use super::gpu_region_batch::{
 use super::gpu_region_dispatch_helpers::record_test_window_reduction_allocation;
 #[cfg(test)]
 pub(super) use super::gpu_region_dispatch_helpers::{
-    append_phase2_gpu_admission, mib_per_second, reset_test_window_reduction_allocations,
+    append_phase2_gpu_admission, reset_test_window_reduction_allocations,
     test_window_reduction_allocations,
 };
 use super::gpu_region_dispatch_helpers::{
