@@ -501,7 +501,13 @@ pub(crate) fn report_compiled_cache_summary(
                 let state = if count > 0 { "hit" } else { "compiled" };
                 (state, count)
             }
-            keyhog_core::CacheKind::DetectorPlans => ("compiled", 0),
+            keyhog_core::CacheKind::DetectorPlans => match &orchestrator.scanner_materialization {
+                Some(crate::orchestrator::ScannerMaterialization::MappedPack { .. }) => ("hit", 0),
+                Some(crate::orchestrator::ScannerMaterialization::Compiled { .. }) => {
+                    ("compiled", 0)
+                }
+                None => ("unknown", 0),
+            },
             keyhog_core::CacheKind::LockFiles => {
                 let dir = cache_base.as_ref().map(|b| b.join("keyhog"));
                 let count = dir.as_deref().map_or(0, |d| {
