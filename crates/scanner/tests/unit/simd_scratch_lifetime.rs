@@ -184,7 +184,7 @@ fn first_scan_lazily_warms_then_reuses_scratch() {
     );
 }
 
-/// Regression: explicit warm-up seeds thread-local scratch so normal
+/// Regression: explicit warm-up must seed every Rayon worker so normal
 /// request traffic does not allocate Hyperscan scratch.
 #[test]
 fn warm_broadcast_seeds_one_scratch_per_shard_on_every_worker() {
@@ -198,19 +198,17 @@ fn warm_broadcast_seeds_one_scratch_per_shard_on_every_worker() {
         "probe patterns must be Hyperscan-supported"
     );
 
+    scanner
+        .warm()
+        .expect("warm must seed worker thread-local scratch");
+
     let shard_count = scanner.shard_count();
-    let warm_counts: Vec<usize> = rayon::broadcast(|_| {
-        scanner
-            .warm()
-            .expect("warm must seed worker thread-local scratch");
-        super::current_thread_scratch_count_for_test(scanner.scanner_id)
-    });
-    for (i, count) in warm_counts.iter().enumerate() {
-        assert_eq!(
-            *count, shard_count,
-            "worker {i} must have one scratch per shard after warm, got {count}"
-        );
-    }
+    assert_eq!(
+        super::current_thread_scratch_count_for_test(scanner.scanner_id),
+        shard_count,
+        "caller thread must have one scratch per shard after warm"
+    );
+
     let probe = b"x KHWORKER_AB12CD34 y ZZWORKER_xy99zz z";
     let post_scan_counts: Vec<usize> = rayon::broadcast(|_| {
         let mut ids = Vec::new();

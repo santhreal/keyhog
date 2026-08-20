@@ -11,9 +11,6 @@ use keyhog_core::Chunk;
 use keyhog_scanner::CompiledScanner;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Mutex;
-
-static MEASURE_LOCK: Mutex<()> = Mutex::new(());
 
 struct ScanCountingAllocator;
 
@@ -31,7 +28,7 @@ unsafe impl GlobalAlloc for ScanCountingAllocator {
             ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
             TOTAL_BYTES.fetch_add(size, Ordering::Relaxed);
             let prev = CURRENT_BYTES.fetch_add(size, Ordering::Relaxed);
-            let cur = prev.saturating_add(size);
+            let cur = prev + size;
             let mut peak = PEAK_BYTES.load(Ordering::Relaxed);
             while cur > peak {
                 match PEAK_BYTES.compare_exchange_weak(
@@ -52,8 +49,8 @@ unsafe impl GlobalAlloc for ScanCountingAllocator {
         let size = layout.size();
         unsafe { System.dealloc(ptr, layout) };
         if COUNTING.load(Ordering::Relaxed) {
-            let _ = CURRENT_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
-                Some(v.saturating_sub(size))
+            let _ = CURRENT_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
+                Some(cur.saturating_sub(size))
             });
         }
     }
@@ -67,7 +64,7 @@ unsafe impl GlobalAlloc for ScanCountingAllocator {
                 let diff = new_size - old_size;
                 TOTAL_BYTES.fetch_add(diff, Ordering::Relaxed);
                 let prev = CURRENT_BYTES.fetch_add(diff, Ordering::Relaxed);
-                let cur = prev.saturating_add(diff);
+                let cur = prev + diff;
                 let mut peak = PEAK_BYTES.load(Ordering::Relaxed);
                 while cur > peak {
                     match PEAK_BYTES.compare_exchange_weak(
@@ -82,14 +79,15 @@ unsafe impl GlobalAlloc for ScanCountingAllocator {
                 }
             } else if old_size > new_size {
                 let diff = old_size - new_size;
-                let _ = CURRENT_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
-                    Some(v.saturating_sub(diff))
+                let _ = CURRENT_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
+                    Some(cur.saturating_sub(diff))
                 });
             }
         }
         new_ptr
     }
 }
+
 #[global_allocator]
 static ALLOCATOR: ScanCountingAllocator = ScanCountingAllocator;
 
@@ -101,7 +99,6 @@ fn reset_instrument() {
 }
 
 fn measure_scan<T>(f: impl FnOnce() -> T) -> (T, usize, usize, usize) {
-    let _guard = MEASURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     reset_instrument();
     COUNTING.store(true, Ordering::SeqCst);
     let res = f();
@@ -111,6 +108,7 @@ fn measure_scan<T>(f: impl FnOnce() -> T) -> (T, usize, usize, usize) {
     let peak = PEAK_BYTES.load(Ordering::SeqCst);
     (res, count, total, peak)
 }
+
 fn make_test_scanner() -> CompiledScanner {
     let specs =
         keyhog_core::load_embedded_detectors_or_fail().expect("embedded detectors must load");
