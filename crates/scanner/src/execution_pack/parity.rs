@@ -79,7 +79,9 @@ impl PackFindingParityEvidence {
         })
     }
 
-    pub(crate) fn validate(
+    /// Validates that this parity evidence matches the expected execution pack backend,
+    /// detector digest, generation identity, and route digest.
+    pub fn validate(
         &self,
         backend: ExecutionPackBackend,
         detector_digest: [u8; 32],
