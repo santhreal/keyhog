@@ -245,32 +245,46 @@ fn unknown_subcommand_exits_two() {
 fn detector_audit_failure_exits_three() {
     let dir = TempDir::new().expect("tempdir");
     let broken_rule = dir.path().join("broken_detector.toml");
+    // Schema-valid so the corpus PARSES, but it declares no `match_confidence`,
+    // which is an Error-severity quality issue. The audit loads ungated on
+    // purpose: a gated load would fail closed with a user error (exit 2) and
+    // report nothing per detector.
     std::fs::write(
         &broken_rule,
         r#"
 [detector]
 id = "broken-detector"
 name = "Broken Detector"
+service = "test"
 severity = "high"
-confidence = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+min_confidence = 0.2
+keywords = ["broken"]
 
-[[detector.keywords]]
-pattern = "[invalid-regex("
+[[detector.patterns]]
+regex = "."
+description = "one character, deliberately unspecific"
 "#,
     )
     .expect("write broken rule");
 
     let out = Command::new(binary())
-        .args(["detectors", "audit", "--rules-dir"])
+        .args(["detectors", "--audit", "--detectors"])
         .arg(dir.path())
         .output()
-        .expect("spawn keyhog detectors audit");
+        .expect("spawn keyhog detectors --audit");
 
     assert_eq!(
         out.status.code(),
         Some(i32::from(EXIT_SYSTEM_ERROR)),
-        "detector audit failure must exit 3 (EXIT_SYSTEM_ERROR); stderr={}",
+        "detector audit failure must exit 3 (EXIT_SYSTEM_ERROR); stdout={}; stderr={}",
+        String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("broken-detector") && stdout.contains("match_confidence"),
+        "the audit must name the offending detector and issue; stdout={stdout}"
     );
 }
 
@@ -320,9 +334,11 @@ fn require_gpu_unmet_exits_twelve() {
 #[test]
 fn source_failure_exits_thirteen() {
     let dir = TempDir::new().expect("tempdir");
-    // Not a git repository, so git-history source fails completely
+    // `--git-history` on a directory with no `.git` is a source that EXISTS and
+    // fails to read. An unknown `--source NAME` is a user error (exit 2)
+    // instead, so it never reaches the source-failure path.
     let mut cmd = Command::new(binary());
-    cmd.args(["scan", "--daemon=off", "--source", "git-history"]);
+    cmd.args(["scan", "--daemon=off", "--git-history"]);
     cmd.arg(dir.path());
     let out = cmd.output().expect("spawn keyhog scan with broken source");
 

@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 
 pub use evidence::{ProviderEvidenceRole, ProviderEvidenceSensitivity};
 pub use load::{
-    load_detector_corpus, load_detectors, read_detector_toml_file, LoadedDetectorCorpus, SpecError,
-    DETECTOR_TOML_FILE_BYTES,
+    load_detector_corpus, load_detectors, load_detectors_with_gate, read_detector_toml_file,
+    LoadedDetectorCorpus, SpecError, DETECTOR_TOML_FILE_BYTES,
 };
 pub use semantic::{
     AnchorSemanticRole, CaptureSemanticRole, DetectorHardNegativeClass, DetectorSemanticPolicySpec,
