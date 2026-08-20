@@ -23,6 +23,16 @@ use support::contracts::{make_chunk, scanner};
 
 const CHILD_ENV: &str = "KEYHOG_ZERO_PATTERN_RECOMPILE_CHILD";
 
+fn current_test_exe() -> std::path::PathBuf {
+    #[cfg(target_os = "linux")]
+    {
+        if std::path::Path::new("/proc/self/exe").exists() {
+            return std::path::PathBuf::from("/proc/self/exe");
+        }
+    }
+    std::env::current_exe().expect("current scanner test executable is available")
+}
+
 fn run_isolated_counter_test() -> bool {
     if std::env::var_os(CHILD_ENV).is_some() {
         return false;
