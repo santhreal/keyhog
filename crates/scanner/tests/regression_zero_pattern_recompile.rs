@@ -23,6 +23,16 @@ use support::contracts::{make_chunk, scanner};
 
 const CHILD_ENV: &str = "KEYHOG_ZERO_PATTERN_RECOMPILE_CHILD";
 
+fn current_test_exe() -> std::path::PathBuf {
+    #[cfg(target_os = "linux")]
+    {
+        if std::path::Path::new("/proc/self/exe").exists() {
+            return std::path::PathBuf::from("/proc/self/exe");
+        }
+    }
+    std::env::current_exe().expect("current scanner test executable is available")
+}
+
 fn run_isolated_counter_test() -> bool {
     if std::env::var_os(CHILD_ENV).is_some() {
         return false;
@@ -31,18 +41,18 @@ fn run_isolated_counter_test() -> bool {
         .name()
         .expect("test thread has a name")
         .to_owned();
-    let output = std::process::Command::new(
-        std::env::current_exe().expect("current scanner test executable is available"),
-    )
-    .env(CHILD_ENV, "1")
-    .arg(&test_name)
-    .arg("--exact")
-    .arg("--test-threads=1")
-    .output()
-    .expect("isolated compile-event test process starts");
+    let output = std::process::Command::new(current_test_exe())
+        .env(CHILD_ENV, "1")
+        .arg(&test_name)
+        .arg("--exact")
+        .arg("--test-threads=1")
+        .output()
+        .expect("isolated compile-event test process starts");
     assert!(
         output.status.success(),
-        "isolated compile-event test `{test_name}` failed"
+        "isolated compile-event test `{test_name}` failed: stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
     );
     true
 }
