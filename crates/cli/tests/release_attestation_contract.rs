@@ -44,7 +44,7 @@ fn crates_publish_uses_oidc_after_the_integrity_receipt() {
         "id-token: write",
         "python3 -B scripts/release_integrity_receipt.py",
         "--commit \"$(git rev-parse HEAD)\"",
-        "--version \"${{ steps.release.outputs.version }}\"",
+        "--version \"${{ steps.tag.outputs.version }}\"",
         "--output release-integrity.json",
         "rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5",
         "run: bash scripts/publish.sh",

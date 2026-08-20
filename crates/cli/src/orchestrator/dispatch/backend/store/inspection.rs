@@ -240,9 +240,6 @@ pub(crate) struct AutorouteSourceMixtureInspection {
     pub(crate) source_class: Option<&'static str>,
     pub(crate) source_class_digest: String,
     pub(crate) has_full_size: bool,
-    pub(crate) chunk_ratio: u64,
-    pub(crate) payload_ratio: u64,
-    pub(crate) max_span_bucket: u8,
 }
 
 #[derive(Debug, Serialize)]
@@ -671,9 +668,6 @@ fn inspect_autoroute_cache_for_build(
                         source_class: source_class_label(&entry.source_class_digest),
                         source_class_digest: keyhog_core::hex_encode(&entry.source_class_digest),
                         has_full_size: entry.has_full_size,
-                        chunk_ratio: entry.chunk_ratio,
-                        payload_ratio: entry.payload_ratio,
-                        max_span_bucket: entry.max_span_bucket,
                     })
                     .collect(),
                 calibrated_at_unix_ms,

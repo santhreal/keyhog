@@ -11,7 +11,7 @@ definitions live in `crates/cli/src/exit_codes.rs` and are rendered in
 | `2` | User or operator error, including invalid arguments or configuration and operator-correctable I/O. |
 | `3` | System or local environment failure, including other low-level I/O, a fatal daemon service failure, or an explicitly selected SIMD backend failure. |
 | `4` | A maintenance health or self-test command reported an unhealthy state. |
-| `10` | A scan confirmed a live credential, or `update --check` found a newer release. |
+| `10` | A scan confirmed a live credential. |
 | `11` | A scanner thread panicked. Scan state is not trustworthy. |
 | `12` | An explicitly selected or required GPU path could not execute. |
 | `13` | A requested source failed or input coverage was incomplete and no finding outcome took precedence. |
@@ -72,7 +72,7 @@ without blocking; `--evidence-policy paranoid` makes them block. A source or
 expansion gap prevents a zero-blocking-finding scan from returning `0`.
 
 Maintenance subcommands also use `0` for their successful state. For example,
-`update --check` returns `0` when the installed version is current.
+`doctor` returns `0` when the installation is healthy.
 
 ## `1`: findings block the active policy
 
@@ -126,7 +126,6 @@ SIMD/Hyperscan path that cannot execute. A selected or required GPU failure is
 `scan` does not return `4`. Maintenance commands use it for unhealthy states:
 
 - `doctor` could not establish a healthy installation;
-- `repair` could not restore a working binary;
 - `backend --self-test` failed;
 - `backend --autoroute` found `quarantined`, `calibration_required`,
   `disabled`, `stale`, or `invalid` routing state.
@@ -138,13 +137,10 @@ keyhog backend --self-test --json
 keyhog backend --autoroute --json
 ```
 
-## `10`: live credential or update available
+## `10`: live credential
 
 For `scan --verify`, at least one credential was accepted by its verification
 service. This takes precedence over other findings and incomplete coverage.
-
-`update --check` reuses `10` to mean that a newer release is available. The
-subcommand context distinguishes this maintenance result from a scan result.
 
 ## `11`: scanner panic
 

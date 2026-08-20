@@ -23,7 +23,7 @@ fn all_excluded_input_fails_closed_without_findings() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            crate::support::DIAGNOSTIC_BACKEND,
             "--format",
             "json",
             "--exclude-paths",

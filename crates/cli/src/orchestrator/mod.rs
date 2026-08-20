@@ -1445,9 +1445,11 @@ impl ScanOrchestrator {
                             (Some(corpus), None)
                         } else {
                             return Err(error).context(
-                                "no usable detector execution pack available for scan; in-process compilation is forbidden. \
-                                 Fix: run `keyhog install` or `keyhog update` to prepare execution packs, \
-                                 or pass `--developer-compile-embedded-detectors` for developer/debug builds."
+                                "loading authenticated detector execution pack; the installed generation \
+                                 does not authenticate against this binary. Republish it with \
+                                 `keyhog compile-execution-packs --output-dir <cache>/keyhog/execution-packs/current \
+                                 --signing-key <cache>/keyhog/execution-packs/signing.key`, or rerun \
+                                 `install.sh --calibrate`",
                             );
                         }
                     }

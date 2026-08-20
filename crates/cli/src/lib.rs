@@ -472,11 +472,9 @@ pub fn cli_main() -> ExitCode {
     // The root-only `-V` remains unambiguous in every position.
     let mut is_version = false;
     let mut full_version = false;
-    let mut maintenance_subcommand_seen = false;
     for arg in std::env::args_os().skip(1) {
         if let Some(value) = arg.to_str() {
-            maintenance_subcommand_seen |= value == "update" || value == "repair";
-            is_version |= value == "-V" || (value == "--version" && !maintenance_subcommand_seen);
+            is_version |= value == "-V" || value == "--version";
             full_version |= value == "--full";
         }
     }
@@ -532,6 +530,9 @@ fn dispatch_command(command: args::Command) -> ExitCode {
         args::Command::CompileExecutionPacks(args) => handle_command_outcome(
             subcommands::compile_execution_packs::run(args).map(|()| ExitCode::SUCCESS),
         ),
+        args::Command::CompileGpuLiterals(args) => handle_command_outcome(
+            subcommands::compile_gpu_literals::run(args).map(|()| ExitCode::SUCCESS),
+        ),
         args::Command::ActionReport(args) => match args.command {
             args::ActionReportCommand::Verify(args) => {
                 handle_command_outcome(action_report::verify(args))
@@ -560,8 +561,6 @@ fn dispatch_command(command: args::Command) -> ExitCode {
         args::Command::Backend(args) => handle_command_outcome(subcommands::backend::run(args)),
         args::Command::Doctor(args) => handle_command_outcome(subcommands::doctor::run(args)),
         args::Command::BloomDiagnostic(args) => handle_command_outcome(bloom_diagnostic::run(args)),
-        args::Command::Update(args) => run_async(|| subcommands::update::run(args)),
-        args::Command::Repair(args) => run_async(|| subcommands::repair::run(args)),
         args::Command::Uninstall(args) => handle_command_outcome(subcommands::uninstall::run(args)),
         args::Command::ScanSystem(args) => {
             handle_command_outcome(subcommands::scan_system::run(args))

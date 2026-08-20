@@ -11,7 +11,7 @@ fn scan_format_jsonl_clean_exit_zero() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            crate::support::DIAGNOSTIC_BACKEND,
             "--format",
             "jsonl",
         ])
