@@ -198,11 +198,9 @@ fn warm_broadcast_seeds_one_scratch_per_shard_on_every_worker() {
         "probe patterns must be Hyperscan-supported"
     );
 
-    rayon::broadcast(|_| {
-        scanner
-            .warm()
-            .expect("warm must seed worker thread-local scratch");
-    });
+    scanner
+        .warm()
+        .expect("warm must seed worker thread-local scratch");
 
     let shard_count = scanner.shard_count();
     assert_eq!(
