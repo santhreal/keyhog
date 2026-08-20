@@ -240,7 +240,7 @@ impl GuardWatcher {
             rx,
             roots: HashMap::new(),
             config,
-            disabled: false,
+            disabled: true,
             disconnection_reason: parking_lot::Mutex::new(None),
         })
     }
@@ -449,12 +449,14 @@ impl GuardWatcher {
                 }
             }
         }
-        // Drain each root's buffer and check for overflow. If overflowed,
-        // emit a ReconcileSubtree event and reset the overflow flag so
-        // the buffer can accept new events after reconciliation.
+        // Drain each root's buffer and check for overflow. If individual or
+        // total pending event capacity is exceeded, emit a ReconcileSubtree
+        // event and reset the overflow flag.
+        let total_buffered: usize = self.roots.values().map(|r| r.buffer.lock().len()).sum();
+        let total_overflow = total_buffered > self.config.max_pending_events_total;
         for (root, watched) in &self.roots {
             let mut buf = watched.buffer.lock();
-            if buf.overflowed() {
+            if total_overflow || buf.overflowed() {
                 results
                     .entry(root.clone())
                     .or_default()

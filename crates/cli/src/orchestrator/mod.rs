@@ -56,7 +56,7 @@ fn collect_detector_signatures(detectors: &[DetectorSpec]) -> std::collections::
 /// misspelled or missing detector IDs instead of treating them as configuration.
 fn filter_disabled_detectors(
     detectors: &mut Vec<DetectorSpec>,
-    disabled_detectors: &std::collections::HashSet<String>,
+    disabled_detectors: &mut std::collections::HashSet<String>,
 ) -> usize {
     let known_ids: std::collections::HashSet<String> = detectors
         .iter()
@@ -96,6 +96,7 @@ fn filter_disabled_detectors(
         }
     }
 
+    disabled_detectors.extend(removed.iter().cloned());
     let before = detectors.len();
     detectors.retain(|detector| !removed.contains(&detector.id));
     for detector in detectors.iter_mut() {
@@ -1017,10 +1018,10 @@ fn setup_default_scan_runtime_with_rayon_policy(
 
     // Apply `[detector.<id>] enabled = false`: drop the disabled detectors before
     // compilation so they never fire (mirrors `ScanOrchestrator::new`).
-    let disabled_detectors = effective_config.disabled_detectors.clone();
+    let mut disabled_detectors = effective_config.disabled_detectors.clone();
     if !disabled_detectors.is_empty() {
         let before = detectors.len();
-        filter_disabled_detectors(&mut detectors, &disabled_detectors);
+        filter_disabled_detectors(&mut detectors, &mut disabled_detectors);
         if detectors.is_empty() && before > 0 {
             anyhow::bail!(
                 "all {before} loaded detector(s) were disabled by .keyhog.toml \
@@ -1344,7 +1345,7 @@ impl ScanOrchestrator {
         }
         let mut effective_config = resolve_scan_config(&mut args)?;
         ResolvedEngineRuntimeSettings::from(&effective_config).apply();
-        let disabled_detectors = effective_config.disabled_detectors.clone();
+        let mut disabled_detectors = effective_config.disabled_detectors.clone();
         // Operator `.keyhog.toml` `[detector.<id>] min_confidence` overrides;
         // detector self-declared floors (DetectorSpec::min_confidence, merged
         // below once the corpus is loaded) fill the gaps.
@@ -1537,7 +1538,7 @@ impl ScanOrchestrator {
         // (Previously this config key was parsed and silently ignored.)
         if !disabled_detectors.is_empty() {
             let before = detectors.len();
-            let dropped = filter_disabled_detectors(&mut detectors, &disabled_detectors);
+            let dropped = filter_disabled_detectors(&mut detectors, &mut disabled_detectors);
             if dropped > 0 {
                 if detectors.is_empty() {
                     let mut disabled_ids: Vec<&str> =

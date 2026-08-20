@@ -291,20 +291,39 @@ def render_accuracy(snapshot: dict[str, Any]) -> str:
     if row is None:
         raise MatrixError("snapshot lacks the default Hyperscan/SIMD accuracy row")
     host, scanner = _context(snapshot)
-    corpus = row["corpus"]
-    detection = row["detection"]
-    return "\n".join(
-        [
-            f"KeyHog `{scanner['version'].splitlines()[0]}` evaluated on both the synthetic **mirror** corpus and competitor **homefield** rule ground-truth on **{host['cpu']}** with the explicit Hyperscan/SIMD default route. The answer-key manifest was excluded from the scan tree.",
-            "",
-            "| Corpus | Fixtures | Positives | Input size | Precision | Recall | F1 | True positives | False positives | False negatives |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
-            f"| **{corpus['name']}** | {corpus['fixture_count']:,} | {corpus['labeled_positives']:,} | {corpus['bytes'] / (1024 * 1024):.2f} MB | {detection['precision']:.4f} | {detection['recall']:.4f} | {detection['f1']:.4f} | {detection['tp']:,} | {detection['fp']:,} | {detection['fn']:,} |",
-            "| **homefield** | 2,399 | 1,057 | 773 KB | 0.9582 | 0.8874 | 0.9214 | 938 | 41 | 119 |",
-            "",
-            _qualification(snapshot, scanner),
-        ]
-    )
+
+    corpus_rows = []
+    seen_corpora = set()
+    for r in snapshot["configuration_rows"]:
+        if r.get("config_id") == "simd-nocache-nodaemon-full":
+            c = r.get("corpus", {})
+            c_name = c.get("name")
+            if c_name and c_name not in seen_corpora:
+                seen_corpora.add(c_name)
+                corpus_rows.append(r)
+    if not corpus_rows:
+        corpus_rows = [row]
+
+    names_desc = " and ".join(f"**{r['corpus']['name']}**" for r in corpus_rows)
+    lines = [
+        f"KeyHog `{scanner['version'].splitlines()[0]}` evaluated on {names_desc} on **{host['cpu']}** with the explicit Hyperscan/SIMD default route. The answer-key manifest was excluded from the scan tree.",
+        "",
+        "| Corpus | Fixtures | Positives | Input size | Precision | Recall | F1 | True positives | False positives | False negatives |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in corpus_rows:
+        c = r["corpus"]
+        d = r["detection"]
+        size_str = (
+            f"{c['bytes'] / 1024:.0f} KB"
+            if c["bytes"] < 1024 * 1024
+            else f"{c['bytes'] / (1024 * 1024):.2f} MB"
+        )
+        lines.append(
+            f"| **{c['name']}** | {c['fixture_count']:,} | {c['labeled_positives']:,} | {size_str} | {d['precision']:.4f} | {d['recall']:.4f} | {d['f1']:.4f} | {d['tp']:,} | {d['fp']:,} | {d['fn']:,} |"
+        )
+    lines.extend(["", _qualification(snapshot, scanner)])
+    return "\n".join(lines)
 
 
 def render_configuration(snapshot: dict[str, Any]) -> str:

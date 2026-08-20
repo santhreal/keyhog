@@ -1236,6 +1236,7 @@ enum MassFilesystemMessage {
         source_coverage_gaps: SourceCoverageGaps,
         skipped_unchanged: usize,
     },
+    #[allow(dead_code)]
     Error(String),
 }
 
@@ -1854,6 +1855,7 @@ async fn handle_connection(
                     reason: format!("daemon: internal panic during request: {detail}"),
                 };
                 let _ = state.record_backend_recovery(recovery); // LAW10: fault recording during panic recovery; no effect on scan findings
+                mass_session = None;
                 Response::Error {
                     message: format!("daemon: internal panic during request: {detail}"),
                 }

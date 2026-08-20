@@ -649,11 +649,17 @@ def render_leaderboard(results: list[RunResult], corpus: str) -> str:
             continue
         o_fixtures = next((r.corpus.fixture_count for r in other_rows if r.corpus.fixture_count), 0)
         o_positives = next((r.corpus.labeled_positives for r in other_rows if r.corpus.labeled_positives), 0)
+        is_competitor = other.startswith("homefield")
+        heading = f"#### Competitor {other} rule corpus" if is_competitor else f"#### {other.replace('_', ' ').replace('-', ' ').title()} corpus"
+        description = (
+            "Cross-tool evaluation on competitor ground truth."
+            if is_competitor
+            else "Cross-tool evaluation on ground-truth corpus."
+        )
         lines.extend([
             "",
-            f"#### Competitor {other} rule corpus",
-            f"Corpus: **{other}** - {o_fixtures} fixtures, {o_positives} labeled positives. "
-            "Cross-tool evaluation on competitor ground truth.",
+            heading,
+            f"Corpus: **{other}** - {o_fixtures} fixtures, {o_positives} labeled positives. {description}",
             "",
             "| Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |",
             "|---|---|---|---|---|---|---|---|",

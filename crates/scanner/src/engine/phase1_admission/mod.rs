@@ -694,6 +694,7 @@ impl Phase1AdmissionSummary {
     }
 
     #[inline]
+    #[allow(dead_code)]
     fn merge(self, other: Self) -> Self {
         Self {
             alphabet_rejected_chunks: self
