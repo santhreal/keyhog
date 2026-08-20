@@ -2404,10 +2404,10 @@ impl Drop for AsyncSpan {
             SpanOutcome {
                 start_offset_ns: runtime.offset_ns(started),
                 elapsed_ns,
-                self_ns: elapsed_ns,
+                self_ns: 0,
                 blocked: false,
                 serial: false,
-                outermost: true,
+                outermost: false,
             },
         );
         if let Some(trace) = self.trace {
@@ -2653,10 +2653,10 @@ impl DecisionTimer {
                     SpanOutcome {
                         start_offset_ns: runtime.offset_ns(self.started),
                         elapsed_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
-                        self_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
+                        self_ns: 0,
                         blocked: false,
                         serial: false,
-                        outermost: true,
+                        outermost: false,
                     },
                 );
             }

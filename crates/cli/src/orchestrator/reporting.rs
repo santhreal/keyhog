@@ -420,20 +420,28 @@ pub(crate) fn report_scanner_materialization_summary(
     ansi: bool,
     materialization: Option<&crate::orchestrator::ScannerMaterialization>,
 ) {
-    let palette = terminal_palette(ansi, false);
-    let line = match materialization {
-        Some(crate::orchestrator::ScannerMaterialization::MappedPack { generation }) => {
-            format!("scanner: mapped from execution pack {generation}")
-        }
-        Some(crate::orchestrator::ScannerMaterialization::Compiled { matcher_outcome }) => {
-            format!(
-                "scanner: compiled in process (developer escape hatch active; matcher-artifact: {})",
-                matcher_outcome.as_str()
-            )
-        }
-        None => "scanner: materialization unknown".to_string(),
+    let Some(mat) = materialization else {
+        return;
     };
-    eprintln!("{}INFO{} {line}", palette.cyan, palette.reset);
+    let palette = terminal_palette(ansi, false);
+    match mat {
+        crate::orchestrator::ScannerMaterialization::MappedPack { generation } => {
+            if ansi {
+                eprintln!(
+                    "{}INFO{} scanner: mapped from execution pack {generation}",
+                    palette.cyan, palette.reset
+                );
+            }
+        }
+        crate::orchestrator::ScannerMaterialization::Compiled { matcher_outcome } => {
+            eprintln!(
+                "{}WARN{} scanner: compiled in process (developer escape hatch active; matcher-artifact: {})",
+                palette.yellow,
+                palette.reset,
+                matcher_outcome.as_str()
+            );
+        }
+    }
 }
 
 /// Report cache status and entry counts for every registered cache kind.
@@ -441,6 +449,9 @@ pub(crate) fn report_compiled_cache_summary(
     ansi: bool,
     orchestrator: &crate::orchestrator::ScanOrchestrator,
 ) {
+    if !orchestrator.args.profile {
+        return;
+    }
     let palette = terminal_palette(ansi, false);
     let cache_base = dirs::cache_dir();
     for kind in keyhog_core::CacheKind::ALL {

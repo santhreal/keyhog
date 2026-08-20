@@ -222,28 +222,25 @@ def render_provenance(rows: list[RunResult]) -> str:
         "| Scanner | Scanner version / executable digest | Corpus identity | Host identity | Run date |",
         "|---|---|---|---|---|",
     ]
-    scanners_ordered: list[str] = []
-    scanners_map: dict[str, list[RunResult]] = {}
+    seen = set()
     for row in rows:
-        sname = row.scanner.name
-        if sname not in scanners_map:
-            scanners_ordered.append(sname)
-            scanners_map[sname] = []
-        scanners_map[sname].append(row)
-
-    for sname in scanners_ordered:
-        scanner_rows = scanners_map[sname]
-        primary = scanner_rows[0]
+        key = (
+            row.scanner.name,
+            row.corpus.name,
+            row.scanner.executable_sha256,
+            row.generated_at,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
         generated_at = (
-            _cell(primary.generated_at)
-            if _run_date_error(primary.generated_at) is None
+            _cell(row.generated_at)
+            if _run_date_error(row.generated_at) is None
             else "_missing or invalid_"
         )
-        corpus_identities = [_corpus_provenance(r) for r in scanner_rows]
-        corpus_cell = "<br>".join(corpus_identities)
         lines.append(
-            f"| {_cell(_name(primary.scanner.name))} | {_scanner_provenance(primary)} | "
-            f"{corpus_cell} | {_host_provenance(primary)} | {generated_at} |"
+            f"| {_cell(_name(row.scanner.name))} | {_scanner_provenance(row)} | "
+            f"{_corpus_provenance(row)} | {_host_provenance(row)} | {generated_at} |"
         )
     return "\n".join(lines)
 
@@ -624,6 +621,20 @@ def _name(scanner: str) -> str:
     return _DISPLAY.get(scanner, scanner)
 
 
+def _is_daemon_corpus(name: str) -> bool:
+    """Return True if the corpus is a daemon performance workload."""
+    return not name or name.startswith("daemon")
+
+
+def _corpus_heading(name: str) -> str:
+    """Return the Markdown heading for a benchmark corpus section."""
+    if name == "mirror":
+        return "#### Synthetic SecretBench-shape mirror corpus"
+    if name == "homefield":
+        return "#### Competitor homefield / home-turf rule corpus"
+    return f"#### Competitor {name} rule corpus"
+
+
 def render_leaderboard(results: list[RunResult], corpus: str) -> str:
     """Render Markdown leaderboard table for corpus and companion corpora."""
     primary_corpus = "mirror" if corpus == "multi-corpus" else corpus
@@ -632,14 +643,16 @@ def render_leaderboard(results: list[RunResult], corpus: str) -> str:
         return f"_No results for corpus `{corpus}` yet - run `make leaderboard`._"
     fixtures = next((r.corpus.fixture_count for r in rows if r.corpus.fixture_count), 0)
     positives = next((r.corpus.labeled_positives for r in rows if r.corpus.labeled_positives), 0)
+    primary_bytes = next((r.corpus.bytes for r in rows if r.corpus.bytes), 0)
     other_corpora = sorted(
-        {r.corpus.name for r in results if r.corpus.name and r.corpus.name != primary_corpus and not r.corpus.name.startswith("daemon")}
+        {r.corpus.name for r in results if r.corpus.name and r.corpus.name != primary_corpus and not _is_daemon_corpus(r.corpus.name)}
     )
     lines = []
     if other_corpora or corpus == "multi-corpus":
-        lines.append("#### Synthetic SecretBench-shape mirror corpus" if primary_corpus == "mirror" else f"#### {primary_corpus} corpus")
+        lines.append(_corpus_heading(primary_corpus))
+    bytes_str = f", {primary_bytes:,} bytes" if primary_bytes else ""
     lines.extend([
-        f"Corpus: **{primary_corpus}** - {fixtures} fixtures, {positives} labeled positives. "
+        f"Corpus: **{primary_corpus}** - {fixtures} fixtures, {positives} labeled positives{bytes_str}. "
         f"Every scanner scored identically (SecretBench overlap rule); the answer-key "
         f"manifest is excluded from the scan tree.",
         "",
@@ -667,8 +680,8 @@ def render_leaderboard(results: list[RunResult], corpus: str) -> str:
         o_fixtures = next((r.corpus.fixture_count for r in other_rows if r.corpus.fixture_count), 0)
         o_positives = next((r.corpus.labeled_positives for r in other_rows if r.corpus.labeled_positives), 0)
         o_bytes = next((r.corpus.bytes for r in other_rows if r.corpus.bytes), 0)
+        heading = _corpus_heading(other)
         if other == "homefield":
-            heading = "#### Competitor homefield / home-turf rule corpus"
             corpus_desc = (
                 f"Corpus: **homefield** - {o_fixtures} fixtures harvested from competitor ground-truth "
                 f"rule suites (Betterleaks and Kingfisher rules; {o_positives:,} labeled positives, "
@@ -676,9 +689,9 @@ def render_leaderboard(results: list[RunResult], corpus: str) -> str:
                 "Cross-tool evaluation on competitor ground truth."
             )
         else:
-            heading = f"#### Competitor {other} rule corpus"
+            bytes_part = f", {o_bytes:,} bytes" if o_bytes else ""
             corpus_desc = (
-                f"Corpus: **{other}** - {o_fixtures} fixtures, {o_positives} labeled positives. "
+                f"Corpus: **{other}** - {o_fixtures} fixtures, {o_positives} labeled positives{bytes_part}. "
                 "Cross-tool evaluation on competitor ground truth."
             )
         lines.extend([
@@ -713,19 +726,16 @@ def render_perf(results: list[RunResult], corpus: str | None = None) -> str:
         return "_No timed runs yet._"
     if corpus is None or corpus == "multi-corpus":
         corpora_in_rows = sorted(
-            {r.corpus.name for r in available_rows if r.corpus.name}
+            {r.corpus.name for r in available_rows if r.corpus.name and not _is_daemon_corpus(r.corpus.name)}
         )
         if len(corpora_in_rows) > 1:
             lines = []
             for c in corpora_in_rows:
                 c_rows = [r for r in available_rows if r.corpus.name == c]
+                if not c_rows:
+                    continue
                 c_rows.sort(key=lambda r: r.speed.wall_ms)
-                if c == "mirror":
-                    heading = "#### Synthetic SecretBench-shape mirror corpus"
-                elif c == "homefield":
-                    heading = "#### Competitor homefield / home-turf rule corpus"
-                else:
-                    heading = f"#### Competitor {c} rule corpus"
+                heading = _corpus_heading(c)
                 lines.extend([
                     heading,
                     "",
@@ -740,8 +750,14 @@ def render_perf(results: list[RunResult], corpus: str | None = None) -> str:
                     )
                 lines.append("")
             return "\n".join(lines).rstrip()
+        elif len(corpora_in_rows) == 1:
+            corpus = corpora_in_rows[0]
+        else:
+            return "_No timed runs yet._"
 
-    selected_rows = [r for r in available_rows if corpus is None or corpus == "multi-corpus" or r.corpus.name == corpus]
+    selected_rows = [r for r in available_rows if r.corpus.name == corpus]
+    if not selected_rows:
+        return "_No timed runs yet._"
     selected_rows.sort(key=lambda r: r.speed.wall_ms)
     lines = [
         "| Scanner | Config | Corpus | Wall | Throughput | Peak RSS |",
@@ -1233,12 +1249,13 @@ def render_bloom_evidence(results: list[RunResult], corpus: str) -> str:
 
 def build_sections(results: list[RunResult], corpus: str) -> dict[str, str]:
     """Build all Markdown sections for README markers."""
+    primary_corpus = "mirror" if corpus == "multi-corpus" else corpus
     return {
         "leaderboard": render_leaderboard(results, corpus),
         "perf": render_perf(results, corpus),
-        "gaps": render_gaps(results, corpus),
-        "recovery": render_static_recovery(results, corpus),
-        "bloom": render_bloom_evidence(results, corpus),
+        "gaps": render_gaps(results, primary_corpus),
+        "recovery": render_static_recovery(results, primary_corpus),
+        "bloom": render_bloom_evidence(results, primary_corpus),
     }
 
 
