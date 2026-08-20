@@ -457,12 +457,15 @@ impl GuardWatcher {
                 }
             }
         }
+        let total_pending: usize = self.roots.values().map(|w| w.buffer.lock().len()).sum();
+        let total_overflowed = total_pending > self.config.max_pending_events_total;
+
         // Drain each root's buffer and check for overflow. If overflowed,
         // emit a ReconcileSubtree event and reset the overflow flag so
         // the buffer can accept new events after reconciliation.
         for (root, watched) in &self.roots {
             let mut buf = watched.buffer.lock();
-            if buf.overflowed() {
+            if buf.overflowed() || total_overflowed {
                 results
                     .entry(root.clone())
                     .or_default()
