@@ -14,9 +14,7 @@
 //! Does not catch hardware GPU adapter faults during kernel execution or hardware memory bit flips.
 //! Does not catch OS kernel-level process SIGKILL termination.
 
-use keyhog::execution_pack_install::{
-    InstalledArtifactClass, InstalledArtifactRegistry,
-};
+use keyhog::execution_pack_install::{InstalledArtifactClass, InstalledArtifactRegistry};
 use keyhog::exit_codes::{EXIT_CREDENTIALS_FOUND, EXIT_SUCCESS, EXIT_USER_ERROR};
 use std::collections::BTreeSet;
 use std::fs;
@@ -149,7 +147,10 @@ fn assert_zero_runtime_compilations(profile_path: &Path) {
         .get("compile_surfaces")
         .and_then(|v| v.as_array())
         .expect("compile_surfaces array must exist in profile JSON");
-    eprintln!("TEST RUN CARGO_BIN_EXE_keyhog = {}", env!("CARGO_BIN_EXE_keyhog"));
+    eprintln!(
+        "TEST RUN CARGO_BIN_EXE_keyhog = {}",
+        env!("CARGO_BIN_EXE_keyhog")
+    );
     assert!(
         !compile_records.is_empty(),
         "compile_surfaces must not be empty"
@@ -232,7 +233,11 @@ fn hook_run_utilizes_execution_pack_zero_runtime_compilations_subsecond() {
         String::from_utf8_lossy(&hook_out.stderr)
     );
 
-    let max_allowed_ms = if cfg!(debug_assertions) { 60_000 } else { 1_000 };
+    let max_allowed_ms = if cfg!(debug_assertions) {
+        60_000
+    } else {
+        1_000
+    };
     assert!(
         elapsed.as_millis() < max_allowed_ms,
         "hook run must execute with zero runtime compilation in subsecond/fast time; took {} ms (max allowed: {} ms)",
@@ -283,11 +288,7 @@ fn hook_run_detects_staged_secrets_with_zero_runtime_compilations() {
 
     // Stage a secret file
     let secret_file = repo_dir.join("credentials.env");
-    fs::write(
-        &secret_file,
-        "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
-    )
-    .expect("write secret file");
+    fs::write(&secret_file, "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n").expect("write secret file");
     let git_add = Command::new("git")
         .current_dir(&repo_dir)
         .args(["add", "credentials.env"])
@@ -318,7 +319,10 @@ fn hook_run_detects_staged_secrets_with_zero_runtime_compilations() {
 
     let stdout = String::from_utf8_lossy(&hook_out.stdout);
     assert!(
-        stdout.contains("AKIAKPQXRMSNTBVWYZBN") || stdout.contains("aws") || stdout.contains("AWS") || stdout.contains("secret found"),
+        stdout.contains("AKIAKPQXRMSNTBVWYZBN")
+            || stdout.contains("aws")
+            || stdout.contains("AWS")
+            || stdout.contains("secret found"),
         "hook output must identify detected secret; stdout:\n{stdout}"
     );
 
@@ -421,8 +425,10 @@ fn hook_run_fails_closed_when_execution_pack_corrupted() {
 #[test]
 fn hook_consumed_classes_registry_invariants() {
     let hook_classes = InstalledArtifactRegistry::hook_consumed_classes();
-    let expected_classes: BTreeSet<_> =
-        InstalledArtifactClass::EXECUTION_PACK_CLASSES.iter().copied().collect();
+    let expected_classes: BTreeSet<_> = InstalledArtifactClass::EXECUTION_PACK_CLASSES
+        .iter()
+        .copied()
+        .collect();
 
     assert_eq!(
         hook_classes, expected_classes,

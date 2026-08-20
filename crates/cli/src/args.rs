@@ -320,6 +320,11 @@ fn validate_cli_args(cli: &Cli) -> Result<(), clap::Error> {
                 }
             }
         }
+        Some(Command::Hook {
+            command: HookCommand::Run(args),
+        }) => {
+            validate_backend_and_gpu_flags(args.backend.as_deref(), args.no_gpu, args.require_gpu)?;
+        }
         Some(Command::Watch(args)) => {
             validate_backend_and_gpu_flags(args.backend.as_deref(), false, false)?;
         }
