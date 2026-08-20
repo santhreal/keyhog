@@ -63,6 +63,7 @@ pub mod regression_row_139_release_binary_strip;
 #[path = "regression_row_143_pass_gate_terminal_output.rs"]
 pub mod regression_row_143_pass_gate_terminal_output;
 pub mod regression_row_149_structural_gate_consolidation;
+pub mod regression_row_162_benchmark_corpus_synthetic_packs;
 pub mod regression_scan_system_mount_filters_tier_b;
 pub mod regression_scanargs_field_contract;
 pub mod regression_stable_hash_field_identity;
