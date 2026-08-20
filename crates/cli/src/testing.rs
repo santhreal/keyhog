@@ -1697,11 +1697,27 @@ pub mod hook {
     pub const CANONICAL_SCAN_ARGS: &str = crate::subcommands::hook::CANONICAL_SCAN_ARGS;
 
     /// Status of a hook installation attempt.
-    pub type HookInstallStatus = crate::subcommands::hook::HookInstallStatus;
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum HookInstallStatus {
+        /// Freshly installed hook.
+        Installed,
+        /// Hook was already up to date.
+        AlreadyInstalled,
+        /// Existing hook was updated to current template.
+        Updated,
+    }
 
     /// Install or update the git pre-commit hook in the given repository.
     pub fn install_at_repo(repo_root: &Path, force: bool) -> Result<(PathBuf, HookInstallStatus)> {
-        crate::subcommands::hook::install_at_repo(repo_root, force)
+        let (path, status) = crate::subcommands::hook::install_at_repo(repo_root, force)?;
+        let test_status = match status {
+            crate::subcommands::hook::HookInstallStatus::Installed => HookInstallStatus::Installed,
+            crate::subcommands::hook::HookInstallStatus::AlreadyInstalled => {
+                HookInstallStatus::AlreadyInstalled
+            }
+            crate::subcommands::hook::HookInstallStatus::Updated => HookInstallStatus::Updated,
+        };
+        Ok((path, test_status))
     }
 
     /// Resolve the hooks directory for a given repository.
