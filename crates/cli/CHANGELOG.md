@@ -2,6 +2,7 @@
 
 ## 0.5.80 - 2026-08-17
 - feat(guard): derive effective root GuardPolicyIdentity digests across .keyhogignore, .keyhogignore.toml, .keyhog.toml, and suppression files, transitioning active roots to StalePolicy and invalidating attestations upon policy modifications (Row 142).
+- Benchmark corpus synthetic packs & representative test coverage (Row 162). Fixed AWS Access Key token shape in the built-in benchmark corpus template to match 20-character credential length (`AKIA` + 16 chars). Added integration tests verifying benchmark corpus structure, metadata, planted credential shapes, and synthetic execution pack finding parity invariants.
 
 - feat(guard): implement continuous guard transition feed / event log surface with causal attribution across registered roots (`keyhog guard feed`, `GuardFeed` protocol frame) (Row 146).
 - feat(cli): enhance pass-gate terminal output craft with structured volume, blob counts, bytes scanned, and execution timing (Row 143).

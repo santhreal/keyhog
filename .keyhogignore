@@ -71,7 +71,6 @@ path:.github/workflows/integration-smoke.yml; reason="the workflow base64-encode
 # the exact fixture value, which keeps the surrounding file scanned and fails the
 # lane on any second credential planted in it.
 hash:e51274cf409418544734e68fef141a841ca58b82a4d7e61f41b2ed638abfd902; reason="GPU ML-scorer warm sample; vendor example token used only to touch the feature extractor; measured entropy-api-key at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/scanner/src/gpu/backend/execution.rs:755; surfaced by preset(s) decode,deep,nodecode,noexcl"; approved_by="keyhog-maintainers"
-hash:5cb35e896767fc86473c803ec5915fe272b73dcb274743e520c660d719d52ece; reason="benchmark smoke fixture; measured stripe-secret-key at crates/cli/src/benchmark.rs:115, fabricated vendor-docs shape"; approved_by="keyhog-maintainers"
 hash:94ba8206be4dd790b4d3243a600904b91e210b7a3940f285559631d2079f0145; reason="shape-classifier accept fixture; measured entropy-token at crates/scanner/src/suppression/shape/canonical.rs:273 under --deep only"; approved_by="keyhog-maintainers"
 
 # --- Reviewed fixtures, provenance generated from measurement -----------------
@@ -108,7 +107,6 @@ hash:d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71; reason="c
 
 hash:c51a2994c021a49f77b06842b74fd2ed8daa15d312eb93e99049552be6b8b6e0; reason="measured entropy-api-key at docs/src/guides/authoring-detectors.md:222; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
 hash:ee6a6a13bdbb26b6abb597b4264c22db93ad166a6b80196a8592596e50bf3b96; reason="measured entropy-api-key at docs/src/guides/authoring-detectors.md:50; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
-hash:fa32f1cd6753305dfd9b8052f8d46205d634e1f6decc3b73f4b60a157a1a5716; reason="measured entropy-api-key at crates/cli/src/benchmark.rs:120; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
 hash:3dadd105baf8cf41097f50bf39aa464f52eafe23940c3368e85053c5ff49b246; reason="measured entropy-token at docs/src/guides/triage-feedback.md:81; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
 hash:bd952ccd2d22f82ace35c4f149144d14834e00c71572a462ea8db3cf99da7aed; reason="measured entropy-token at docs/src/workflows/github-action.md:266; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
 hash:c5123af85e3a7d4b6b28fe69fc3936ce4d72cba1d0c33c101f45bccb875917f8; reason="measured entropy-token at docs/src/guides/triage-feedback.md:83; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
