@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, LazyLock};
 
 /// Cache format version. Bump when the envelope layout changes.
 pub use keyhog_core::MATCHER_ARTIFACT_FORMAT_VERSION as MATCHER_ARTIFACT_VERSION;
@@ -41,9 +41,23 @@ pub const MATCHER_ARTIFACT_FILE_BYTES: u64 = 256 * 1024 * 1024;
 pub const MATCHER_ARTIFACT_MAX_ENTRIES: usize = keyhog_core::CacheKind::MatcherArtifacts
     .default_policy()
     .max_entries;
-static CONFIGURED_CACHE_DIR: OnceLock<parking_lot::RwLock<Option<PathBuf>>> = OnceLock::new();
-fn configured_cache_dir_cell() -> &'static parking_lot::RwLock<Option<PathBuf>> {
-    CONFIGURED_CACHE_DIR.get_or_init(|| parking_lot::RwLock::new(None))
+static CONFIGURED_CACHE_STATE: LazyLock<
+    parking_lot::RwLock<(Option<PathBuf>, Option<MatcherArtifactCacheDisableReason>)>,
+> = LazyLock::new(|| {
+    parking_lot::RwLock::new((None, Some(MatcherArtifactCacheDisableReason::ConfiguredOff)))
+});
+
+/// Configure the MatcherArtifact cache directory and disable reason for this process.
+pub fn set_matcher_artifact_cache_state(
+    path: Option<PathBuf>,
+    disable_reason: Option<MatcherArtifactCacheDisableReason>,
+) {
+    let reason = if path.is_none() {
+        disable_reason.or(Some(MatcherArtifactCacheDisableReason::ConfiguredOff))
+    } else {
+        None
+    };
+    *CONFIGURED_CACHE_STATE.write() = (path, reason);
 }
 
 /// Configure the MatcherArtifact cache directory for this process.
@@ -51,12 +65,18 @@ fn configured_cache_dir_cell() -> &'static parking_lot::RwLock<Option<PathBuf>> 
 /// `Some(path)` enables persistence at that absolute directory. `None` disables
 /// the cache for subsequent compiles in this process.
 pub fn set_matcher_artifact_cache_dir(path: Option<PathBuf>) {
-    *configured_cache_dir_cell().write() = path;
+    set_matcher_artifact_cache_state(path, None);
 }
 
 /// Currently configured MatcherArtifact cache directory, if enabled.
 pub fn configured_matcher_artifact_cache_dir() -> Option<PathBuf> {
-    configured_cache_dir_cell().read().clone()
+    CONFIGURED_CACHE_STATE.read().0.clone()
+}
+
+/// Currently configured MatcherArtifact cache directory and disable reason.
+pub fn configured_matcher_artifact_cache_state(
+) -> (Option<PathBuf>, Option<MatcherArtifactCacheDisableReason>) {
+    CONFIGURED_CACHE_STATE.read().clone()
 }
 
 /// Default MatcherArtifact cache directory under the platform user cache root.
@@ -763,7 +783,8 @@ pub fn store_matcher_artifact(
     if sections.backend != expected_backend {
         return Err("matcher artifact backend does not match identity".to_owned());
     }
-    validate_and_tighten_matcher_artifact_cache_dir(cache_dir, true)?;
+    let created_cache_dir = !cache_dir.exists();
+    validate_and_tighten_matcher_artifact_cache_dir(cache_dir, created_cache_dir)?;
     std::fs::create_dir_all(cache_dir).map_err(|error| {
         format!(
             "cannot create matcher-artifact cache dir {}: {error}",
@@ -773,17 +794,19 @@ pub fn store_matcher_artifact(
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::symlink_metadata(cache_dir) {
-            // LAW10: best-effort permissions check on newly created cache dir; failure surfaced if chmod fails
-            if !meta.file_type().is_symlink() && (meta.permissions().mode() & 0o077 != 0) {
-                std::fs::set_permissions(cache_dir, std::fs::Permissions::from_mode(0o700))
-                    .map_err(|error| {
-                        format!(
-                            "cannot tighten matcher-artifact cache dir {}: {error}; repair with `chmod 700 {}`",
-                            cache_dir.display(),
-                            cache_dir.display()
-                        )
-                    })?;
+        if created_cache_dir {
+            if let Ok(meta) = std::fs::symlink_metadata(cache_dir) {
+                // LAW10: best-effort permissions check on newly created cache dir; failure surfaced if chmod fails
+                if !meta.file_type().is_symlink() && (meta.permissions().mode() & 0o077 != 0) {
+                    std::fs::set_permissions(cache_dir, std::fs::Permissions::from_mode(0o700))
+                        .map_err(|error| {
+                            format!(
+                                "cannot tighten matcher-artifact cache dir {}: {error}; repair with `chmod 700 {}`",
+                                cache_dir.display(),
+                                cache_dir.display()
+                            )
+                        })?;
+                }
             }
         }
     }
@@ -905,7 +928,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
     pack_generation: Option<&str>,
     runtime_identity: Option<&str>,
 ) -> Result<(CompiledScanner, MatcherArtifactCacheOutcome)> {
-    let cache_dir = configured_matcher_artifact_cache_dir();
+    let (cache_dir, configured_reason) = configured_matcher_artifact_cache_state();
     let Some(backend) = matcher_backend_for_gpu_policy(gpu_policy) else {
         return compile_without_matcher_artifact_cache(
             detectors,
@@ -923,7 +946,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
             detectors,
             gpu_policy,
             tuning_config,
-            MatcherArtifactCacheDisableReason::ConfiguredOff,
+            configured_reason.unwrap_or(MatcherArtifactCacheDisableReason::ConfiguredOff),
         );
     }
     // Identity keys on the canonical detector-IR digest (same digest packs use).
@@ -980,10 +1003,9 @@ pub fn compile_shared_with_matcher_artifact_cache(
             sorted,
             gpu_policy,
             tuning_config,
-            MatcherArtifactCacheDisableReason::ConfiguredOff,
+            configured_reason.unwrap_or(MatcherArtifactCacheDisableReason::ConfiguredOff),
         );
     };
-
     let path = cache_dir.join(identity.cache_filename());
     // When a structurally intact entry is not reusable for this live corpus
     // (hydrate/compile failure after a successful load), do not immediately

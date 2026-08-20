@@ -377,7 +377,7 @@ impl GuardWatcher {
     /// the overflow flag is cleared.
     pub fn poll_events(&self) -> Vec<(PathBuf, Vec<GuardEvent>)> {
         let mut results: HashMap<PathBuf, Vec<GuardEvent>> = HashMap::new();
-        if self.disabled {
+        if self.disabled || self.backend_kind == GuardWatcherBackendKind::NullWatcher {
             return Vec::new();
         }
         loop {
@@ -412,6 +412,13 @@ impl GuardWatcher {
                                     let mut buf = buffer.buffer.lock();
                                     buf.push(guard_event);
                                 }
+                            }
+                        }
+                        let total_pending: usize =
+                            self.roots.values().map(|r| r.buffer.lock().len()).sum();
+                        if total_pending > self.config.max_pending_events_total {
+                            for root in self.roots.values() {
+                                root.buffer.lock().mark_overflow();
                             }
                         }
                     }

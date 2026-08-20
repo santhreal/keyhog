@@ -12,33 +12,40 @@ fn matcher_cache_path_config_overrides_and_disable() {
         .tempdir_in(actual_home)
         .expect("secure cache home");
     let home = cache_home.path().to_path_buf();
-    let default = resolve_matcher_cache_path_with_default(None, Some(home.clone()))
-        .expect("default matcher cache");
+    let (default, default_reason) =
+        resolve_matcher_cache_path_with_default(None, Some(home.clone()))
+            .expect("default matcher cache");
     assert_eq!(default, Some(home.join("keyhog-matcher-artifacts")));
+    assert_eq!(default_reason, None);
 
-    // Unusable automatic defaults soft-fail to disabled.
+    // Unusable automatic defaults soft-fail to disabled with UnusableLocation reason.
+    let (unusable_dir, unusable_reason) = resolve_matcher_cache_path_with_default(
+        None,
+        Some(std::path::PathBuf::from("/var/cache/shared")),
+    )
+    .expect("unusable default");
+    assert_eq!(unusable_dir, None);
     assert_eq!(
-        resolve_matcher_cache_path_with_default(
-            None,
-            Some(std::path::PathBuf::from("/var/cache/shared"))
-        )
-        .expect("unusable default"),
-        None
+        unusable_reason,
+        Some(keyhog_scanner::MatcherArtifactCacheDisableReason::UnusableLocation)
     );
 
     for off in ["off", "OFF", "0", ""] {
+        let (off_dir, off_reason) =
+            resolve_matcher_cache_path_with_default(Some(off), None).expect("disable");
+        assert_eq!(off_dir, None);
         assert_eq!(
-            resolve_matcher_cache_path_with_default(Some(off), None).expect("disable"),
-            None
+            off_reason,
+            Some(keyhog_scanner::MatcherArtifactCacheDisableReason::ConfiguredOff)
         );
     }
 
     let explicit = home.join(".cache/keyhog/matcher-artifacts");
-    assert_eq!(
+    let (explicit_dir, explicit_reason) =
         resolve_matcher_cache_path_with_default(Some(explicit.to_str().unwrap()), None)
-            .expect("explicit"),
-        Some(explicit)
-    );
+            .expect("explicit");
+    assert_eq!(explicit_dir, Some(explicit));
+    assert_eq!(explicit_reason, None);
 }
 
 #[test]

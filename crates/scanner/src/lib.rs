@@ -293,6 +293,22 @@ pub fn set_matcher_artifact_cache_dir(path: Option<std::path::PathBuf>) {
     matcher_artifact_cache::set_matcher_artifact_cache_dir(path);
 }
 
+/// Configure the MatcherArtifact cache directory and disable reason for this process.
+pub fn set_matcher_artifact_cache_state(
+    path: Option<std::path::PathBuf>,
+    reason: Option<matcher_artifact_cache::MatcherArtifactCacheDisableReason>,
+) {
+    matcher_artifact_cache::set_matcher_artifact_cache_state(path, reason);
+}
+
+/// Currently configured MatcherArtifact cache directory and disable reason.
+pub fn configured_matcher_artifact_cache_state() -> (
+    Option<std::path::PathBuf>,
+    Option<matcher_artifact_cache::MatcherArtifactCacheDisableReason>,
+) {
+    matcher_artifact_cache::configured_matcher_artifact_cache_state()
+}
+
 /// Validate an explicit MatcherArtifact cache directory without compiling.
 pub fn validate_matcher_artifact_cache_dir(
     path: &std::path::Path,

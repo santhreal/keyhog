@@ -110,13 +110,8 @@ impl CanonicalDetectorExecutionIr {
         Self::embedded().map(|ir| ir.digest())
     }
 
-    pub(crate) fn is_embedded_corpus(detectors: &[DetectorSpec]) -> bool {
+    pub fn is_embedded_corpus(detectors: &[DetectorSpec]) -> bool {
         std::ptr::eq(detectors, keyhog_core::embedded_detector_specs())
-            || (detectors.len() == keyhog_core::embedded_detector_count()
-                && detectors
-                    .iter()
-                    .zip(keyhog_core::embedded_detector_specs().iter())
-                    .all(|(a, b)| a.id == b.id))
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, ExecutionPackError> {

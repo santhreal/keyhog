@@ -258,7 +258,7 @@ pub(crate) fn validate_backend_and_gpu_flags(
             ));
         }
         let b_lower = b.to_ascii_lowercase();
-        if (b_lower == "gpu-metal" || b_lower == "gpu-metal-region-presence")
+        if (b_lower == "gpu-metal" || b_lower.starts_with("gpu-metal-"))
             && !cfg!(target_os = "macos")
         {
             return Err(clap::Error::raw(
@@ -269,8 +269,7 @@ pub(crate) fn validate_backend_and_gpu_flags(
                 ),
             ));
         }
-        if (b_lower == "gpu-cuda" || b_lower == "gpu-cuda-region-presence")
-            && cfg!(target_os = "macos")
+        if (b_lower == "gpu-cuda" || b_lower.starts_with("gpu-cuda-")) && cfg!(target_os = "macos")
         {
             return Err(clap::Error::raw(
                 clap::error::ErrorKind::InvalidValue,

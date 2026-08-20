@@ -209,3 +209,56 @@ fn add_root_fails_when_watcher_disconnected() {
     assert!(res.is_err());
     assert!(res.unwrap_err().contains("watcher backend disconnected"));
 }
+
+/// WHY: new_null watcher must remain unmonitored without disconnecting or refusing roots.
+#[test]
+fn new_null_watcher_does_not_disconnect_and_accepts_roots() {
+    let config = GuardReconciliationConfig::default();
+    let mut watcher = GuardWatcher::new_null(config).unwrap();
+    let events = watcher.poll_events();
+    assert!(events.is_empty(), "null watcher poll must return empty");
+    assert!(
+        !watcher.is_disconnected(),
+        "null watcher must not be marked disconnected"
+    );
+
+    let dir = tempdir().unwrap();
+    let res = watcher.add_root(dir.path().to_path_buf());
+    assert!(res.is_ok(), "adding root to null watcher must succeed");
+}
+
+/// WHY: total pending events across all roots must be bounded by max_pending_events_total
+/// to prevent unbounded memory growth on nested root multi-path event fans.
+#[test]
+fn max_pending_events_total_marks_overflow() {
+    let mut config = GuardReconciliationConfig::default();
+    config.max_pending_events_per_root = 100;
+    config.max_pending_events_total = 5;
+
+    let (mut watcher, tx) = GuardWatcher::new_with_channel(config);
+    let root_a = PathBuf::from("/tmp/test_root_a");
+    let root_b = PathBuf::from("/tmp/test_root_b");
+    watcher.add_root(root_a.clone()).unwrap();
+    watcher.add_root(root_b.clone()).unwrap();
+
+    for i in 0..4 {
+        let mut event = notify::Event::new(EventKind::Modify(notify::event::ModifyKind::Any));
+        event.paths.push(root_a.join(format!("file_{i}.txt")));
+        event.paths.push(root_b.join(format!("file_{i}.txt")));
+        tx.send(Ok(event)).unwrap();
+    }
+
+    // 4 iterations * 2 paths = 8 events total, exceeding max_pending_events_total (5)
+    let polled = watcher.poll_events();
+    let map: HashMap<PathBuf, Vec<GuardEvent>> = polled.into_iter().collect();
+    // Both roots should receive ReconcileSubtree due to overflow
+    for root in [&root_a, &root_b] {
+        let events = map.get(root).expect("root events");
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, GuardEvent::ReconcileSubtree(_))),
+            "overflow must trigger ReconcileSubtree for {root:?}"
+        );
+    }
+}
