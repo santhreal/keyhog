@@ -395,9 +395,9 @@ pub(super) fn apply_scan_section(
             if let Some(bytes) =
                 parse_config_byte_size(config_errors, "[scan].window_overlap", overlap_str)
             {
-                if !(1024..=16 * 1024 * 1024).contains(&bytes) {
+                if bytes < 1024 || bytes >= keyhog_core::DEFAULT_WINDOW_SIZE_BYTES {
                     config_errors.push(format!(
-                        "- [scan].window_overlap = '{overlap_str}': window overlap must be between 1KB and 16MB"
+                        "- [scan].window_overlap = '{overlap_str}': window overlap must be between 1KB and 1MB (strictly less than 1MB window size)"
                     ));
                 } else if args.window_overlap.is_none() {
                     args.window_overlap = Some(bytes);
