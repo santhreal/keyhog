@@ -49,7 +49,9 @@ unsafe impl GlobalAlloc for ScanCountingAllocator {
         let size = layout.size();
         unsafe { System.dealloc(ptr, layout) };
         if COUNTING.load(Ordering::Relaxed) {
-            CURRENT_BYTES.fetch_sub(size, Ordering::Relaxed);
+            let _ = CURRENT_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
+                Some(cur.saturating_sub(size))
+            });
         }
     }
 
@@ -76,7 +78,10 @@ unsafe impl GlobalAlloc for ScanCountingAllocator {
                     }
                 }
             } else if old_size > new_size {
-                CURRENT_BYTES.fetch_sub(old_size - new_size, Ordering::Relaxed);
+                let diff = old_size - new_size;
+                let _ = CURRENT_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
+                    Some(cur.saturating_sub(diff))
+                });
             }
         }
         new_ptr
