@@ -75,6 +75,12 @@ if [ -z "\$KH_FEAT" ]; then
     *)       KH_FEAT="--features simd" ;;                            # Linux: Hyperscan SIMD
   esac
 fi
+if [ -n "\$KH_FEAT" ] && echo "\$KH_FEAT" | grep -q "simd"; then
+  if [ "\$OS" = "Linux" ] && ! pkg-config --exists libhs 2>/dev/null && ! pkg-config --exists vectorscan 2>/dev/null && ! pkg-config --exists hyperscan 2>/dev/null; then
+    echo "error: libhs/vectorscan pkg-config package not found on remote; install libhyperscan-dev or libvectorscan-dev to build with --features simd, or override KEYHOG_INSTALL_FEATURES='--no-default-features --features portable'" >&2
+    exit 4
+  fi
+fi
 echo "installing keyhog (cargo install --path crates/cli \$KH_FEAT)..." >&2
 cargo install --path crates/cli --root "$REMOTE_TMP/kh" \$KH_FEAT --quiet --locked >&2
 KH="$REMOTE_TMP/kh/bin/keyhog"
