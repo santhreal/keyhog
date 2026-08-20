@@ -13,10 +13,10 @@ are evidence from the running binary, not universal defaults.
 $ keyhog scan . --progress
     K E Y H O G
     ───────────
-    v0.5.80 · secret scanner · 935 detectors
+    v0.5.80 · secret scanner · 934 detectors
     by santh
 
-  16 cores | SIMD: AVX-512 | Hyperscan | 935 detectors (5820 patterns) io_uring | backend=simd-regex | gpu=none
+  16 cores | SIMD: AVX-512 | Hyperscan | 934 detectors (5820 patterns) io_uring | backend=simd-regex | gpu=none
 
   ┌    CRITICAL ─── Stripe Secret Key
   │ Secret:     sk_l...p7dc

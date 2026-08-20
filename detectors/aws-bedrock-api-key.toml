@@ -34,6 +34,19 @@ keywords = ["ABSK", "bedrock", "bedrock-api-key", "AWS_BEARER_TOKEN_BEDROCK"]
 regex = 'ABSKQmVkcm9ja0FQSUtleS[A-Za-z0-9+/]{100,270}={0,2}'
 description = "AWS Bedrock long-term API key (ABSK prefix, BedrockAPIKey anchor)"
 
+[[detector.patterns]]
+# Same credential family without the `QmVkcm9ja0FQSUtleS` header: an `ABSK`
+# prefix plus a 109-269 char base64 body. Kept on THIS detector rather than a
+# second `aws-*-bedrock-*` detector, because an anchored key matches both
+# shapes and the cross-detector fold then decides the reported id by an
+# alphabetical tiebreak on identical scores.
+regex = 'ABSK[A-Za-z0-9+/]{109,269}={0,2}'
+description = "AWS Bedrock long-lived API key (ABSK prefix, 109-269 base64 body)"
+
 [[detector.tests]]
 test_positive = "ABSKQmVkcm9ja0FQSUtleSYGcEYmTIBr6ysnXHravYjroDShigIQLS0PNHDWjrpil9o3qRwpbzFl0vePrls1cDN8QvUdbqJwNSlzq23meO5ACW3zsuzeDQgwLd92dO3gFCPF"
 test_negative = "ABSK_not_a_bedrock_key_missing_the_base64_anchor_value_here"
+
+[[detector.tests]]
+test_positive = "ABSKh7ZsBnijAk9geoCGCQwuW0fF3cSLpXjdsv3plhdpxN9h8BvwE49uyiah+iO+Mkyi0zZDD6Msw7UqIiburZMMV71mI+vrHrwB6Bg6nYuBt8LvlxpdqsF/eg=="
+test_negative = "ABSKQmVkcm9ja0FQSUtleS1EXAMPLE"

@@ -7,7 +7,7 @@
 //! - `curl-auth-user`
 //! - `datadog-application-key`
 //! - `bitly-access-token`
-//! - `aws-amazon-bedrock-api-key-long-lived`
+//! - `aws-bedrock-api-key` (unanchored long-lived ABSK shape)
 //! - `anthropic-admin-api-key`
 //! - `airtable-api-key`
 
@@ -112,11 +112,15 @@ fn test_anthropic_admin_and_standard_keys() {
 }
 
 #[test]
-fn test_aws_amazon_bedrock_api_key_long_lived_surfaces() {
+fn test_aws_bedrock_long_lived_unanchored_key_surfaces() {
+    // Long-lived ABSK keys without the `QmVkcm9ja0FQSUtleS` header are the
+    // second pattern on `aws-bedrock-api-key`, not a separate detector: an
+    // anchored key matches both shapes, so two detectors would race for the
+    // reported id on an alphabetical tiebreak.
     let key = format!("ABSK{}", alnum(124, 11));
     let text = format!("BEDROCK_KEY={key}");
     assert!(
-        surfaces_under(&text, "aws-amazon-bedrock-api-key-long-lived", &key),
+        surfaces_under(&text, "aws-bedrock-api-key", &key),
         "AWS Bedrock long-lived API key must surface"
     );
 }

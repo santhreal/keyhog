@@ -388,7 +388,7 @@ verification-template rewrite; other audit findings require an explicit edit.
 | `--fix` |  |  | Apply safe automated fixes to the detector TOMLs in `--detectors`. Currently rewrites single-brace template references (`{name}`) to the double-brace form (`{{name}}`) within `[detector.verify*]` blocks: the one fix the interpolator's contract makes safe to perform mechanically. Other validator findings are left alone (they need human judgement). Use `--dry-run` to preview rewrites without touching the filesystem |
 | `--format` | `FORMAT` |  | Output format for the detector listing. `text` (default) is the grouped, human-readable summary; `json` emits the structured detector array. This is the canonical flag, it matches `scan --format` so the two surfaces share one convention (CLI-01). Only `text`/`json` apply to a detector listing, so the format set is intentionally narrower than `scan`'s. Mutually exclusive with `--audit` / `--fix` (they emit their own structured formats) Possible values: `text`, `json`. |
 | `--mechanisms` |  |  | Print the generated mechanism manifest: which recovery mechanisms each detector actually declares. KeyHog advertises regex matching, structural validation, entropy scoring, BPE token efficiency, decode recovery, companion confirmation, live verification, and detector-owned suppression, but nothing in the product will tell you which of those a given detector uses. This does, and it derives every answer from the loaded corpus: each mechanism is a predicate over detector TOML fields and the field that made it active is reported as its evidence, so there is no per-detector table in Rust to drift. A mechanism KeyHog cannot express yet is reported as unavailable with the reason rather than omitted, because a missing row cannot be told apart from "no detector uses this". Pairs with `--search` to scope the manifest, and with `--format json` for the machine-readable document. Does not scan. |
-| `-s`, `--search` | `SEARCH` |  | Filter detectors by substring match (case-insensitive) against id, name, service, and keywords. Useful for finding detectors in the 927-strong corpus (e.g. `keyhog detectors --search aws`). |
+| `-s`, `--search` | `SEARCH` |  | Filter detectors by substring match (case-insensitive) against id, name, service, and keywords. Useful for finding detectors in the 934-strong corpus (e.g. `keyhog detectors --search aws`). |
 | `-v`, `--verbose` |  |  | Print the matching-policy summary (regexes, keywords, companions, verification presence) instead of the grouped service summary. Pairs naturally with `--search`. Use `--format json` for the redaction-safe declared schema, including verification structure and test coverage |
 <!-- /keyhog-generated: cli-reference command="detectors" -->
 
@@ -424,13 +424,13 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 |------------|---------|-------------|
 | `add` |  | Register a repository or filesystem root for continuous guard protection. Waits for initial reconciliation to complete before returning. When guarding a Git repository in `repo` mode, also attempts to install the managed pre-commit hook (skipped if a foreign hook already exists, or if `--no-hook` is passed) |
 | `down` |  | Stop the background guard daemon cleanly. Persisted root registrations and durable indexes remain on disk and resume on the next `guard up` |
-| `feed` | `events`, `log`, `transitions` | Expose continuous transition feed and event log with causes across guarded roots |
+| `feed` |  | Expose continuous transition feed and event log with causes across guarded roots |
 | `help` |  | Print this message or the help of the given subcommand(s) |
 | `list` |  | List all registered guard roots and their current states |
 | `rebuild` |  | Delete and recreate the durable guard store for a root. Use after store corruption or when the persisted state is irrecoverably stale. The root is re-registered and a full reconciliation is triggered |
 | `reconcile` |  | Force a full reconciliation of a guarded root after an intentional policy or filesystem change |
 | `remove` |  | Stop protecting a root and remove its persisted non-secret state. Also removes any KeyHog-owned Git pre-commit hook unless `--keep-hook` is passed |
-| `status` |  | Print the exact state and current policy identity of a guarded root |
+| `status` |  | Print the exact state and current policy identity of a guarded root. When no root is specified, summarizes all registered roots |
 | `up` |  | Start or ensure the background guard daemon is running and ready. When the daemon is already running, reports that it is active. Reconciles registered roots loaded from the durable store |
 
 ### `keyhog guard add`
@@ -494,7 +494,7 @@ The command requires the Unix daemon transport and exits unsupported on Windows.
 
 | Argument | Value | Default | Description |
 |----------|-------|---------|-------------|
-| `[ROOT]` | `ROOT` |  | Root path to inspect (optional; inspects all roots when omitted) |
+| `<ROOT>` | `ROOT` |  | Root path to inspect (summarizes all registered roots when omitted) |
 | `--format` | `FORMAT` | `human` | Output format: `human` or `json` |
 | `--socket` | `PATH` |  | Override the socket path |
 
@@ -910,6 +910,7 @@ diagnostic override and does not replace autoroute evidence.
 | `--no-config` |  |  | Calibrate the compiled-in defaults instead of the repository config. Routing decisions are stored under the RESOLVED scan configuration, so calibration must resolve the same `.keyhog.toml` walk-up the scans that follow it resolve. Skipping the file writes every decision under a digest no scan in that repository requests, and the next `keyhog scan` fails closed with "none matching config digest". Pass this to prime a host baseline that is independent of whatever directory calibration ran in. Installers do exactly that, and an operator whose repository carries a `.keyhog.toml` reruns the bare command inside the repository. |
 | `--policy` | `POLICY` | `all` | Select which scan policy to calibrate. `all` preserves the install-time sweep. Select one policy when you need to repair or refresh only the configuration you run. Possible values: `default`, `fast`, `deep`, `precision`, `all`. |
 | `--quiet` |  |  | Suppress the per-probe progress lines; print only the final summary |
+| `--signing-key` *(hidden)* | `PATH` |  | Execution pack verification key used to authenticate staged execution packs |
 <!-- /keyhog-generated: cli-reference command="calibrate-autoroute" -->
 
 ## `keyhog backend`

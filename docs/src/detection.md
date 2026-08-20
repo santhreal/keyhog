@@ -51,7 +51,7 @@ ML participation is detector-owned through `[detector.ml]`. `lift` can raise a
 structural score but cannot veto a match, `blend` combines model and structural
 evidence, and `authoritative` lets the model decide an otherwise ambiguous
 channel. In the shipped corpus every regex-pattern channel is currently
-`lift`; 930 of 935 entropy channels disable ML. The five that do not are all
+`lift`; 929 of 934 entropy channels disable ML. The five that do not are all
 generic owners: `generic-api-key`, `generic-high-entropy-string`, `generic-keyword-secret`, and
 `generic-secret` use `authoritative`, and `generic-password` uses `lift`. The
 model is therefore not a general regex

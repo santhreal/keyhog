@@ -170,7 +170,7 @@ runtime fallback to a scanner constant. An active entropy owner must declare
 `generic_assignment_confidence`, and a non-disabled `ml.entropy_mode`. Omitting
 any of them fails the load.
 
-Most detectors are not entropy owners. In the shipped corpus, 930 of 935
+Most detectors are not entropy owners. In the shipped corpus, 929 of 934
 detectors set `entropy_mode = "disabled"`. Write a regex detector unless you are
 deliberately adding a generic channel.
 

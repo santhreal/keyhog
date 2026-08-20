@@ -2573,48 +2573,6 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI8K7MDENG7bPxRfiCY9ABCDEFGHIJ
     r#"aws-access-key.txt"#
 );
 contract_schema!(
-    aws_amazon_bedrock_api_key_long_lived_schema,
-    "aws-amazon-bedrock-api-key-long-lived",
-    "aws",
-    "critical",
-    None
-);
-positive_fixture!(
-    aws_amazon_bedrock_api_key_long_lived_positive_0,
-    "aws-amazon-bedrock-api-key-long-lived",
-    r#"ABSKQmVkcm9ja0FQSUtleSYGcEYmTIBr6ysnXHravYjroDShigIQLS0PNHDWjrpil9o3qRwpbzFl0vePrls1cDN8QvUdbqJwNSlzq23meO5ACW3zsuzeDQgwLd92dO3gFCPF"#,
-    r#"ABSKQmVkcm9ja0FQSUtleSYGcEYmTIBr6ysnXHravYjroDShigIQLS0PNHDWjrpil9o3qRwpbzFl0vePrls1cDN8QvUdbqJwNSlzq23meO5ACW3zsuzeDQgwLd92dO3gFCPF"#,
-    r#"aws-amazon-bedrock-api-key-long-lived.txt"#
-);
-positive_fixture!(
-    aws_amazon_bedrock_api_key_long_lived_positive_1,
-    "aws-amazon-bedrock-api-key-long-lived",
-    r#"BEDROCK_KEY="ABSKQmVkcm9ja0FQSUtleSy2J0fajDUXD1efoRCtqKODGGBi8UWr7UJsq2tkhFhx8ZEDEd9hnKHivse0YHShMdeCAbPEOXOxyhkg5cqNGHA1grwAyKC3Y8HDD62wLdl37iKN""#,
-    r#"ABSKQmVkcm9ja0FQSUtleSy2J0fajDUXD1efoRCtqKODGGBi8UWr7UJsq2tkhFhx8ZEDEd9hnKHivse0YHShMdeCAbPEOXOxyhkg5cqNGHA1grwAyKC3Y8HDD62wLdl37iKN"#,
-    r#"aws-amazon-bedrock-api-key-long-lived.txt"#
-);
-negative_fixture!(
-    aws_amazon_bedrock_api_key_long_lived_negative_0,
-    "aws-amazon-bedrock-api-key-long-lived",
-    r#"ABSKQmVkcm9ja0FQSUtleS1EXAMPLE"#,
-    r#"aws-amazon-bedrock-api-key-long-lived.txt"#,
-    false
-);
-negative_fixture!(
-    aws_amazon_bedrock_api_key_long_lived_negative_1,
-    "aws-amazon-bedrock-api-key-long-lived",
-    r#"ABSK_KEY=short"#,
-    r#"aws-amazon-bedrock-api-key-long-lived.txt"#,
-    false
-);
-positive_fixture!(
-    aws_amazon_bedrock_api_key_long_lived_evasion_0,
-    "aws-amazon-bedrock-api-key-long-lived",
-    r#"Authorization: Bearer ABSKQmVkcm9ja0FQSUtleSoM4fgI2BhUzqHSmTNK2bzg6OohEl6GBlKcywRZadfZPtESfwDHffnlHL1NXQi8QrrbKxjb8XAgluB8CqBjA4ir6vcnq6NdVJFKGZ2Q5YZfHU27"#,
-    r#"ABSKQmVkcm9ja0FQSUtleSoM4fgI2BhUzqHSmTNK2bzg6OohEl6GBlKcywRZadfZPtESfwDHffnlHL1NXQi8QrrbKxjb8XAgluB8CqBjA4ir6vcnq6NdVJFKGZ2Q5YZfHU27"#,
-    r#"aws-amazon-bedrock-api-key-long-lived.txt"#
-);
-contract_schema!(
     aws_bedrock_api_key_schema,
     "aws-bedrock-api-key",
     "aws",
@@ -2633,6 +2591,13 @@ positive_fixture!(
     "aws-bedrock-api-key",
     r#"AWS_BEARER_TOKEN_BEDROCK="ABSKQmVkcm9ja0FQSUtleSy2J0fajDUXD1efoRCtqKODGGBi8UWr7UJsq2tkhFhx8ZEDEd9hnKHivse0YHShMdeCAbPEOXOxyhkg5cqNGHA1grwAyKC3Y8HDD62wLdl37iKN""#,
     r#"ABSKQmVkcm9ja0FQSUtleSy2J0fajDUXD1efoRCtqKODGGBi8UWr7UJsq2tkhFhx8ZEDEd9hnKHivse0YHShMdeCAbPEOXOxyhkg5cqNGHA1grwAyKC3Y8HDD62wLdl37iKN"#,
+    r#"aws-bedrock-api-key.txt"#
+);
+positive_fixture!(
+    aws_bedrock_api_key_positive_2,
+    "aws-bedrock-api-key",
+    r#"ABSKh7ZsBnijAk9geoCGCQwuW0fF3cSLpXjdsv3plhdpxN9h8BvwE49uyiah+iO+Mkyi0zZDD6Msw7UqIiburZMMV71mI+vrHrwB6Bg6nYuBt8LvlxpdqsF/eg=="#,
+    r#"ABSKh7ZsBnijAk9geoCGCQwuW0fF3cSLpXjdsv3plhdpxN9h8BvwE49uyiah+iO+Mkyi0zZDD6Msw7UqIiburZMMV71mI+vrHrwB6Bg6nYuBt8LvlxpdqsF/eg=="#,
     r#"aws-bedrock-api-key.txt"#
 );
 negative_fixture!(

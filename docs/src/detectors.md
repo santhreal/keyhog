@@ -620,10 +620,10 @@ keyhog detectors --mechanisms
 ```
 
 ```text
-Mechanism manifest: 935 detectors from detectors
+Mechanism manifest: 934 detectors from detectors
 
-  regex                    933  phase-1 pattern anchors
-  keywords                 935  phase-2 keyword triggers for shapeless candidates
+  regex                    932  phase-1 pattern anchors
+  keywords                 934  phase-2 keyword triggers for shapeless candidates
   structure                 47  offline structural proof: checksum, payload decode, or declared shape
   entropy                   58  detector-owned Shannon entropy floors
   bpe                        5  BPE token-efficiency precision gate

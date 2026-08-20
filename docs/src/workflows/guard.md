@@ -69,7 +69,7 @@ keyhog guard up
 ```
 
 `guard up` ensures the daemon is active in the background, compiles the active
-935-detector corpus once, and stays resident in memory. One daemon process serves
+934-detector corpus once, and stays resident in memory. One daemon process serves
 all guarded repositories and scan requests.
 ### 2. Register a repository
 
@@ -120,7 +120,7 @@ last recon:     2026-08-17T00:15:00Z
 residency:      resident
 backend route:  gpu-cuda-region-presence
 build digest:   1a2b3c4d5e6f7a8b
-detector:       935-701c88bbed92c87e
+detector:       934-dc43f6629978321b
 suppression:    0000000000000000
 config:         18cc6ed841bf6dfe
 autoroute:      calibrated
