@@ -42,7 +42,7 @@ fn compiled_artifact_classes_are_enumerable_and_have_compile_owners() {
 }
 
 #[test]
-fn compiled_artifact_identity_round_trips_and_validates() {
+fn compiled_artifact_identity_round_trips_canonical_serialization() {
     let identity = CompiledArtifactIdentity {
         artifact_class: CompiledArtifactClass::MatcherArtifact,
         binary_digest: "a".repeat(64),
@@ -64,16 +64,7 @@ fn compiled_artifact_identity_round_trips_and_validates() {
 }
 #[cfg(unix)]
 fn allowlisted_tempdir() -> tempfile::TempDir {
-    let uid = std::fs::read_to_string("/proc/self/status")
-        .ok()
-        .and_then(|status| {
-            status.lines().find_map(|line| {
-                line.strip_prefix("Uid:\t")
-                    .and_then(|rest| rest.split_whitespace().next())
-                    .map(str::to_owned)
-            })
-        })
-        .unwrap_or_else(|| "0".to_owned());
+    let uid = unsafe { libc::geteuid() };
     let root = std::env::temp_dir().join(format!("keyhog-cache-{uid}"));
     if let Ok(meta) = std::fs::symlink_metadata(&root) {
         assert!(

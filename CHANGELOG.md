@@ -4,6 +4,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [0.5.80] - 2026-08-17
 
+### Added
+
+- feat(compiled_artifact): add canonical `CompiledArtifactClass` enumeration and `CompiledArtifactIdentity` contracts.
+- feat(cache): add `validate_and_tighten_matcher_artifact_cache_dir` to auto-repair loose default cache directory permissions to 0700 without disabling cache.
+
 ### Changed
 
 - fix(scanner): clamp decode-through window overlap to enforce strictly advancing window progress across UTF-8 scalar boundaries in release builds.
