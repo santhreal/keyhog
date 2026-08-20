@@ -1264,8 +1264,11 @@ pub(crate) fn record_gpu_dispatch() {
 
 /// Reset process-global telemetry that is scoped to one scan.
 pub fn reset_for_scan() {
-    current_scan_telemetry().reset();
+    GLOBAL_SCAN_TELEMETRY.reset();
     CURRENT_SCAN_TELEMETRY.with(|slot| {
+        if let Some(scoped) = slot.borrow().as_ref() {
+            scoped.reset();
+        }
         *slot.borrow_mut() = None;
     });
 }
