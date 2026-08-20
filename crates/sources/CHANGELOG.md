@@ -1,8 +1,6 @@
 # Changelog
 
 ## 0.5.80 - 2026-08-17
-- test(sources): derive ecosystem lockfile variant space dynamically from `rules/default_excludes.toml` with bidirectional fixture precision assertions (`lockfile_default_excludes_parity`).
-- feat(sources): expose default exclude and directory classification helpers unconditionally for watcher and scanner integration.
 
 - style: format guard massive diff test and git sources modules.
 

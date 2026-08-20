@@ -1,0 +1,3 @@
+category = "Added"
+summary = "Audit and enforce release binary symbol stripping and zero DWARF debuginfo bloat via Cargo.toml [profile.release] and profile divergence gates."
+crates = []
