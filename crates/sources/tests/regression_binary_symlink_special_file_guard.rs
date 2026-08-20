@@ -50,17 +50,13 @@ const SENTINEL_B: &str = "KEYHOG_SECOND_SENTINEL_b7c2d4e6";
 /// test calls this first, so concurrent refusals never pollute a count assertion.
 /// Poison is recovered (`into_inner`) so a single failing assert isolates to that
 /// test instead of cascading `PoisonError` through the rest of the binary.
-fn guarded() -> (
-    MutexGuard<'static, ()>,
-    keyhog_sources::testing::ScanCounterScope,
-) {
+fn guarded() -> MutexGuard<'static, ()> {
     let guard = COUNTER_LOCK
         .lock()
         .unwrap_or_else(|poison| poison.into_inner());
-    let scope = TestApi.skip_counter_guard();
     reset_binary_counters();
     TestApi.reset_skip_counters();
-    (guard, scope)
+    guard
 }
 
 /// Run `f` on a worker thread and REQUIRE it to finish within `secs`. A blocking
@@ -69,6 +65,7 @@ fn guarded() -> (
 fn within_timeout<T: Send + 'static>(secs: u64, f: impl FnOnce() -> T + Send + 'static) -> T {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
+        let _scope = TestApi.skip_counter_guard();
         let _ = tx.send(f());
     });
     rx.recv_timeout(Duration::from_secs(secs)).expect(

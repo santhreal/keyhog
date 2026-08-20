@@ -24,14 +24,6 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{mpsc, Mutex, Notify, OwnedMutexGuard, Semaphore};
 
 const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
-#[cfg(test)]
-static TEST_PANIC_INJECTION_KIND: parking_lot::RwLock<Option<String>> =
-    parking_lot::RwLock::new(None);
-
-#[cfg(test)]
-pub(crate) fn set_test_panic_injection(kind: Option<&str>) {
-    *TEST_PANIC_INJECTION_KIND.write() = kind.map(str::to_string);
-}
 
 const DEFAULT_REQUEST_READ_TIMEOUT_SECS: u64 = 300;
 /// Ceiling on one response write. Without it a client that sends a request and
@@ -1601,12 +1593,7 @@ async fn handle_connection(
             let state_cloned = state.clone();
             let mass_session_ref = &mut mass_session;
             let streamed_result = std::panic::AssertUnwindSafe(async {
-                #[cfg(test)]
-                if let Some(target_kind) = TEST_PANIC_INJECTION_KIND.read().as_deref() {
-                    if target_kind == "MassFilesystemDrain" {
-                        panic!("simulated test panic on daemon request kind: MassFilesystemDrain");
-                    }
-                }
+                crate::testing::check_test_panic_injection("MassFilesystemDrain");
                 stream_mass_filesystem(&state_cloned, mass_session_ref.as_mut(), &mut transport)
                     .await
             })
@@ -1657,12 +1644,7 @@ async fn handle_connection(
         let mass_session_ref = &mut mass_session;
 
         let dispatch_result = std::panic::AssertUnwindSafe(async {
-            #[cfg(test)]
-            if let Some(target_kind) = TEST_PANIC_INJECTION_KIND.read().as_deref() {
-                if target_kind == crate::daemon::protocol::request_kind(&request) {
-                    panic!("simulated test panic on daemon request kind: {target_kind}");
-                }
-            }
+            crate::testing::check_test_panic_injection(crate::daemon::protocol::request_kind(&request));
             match request {
                 Request::MassBegin { dogfood, profile } => {
                     if !state_dispatch.mass_service {
@@ -2902,7 +2884,9 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 .guard
                 .take_coverage_lost_during_indexing(root.as_bytes());
             let dirty = state.guard.take_dirty_during_indexing(root.as_bytes());
-            let force_degraded = coverage_lost || state.guard.is_watcher_disconnected();
+            let force_degraded = coverage_lost
+                || state.guard.is_watcher_disconnected()
+                || !state.guard_watcher.lock().is_watching();
             let terminal = baseline_terminal_transition(scan_result, force_degraded);
             match state.guard.transition_root(root.as_bytes(), &terminal) {
                 Ok(_) => {
