@@ -33,20 +33,14 @@ pub(super) fn compile_gpu_literal_set(
                 let cache_file = cache_dir.join(&cache_key);
                 let cache_file_bin = cache_dir.join(format!("{cache_key}.bin"));
                 let is_hit = cache_file.exists() || cache_file_bin.exists();
-                if is_hit {
-                    keyhog_profile::record_cache_hit(keyhog_profile::CacheId::GpuProgram);
-                } else {
-                    keyhog_profile::record_cache_miss(keyhog_profile::CacheId::GpuProgram);
-                }
+                let cid = keyhog_profile::CacheId::GpuProgram;
+                if is_hit { keyhog_profile::record_cache_hit(cid); } else { keyhog_profile::record_cache_miss(cid); }
                 let res = vyre::scan::cached_load_or_compile(&cache_dir, &cache_key, || {
                     vyre::scan::GpuLiteralSet::compile_case_insensitive(&literal_refs)
                 });
                 if !is_hit {
-                    crate::cache_eviction::evict_cache_dir_with_policy(
-                        &cache_dir,
-                        keyhog_core::CacheKind::GpuPrograms,
-                        keyhog_core::CacheKind::GpuPrograms.default_policy(),
-                    );
+                    let k = keyhog_core::CacheKind::GpuPrograms;
+                    crate::cache_eviction::evict_cache_dir_with_policy(&cache_dir, k, k.default_policy());
                 }
                 res
             }

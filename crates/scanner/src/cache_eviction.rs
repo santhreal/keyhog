@@ -157,6 +157,14 @@ fn collect_stale_locks_bounded(cache_dir: &Path, max_age: Duration, top_level: b
             continue;
         }
         if CacheKind::classify_path(&path) == Some(CacheKind::LockFiles) {
+            if let Some(path_str) = path.to_str() {
+                if let Some(target_str) = path_str.strip_suffix(".lock") {
+                    if Path::new(target_str).exists() {
+                        // Companion state/cache artifact still exists; keep its coordination lock file
+                        continue;
+                    }
+                }
+            }
             let Ok(meta) = entry.metadata() else {
                 continue;
             };
