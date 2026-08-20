@@ -1308,7 +1308,7 @@
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/wechat-api-credentials.toml:47"
+        "detectors/wechat-api-credentials.toml:43"
       ]
     },
     "2fcbee5fa2c6ad429416ac68941ef1aae5b3f5ec21c8c07c79ec5f41fb5c1384": {
@@ -2964,15 +2964,6 @@
       "on_declared_fixture_line": true,
       "sites": [
         "detectors/shutterstock-api-key.toml:33"
-      ]
-    },
-    "62236ee6267b1c16458ff7a6d64cdc584c1190867877c58bae72efa0ea78f405": {
-      "detector_ids": [
-        "entropy-api-key"
-      ],
-      "on_declared_fixture_line": true,
-      "sites": [
-        "detectors/netrc-password.toml:37"
       ]
     },
     "622fb155c21742b7184aab5dff331645640500ad721fb1a998322762d8b8bac1": {
@@ -6355,7 +6346,7 @@
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/apple-push-notification-key.toml:25"
+        "detectors/apple-push-notification-key.toml:26"
       ]
     },
     "cf60c8386e3fd8a220143bf97977351e4d3b157cc27de98d040ef7958a5795d3": {
@@ -6871,15 +6862,6 @@
         "detectors/hubspot-api-key.toml:26"
       ]
     },
-    "dc3839da19fa4c27e6046c6782a7e3c66a5007698f5e02557e0ebc5750075e18": {
-      "detector_ids": [
-        "ssh-private-key"
-      ],
-      "on_declared_fixture_line": true,
-      "sites": [
-        "detectors/google-artifact-registry-key.toml:21"
-      ]
-    },
     "dc9b5db8c9b009b33f42c4aa31b9862fabd53f56920632a4fe1f28a933570008": {
       "detector_ids": [
         "segment-write-key"
@@ -7318,6 +7300,15 @@
         "detectors/soundcloud-client-credentials.toml:26"
       ]
     },
+    "ea81663995b1be30ef5b617fc32f057a6898b4a230be60023dbaeff21655a986": {
+      "detector_ids": [
+        "ssh-private-key"
+      ],
+      "on_declared_fixture_line": true,
+      "sites": [
+        "detectors/google-artifact-registry-key.toml:20"
+      ]
+    },
     "eacc2e4f9c919ad13cc8a0fd59ec8f25eb28e4136dd0db71366ced269286d7cc": {
       "detector_ids": [
         "solana-rpc-credentials"
@@ -7537,7 +7528,7 @@
       ],
       "on_declared_fixture_line": true,
       "sites": [
-        "detectors/near-api-credentials.toml:36"
+        "detectors/near-api-credentials.toml:37"
       ]
     },
     "f3bb42ecbbf0dee1fa195ecb8232e2e4b49648ae236b9439dc6fad3aa367ca1f": {
