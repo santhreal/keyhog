@@ -220,7 +220,6 @@ fn require_gpu_or_panic_panics_on_unmet_policy() {
         require_gpu_or_panic("test_auto");
     }
 
-    // When policy is Required and preflight fails (H0/H1/H3), require_gpu_or_panic must panic
     let preflight = require_gpu_preflight_with_policy_for_test(GpuRuntimePolicy::Required);
     if preflight.is_err() {
         let _required_guard = PolicyGuard::set(GpuRuntimePolicy::Required);
