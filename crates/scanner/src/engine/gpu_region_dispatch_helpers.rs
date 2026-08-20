@@ -102,6 +102,7 @@ fn recovered_phase2_tail(
         fault: Some(fault),
     }
 }
+#[cfg(test)]
 #[inline]
 pub(super) fn mib_per_second(bytes: usize, elapsed: std::time::Duration) -> f64 {
     if bytes == 0 || elapsed.is_zero() {
