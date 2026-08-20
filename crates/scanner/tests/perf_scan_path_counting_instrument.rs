@@ -24,7 +24,9 @@ unsafe impl GlobalAlloc for ScanCountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let size = layout.size();
         let ptr = unsafe { System.alloc(layout) };
-        if !ptr.is_null() {
+        if !ptr.is_null() && COUNTING.load(Ordering::Relaxed) {
+            ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
+            TOTAL_BYTES.fetch_add(size, Ordering::Relaxed);
             let prev = CURRENT_BYTES.fetch_add(size, Ordering::Relaxed);
             let cur = prev + size;
             let mut peak = PEAK_BYTES.load(Ordering::Relaxed);
@@ -92,7 +94,8 @@ static ALLOCATOR: ScanCountingAllocator = ScanCountingAllocator;
 fn reset_instrument() {
     ALLOC_COUNT.store(0, Ordering::SeqCst);
     TOTAL_BYTES.store(0, Ordering::SeqCst);
-    PEAK_BYTES.store(CURRENT_BYTES.load(Ordering::SeqCst), Ordering::SeqCst);
+    CURRENT_BYTES.store(0, Ordering::SeqCst);
+    PEAK_BYTES.store(0, Ordering::SeqCst);
 }
 
 fn measure_scan<T>(f: impl FnOnce() -> T) -> (T, usize, usize, usize) {
