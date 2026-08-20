@@ -553,10 +553,6 @@ fn dispatch_command(command: args::Command) -> ExitCode {
         args::Command::Watch(args) => {
             handle_command_outcome(subcommands::watch::run(args).map(|()| ExitCode::SUCCESS))
         }
-        args::Command::Completion(args) => {
-            subcommands::completion::run(args);
-            ExitCode::SUCCESS
-        }
         args::Command::Backend(args) => handle_command_outcome(subcommands::backend::run(args)),
         args::Command::Doctor(args) => handle_command_outcome(subcommands::doctor::run(args)),
         args::Command::BloomDiagnostic(args) => handle_command_outcome(bloom_diagnostic::run(args)),

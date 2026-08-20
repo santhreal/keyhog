@@ -862,7 +862,11 @@ async fn run_status_online(
                     }
                 }
 
-                let mut overall_exit = exit_codes::EXIT_SUCCESS;
+                let mut overall_exit = if views.len() < roots.len() {
+                    exit_codes::EXIT_SOURCE_FAILED
+                } else {
+                    exit_codes::EXIT_SUCCESS
+                };
                 for view in &views {
                     let code = exit_code_for_guard_state(&view.state, view.findings_count);
                     if code == exit_codes::EXIT_FINDINGS {
