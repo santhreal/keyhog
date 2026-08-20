@@ -23,9 +23,7 @@
 //! What this does NOT catch: Physical GPU driver hardware faults, broken Vulkan
 //! ICD installations, or kernel crashes during device execution.
 
-use keyhog_scanner::hw_probe::{
-    select_backend_verdict, BackendRoutingReason, HardwareCaps, ScanBackend,
-};
+use keyhog_scanner::hw_probe::{select_backend_verdict, BackendRoutingReason, HardwareCaps};
 
 fn test_caps(
     gpu_available: bool,
