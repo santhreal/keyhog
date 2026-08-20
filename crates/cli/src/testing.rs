@@ -1749,19 +1749,19 @@ pub mod daemon {
             /// Completed event sequence counter.
             pub completed_event_sequence: u64,
             /// Pending events count.
-            pub pending_events: usize,
+            pub pending_events: u64,
             /// Total files scanned.
-            pub files_scanned: usize,
+            pub files_scanned: u64,
             /// Total bytes scanned.
             pub bytes_scanned: u64,
             /// Cache hit count.
-            pub attestation_hits: usize,
+            pub attestation_hits: u64,
             /// Cache miss count.
-            pub attestation_misses: usize,
+            pub attestation_misses: u64,
             /// Total secret findings.
-            pub findings_count: usize,
+            pub findings_count: u64,
             /// Total coverage gaps.
-            pub coverage_gaps: usize,
+            pub coverage_gaps: u64,
             /// Timestamp of initial reconciliation.
             pub initial_reconciliation_time: Option<u64>,
             /// Timestamp of last reconciliation.
