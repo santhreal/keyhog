@@ -63,6 +63,7 @@ fn sample_raw_match(detector_id: &str, file: &str, line: usize, secret: &str) ->
             author: None,
             date: None,
         },
+        entropy: None,
         confidence: Some(0.9),
         evidence: keyhog_core::EvidenceVerdict::review_unattributed(),
     }
