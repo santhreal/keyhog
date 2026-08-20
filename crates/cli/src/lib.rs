@@ -642,21 +642,30 @@ fn print_version_info(full: bool) {
     }
     let hw = keyhog_scanner::hw_probe::probe_hardware();
     if hw.gpu_available {
-        println!(
-            "GPU Acceleration: {}{}",
-            hw.gpu_name.as_deref().unwrap_or("available"), // LAW10: absent name/label => display default; reporting-only, recall-safe
-            hw.gpu_vram_mb
-                .map(|mb| {
-                    if mb >= 1024 {
-                        format!(" (max buffer {} GB)", mb / 1024)
-                    } else {
-                        format!(" (max buffer {mb} MB)")
-                    }
-                })
-                .unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
-        );
+        if hw.gpu_is_software {
+            println!(
+                "GPU Acceleration: {} (software renderer: disabled)",
+                hw.gpu_name.as_deref().unwrap_or("yes")
+            );
+        } else {
+            println!(
+                "GPU Acceleration: {}{}",
+                hw.gpu_name.as_deref().unwrap_or("yes"), // LAW10: absent name/label => display default; reporting-only, recall-safe
+                hw.gpu_vram_mb
+                    .map(|mb| {
+                        if mb >= 1024 {
+                            format!(" (max buffer {} GB)", mb / 1024)
+                        } else {
+                            format!(" (max buffer {mb} MB)")
+                        }
+                    })
+                    .unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
+            );
+        }
     } else if let Some(name) = &hw.gpu_name {
-        if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
+        if hw.gpu_is_software {
+            println!("GPU Acceleration: {name} (software renderer: disabled)");
+        } else if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
             if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
                 println!("GPU Acceleration: {name} (compiled without GPU backend / single compiled backend)");
             } else {
@@ -701,7 +710,7 @@ pub(crate) mod baseline;
 pub(crate) mod benchmark;
 pub(crate) mod bloom_diagnostic;
 pub(crate) mod config;
-pub mod execution_pack_install;
+mod execution_pack_install;
 pub mod exit_codes;
 pub(crate) mod format;
 pub(crate) mod installer;
