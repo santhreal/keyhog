@@ -821,13 +821,22 @@ impl FilesystemSource {
         self
     }
 
-    /// Override the windowed-scan parameters. Production callers stick
-    /// with the defaults (1 MiB / 128 KiB); tests use this to exercise
-    /// the multi-window path on tiny fixtures. `window_size` must
-    /// strictly exceed `overlap` (the underlying slicer asserts this).
-    pub(crate) fn with_window_config(mut self, window_size: usize, overlap: usize) -> Self {
+    /// Override the windowed-scan parameters.
+    #[must_use]
+    pub fn with_window_config(mut self, window_size: usize, overlap: usize) -> Self {
         assert!(window_size > overlap, "window must exceed overlap");
         self.window_size = window_size;
+        self.window_overlap = overlap;
+        self
+    }
+
+    /// Override the streaming window overlap in bytes.
+    #[must_use]
+    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
+        assert!(
+            self.window_size > overlap,
+            "window size must exceed overlap"
+        );
         self.window_overlap = overlap;
         self
     }

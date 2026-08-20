@@ -604,6 +604,8 @@ pub(crate) async fn run_with_backend_override(
                         // path, filesystem identity, mode, and sequences.
                         let mut restored = record.clone();
                         restored.state = keyhog_core::guard_state::GuardRootState::Stopped;
+                        restored.filesystem_authority =
+                            crate::daemon::fs_probe::probe_filesystem_authority(&path);
                         if let Err(e) = state.guard.restore_root(restored) {
                             tracing::warn!("daemon: failed to restore root {}: {}", path_str, e);
                         } else {
@@ -801,6 +803,7 @@ fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<
         // scrub interval is configured.
         let mut last_scrub_times: std::collections::HashMap<Vec<u8>, std::time::Instant> =
             std::collections::HashMap::new();
+        let mut last_scrub_tick = std::time::Instant::now();
         loop {
             tokio::select! {
                 _ = state.shutdown.notified() => return,
@@ -823,7 +826,10 @@ fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<
 
                     // Periodic scrub: check all Current roots against their
                     // configured or default unauthoritative scrub interval.
-                    scrub_guard_roots(&state, &mut last_scrub_times);
+                    if last_scrub_tick.elapsed() >= std::time::Duration::from_secs(1) {
+                        last_scrub_tick = std::time::Instant::now();
+                        scrub_guard_roots(&state, &mut last_scrub_times);
+                    }
                 }
             }
         }

@@ -506,21 +506,21 @@ fn load_guard_config() -> (
     let recon_config = keyhog_sources::guard::GuardReconciliationConfig {
         max_pending_events_per_root: guard
             .max_pending_events_per_root
-            .unwrap_or(defaults.max_pending_events_per_root), // LAW10: explicit TOML config default resolution
+            .unwrap_or(defaults.max_pending_events_per_root), // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
         max_pending_events_total: guard
             .max_pending_events_total
-            .unwrap_or(defaults.max_pending_events_total), // LAW10: explicit TOML config default resolution
+            .unwrap_or(defaults.max_pending_events_total), // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
         coalesce_window_ms: guard
             .coalesce_window
             .as_deref()
             .and_then(parse_duration_ms)
-            .unwrap_or(defaults.coalesce_window_ms), // LAW10: explicit TOML config default resolution
+            .unwrap_or(defaults.coalesce_window_ms), // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
         subtree_max_files: guard
             .subtree_max_files
-            .unwrap_or(defaults.subtree_max_files), // LAW10: explicit TOML config default resolution
+            .unwrap_or(defaults.subtree_max_files), // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
         subtree_max_depth: guard
             .subtree_max_depth
-            .unwrap_or(defaults.subtree_max_depth), // LAW10: explicit TOML config default resolution
+            .unwrap_or(defaults.subtree_max_depth), // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
     };
     let scanner_idle_timeout_secs = guard
         .scanner_idle_timeout

@@ -172,6 +172,8 @@ pub struct GuardWatcher {
     poll_interval_ms: Option<u64>,
     /// Channel receiver for events from the native watcher.
     rx: mpsc::Receiver<notify::Result<notify::Event>>,
+    /// Retained sender for null/disabled watchers to keep the channel open.
+    _null_tx: Option<mpsc::Sender<notify::Result<notify::Event>>>,
     /// Tracked roots: canonical path -> watched root state.
     roots: HashMap<PathBuf, WatchedRoot>,
     /// Reconciliation config (bounds for subtree reconciliation).
@@ -197,6 +199,7 @@ impl GuardWatcher {
             backend_kind,
             poll_interval_ms,
             rx,
+            _null_tx: None,
             roots: HashMap::new(),
             config,
             disabled: false,
@@ -223,6 +226,7 @@ impl GuardWatcher {
             backend_kind: GuardWatcherBackendKind::PollWatcher,
             poll_interval_ms: Some(poll_interval.as_millis() as u64),
             rx,
+            _null_tx: None,
             roots: HashMap::new(),
             config,
             disabled: false,
@@ -231,13 +235,14 @@ impl GuardWatcher {
     }
 
     pub fn new_null(config: GuardReconciliationConfig) -> Result<Self, String> {
-        let (_tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+        let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
         let watcher = notify::NullWatcher;
         Ok(Self {
             watcher: Some(ActiveWatcherHandle::Null(watcher)),
             backend_kind: GuardWatcherBackendKind::NullWatcher,
             poll_interval_ms: None,
             rx,
+            _null_tx: Some(tx),
             roots: HashMap::new(),
             config,
             disabled: false,
@@ -249,12 +254,13 @@ impl GuardWatcher {
     /// still works via commit transactions; it just loses advisory
     /// filesystem events.
     pub fn new_disabled() -> Self {
-        let (_tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+        let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
         Self {
             watcher: None,
             backend_kind: GuardWatcherBackendKind::Disabled,
             poll_interval_ms: None,
             rx,
+            _null_tx: Some(tx),
             roots: HashMap::new(),
             config: GuardReconciliationConfig::default(),
             disabled: true,
@@ -273,6 +279,7 @@ impl GuardWatcher {
             backend_kind: GuardWatcherBackendKind::CustomTest,
             poll_interval_ms: None,
             rx,
+            _null_tx: None,
             roots: HashMap::new(),
             config,
             disabled: false,
@@ -291,6 +298,7 @@ impl GuardWatcher {
                 backend_kind: GuardWatcherBackendKind::CustomTest,
                 poll_interval_ms: None,
                 rx,
+                _null_tx: None,
                 roots: HashMap::new(),
                 config,
                 disabled: false,
@@ -377,7 +385,7 @@ impl GuardWatcher {
     /// the overflow flag is cleared.
     pub fn poll_events(&self) -> Vec<(PathBuf, Vec<GuardEvent>)> {
         let mut results: HashMap<PathBuf, Vec<GuardEvent>> = HashMap::new();
-        if self.disabled {
+        if self.disabled || matches!(self.backend_kind, GuardWatcherBackendKind::NullWatcher) {
             return Vec::new();
         }
         loop {
@@ -402,15 +410,22 @@ impl GuardWatcher {
                                 .push(GuardEvent::ReconcileSubtree(root.clone()));
                         }
                     } else {
-                        // Process and attribute ALL paths present on the event to ALL matching
-                        // enclosing roots so nested and parent roots both receive events.
-                        for path in &event.paths {
-                            let roots = self.find_matching_roots_for_path(path);
-                            for root in roots {
-                                let guard_event = normalize_notify_path_event(&event.kind, path);
-                                if let Some(buffer) = self.roots.get(&root) {
-                                    let mut buf = buffer.buffer.lock();
-                                    buf.push(guard_event);
+                        if self.total_pending_events() >= self.config.max_pending_events_total {
+                            for watched in self.roots.values() {
+                                watched.buffer.lock().mark_overflow();
+                            }
+                        } else {
+                            // Process and attribute ALL paths present on the event to ALL matching
+                            // enclosing roots so nested and parent roots both receive events.
+                            for path in &event.paths {
+                                let roots = self.find_matching_roots_for_path(path);
+                                for root in roots {
+                                    let guard_event =
+                                        normalize_notify_path_event(&event.kind, path);
+                                    if let Some(buffer) = self.roots.get(&root) {
+                                        let mut buf = buffer.buffer.lock();
+                                        buf.push(guard_event);
+                                    }
                                 }
                             }
                         }
@@ -468,6 +483,12 @@ impl GuardWatcher {
             }
         }
         results.into_iter().collect()
+    }
+
+    /// Return the total number of queued events across all watched root buffers.
+    #[must_use]
+    pub fn total_pending_events(&self) -> usize {
+        self.roots.values().map(|r| r.buffer.lock().len()).sum()
     }
 
     /// Find all registered roots that are prefixes of a path.
