@@ -285,7 +285,7 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
             .entropy_shape
             .as_ref()
             .map(|s| s.special_min_length)
-            .unwrap_or(context.mixed_alnum_min_len);
+            .unwrap_or(context.mixed_alnum_min_len); // LAW10: no detector override uses the context minimum; scan behavior is unchanged
         if !has_symbol
             && has_upper
             && has_lower

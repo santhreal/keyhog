@@ -743,7 +743,7 @@ pub(crate) fn is_likely_concatenation_fragment(line: &str) -> bool {
             let after_quote = trimmed
                 .rfind(quote_char)
                 .map(|index| &trimmed[index + 1..])
-                .unwrap_or("")
+                .unwrap_or("") // LAW10: no text after the quote is an empty suffix; scan findings are unchanged
                 .trim();
             let is_fragment_suffix = after_quote.is_empty()
                 || after_quote == "+"

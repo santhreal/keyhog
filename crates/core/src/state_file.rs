@@ -46,7 +46,7 @@ impl StateFileWriteLock {
                     {
                         return Ok(Self { file });
                     }
-                    let _ = FileExt::unlock(&file);
+                    let _ = FileExt::unlock(&file); // LAW10: the retained handle is dropped on the next iteration, which releases the OS lock; no runtime effect
                     continue;
                 }
             }

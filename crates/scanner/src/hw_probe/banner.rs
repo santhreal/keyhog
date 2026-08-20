@@ -7,7 +7,7 @@ use super::HardwareCaps;
 /// Format a one-line startup banner summarizing detected hardware.
 pub fn startup_banner(caps: &HardwareCaps, detector_count: usize, pattern_count: usize) -> String {
     let gpu = if caps.gpu_available {
-        let name = caps.gpu_name.as_deref().unwrap_or("available");
+        let name = caps.gpu_name.as_deref().unwrap_or("available"); // LAW10: display-only label for an unnamed adapter
         if caps.gpu_is_software {
             format!("GPU: {name} (software, ignored)")
         } else {

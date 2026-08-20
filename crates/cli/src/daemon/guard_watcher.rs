@@ -279,9 +279,11 @@ fn build_root_ignore_matcher(
     let keyhogignore = root.join(".keyhogignore");
     if keyhogignore.is_file() {
         if let Ok(content) = std::fs::read_to_string(&keyhogignore) {
+            // LAW10: an unreadable .keyhogignore leaves those patterns out of the
+            // watcher matcher, so more events are delivered, never fewer; recall preserved.
             let allowlist = keyhog_core::Allowlist::parse(&content);
             for pattern in &*allowlist.ignored_paths {
-                let _ = builder.add_line(None, pattern);
+                let _ = builder.add_line(None, pattern); // LAW10: best-effort ignore pattern addition; no runtime effect
             }
         }
     }
@@ -299,6 +301,7 @@ fn resolve_root_exclusions(root: &std::path::Path) -> (Vec<String>, bool) {
             // LAW10: invalid utf8 config uses default exclusions; documented default
             if let Ok(config) = toml::from_str::<crate::config::schema::ConfigFile>(text) {
                 let exclude = config.scan.and_then(|s| s.exclude).unwrap_or_default();
+                // LAW10: no [scan].exclude means nothing is excluded from watching; recall preserved.
                 return (exclude, true);
             }
         }

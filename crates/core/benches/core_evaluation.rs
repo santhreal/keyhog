@@ -272,7 +272,7 @@ fn bench_finding_dedup_and_correlation(c: &mut Criterion) {
                     &m.detector_id,
                     &m.service,
                     m.severity,
-                    m.location.file_path.as_deref().unwrap_or(""),
+                    m.location.file_path.as_deref().unwrap_or(""), // LAW10: benchmark input placeholder for a pathless match; reporting-only
                     "secret_hash_val",
                 )
             })

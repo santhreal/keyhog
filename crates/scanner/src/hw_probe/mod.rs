@@ -134,7 +134,7 @@ pub fn uncompiled_gpu_backend_explanation() -> &'static str {
 #[must_use]
 pub fn format_gpu_status(caps: &HardwareCaps) -> String {
     if caps.gpu_available {
-        let name = caps.gpu_name.as_deref().unwrap_or("yes");
+        let name = caps.gpu_name.as_deref().unwrap_or("yes"); // LAW10: display-only label for an unnamed adapter
         if caps.gpu_is_software {
             format!("{name} (software renderer: disabled)")
         } else {

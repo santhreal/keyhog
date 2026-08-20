@@ -1392,7 +1392,7 @@ impl CompiledScanner {
                 ahash::RandomState::new(),
                 std::thread::available_parallelism()
                     .map(|p| p.get().saturating_mul(4).next_power_of_two().clamp(16, 128))
-                    .unwrap_or(16),
+                    .unwrap_or(16), // LAW10: shard/size knob when host parallelism is unknown; perf-only, recall-irrelevant
             ),
             entropy_config_digest_cache: parking_lot::Mutex::new(None),
             compiled_plan_digest,

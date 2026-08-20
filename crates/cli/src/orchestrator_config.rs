@@ -215,6 +215,7 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
             resolved_matcher_cache.path(),
             resolved_matcher_cache
                 .disable_reason()
+                // LAW10: the reason is reporting-only, it labels why no path is configured
                 .unwrap_or(keyhog_scanner::MatcherArtifactCacheDisableReason::ConfiguredOff),
         )
     };

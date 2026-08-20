@@ -120,7 +120,7 @@ pub(crate) fn install_execution_generation(
         .arg("--help")
         .output()
         .map(|output| output.status.success())
-        .unwrap_or(false);
+        .unwrap_or(false); // LAW10: fail-closed, a probe that does not run means the candidate cannot compile execution packs and the install aborts below
     if !supports_execution_packs {
         bail!(
             "candidate binary {} cannot compile execution packs. Fix: reinstall with `cargo install --locked --force keyhog`, then run `keyhog install`.",

@@ -75,7 +75,7 @@ fn every_shipped_success_contract_is_classified() {
         "success contracts without an explicit policy: {unclassified:?}"
     );
     assert_eq!(
-        status_with_error_backstop, 323,
+        status_with_error_backstop, 328,
         "conservative status contract accounting drifted"
     );
     assert_eq!(

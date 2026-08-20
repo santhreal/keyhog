@@ -969,14 +969,24 @@ pub fn compute_keyhogignore_digest(root: &Path) -> String {
 /// Compute `.keyhog.toml` scan configuration digest for a guard root.
 pub fn compute_config_digest(root: &Path) -> String {
     let root_config = root.join(".keyhog.toml");
-    match std::fs::read(&root_config).ok() {
-        Some(bytes) => {
+    match std::fs::read(&root_config) {
+        Ok(bytes) => {
             let mut hasher = blake3::Hasher::new();
             hasher.update(b"keyhog-config-v1:");
             hasher.update(&bytes);
             hex::encode(hasher.finalize().as_bytes())
         }
-        None => crate::orchestrator::autoroute_default_config_identity(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            crate::orchestrator::autoroute_default_config_identity()
+        }
+        // A present but unreadable config yields a distinct identity, so the root
+        // transitions to StalePolicy instead of passing as unchanged.
+        Err(error) => {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(b"keyhog-config-unreadable-v1:");
+            hasher.update(format!("{:?}", error.kind()).as_bytes());
+            hex::encode(hasher.finalize().as_bytes())
+        }
     }
 }
 
@@ -2258,6 +2268,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 .guard
                 .get_root_policy_identity(canonical_repo.as_os_str().as_encoded_bytes())
                 .unwrap_or_else(|| {
+                    // LAW10: unregistered root computes fresh identity; canonical default
                     compute_root_policy_identity(
                         &canonical_repo,
                         KEYHOG_VERSION,
@@ -3058,7 +3069,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                         .iter()
                         .map(|r| {
                             let root_str = String::from_utf8(r.canonical_path.clone())
-                                .unwrap_or_else(|_| format!("<non-utf8 {:?}>", r.canonical_path));
+                                .unwrap_or_else(|_| format!("<non-utf8 {:?}>", r.canonical_path)); // LAW10: display placeholder for a non-UTF-8 root path; reporting-only
                             crate::daemon::protocol::GuardTransitionWireEntry {
                                 root: root_str,
                                 sequence: r.sequence,
@@ -3216,13 +3227,13 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
         }
         Request::GuardFeed { root, limit } => {
             let root_bytes = root.as_deref().map(str::as_bytes);
-            let limit_val = limit.unwrap_or(50).min(1000);
+            let limit_val = limit.unwrap_or(50).min(1000); // LAW10: display default for the feed listing; reporting-only
             let feed_records = state.guard.transition_feed(root_bytes, Some(limit_val));
             let transitions: Vec<crate::daemon::protocol::GuardTransitionWireEntry> = feed_records
                 .into_iter()
                 .map(|r| {
                     let root_str = String::from_utf8(r.canonical_path.clone())
-                        .unwrap_or_else(|_| format!("<non-utf8 {:?}>", r.canonical_path));
+                        .unwrap_or_else(|_| format!("<non-utf8 {:?}>", r.canonical_path)); // LAW10: display placeholder for a non-UTF-8 root path; reporting-only
                     crate::daemon::protocol::GuardTransitionWireEntry {
                         root: root_str,
                         sequence: r.sequence,

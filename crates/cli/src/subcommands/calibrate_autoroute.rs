@@ -672,7 +672,15 @@ fn resolve_execution_pack_binding(
     if !installed.exists() {
         return Ok(None);
     }
-    Ok(crate::execution_pack_install::load_authenticated_binding(&installed, signing_key).ok())
+    match crate::execution_pack_install::load_authenticated_binding(&installed, signing_key) {
+        Ok(binding) => Ok(Some(binding)),
+        Err(error) => {
+            eprintln!(
+                "keyhog: installed execution-pack generation is not authenticated ({error}); autoroute evidence stays unbound"
+            );
+            Ok(None)
+        }
+    }
 }
 
 pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {

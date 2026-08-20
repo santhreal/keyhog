@@ -239,6 +239,7 @@ fn collect_matching_entries_bounded(
         let manifest_path = dir.join(".installed_manifest.json");
         if manifest_path.exists() {
             if let Ok(bytes) = std::fs::read(&manifest_path) {
+                // LAW10: fail-closed, the unreadable arm below evicts nothing
                 #[derive(serde::Deserialize)]
                 struct Manifest {
                     #[serde(default)]
@@ -249,6 +250,7 @@ fn collect_matching_entries_bounded(
                     file_name: String,
                 }
                 if let Ok(manifest) = serde_json::from_slice::<Manifest>(&bytes) {
+                    // LAW10: fail-closed, the malformed arm below evicts nothing
                     for item in manifest.artifacts {
                         protected_files.insert(item.file_name);
                     }

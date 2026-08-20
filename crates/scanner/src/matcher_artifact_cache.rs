@@ -107,7 +107,7 @@ pub fn validate_and_tighten_matcher_artifact_cache_dir(
     auto_tighten: bool,
 ) -> std::result::Result<(), String> {
     #[cfg(not(unix))]
-    let _ = auto_tighten;
+    let _ = auto_tighten; // LAW10: unused-binding outside unix; no runtime effect
     if !path.is_absolute() {
         return Err(format!(
             "matcher-artifact cache dir '{}' must be absolute",

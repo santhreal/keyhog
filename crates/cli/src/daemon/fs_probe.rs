@@ -300,7 +300,7 @@ fn probe_windows(path: &Path) -> Option<FilesystemAuthority> {
         let len = fs_name_buf
             .iter()
             .position(|&c| c == 0)
-            .unwrap_or(fs_name_buf.len()); // LAW10: full buffer length used when no nul terminator is present
+            .unwrap_or(fs_name_buf.len()); // LAW10: an unterminated name uses the whole buffer, the same value the API reported; reporting-only filesystem label
         let fs_name = String::from_utf16_lossy(&fs_name_buf[..len]);
         Some(classify_filesystem_type(&fs_name))
     } else {

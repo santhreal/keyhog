@@ -177,9 +177,16 @@ impl GuardRuntime {
         let existing = root_map.get(root_path);
         if let Some(existing) = existing {
             if !existing.is_compatible_with(&identity) {
-                if let Ok(old_short) = existing.short_digest() {
-                    self.attestations.invalidate_policy_digest(&old_short);
-                }
+                match existing.short_digest() {
+                    Ok(old_short) => self.attestations.invalidate_policy_digest(&old_short),
+                    Err(error) => {
+                        eprintln!(
+                            "keyhog: guard could not compute the previous policy digest ({error}); dropping every cached attestation"
+                        );
+                        self.attestations.clear();
+                        0
+                    }
+                };
                 let mut roots = self.roots.write();
                 if let Some(r) = roots.get_mut(root_path) {
                     if r.state != GuardRootState::Stopped {
@@ -244,6 +251,7 @@ impl GuardRuntime {
                                     "policy identity changed: detector/suppression/schema digest mismatch",
                                 );
                             }
+                            // LAW10: an illegal transition leaves the root state unchanged; no runtime effect
                             Err(_) => {
                                 // Transition is illegal (e.g. Degraded).
                                 // Leave the root in its current state.
@@ -442,7 +450,7 @@ impl GuardRuntime {
         limit: Option<usize>,
     ) -> Vec<GuardTransitionRecord> {
         let feed = self.transition_feed.lock();
-        let limit = limit.unwrap_or(50);
+        let limit = limit.unwrap_or(50); // LAW10: display default for the feed listing; reporting-only
         let mut entries: Vec<GuardTransitionRecord> = if let Some(target_root) = root {
             feed.iter()
                 .filter(|t| t.canonical_path == target_root)
