@@ -293,14 +293,45 @@ def render_accuracy(snapshot: dict[str, Any]) -> str:
     host, scanner = _context(snapshot)
     corpus = row["corpus"]
     detection = row["detection"]
+
+    table_rows = [
+        f"| **{corpus['name']}** | {corpus['fixture_count']:,} | {corpus['labeled_positives']:,} | {corpus['bytes'] / (1024 * 1024):.2f} MB | {detection['precision']:.4f} | {detection['recall']:.4f} | {detection['f1']:.4f} | {detection['tp']:,} | {detection['fp']:,} | {detection['fn']:,} |",
+    ]
+
+    homefield_row = next(
+        (
+            r
+            for r in snapshot.get("configuration_rows", [])
+            if r.get("corpus", {}).get("name", "").startswith("homefield")
+        ),
+        None,
+    )
+    if homefield_row is not None:
+        h_corpus = homefield_row["corpus"]
+        h_det = homefield_row["detection"]
+        size_str = (
+            f"{h_corpus['bytes'] / (1024 * 1024):.2f} MB"
+            if h_corpus["bytes"] >= 1024 * 1024
+            else f"{h_corpus['bytes'] // 1024:,} KB"
+        )
+        table_rows.append(
+            f"| **{h_corpus['name']}** | {h_corpus['fixture_count']:,} | {h_corpus['labeled_positives']:,} | {size_str} | {h_det['precision']:.4f} | {h_det['recall']:.4f} | {h_det['f1']:.4f} | {h_det['tp']:,} | {h_det['fp']:,} | {h_det['fn']:,} |"
+        )
+
+    has_homefield = homefield_row is not None
+    intro = (
+        f"KeyHog `{scanner['version'].splitlines()[0]}` evaluated on both the synthetic **mirror** corpus and competitor **homefield** rule ground-truth on **{host['cpu']}** with the explicit Hyperscan/SIMD default route. The answer-key manifest was excluded from the scan tree."
+        if has_homefield
+        else f"KeyHog `{scanner['version'].splitlines()[0]}` evaluated on the synthetic **mirror** corpus on **{host['cpu']}** with the explicit Hyperscan/SIMD default route. The answer-key manifest was excluded from the scan tree."
+    )
+
     return "\n".join(
         [
-            f"KeyHog `{scanner['version'].splitlines()[0]}` evaluated on both the synthetic **mirror** corpus and competitor **homefield** rule ground-truth on **{host['cpu']}** with the explicit Hyperscan/SIMD default route. The answer-key manifest was excluded from the scan tree.",
+            intro,
             "",
             "| Corpus | Fixtures | Positives | Input size | Precision | Recall | F1 | True positives | False positives | False negatives |",
             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
-            f"| **{corpus['name']}** | {corpus['fixture_count']:,} | {corpus['labeled_positives']:,} | {corpus['bytes'] / (1024 * 1024):.2f} MB | {detection['precision']:.4f} | {detection['recall']:.4f} | {detection['f1']:.4f} | {detection['tp']:,} | {detection['fp']:,} | {detection['fn']:,} |",
-            "| **homefield** | 2,399 | 1,057 | 773 KB | 0.9582 | 0.8874 | 0.9214 | 938 | 41 | 119 |",
+            *table_rows,
             "",
             _qualification(snapshot, scanner),
         ]

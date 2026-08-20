@@ -1392,58 +1392,54 @@ impl ScanOrchestrator {
         };
         let (mut loaded_corpus, detector_execution_pack) = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorLoad);
-            if !detectors_path.exists() && requested_detector_mode.is_none() {
-                let policy = execution_pack_policy_for_args(&args);
-                let installed = match effective_config.backend_override {
-                    Some(backend) => {
-                        let pack_backend =
-                            keyhog_scanner::execution_pack::ExecutionPackBackend::from_scan_backend(
-                                backend,
-                            )
-                            .context(
-                                "the selected scan backend has no execution-pack identity",
-                            )?;
-                        crate::execution_pack_install::
-                            load_installed_detector_execution_pack_for_backend(
-                                policy,
-                                pack_backend,
-                            )
-                    }
-                    None => crate::execution_pack_install::
-                        load_installed_preferred_detector_execution_pack(policy),
-                };
-                match installed {
-                    Ok(pack) => {
-                        keyhog_profile::record_cache_hit(keyhog_profile::CacheId::DetectorPlan);
-                        (None, Some(pack))
-                    }
-                    Err(error) => {
-                        if args.developer_compile_embedded_detectors {
-                            keyhog_profile::record_cache_miss(
-                                keyhog_profile::CacheId::DetectorPlan,
-                            );
-                            eprintln!(
-                                "keyhog: developer mode active: in-process detector compilation (--developer-compile-embedded-detectors)"
-                            );
-                            tracing::warn!(
-                                error = %error,
-                                "developer escape hatch active: in-process detector compilation (--developer-compile-embedded-detectors)"
-                            );
-                            let embedded = || -> anyhow::Result<LoadedDetectorCorpus> {
-                                load_effective_detector_corpus(
-                                    &detectors_path,
-                                    requested_detector_mode,
-                                    !args.lockdown,
+            let custom_corpus_requested =
+                args.detectors_cli_explicit || requested_detector_mode.is_some();
+            if !custom_corpus_requested {
+                if args.developer_compile_embedded_detectors {
+                    keyhog_profile::record_cache_miss(keyhog_profile::CacheId::DetectorPlan);
+                    eprintln!(
+                        "keyhog: developer mode active: in-process detector compilation (--developer-compile-embedded-detectors)"
+                    );
+                    tracing::warn!(
+                        "developer escape hatch active: in-process detector compilation (--developer-compile-embedded-detectors)"
+                    );
+                    let mut corpus = load_effective_detector_corpus(
+                        &detectors_path,
+                        requested_detector_mode,
+                        !args.lockdown,
+                    )
+                    .context("loading effective detector corpus")?;
+                    corpus.provenance.mode = "developer-embedded";
+                    corpus.provenance.source =
+                        "developer escape hatch (--developer-compile-embedded-detectors)"
+                            .to_string();
+                    (Some(corpus), None)
+                } else {
+                    let policy = execution_pack_policy_for_args(&args);
+                    let installed = match effective_config.backend_override {
+                        Some(backend) => {
+                            let pack_backend =
+                                keyhog_scanner::execution_pack::ExecutionPackBackend::from_scan_backend(
+                                    backend,
                                 )
-                                .context("loading effective detector corpus")
-                            };
-                            let mut corpus = embedded()?;
-                            corpus.provenance.mode = "developer-embedded";
-                            corpus.provenance.source =
-                                "developer escape hatch (--developer-compile-embedded-detectors)"
-                                    .to_string();
-                            (Some(corpus), None)
-                        } else {
+                                .context(
+                                    "the selected scan backend has no execution-pack identity",
+                                )?;
+                            crate::execution_pack_install::
+                                load_installed_detector_execution_pack_for_backend(
+                                    policy,
+                                    pack_backend,
+                                )
+                        }
+                        None => crate::execution_pack_install::
+                            load_installed_preferred_detector_execution_pack(policy),
+                    };
+                    match installed {
+                        Ok(pack) => {
+                            keyhog_profile::record_cache_hit(keyhog_profile::CacheId::DetectorPlan);
+                            (None, Some(pack))
+                        }
+                        Err(error) => {
                             return Err(error).context(
                                 "no usable detector execution pack available for scan; in-process compilation is forbidden. \
                                  Fix: run `keyhog install` or `keyhog update` to prepare execution packs, \

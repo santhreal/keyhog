@@ -618,7 +618,13 @@ def render_leaderboard(results: list[RunResult], corpus: str) -> str:
         return f"_No results for corpus `{corpus}` yet - run `make leaderboard`._"
     fixtures = next((r.corpus.fixture_count for r in rows if r.corpus.fixture_count), 0)
     positives = next((r.corpus.labeled_positives for r in rows if r.corpus.labeled_positives), 0)
+    primary_heading = (
+        "#### Synthetic SecretBench-shape mirror corpus"
+        if corpus == "mirror"
+        else f"#### Competitor {corpus} / home-turf rule corpus"
+    )
     lines = [
+        primary_heading,
         f"Corpus: **{corpus}** - {fixtures} fixtures, {positives} labeled positives. "
         f"Every scanner scored identically (SecretBench overlap rule); the answer-key "
         f"manifest is excluded from the scan tree.",
@@ -649,9 +655,14 @@ def render_leaderboard(results: list[RunResult], corpus: str) -> str:
             continue
         o_fixtures = next((r.corpus.fixture_count for r in other_rows if r.corpus.fixture_count), 0)
         o_positives = next((r.corpus.labeled_positives for r in other_rows if r.corpus.labeled_positives), 0)
+        other_heading = (
+            "#### Synthetic SecretBench-shape mirror corpus"
+            if other == "mirror"
+            else f"#### Competitor {other} / home-turf rule corpus"
+        )
         lines.extend([
             "",
-            f"#### Competitor {other} rule corpus",
+            other_heading,
             f"Corpus: **{other}** - {o_fixtures} fixtures, {o_positives} labeled positives. "
             "Cross-tool evaluation on competitor ground truth.",
             "",

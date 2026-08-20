@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 /// Cache format version. Bump when the envelope layout changes.
 pub use keyhog_core::MATCHER_ARTIFACT_FORMAT_VERSION as MATCHER_ARTIFACT_VERSION;
@@ -41,22 +41,39 @@ pub const MATCHER_ARTIFACT_FILE_BYTES: u64 = 256 * 1024 * 1024;
 pub const MATCHER_ARTIFACT_MAX_ENTRIES: usize = keyhog_core::CacheKind::MatcherArtifacts
     .default_policy()
     .max_entries;
-static CONFIGURED_CACHE_DIR: OnceLock<parking_lot::RwLock<Option<PathBuf>>> = OnceLock::new();
-fn configured_cache_dir_cell() -> &'static parking_lot::RwLock<Option<PathBuf>> {
-    CONFIGURED_CACHE_DIR.get_or_init(|| parking_lot::RwLock::new(None))
-}
+static CONFIGURED_CACHE_STATE: std::sync::LazyLock<
+    parking_lot::RwLock<(Option<PathBuf>, MatcherArtifactCacheDisableReason)>,
+> = std::sync::LazyLock::new(|| {
+    parking_lot::RwLock::new((None, MatcherArtifactCacheDisableReason::ConfiguredOff))
+});
 
 /// Configure the MatcherArtifact cache directory for this process.
 ///
 /// `Some(path)` enables persistence at that absolute directory. `None` disables
 /// the cache for subsequent compiles in this process.
 pub fn set_matcher_artifact_cache_dir(path: Option<PathBuf>) {
-    *configured_cache_dir_cell().write() = path;
+    set_matcher_artifact_cache_dir_with_reason(
+        path,
+        MatcherArtifactCacheDisableReason::ConfiguredOff,
+    );
+}
+
+/// Configure the MatcherArtifact cache directory and explicit disable reason for this process.
+pub fn set_matcher_artifact_cache_dir_with_reason(
+    path: Option<PathBuf>,
+    reason: MatcherArtifactCacheDisableReason,
+) {
+    *CONFIGURED_CACHE_STATE.write() = (path, reason);
 }
 
 /// Currently configured MatcherArtifact cache directory, if enabled.
 pub fn configured_matcher_artifact_cache_dir() -> Option<PathBuf> {
-    configured_cache_dir_cell().read().clone()
+    CONFIGURED_CACHE_STATE.read().0.clone()
+}
+
+/// Currently configured MatcherArtifact cache disable reason when disabled.
+pub fn configured_matcher_artifact_cache_disable_reason() -> MatcherArtifactCacheDisableReason {
+    CONFIGURED_CACHE_STATE.read().1
 }
 
 /// Default MatcherArtifact cache directory under the platform user cache root.
@@ -919,11 +936,12 @@ pub fn compile_shared_with_matcher_artifact_cache(
     // same way the cache-enabled path does so enabling the cache cannot change
     // scanner assembly ordering.
     if cache_dir.is_none() {
+        let disable_reason = configured_matcher_artifact_cache_disable_reason();
         return compile_without_matcher_artifact_cache(
             detectors,
             gpu_policy,
             tuning_config,
-            MatcherArtifactCacheDisableReason::ConfiguredOff,
+            disable_reason,
         );
     }
     // Identity keys on the canonical detector-IR digest (same digest packs use).
@@ -971,11 +989,12 @@ pub fn compile_shared_with_matcher_artifact_cache(
     };
 
     let Some(cache_dir) = cache_dir.as_ref() else {
+        let disable_reason = configured_matcher_artifact_cache_disable_reason();
         return compile_without_matcher_artifact_cache(
             sorted,
             gpu_policy,
             tuning_config,
-            MatcherArtifactCacheDisableReason::ConfiguredOff,
+            disable_reason,
         );
     };
 

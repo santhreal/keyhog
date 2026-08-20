@@ -392,13 +392,24 @@ pub(crate) fn configure_hyperscan_cache_dir(cache_dir: Option<PathBuf>) -> Resul
     Ok(())
 }
 
+#[allow(dead_code)]
 pub(crate) fn configure_matcher_artifact_cache_dir(cache_dir: Option<PathBuf>) -> Result<()> {
+    configure_matcher_artifact_cache_dir_with_reason(
+        cache_dir,
+        keyhog_scanner::MatcherArtifactCacheDisableReason::ConfiguredOff,
+    )
+}
+
+pub(crate) fn configure_matcher_artifact_cache_dir_with_reason(
+    cache_dir: Option<PathBuf>,
+    reason: keyhog_scanner::MatcherArtifactCacheDisableReason,
+) -> Result<()> {
     if let Some(path) = cache_dir.as_ref() {
         keyhog_scanner::validate_matcher_artifact_cache_dir(path).map_err(|error| {
             anyhow::anyhow!("{error}. Configure with --matcher-cache or [system].matcher_cache")
         })?;
     }
-    keyhog_scanner::set_matcher_artifact_cache_dir(cache_dir);
+    keyhog_scanner::set_matcher_artifact_cache_dir_with_reason(cache_dir, reason);
     Ok(())
 }
 

@@ -140,11 +140,10 @@ pub(super) fn region_presence_batch_byte_limit_for_backend(backend_id: &str) -> 
 /// Memory retention budget for GPU region-presence scratch buffers.
 ///
 /// Thread-local scratch buffers retain capacity up to the configured GPU batch input
-/// memory budget (or VYRE's 64 MiB scan ceiling, whichever is larger), preventing
-/// steady-state allocate-fault-copy-scrub-free cycles across batches.
+/// memory budget, preventing steady-state allocate-fault-copy-scrub-free cycles across batches.
 /// Buffers exceeding this ceiling are returned to the allocator on drop.
 pub(crate) fn region_presence_scratch_retention_limit() -> usize {
-    super::gpu_input_budget::gpu_batch_input_limit().max(REGION_PRESENCE_BATCH_BYTE_LIMIT)
+    super::gpu_input_budget::gpu_batch_input_limit()
 }
 
 /// Bound overlap amplification from pathological custom detector literals.

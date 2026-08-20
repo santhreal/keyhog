@@ -27,8 +27,8 @@ pub(crate) use policy::{ResolvedAllowlistConfig, ResolvedReportPolicy, ResolvedV
 pub(crate) use runtime::MAX_COMMITS_DEFAULT;
 pub(crate) use runtime::{
     backend_override_cli_value, backend_override_label, configure_hyperscan_cache_dir,
-    configure_matcher_artifact_cache_dir, configure_persistent_daemon_threads, configure_threads,
-    fused_batch_calibration_counts, fused_cpu_wave_width, fused_depth_default,
+    configure_matcher_artifact_cache_dir_with_reason, configure_persistent_daemon_threads,
+    configure_threads, fused_batch_calibration_counts, fused_cpu_wave_width, fused_depth_default,
     gpu_runtime_policy_for_backend_override, gpu_runtime_policy_from_args, keyhog_worker_threads,
     parse_backend_override, ScanRuntimeInput, FUSED_BATCH_BYTES, FUSED_BATCH_DEFAULT,
     MAX_THREADS_CAP, ML_THRESHOLD_DEFAULT, VERIFY_MAX_CONCURRENT_DEFAULT,
@@ -195,10 +195,13 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         runtime_input.autoroute_cache.as_deref(),
     )
     .map_err(anyhow::Error::msg)?;
-    let mut matcher_cache_path = crate::matcher_cache_path::resolve_matcher_cache_path(
-        runtime_input.matcher_cache.as_deref(),
-    )
-    .map_err(anyhow::Error::msg)?;
+    let (mut matcher_cache_path, mut matcher_disable_reason) = {
+        let (path, reason) = crate::matcher_cache_path::resolve_matcher_cache_path_and_reason(
+            runtime_input.matcher_cache.as_deref(),
+        )
+        .map_err(anyhow::Error::msg)?;
+        (path, reason)
+    };
     // Lockdown forbids reading detector graphs from unsigned on-disk caches.
     if args.lockdown && matcher_cache_path.is_some() {
         // Only surface warnings when the operator explicitly configured the
@@ -210,9 +213,13 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
             );
         }
         matcher_cache_path = None;
+        matcher_disable_reason = keyhog_scanner::MatcherArtifactCacheDisableReason::LockdownActive;
     }
 
-    configure_matcher_artifact_cache_dir(matcher_cache_path.clone())?;
+    configure_matcher_artifact_cache_dir_with_reason(
+        matcher_cache_path.clone(),
+        matcher_disable_reason,
+    )?;
     let backend_override = parse_backend_override(runtime_input.backend.as_deref())?;
     let scanner_tuning = outcome.scanner_tuning;
     let scanner_input = ScannerConfigInput::from_scan_args(args);

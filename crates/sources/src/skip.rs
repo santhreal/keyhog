@@ -559,7 +559,7 @@ pub(crate) fn subtract_excluded(delta: usize) {
         return;
     }
     let t = current_source_telemetry();
-    let _ = t.counters[2].fetch_update(Relaxed, Relaxed, |current| {
+    let _ = t.counters[2].fetch_update(Relaxed, Relaxed, |current| { // LAW10: atomic telemetry counter update with unconditional Some is infallible
         Some(current.saturating_sub(delta))
     });
 }

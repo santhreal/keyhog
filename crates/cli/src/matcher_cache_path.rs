@@ -16,18 +16,48 @@ use std::path::PathBuf;
 /// is a hard error. The automatic default automatically tightens loose permissions
 /// (e.g. 0775 to 0700) and soft-fails to `None` (cache disabled) when the platform
 /// cache root is missing or outside the allowlist.
+#[allow(dead_code)]
 pub(crate) fn resolve_matcher_cache_path(raw: Option<&str>) -> Result<Option<PathBuf>, String> {
     resolve_matcher_cache_path_with_default(raw, dirs::cache_dir())
 }
 
+#[allow(dead_code)]
 pub(crate) fn resolve_matcher_cache_path_with_default(
     raw: Option<&str>,
     default_cache_dir: Option<PathBuf>,
 ) -> Result<Option<PathBuf>, String> {
+    resolve_matcher_cache_path_and_reason_with_default(raw, default_cache_dir).map(|(path, _)| path)
+}
+
+pub(crate) fn resolve_matcher_cache_path_and_reason(
+    raw: Option<&str>,
+) -> Result<
+    (
+        Option<PathBuf>,
+        keyhog_scanner::MatcherArtifactCacheDisableReason,
+    ),
+    String,
+> {
+    resolve_matcher_cache_path_and_reason_with_default(raw, dirs::cache_dir())
+}
+
+pub(crate) fn resolve_matcher_cache_path_and_reason_with_default(
+    raw: Option<&str>,
+    default_cache_dir: Option<PathBuf>,
+) -> Result<
+    (
+        Option<PathBuf>,
+        keyhog_scanner::MatcherArtifactCacheDisableReason,
+    ),
+    String,
+> {
     if let Some(raw) = raw {
         let trimmed = raw.trim();
         if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("off") || trimmed == "0" {
-            return Ok(None);
+            return Ok((
+                None,
+                keyhog_scanner::MatcherArtifactCacheDisableReason::ConfiguredOff,
+            ));
         }
         let path = PathBuf::from(trimmed);
         if !path.is_absolute() {
@@ -37,13 +67,19 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
             ));
         }
         keyhog_scanner::validate_matcher_artifact_cache_dir(&path)?;
-        return Ok(Some(path));
+        return Ok((
+            Some(path),
+            keyhog_scanner::MatcherArtifactCacheDisableReason::ConfiguredOff,
+        ));
     }
 
     match keyhog_scanner::default_matcher_artifact_cache_dir_from_base(default_cache_dir) {
         Ok(path) => {
             match keyhog_scanner::validate_and_tighten_matcher_artifact_cache_dir(&path, true) {
-                Ok(()) => Ok(Some(path)),
+                Ok(()) => Ok((
+                    Some(path),
+                    keyhog_scanner::MatcherArtifactCacheDisableReason::ConfiguredOff,
+                )),
                 Err(error) => {
                     tracing::warn!(
                         error = %error,
@@ -54,7 +90,10 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
                         "warning: matcher-artifact cache unusable at {}: {error}",
                         path.display()
                     );
-                    Ok(None)
+                    Ok((
+                        None,
+                        keyhog_scanner::MatcherArtifactCacheDisableReason::UnusableLocation,
+                    ))
                 }
             }
         }
@@ -66,7 +105,10 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
             eprintln!(
                 "warning: matcher-artifact cache unusable: {error}; configure with --matcher-cache <DIR>"
             );
-            Ok(None)
+            Ok((
+                None,
+                keyhog_scanner::MatcherArtifactCacheDisableReason::UnusableLocation,
+            ))
         }
     }
 }
