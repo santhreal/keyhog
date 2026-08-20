@@ -492,16 +492,20 @@ fn load_guard_config() -> (
             )
         }
     };
-    let budget =
-        guard.hot_index_memory.as_deref().and_then(
-            |s| match crate::value_parsers::parse_byte_size(s) {
-                Ok(bytes) => Some(bytes),
-                Err(err) => {
-                    tracing::warn!("daemon: invalid guard hot_index_memory '{s}': {err}");
-                    None
-                }
-            },
-        );
+    let budget = guard.hot_index_memory.as_deref().and_then(|s| {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        match crate::value_parsers::parse_byte_size(trimmed) {
+            Ok(0) => None,
+            Ok(bytes) => Some(bytes),
+            Err(err) => {
+                tracing::warn!("daemon: invalid guard hot_index_memory '{s}': {err}");
+                None
+            }
+        }
+    });
     let defaults = keyhog_sources::guard::GuardReconciliationConfig::default();
     let recon_config = keyhog_sources::guard::GuardReconciliationConfig {
         max_pending_events_per_root: guard

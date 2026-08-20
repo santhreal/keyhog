@@ -58,7 +58,7 @@ fn collect_detector_signatures(detectors: &[DetectorSpec]) -> std::collections::
 fn filter_disabled_detectors(
     detectors: &mut Vec<DetectorSpec>,
     disabled_detectors: &std::collections::HashSet<String>,
-) -> usize {
+) -> std::collections::HashSet<String> {
     let known_ids: std::collections::HashSet<String> = detectors
         .iter()
         .map(|detector| detector.id.clone())
@@ -68,7 +68,7 @@ fn filter_disabled_detectors(
         .cloned()
         .collect();
     if removed.is_empty() {
-        return 0;
+        return std::collections::HashSet::new();
     }
 
     let mut required_by: std::collections::HashMap<String, Vec<String>> =
@@ -97,14 +97,13 @@ fn filter_disabled_detectors(
         }
     }
 
-    let before = detectors.len();
     detectors.retain(|detector| !removed.contains(&detector.id));
     for detector in detectors.iter_mut() {
         detector
             .detector_relations
             .retain(|relation| !removed.contains(&relation.detector_id));
     }
-    before - detectors.len()
+    removed
 }
 
 /// Hosts with strictly less RAM than this are treated as low-RAM and get the
@@ -1018,10 +1017,10 @@ fn setup_default_scan_runtime_with_rayon_policy(
 
     // Apply `[detector.<id>] enabled = false`: drop the disabled detectors before
     // compilation so they never fire (mirrors `ScanOrchestrator::new`).
-    let disabled_detectors = effective_config.disabled_detectors.clone();
+    let mut disabled_detectors = effective_config.disabled_detectors.clone();
     if !disabled_detectors.is_empty() {
         let before = detectors.len();
-        filter_disabled_detectors(&mut detectors, &disabled_detectors);
+        let removed = filter_disabled_detectors(&mut detectors, &disabled_detectors);
         if detectors.is_empty() && before > 0 {
             anyhow::bail!(
                 "all {before} loaded detector(s) were disabled by .keyhog.toml \
@@ -1029,6 +1028,7 @@ fn setup_default_scan_runtime_with_rayon_policy(
                  `{subcommand_name}`, or remove the config."
             );
         }
+        disabled_detectors.extend(removed);
     }
 
     // Performance identity describes the active corpus before per-invocation
@@ -1350,7 +1350,7 @@ impl ScanOrchestrator {
         }
         let mut effective_config = resolve_scan_config(&mut args)?;
         ResolvedEngineRuntimeSettings::from(&effective_config).apply();
-        let disabled_detectors = effective_config.disabled_detectors.clone();
+        let mut disabled_detectors = effective_config.disabled_detectors.clone();
         // Operator `.keyhog.toml` `[detector.<id>] min_confidence` overrides;
         // detector self-declared floors (DetectorSpec::min_confidence, merged
         // below once the corpus is loaded) fill the gaps.
@@ -1526,7 +1526,8 @@ impl ScanOrchestrator {
         // their matches during postprocess filtering when using precompiled execution packs.
         if !disabled_detectors.is_empty() {
             let before = detectors.len();
-            let dropped = filter_disabled_detectors(&mut detectors, &disabled_detectors);
+            let removed = filter_disabled_detectors(&mut detectors, &disabled_detectors);
+            let dropped = removed.len();
             if dropped > 0 {
                 if detectors.is_empty() {
                     let mut disabled_ids: Vec<&str> =
@@ -1549,6 +1550,7 @@ impl ScanOrchestrator {
                          loaded."
                     );
                 }
+                disabled_detectors.extend(removed);
                 tracing::info!(
                     target: "keyhog::config",
                     dropped,

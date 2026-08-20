@@ -195,24 +195,34 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         runtime_input.autoroute_cache.as_deref(),
     )
     .map_err(anyhow::Error::msg)?;
-    let mut matcher_cache_path = crate::matcher_cache_path::resolve_matcher_cache_path(
+    let resolved_matcher_cache = crate::matcher_cache_path::resolve_matcher_cache_path(
         runtime_input.matcher_cache.as_deref(),
     )
     .map_err(anyhow::Error::msg)?;
-    // Lockdown forbids reading detector graphs from unsigned on-disk caches.
-    if args.lockdown && matcher_cache_path.is_some() {
-        // Only surface warnings when the operator explicitly configured the
-        // cache; default-on resolution must not spam --lockdown/--quiet CI.
-        if runtime_input.matcher_cache.is_some() {
+    let (matcher_cache_path, matcher_cache_disable_reason) = if args.lockdown {
+        if runtime_input.matcher_cache.is_some() && resolved_matcher_cache.path().is_some() {
             tracing::warn!("lockdown mode: MatcherArtifact cache disabled");
             eprintln!(
                 "warning: MatcherArtifact cache disabled because --lockdown forbids unsigned on-disk detector/matcher caches"
             );
         }
-        matcher_cache_path = None;
-    }
+        (
+            None,
+            keyhog_scanner::MatcherArtifactCacheDisableReason::LockdownActive,
+        )
+    } else {
+        match resolved_matcher_cache {
+            crate::matcher_cache_path::ResolvedMatcherCacheConfig::Enabled(path) => (
+                Some(path),
+                keyhog_scanner::MatcherArtifactCacheDisableReason::ConfiguredOff,
+            ),
+            crate::matcher_cache_path::ResolvedMatcherCacheConfig::Disabled(reason) => {
+                (None, reason)
+            }
+        }
+    };
 
-    configure_matcher_artifact_cache_dir(matcher_cache_path.clone())?;
+    configure_matcher_artifact_cache_dir(matcher_cache_path.clone(), matcher_cache_disable_reason)?;
     let backend_override = parse_backend_override(runtime_input.backend.as_deref())?;
     let scanner_tuning = outcome.scanner_tuning;
     let scanner_input = ScannerConfigInput::from_scan_args(args);

@@ -122,11 +122,11 @@ static OPERATIONAL_KNOBS: [OperationalKnob; 11] = [
     OperationalKnob {
         toml_key: "[scan].gpu_batch_input_limit",
         cli_flag: Some("--gpu-batch-input-limit"),
-        default_str: "8MB",
-        default_val: 8_388_480,
+        default_str: "128MB",
+        default_val: 134_217_728,
         unit: OperationalUnit::Bytes,
-        min_val: 65_536,
-        max_val: 2_147_483_648,
+        min_val: 134_217_728,
+        max_val: 1_073_741_824,
         description: "GPU region-presence batch byte budget",
     },
     OperationalKnob {

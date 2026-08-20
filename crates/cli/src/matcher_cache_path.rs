@@ -16,18 +16,46 @@ use std::path::PathBuf;
 /// is a hard error. The automatic default automatically tightens loose permissions
 /// (e.g. 0775 to 0700) and soft-fails to `None` (cache disabled) when the platform
 /// cache root is missing or outside the allowlist.
-pub(crate) fn resolve_matcher_cache_path(raw: Option<&str>) -> Result<Option<PathBuf>, String> {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ResolvedMatcherCacheConfig {
+    Enabled(PathBuf),
+    Disabled(keyhog_scanner::MatcherArtifactCacheDisableReason),
+}
+
+impl ResolvedMatcherCacheConfig {
+    pub(crate) fn path(&self) -> Option<PathBuf> {
+        match self {
+            Self::Enabled(path) => Some(path.clone()),
+            Self::Disabled(_) => None,
+        }
+    }
+
+    pub(crate) fn disable_reason(
+        &self,
+    ) -> Option<keyhog_scanner::MatcherArtifactCacheDisableReason> {
+        match self {
+            Self::Enabled(_) => None,
+            Self::Disabled(reason) => Some(*reason),
+        }
+    }
+}
+
+pub(crate) fn resolve_matcher_cache_path(
+    raw: Option<&str>,
+) -> Result<ResolvedMatcherCacheConfig, String> {
     resolve_matcher_cache_path_with_default(raw, dirs::cache_dir())
 }
 
 pub(crate) fn resolve_matcher_cache_path_with_default(
     raw: Option<&str>,
     default_cache_dir: Option<PathBuf>,
-) -> Result<Option<PathBuf>, String> {
+) -> Result<ResolvedMatcherCacheConfig, String> {
     if let Some(raw) = raw {
         let trimmed = raw.trim();
         if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("off") || trimmed == "0" {
-            return Ok(None);
+            return Ok(ResolvedMatcherCacheConfig::Disabled(
+                keyhog_scanner::MatcherArtifactCacheDisableReason::ConfiguredOff,
+            ));
         }
         let path = PathBuf::from(trimmed);
         if !path.is_absolute() {
@@ -37,20 +65,22 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
             ));
         }
         keyhog_scanner::validate_matcher_artifact_cache_dir(&path)?;
-        return Ok(Some(path));
+        return Ok(ResolvedMatcherCacheConfig::Enabled(path));
     }
 
     match keyhog_scanner::default_matcher_artifact_cache_dir_from_base(default_cache_dir) {
         Ok(path) => {
             match keyhog_scanner::validate_and_tighten_matcher_artifact_cache_dir(&path, true) {
-                Ok(()) => Ok(Some(path)),
+                Ok(()) => Ok(ResolvedMatcherCacheConfig::Enabled(path)),
                 Err(error) => {
                     tracing::debug!(
                         error = %error,
                         path = %path.display(),
-                        "matcher-artifact cache soft-fail: default cache location is unusable"
+                        "matcher-artifact cache unusable: default cache location is unusable"
                     );
-                    Ok(None)
+                    Ok(ResolvedMatcherCacheConfig::Disabled(
+                        keyhog_scanner::MatcherArtifactCacheDisableReason::UnusableLocation,
+                    ))
                 }
             }
         }
@@ -59,10 +89,9 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
                 error = %error,
                 "matcher-artifact cache soft-fail: no default cache location"
             );
-            eprintln!(
-                "warning: matcher-artifact cache unusable: {error}; configure with --matcher-cache <DIR>"
-            );
-            Ok(None)
+            Ok(ResolvedMatcherCacheConfig::Disabled(
+                keyhog_scanner::MatcherArtifactCacheDisableReason::UnusableLocation,
+            ))
         }
     }
 }
