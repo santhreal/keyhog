@@ -65,6 +65,7 @@ fn guarded() -> MutexGuard<'static, ()> {
 fn within_timeout<T: Send + 'static>(secs: u64, f: impl FnOnce() -> T + Send + 'static) -> T {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
+        let _scope = TestApi.skip_counter_guard();
         let _ = tx.send(f());
     });
     rx.recv_timeout(Duration::from_secs(secs)).expect(

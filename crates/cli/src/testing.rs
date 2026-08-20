@@ -35,6 +35,30 @@ pub enum DaemonTerminalFixture {
     FatalAccept(std::io::Error),
 }
 
+#[cfg(unix)]
+static TEST_PANIC_INJECTION_KIND: parking_lot::RwLock<Option<String>> =
+    parking_lot::RwLock::new(None);
+#[cfg(unix)]
+static HAS_TEST_PANIC_INJECTION: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(unix)]
+pub(crate) fn set_test_panic_injection(kind: Option<&str>) {
+    HAS_TEST_PANIC_INJECTION.store(kind.is_some(), std::sync::atomic::Ordering::Relaxed);
+    *TEST_PANIC_INJECTION_KIND.write() = kind.map(str::to_string);
+}
+
+#[cfg(unix)]
+pub(crate) fn check_test_panic_injection(kind: &str) {
+    if HAS_TEST_PANIC_INJECTION.load(std::sync::atomic::Ordering::Relaxed) {
+        if let Some(target) = TEST_PANIC_INJECTION_KIND.read().as_deref() {
+            if target == kind {
+                panic!("simulated test panic on daemon request kind: {target}");
+            }
+        }
+    }
+}
+
 /// Enumeration of every door and entry point that parses human-readable byte sizes (Row 112).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ByteSizeParserDoor {
@@ -771,12 +795,10 @@ impl CliTestApi for TestApi {
             crate::daemon::server::testing::finish_daemon_service_for_test(socket_path, fixture),
         )
     }
-    #[cfg(all(unix, test))]
+    #[cfg(unix)]
     fn set_daemon_panic_injection(&self, kind: Option<&str>) {
-        crate::daemon::server::set_test_panic_injection(kind);
+        set_test_panic_injection(kind);
     }
-    #[cfg(all(unix, not(test)))]
-    fn set_daemon_panic_injection(&self, _kind: Option<&str>) {}
     #[cfg(unix)]
     fn all_daemon_request_kinds(&self) -> &'static [&'static str] {
         crate::daemon::protocol::ALL_REQUEST_KINDS
