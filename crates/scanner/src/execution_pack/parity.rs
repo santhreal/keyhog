@@ -79,7 +79,7 @@ impl PackFindingParityEvidence {
         })
     }
 
-    pub(crate) fn validate(
+    pub fn validate(
         &self,
         backend: ExecutionPackBackend,
         detector_digest: [u8; 32],
