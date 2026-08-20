@@ -1,4 +1,4 @@
-//! Centralized cache directory scanner, reconciler, and LRU eviction engine.
+//! Centralized cache directory scanner, reconciler, and least-recently-written eviction engine.
 //!
 //! Enforces bounded growth across all KeyHog cache artifact kinds:
 //! - Hyperscan pattern databases (`hs-*.db`)
@@ -50,10 +50,22 @@ pub fn evict_cache_dir_with_policy(
     let mut report = EvictionReport::default();
 
     if kind == CacheKind::LockFiles {
+        let mut entries = Vec::new();
+        collect_matching_entries(cache_dir, kind, &mut entries);
+        report.initial_count = entries.len();
+        report.initial_bytes = entries.iter().map(|e| e.bytes).sum();
+
         if policy.max_lock_age_secs > 0 {
             report.stale_locks_removed =
                 collect_stale_lock_files(cache_dir, Duration::from_secs(policy.max_lock_age_secs));
         }
+
+        report.evicted_count = report.stale_locks_removed;
+        let mut remaining_entries = Vec::new();
+        collect_matching_entries(cache_dir, kind, &mut remaining_entries);
+        report.retained_count = remaining_entries.len();
+        report.retained_bytes = remaining_entries.iter().map(|e| e.bytes).sum();
+        report.evicted_bytes = report.initial_bytes.saturating_sub(report.retained_bytes);
         return report;
     }
 
@@ -65,24 +77,32 @@ pub fn evict_cache_dir_with_policy(
     let mut current_bytes: u64 = entries.iter().map(|e| e.bytes).sum();
     report.initial_bytes = current_bytes;
 
-    // Sort oldest first (least recently written)
+    // Sort oldest first (least recently written by modification time)
     entries.sort_by(|a, b| a.modified.cmp(&b.modified));
 
     let total = entries.len();
-    let mut remaining_count = total;
     let mut retained_count = 0;
 
     for (idx, entry) in entries.into_iter().enumerate() {
         let is_newest = idx + 1 == total;
-        let over_count = remaining_count > policy.max_entries;
-        let over_bytes = current_bytes > policy.max_bytes && (!is_newest || retained_count > 0);
+        let remaining_candidates = total - idx;
+        let files_if_retained = retained_count + remaining_candidates;
 
-        if over_count || over_bytes {
+        let over_count = files_if_retained > policy.max_entries;
+        let over_bytes = current_bytes > policy.max_bytes;
+
+        // If policy permits at least one entry, never evict the sole newest entry on byte cap
+        let should_evict = if is_newest && retained_count == 0 && policy.max_entries >= 1 {
+            false
+        } else {
+            over_count || over_bytes
+        };
+
+        if should_evict {
             if std::fs::remove_file(&entry.path).is_ok() {
                 report.evicted_count += 1;
                 report.evicted_bytes += entry.bytes;
                 current_bytes = current_bytes.saturating_sub(entry.bytes);
-                remaining_count = remaining_count.saturating_sub(1);
                 continue;
             }
         }
@@ -151,8 +171,22 @@ fn collect_stale_locks_bounded(cache_dir: &Path, max_age: Duration, top_level: b
                 {
                     use fs2::FileExt;
                     if file.try_lock_exclusive().is_ok() {
-                        if std::fs::remove_file(&path).is_ok() {
-                            removed += 1;
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::MetadataExt;
+                            if let (Ok(m1), Ok(m2)) = (file.metadata(), std::fs::metadata(&path)) {
+                                if m1.ino() == m2.ino() && m1.dev() == m2.dev() && m1.nlink() > 0 {
+                                    if std::fs::remove_file(&path).is_ok() {
+                                        removed += 1;
+                                    }
+                                }
+                            }
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            if std::fs::remove_file(&path).is_ok() {
+                                removed += 1;
+                            }
                         }
                         let _ = file.unlock(); // LAW10: no runtime effect; unlocking unlinked descriptor cleans up kernel lock table entry
                     }
@@ -187,22 +221,28 @@ fn collect_matching_entries_bounded(
     let mut protected_files = std::collections::HashSet::new();
     if kind == CacheKind::GpuPrograms {
         let manifest_path = dir.join(".installed_manifest.json");
-        if let Ok(bytes) = std::fs::read(&manifest_path) {
-            // LAW10: missing or unreadable manifest conservatively treats no installed artifacts as present; no effect on scan findings
-            #[derive(serde::Deserialize)]
-            struct Manifest {
-                #[serde(default)]
-                artifacts: Vec<Entry>,
-            }
-            #[derive(serde::Deserialize)]
-            struct Entry {
-                file_name: String,
-            }
-            if let Ok(manifest) = serde_json::from_slice::<Manifest>(&bytes) {
-                // LAW10: malformed manifest skips protected set population; no effect on scan findings
-                for item in manifest.artifacts {
-                    protected_files.insert(item.file_name);
+        if manifest_path.exists() {
+            if let Ok(bytes) = std::fs::read(&manifest_path) {
+                #[derive(serde::Deserialize)]
+                struct Manifest {
+                    #[serde(default)]
+                    artifacts: Vec<Entry>,
                 }
+                #[derive(serde::Deserialize)]
+                struct Entry {
+                    file_name: String,
+                }
+                if let Ok(manifest) = serde_json::from_slice::<Manifest>(&bytes) {
+                    for item in manifest.artifacts {
+                        protected_files.insert(item.file_name);
+                    }
+                } else {
+                    // Malformed manifest exists: fail closed and do not collect/evict any GpuPrograms
+                    return;
+                }
+            } else {
+                // Unreadable manifest exists: fail closed and do not collect/evict any GpuPrograms
+                return;
             }
         }
     }

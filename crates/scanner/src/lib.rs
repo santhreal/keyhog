@@ -303,6 +303,7 @@ pub use cache_eviction::{
     collect_stale_lock_files, evict_cache_dir_with_policy, reconcile_all_cache_kinds,
     EvictionReport,
 };
+pub use matcher_artifact_cache::{MATCHER_ARTIFACT_FILE_BYTES, MATCHER_ARTIFACT_MAX_ENTRIES};
 
 /// Validate a MatcherArtifact cache directory with optional auto-tightening for default locations.
 pub fn validate_and_tighten_matcher_artifact_cache_dir(
