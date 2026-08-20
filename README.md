@@ -25,7 +25,7 @@ containers, cloud storage, browser assets, collaboration content, and running
 systems.**
 
 Most secret scanners stop at CPU regex matches in a repository checkout.
-KeyHog combines **927 service-specific detectors**, decode-through for concealed
+KeyHog combines **935 service-specific detectors**, decode-through for concealed
 credentials, context-aware evidence and suppression, live provider verification,
 and first-class **CUDA, Metal, and WGPU execution through
 [Vyre](https://github.com/santhreal/vyre)**. Calibration measures every eligible
@@ -535,7 +535,7 @@ contracts.
 
 ## How KeyHog works
 
-KeyHog compiles its 927 detectors into a shared trigger and extraction plan,
+KeyHog compiles its 935 detectors into a shared trigger and extraction plan,
 decodes nested encodings before matching, and applies per-detector scoring,
 evidence, and suppression. Pure-Rust CPU (`cpu-fallback`) is always available.
 The Hyperscan route (`simd-regex`) uses Hyperscan when that feature is present;
@@ -586,7 +586,7 @@ dependencies.
 
 ## What it catches
 
-927 embedded detectors with detector-owned offline validation and companions:
+935 embedded detectors with detector-owned offline validation and companions:
 
 - **Cloud providers:** AWS (access key + secret + STS verification),
   Azure (subscription key, storage account key, SAS), GCP (service account,
