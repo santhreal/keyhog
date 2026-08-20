@@ -346,12 +346,7 @@ fn row_147_guard_status_protocol_and_state_transitions() {
         let status_req = Request::GuardStatus {
             root: "/srv/repo".to_string(),
         };
-        let encoded_req = serde_json::to_vec(&status_req).expect("serialize req");
-        let decoded_req: Request = serde_json::from_slice(&encoded_req).expect("deserialize req");
-        match decoded_req {
-            Request::GuardStatus { root } => assert_eq!(root, "/srv/repo"),
-            _ => panic!("expected GuardStatus"),
-        }
+        use keyhog::testing::daemon::GuardRuntime;
 
         let status_resp = Response::GuardStatusResult {
             root: "/srv/repo".to_string(),
@@ -389,17 +384,16 @@ fn row_147_guard_status_protocol_and_state_transitions() {
             recent_transitions: Vec::new(),
         };
 
-        assert_eq!(response_kind(&status_resp), "GuardStatusResult");
-        let encoded_resp = serde_json::to_vec(&status_resp).expect("serialize resp");
-        let decoded_resp: Response =
-            serde_json::from_slice(&encoded_resp).expect("deserialize resp");
-        match decoded_resp {
-            Response::GuardStatusResult { root, state, .. } => {
-                assert_eq!(root, "/srv/repo");
-                assert_eq!(state, "current");
-            }
-            _ => panic!("expected GuardStatusResult"),
-        }
+        let status_resp_frame = sample_guard_status_result_frame("/srv/repo");
+        assert_eq!(
+            response_kind_classification(&status_resp_frame),
+            "GuardStatusResult"
+        );
+        let encoded_resp = serialize_status_response(&status_resp_frame);
+        let (decoded_root, decoded_state) =
+            deserialize_status_response(&encoded_resp).expect("deserialize resp");
+        assert_eq!(decoded_root, "/srv/repo");
+        assert_eq!(decoded_state, "current");
 
         // GuardRuntime verification
         let rt = GuardRuntime::new();

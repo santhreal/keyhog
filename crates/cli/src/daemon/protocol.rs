@@ -92,7 +92,7 @@ pub(crate) const WIRE_VERSION: u32 = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct WarmBackendIdentity {
+pub(crate) struct WarmBackendIdentity {
     pub engine: String,
     pub gpu_artifact: Option<String>,
     pub binary_sha256: String,
@@ -102,7 +102,7 @@ pub struct WarmBackendIdentity {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct WarmBackendStatus {
+pub(crate) struct WarmBackendStatus {
     pub ready: bool,
     pub daemon_generation: String,
     pub identity: WarmBackendIdentity,
@@ -114,7 +114,7 @@ pub struct WarmBackendStatus {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct MassScanStats {
+pub(crate) struct MassScanStats {
     pub batches: u64,
     pub chunks: u64,
     pub bytes: u64,
@@ -135,7 +135,7 @@ impl MassScanStats {
 /// input data and the payload is privacy-safe by construction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ProfileStageMeasurement {
+pub(crate) struct ProfileStageMeasurement {
     pub stage: String,
     pub calls: u64,
     pub elapsed_ns: u64,
@@ -148,7 +148,7 @@ pub struct ProfileStageMeasurement {
 /// and exact event loss counts so dropped detail is never silent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct RequestProfile {
+pub(crate) struct RequestProfile {
     /// Server-assigned identity: the daemon generation string from
     /// [`WarmBackendStatus`] plus a process-atomic per-request sequence.
     pub request_id: String,
@@ -174,7 +174,7 @@ pub(crate) const MASS_BATCH_CHUNKS: usize = 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
-pub enum Request {
+pub(crate) enum Request {
     /// First message on every connection. Server replies with
     /// [`Response::Hello`] containing its `WIRE_VERSION` so the client
     /// can refuse mismatched daemons.
@@ -305,7 +305,7 @@ pub enum Request {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Response {
+pub(crate) enum Response {
     Hello {
         wire_version: u32,
         keyhog_version: String,
@@ -665,7 +665,7 @@ pub(crate) fn guard_commit_receipt_wire_len(
 /// `GuardCommitBegin`. Carries no payload bytes, only identity metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct GuardWireManifestEntry {
+pub(crate) struct GuardWireManifestEntry {
     /// Path bytes as hex-encoded UTF-8 (non-UTF-8 paths are hex-escaped).
     pub path: String,
     /// Entry kind label: "file", "symlink", "submodule", "deletion".
@@ -700,7 +700,7 @@ pub struct GuardTransitionWireEntry {
 /// One root entry in a `GuardListResult`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct GuardListEntry {
+pub(crate) struct GuardListEntry {
     /// Canonical root path.
     pub root: String,
     /// Mode label: "repo" or "filesystem".
@@ -712,7 +712,7 @@ pub struct GuardListEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BackendRecoveryStatus {
+pub(crate) struct BackendRecoveryStatus {
     pub failed_backend: String,
     pub recovery_backend: String,
     pub recovered_ranges: Vec<RecoveredInputRangeStatus>,
@@ -725,7 +725,7 @@ pub struct BackendRecoveryStatus {
 /// field is a deserialization error so older peers cannot silently downgrade
 /// a v6 `ScanResults` frame to a no-fault execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RequiredOption<T> {
+pub(crate) enum RequiredOption<T> {
     None,
     Some(T),
 }
@@ -811,14 +811,14 @@ impl<T> Default for RequiredOption<T> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RecoveredInputRangeStatus {
+pub(crate) struct RecoveredInputRangeStatus {
     pub chunk_index: usize,
     pub byte_start: usize,
     pub byte_end: usize,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SourceCoverageGaps {
+pub(crate) struct SourceCoverageGaps {
     pub over_max_size: usize,
     pub binary: usize,
     pub unreadable: usize,
@@ -1180,7 +1180,7 @@ pub(crate) fn sample_request_for_kind(kind: &str) -> Option<Request> {
 /// One-word kind label for a daemon [`Response`]. Use this in user-facing
 /// protocol errors instead of `Debug`: response payloads can contain scanner
 /// results and therefore credential-shaped data.
-pub fn response_kind(response: &Response) -> &'static str {
+pub(crate) fn response_kind(response: &Response) -> &'static str {
     match response {
         Response::Hello { .. } => "Hello",
         Response::Health { .. } => "Health",

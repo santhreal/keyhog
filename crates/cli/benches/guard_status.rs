@@ -9,9 +9,15 @@ use keyhog_core::guard_state::{
     FilesystemAuthority, FilesystemIdentity, GuardPolicyIdentity, GuardRootMode, GuardRootState,
     GuardTransition,
 };
+#[cfg(unix)]
+use keyhog::testing::daemon::GuardRuntime;
+#[cfg(unix)]
+use keyhog_core::guard_state::{FilesystemIdentity, GuardRootMode};
+use keyhog_core::guard_state::{GuardPolicyIdentity, GuardRootState, GuardTransition};
 use std::hint::black_box;
 use tempfile::tempdir;
 
+#[cfg(unix)]
 fn sample_fs_identity(dev: u64, ino: u64) -> FilesystemIdentity {
     FilesystemIdentity {
         device: dev,
@@ -23,8 +29,6 @@ fn sample_fs_identity(dev: u64, ino: u64) -> FilesystemIdentity {
 /// guard status and control frames between the CLI client and guard daemon.
 #[cfg(unix)]
 fn bench_guard_protocol_framing(c: &mut Criterion) {
-    use keyhog::testing::daemon::protocol::response_kind;
-
     let mut group = c.benchmark_group("guard_protocol_framing");
 
     let status_req = Request::GuardStatus {
@@ -68,37 +72,37 @@ fn bench_guard_protocol_framing(c: &mut Criterion) {
 
     group.bench_function("serialize_request_guard_status", |b| {
         b.iter(|| {
-            let json = serde_json::to_vec(black_box(&status_req)).expect("serialize");
+            let json = serialize_status_request(black_box(status_root));
             let _ = black_box(json);
         });
     });
 
     group.bench_function("deserialize_request_guard_status", |b| {
-        let json = serde_json::to_vec(&status_req).expect("serialize");
+        let json = serialize_status_request(status_root);
         b.iter(|| {
-            let req: Request = serde_json::from_slice(black_box(&json)).expect("deserialize");
+            let req = deserialize_status_request(black_box(&json)).expect("deserialize");
             let _ = black_box(req);
         });
     });
 
     group.bench_function("serialize_response_guard_status", |b| {
         b.iter(|| {
-            let json = serde_json::to_vec(black_box(&status_resp)).expect("serialize");
+            let json = serialize_status_response(black_box(&status_resp_frame));
             let _ = black_box(json);
         });
     });
 
     group.bench_function("deserialize_response_guard_status", |b| {
-        let json = serde_json::to_vec(&status_resp).expect("serialize");
+        let json = serialize_status_response(&status_resp_frame);
         b.iter(|| {
-            let resp: Response = serde_json::from_slice(black_box(&json)).expect("deserialize");
+            let resp = deserialize_status_response(black_box(&json)).expect("deserialize");
             let _ = black_box(resp);
         });
     });
 
     group.bench_function("response_kind_classification", |b| {
         b.iter(|| {
-            let kind = response_kind(black_box(&status_resp));
+            let kind = response_kind_classification(black_box(&status_resp_frame));
             let _ = black_box(kind);
         });
     });

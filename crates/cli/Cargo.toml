@@ -195,7 +195,8 @@ windows-sys = { workspace = true, features = [
 [dev-dependencies]
 keyhog-core = { workspace = true }
 keyhog-scanner = { workspace = true, default-features = false }
-keyhog-sources = { workspace = true, default-features = false }
+keyhog-sources = { workspace = true, default-features = false, features = ["git"] }
+keyhog-verifier = { workspace = true, features = ["live"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tempfile = { workspace = true }

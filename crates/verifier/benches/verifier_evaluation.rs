@@ -1,10 +1,10 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use keyhog_core::json_selector;
 use keyhog_core::VerificationResult;
-use keyhog_verifier::sigv4::{aws_uri_encode, canonical_query_string};
 use keyhog_verifier::ssrf::{is_private_ip_addr, is_private_url};
 use keyhog_verifier::testing::{
-    TestApi, TestVerificationCache, VerifierTestApi, VerifierTestCache,
+    aws_uri_encode, canonical_query_string, TestApi, TestVerificationCache, VerifierTestApi,
+    VerifierTestCache,
 };
 use std::collections::HashMap;
 use std::hint::black_box;
