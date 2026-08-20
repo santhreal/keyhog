@@ -401,8 +401,8 @@ kernel notifications. When an unauthoritative filesystem is registered and no op
 `scrub_interval` is configured, KeyHog enforces a default 60-second periodic scrub interval
 to guarantee that remote modifications are caught.
 
-When the scrub interval elapses, each `current` root automatically transitions to
-`indexing` for a full reconciliation.
+When the scrub interval elapses, each `current` root is marked dirty to schedule
+a background reconciliation pass.
 ## Recovering corrupted roots
 
 If a repository's durable state becomes corrupt or desynchronized, rebuild it:

@@ -417,6 +417,13 @@ impl GuardWatcher {
                                 }
                             }
                         }
+                        let total_pending: usize =
+                            self.roots.values().map(|r| r.buffer.lock().len()).sum();
+                        if total_pending >= self.config.max_pending_events_total {
+                            for buffer in self.roots.values() {
+                                buffer.buffer.lock().mark_overflow();
+                            }
+                        }
                     }
                 }
                 Ok(Err(_)) => {
