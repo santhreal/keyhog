@@ -123,7 +123,7 @@ static OPERATIONAL_KNOBS: [OperationalKnob; 11] = [
         toml_key: "[scan].gpu_batch_input_limit",
         cli_flag: Some("--gpu-batch-input-limit"),
         default_str: "8MB",
-        default_val: 8_388_480,
+        default_val: 8_388_608,
         unit: OperationalUnit::Bytes,
         min_val: 65_536,
         max_val: 2_147_483_648,
