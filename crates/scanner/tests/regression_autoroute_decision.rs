@@ -238,6 +238,10 @@ fn backend_routing_reason_labels_are_stable() {
         "gpu_software_renderer"
     );
     assert_eq!(
+        BackendRoutingReason::GpuBatchNotDominant.label(),
+        "gpu_batch_not_dominant"
+    );
+    assert_eq!(
         BackendRoutingReason::GpuThresholdNotMet.label(),
         "gpu_threshold_not_met"
     );

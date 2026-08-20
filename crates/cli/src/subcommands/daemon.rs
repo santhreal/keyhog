@@ -492,35 +492,23 @@ fn load_guard_config() -> (
             )
         }
     };
-    let budget =
-        guard.hot_index_memory.as_deref().and_then(
-            |s| match crate::value_parsers::parse_byte_size(s) {
-                Ok(bytes) => Some(bytes),
-                Err(err) => {
-                    tracing::warn!("daemon: invalid guard hot_index_memory '{s}': {err}");
-                    None
-                }
-            },
-        );
+    let budget = guard.hot_index_memory.as_deref().and_then(parse_byte_size);
     let defaults = keyhog_sources::guard::GuardReconciliationConfig::default();
     let recon_config = keyhog_sources::guard::GuardReconciliationConfig {
         max_pending_events_per_root: guard
             .max_pending_events_per_root
-            .unwrap_or(defaults.max_pending_events_per_root), // LAW10: documented default resolution from configuration table
-        max_pending_events_total: guard
-            .max_pending_events_total
-            .unwrap_or(defaults.max_pending_events_total), // LAW10: documented default resolution from configuration table
+            .unwrap_or(defaults.max_pending_events_per_root),
         coalesce_window_ms: guard
             .coalesce_window
             .as_deref()
             .and_then(parse_duration_ms)
-            .unwrap_or(defaults.coalesce_window_ms), // LAW10: documented default resolution from configuration table
+            .unwrap_or(defaults.coalesce_window_ms),
         subtree_max_files: guard
             .subtree_max_files
-            .unwrap_or(defaults.subtree_max_files), // LAW10: documented default resolution from configuration table
+            .unwrap_or(defaults.subtree_max_files),
         subtree_max_depth: guard
             .subtree_max_depth
-            .unwrap_or(defaults.subtree_max_depth), // LAW10: documented default resolution from configuration table
+            .unwrap_or(defaults.subtree_max_depth),
     };
     let scanner_idle_timeout_secs = guard
         .scanner_idle_timeout
@@ -573,6 +561,33 @@ fn expand_state_path(s: &str) -> Option<PathBuf> {
     } else {
         Some(PathBuf::from(s))
     }
+}
+
+/// Parse a human-readable byte size string (e.g. "64MiB", "128MB", "1GB").
+/// Returns `None` on parse failure.
+fn parse_byte_size(s: &str) -> Option<usize> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    // Find the split between numeric and unit.
+    let split = s.find(|c: char| !c.is_ascii_digit() && c != '.');
+    let (num_str, unit_str) = match split {
+        Some(idx) => (&s[..idx], s[idx..].trim()),
+        None => (s, ""),
+    };
+    let num: f64 = num_str.parse().ok()?;
+    let multiplier = match unit_str.to_lowercase().as_str() {
+        "" | "b" => 1.0,
+        "k" | "kb" | "kib" => 1024.0,
+        "m" | "mb" | "mib" => 1024.0 * 1024.0,
+        "g" | "gb" | "gib" => 1024.0 * 1024.0 * 1024.0,
+        _ => {
+            tracing::warn!("daemon: unknown byte size unit '{}'", unit_str);
+            return None;
+        }
+    };
+    Some((num * multiplier) as usize)
 }
 
 /// Parse a human-readable duration string (e.g. "100ms", "5s", "1m").

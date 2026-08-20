@@ -133,7 +133,6 @@ fn scan(root: &Path, socket: &Path, fixture: &Path, detectors: &Path, overlay: b
         command.args(["--detectors-mode", "overlay"]);
     }
     command
-        .args(["--evidence-policy", "paranoid"])
         .args(["--format", "json-envelope"])
         .arg(fixture)
         .env("HOME", root)
@@ -157,7 +156,7 @@ fn custom_replacement_corpus_requires_exact_daemon_identity() {
     write_detector(&matching, "daemon-custom-match");
     write_detector(&mismatched, "daemon-custom-other");
     let fixture = root.path().join("planted.txt");
-    std::fs::write(&fixture, format!("demo_secret = \"{CUSTOM_TOKEN}\"\n"))
+    std::fs::write(&fixture, format!("custom = \"{CUSTOM_TOKEN}\"\n"))
         .expect("write planted custom secret");
 
     let daemon = start_daemon(root.path(), &matching);
@@ -166,8 +165,7 @@ fn custom_replacement_corpus_requires_exact_daemon_identity() {
     assert_eq!(
         matched.status.code(),
         Some(1),
-        "matching replacement corpus must reach the daemon and find the custom token; stdout={}; stderr={}",
-        String::from_utf8_lossy(&matched.stdout),
+        "matching replacement corpus must reach the daemon and find the custom token; stderr={}",
         String::from_utf8_lossy(&matched.stderr)
     );
     let report: Value = serde_json::from_slice(&matched.stdout).unwrap_or_else(|error| {

@@ -302,7 +302,7 @@ fn control_requests_survive_a_saturated_data_plane() {
     let socket = daemon.socket();
 
     // Mirrors the server's data-plane sizing so the pool is provably exhausted.
-    let cores = keyhog_profile::logical_cpu_count();
+    let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
     let scan_slots = (cores * 4).clamp(8, 256);
 
     let mut stalled = Vec::new();

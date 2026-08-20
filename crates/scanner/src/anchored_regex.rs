@@ -36,9 +36,6 @@ impl AnchoredRegex {
     }
 
     fn compile(&self, prefix: &str, suffix: &str) -> Arc<Regex> {
-        keyhog_profile::record_compile_surface_invocation(
-            keyhog_profile::CompileSurfaceId::DetectorPlan,
-        );
         let anchored = format!("{prefix}{}{suffix}", self.src);
         match RegexBuilder::new(&anchored)
             .case_insensitive(self.case_insensitive)

@@ -65,7 +65,9 @@ mod linux {
             CollectorAvailability::Available
         );
         let topology = collector.sample();
-        let expected_logical = keyhog_profile::logical_cpus();
+        let expected_logical = std::thread::available_parallelism()
+            .expect("available parallelism")
+            .get() as u32;
         assert_eq!(topology.logical_cpus, expected_logical);
 
         let cpus = sysfs_cpu_indices();

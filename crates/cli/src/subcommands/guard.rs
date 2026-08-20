@@ -194,8 +194,8 @@ async fn run_add(
     };
     let canonical_for_reconcile = match conn.round_trip(&request).await? {
         Response::GuardAdded {
-            root: added_root,
-            state: add_state,
+            root: ref added_root,
+            state: ref add_state,
             terminal_sequence,
         } => {
             let palette = style::for_stderr();
@@ -414,10 +414,6 @@ async fn run_status(
             root: daemon_root,
             mode,
             state,
-            filesystem_type,
-            filesystem_authoritative,
-            filesystem_unauthoritative_reason,
-            scrub_interval_secs,
             terminal_sequence,
             accepted_event_sequence,
             completed_event_sequence,
@@ -431,9 +427,6 @@ async fn run_status(
             initial_reconciliation_time,
             last_reconciliation_time,
             scanner_residency,
-            watcher_backend,
-            watcher_latency_tier,
-            watcher_poll_interval_ms,
             backend_route_label,
             build_identity_short,
             detector_digest_short,
@@ -455,10 +448,6 @@ async fn run_status(
                     "root": daemon_root,
                     "mode": mode,
                     "state": state,
-                    "filesystem_type": filesystem_type,
-                    "filesystem_authoritative": filesystem_authoritative,
-                    "filesystem_unauthoritative_reason": filesystem_unauthoritative_reason,
-                    "scrub_interval_secs": scrub_interval_secs,
                     "terminal_sequence": terminal_sequence,
                     "accepted_event_sequence": accepted_event_sequence,
                     "completed_event_sequence": completed_event_sequence,
@@ -472,9 +461,6 @@ async fn run_status(
                     "initial_reconciliation_time": initial_reconciliation_time,
                     "last_reconciliation_time": last_reconciliation_time,
                     "scanner_residency": scanner_residency,
-                    "watcher_backend": watcher_backend,
-                    "watcher_latency_tier": watcher_latency_tier,
-                    "watcher_poll_interval_ms": watcher_poll_interval_ms,
                     "backend_route_label": backend_route_label,
                     "build_identity_short": build_identity_short,
                     "detector_digest_short": detector_digest_short,
@@ -491,17 +477,6 @@ async fn run_status(
                 println!("root:           {}", daemon_root);
                 println!("mode:           {mode}");
                 println!("state:          {state}");
-                let fs_auth_label = if filesystem_authoritative {
-                    "authoritative".to_string()
-                } else if let Some(reason) = &filesystem_unauthoritative_reason {
-                    format!("unauthoritative: {reason}")
-                } else {
-                    "unauthoritative".to_string()
-                };
-                println!("filesystem:     {filesystem_type} ({fs_auth_label})");
-                if scrub_interval_secs > 0 {
-                    println!("scrub interval: {scrub_interval_secs}s");
-                }
                 println!("sequence:       {terminal_sequence}");
                 println!("accepted seq:   {accepted_event_sequence}");
                 println!("completed seq:  {completed_event_sequence}");
@@ -519,10 +494,6 @@ async fn run_status(
                     println!("last recon:     {t}");
                 }
                 println!("residency:      {scanner_residency}");
-                println!("watcher:        {watcher_backend} ({watcher_latency_tier})");
-                if let Some(poll_ms) = watcher_poll_interval_ms {
-                    println!("poll interval:  {poll_ms}ms");
-                }
                 println!("backend route:  {backend_route_label}");
                 if !build_identity_short.is_empty() {
                     println!("build digest:   {build_identity_short}");
@@ -686,8 +657,8 @@ async fn run_rebuild(
     };
     let added_root = match conn.round_trip(&add_request).await? {
         Response::GuardAdded {
-            root: added_root,
-            state: add_state,
+            root: ref added_root,
+            state: ref add_state,
             terminal_sequence,
         } => {
             eprintln!(

@@ -80,9 +80,8 @@ pub(crate) fn phase2_pattern_prof_enabled() -> bool {
 static PHASE2_PATTERN_NS: OnceLock<Vec<AtomicU64>> = OnceLock::new();
 static PHASE2_PATTERN_RUNS: OnceLock<Vec<AtomicU64>> = OnceLock::new();
 
-/// Prefix-gate diagnostics (enabled by `keyhog scan --perf-trace`), mapped to
-/// [`keyhog_profile::CounterId::Phase2PrefilterGateSkips`] and [`keyhog_profile::CounterId::Phase2PrefilterMarkCalls`].
-/// Counts how many gateable batches were SKIPPED (their required prefix literals absent)
+/// Prefix-gate diagnostics (enabled by `keyhog scan --perf-trace`). Counts how
+/// many gateable batches were SKIPPED (their required prefix literals absent)
 /// vs RUN, and how many `mark_matches` calls the gate saw, so we can tell
 /// whether the gate actually skips on a given corpus or whether spliced context
 /// keeps it firing.

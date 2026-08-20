@@ -36,10 +36,8 @@ pub use crate::{
     limits::{SourceLimits, DEFAULT_SOURCE_LIMITS},
     safe_read::read_file_safe_bytes,
     skip::{
-        capture_source_telemetry, current_source_telemetry, git_object_unreadable,
-        merge_skip_count_deltas, reset_for_scan, reset_skipped_over_max_size, skip_counts,
-        with_captured_source_telemetry, with_source_telemetry, ScanCounterScope, SkipCounts,
-        SourceSkipTelemetry,
+        git_object_unreadable, merge_skip_count_deltas, reset_skipped_over_max_size, skip_counts,
+        ScanCounterScope, SkipCounts,
     },
 };
 pub use keyhog_core::{common_source_types, intern_source_type};

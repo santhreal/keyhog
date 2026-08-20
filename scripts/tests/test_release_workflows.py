@@ -81,19 +81,26 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
         self.assertLess(RELEASE.index(guard), RELEASE.index("scripts/auto_release.py"))
         self.assertIn("Automatic release commits do not create another release.", RELEASE)
 
-    def test_release_governance_scope_decision(self) -> None:
-        """Release governance architecture decision (Row 92):
+    def test_release_has_no_signature_or_asset_publication_path(self) -> None:
+        """Release automation must not restore signing, attestations, or binary bundles."""
+        for obsolete in (
+            "gpg",
+            "minisign",
+            "cosign",
+            "attest",
+            "publish_release_assets",
+            "release-signing",
+            "KEYHOG_RELEASE_SIGNING",
+        ):
+            with self.subTest(obsolete=obsolete):
+                self.assertNotIn(obsolete, RELEASE.casefold())
 
-        KeyHog packages are distributed as pure source crates to crates.io with
-        OIDC Trusted Publishing and deterministic source-bound integrity receipts
-        (release-integrity.json). Standalone binary packaging, out-of-band signing,
-        and third-party attestation jobs are deliberately out of scope for crate releases.
-        """
-        self.assertIn("id-token: write", RELEASE)
-        self.assertIn("release-integrity.json", RELEASE)
-
-    def test_ci_verdict_required_job_contracts(self) -> None:
-        """Successful CI verdict enforces all 11 required test/verification jobs."""
+    def test_ci_verdict_excludes_removed_security_gates(self) -> None:
+        """Successful CI must not wait on prevention, audit, deny, or adversarial jobs."""
+        for obsolete in ("audit-gates:", "strict-runners:", "  deny:", "  audit:"):
+            with self.subTest(obsolete=obsolete):
+                self.assertNotIn(obsolete, CI)
+        # Required push/PR verdict after restoring comprehensive coverage.
         self.assertIn("length == 11", CI)
 
     def test_release_dogfood_build_includes_the_simd_backend_it_exercises(self) -> None:
@@ -103,13 +110,17 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
             CI,
         )
 
-    def test_publisher_uploads_exact_dependency_order(self) -> None:
-        """Cargo uploads must follow the exact workspace dependency chain."""
+    def test_publisher_uploads_dependency_order_without_release_proofs(self) -> None:
+        """Cargo uploads must follow the workspace dependency chain and stop there."""
         self.assertIn(
             "CRATES=(keyhog-profile keyhog-core keyhog-verifier keyhog-sources keyhog-scanner keyhog)",
             PUBLISH,
         )
         self.assertEqual(PUBLISH.count("cargo publish"), 1)
+        for obsolete in ("signature", "sbom", "provenance", "license_gate"):
+            with self.subTest(obsolete=obsolete):
+                self.assertNotIn(obsolete, PUBLISH.casefold())
+
     def test_publisher_preflights_external_registry_dependencies_before_upload(self) -> None:
         """No KeyHog crate may publish before every packaged Git dependency exists."""
         preflight = PUBLISH.index("python3 -B scripts/publish_registry_preflight.py")

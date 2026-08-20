@@ -30,7 +30,6 @@ pub(crate) fn union_unique_matches(dest: &mut Vec<RawMatch>, src: Vec<RawMatch>)
 pub(crate) fn decode_source_windows(
     limit: usize,
     chunk: &Chunk,
-    overlap: usize,
     mut visit: impl FnMut(&Chunk) -> crate::error::Result<()>,
 ) -> crate::error::Result<()> {
     let text = chunk.data.as_str();
@@ -74,9 +73,11 @@ pub(crate) fn decode_source_windows(
         }
 
         let max_overlap = (end - start).saturating_sub(1);
-        let actual_overlap = overlap.min(limit / 2).min(max_overlap);
+        let overlap = crate::types::WINDOW_OVERLAP_BYTES
+            .min(limit / 2)
+            .min(max_overlap);
 
-        let mut next = end.saturating_sub(actual_overlap);
+        let mut next = end.saturating_sub(overlap);
         while next < end && !text.is_char_boundary(next) {
             next += 1;
         }

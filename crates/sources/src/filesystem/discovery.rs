@@ -738,7 +738,6 @@ fn discovery_spool() -> Result<std::fs::File, SourceError> {
     if fd < 0 {
         return Err(SourceError::Io(std::io::Error::last_os_error()));
     }
-    // SAFETY: fd is non-negative and newly created by memfd_create.
     Ok(unsafe { std::fs::File::from_raw_fd(fd) })
 }
 

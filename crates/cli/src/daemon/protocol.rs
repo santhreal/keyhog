@@ -169,7 +169,7 @@ pub(crate) const MASS_BATCH_CHUNKS: usize = 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
-pub enum Request {
+pub(crate) enum Request {
     /// First message on every connection. Server replies with
     /// [`Response::Hello`] containing its `WIRE_VERSION` so the client
     /// can refuse mismatched daemons.
@@ -483,14 +483,6 @@ pub(crate) enum Response {
         mode: String,
         /// Current state label.
         state: String,
-        /// Backing filesystem type (Row 132).
-        filesystem_type: String,
-        /// Whether the filesystem is authoritative for change events (Row 132).
-        filesystem_authoritative: bool,
-        /// Reason if unauthoritative (Row 132).
-        filesystem_unauthoritative_reason: Option<String>,
-        /// Effective periodic scrub interval in seconds (Row 132).
-        scrub_interval_secs: u64,
         /// Terminal event sequence.
         terminal_sequence: u64,
         /// Accepted event sequence (events received from the watcher).
@@ -517,12 +509,6 @@ pub(crate) enum Response {
         last_reconciliation_time: Option<u64>,
         /// Scanner residency label.
         scanner_residency: String,
-        /// Watcher backend identifier label (Row 123).
-        watcher_backend: String,
-        /// Watcher backend latency tier classification (Row 123).
-        watcher_latency_tier: String,
-        /// Watcher polling interval in milliseconds, if polling (Row 123).
-        watcher_poll_interval_ms: Option<u64>,
         /// Backend route label used for the last scan.
         backend_route_label: String,
         /// Build identity short digest (first 12 hex chars).
@@ -641,7 +627,7 @@ pub(crate) fn guard_commit_receipt_wire_len(
 /// `GuardCommitBegin`. Carries no payload bytes, only identity metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct GuardWireManifestEntry {
+pub(crate) struct GuardWireManifestEntry {
     /// Path bytes as hex-encoded UTF-8 (non-UTF-8 paths are hex-escaped).
     pub path: String,
     /// Entry kind label: "file", "symlink", "submodule", "deletion".
@@ -1036,96 +1022,6 @@ pub(crate) fn request_kind(request: &Request) -> &'static str {
         Request::GuardStatus { .. } => "GuardStatus",
         Request::GuardReconcile { .. } => "GuardReconcile",
         Request::GuardList => "GuardList",
-    }
-}
-
-/// All 18 daemon request kinds.
-pub(crate) const ALL_REQUEST_KINDS: &[&str] = &[
-    "Hello",
-    "ScanText",
-    "ScanPath",
-    "MassBegin",
-    "MassBatch",
-    "MassFilesystemBegin",
-    "MassFilesystemDrain",
-    "MassEnd",
-    "Health",
-    "Shutdown",
-    "GuardCommitBegin",
-    "GuardCommitBlob",
-    "GuardCommitFinish",
-    "GuardAdd",
-    "GuardRemove",
-    "GuardStatus",
-    "GuardReconcile",
-    "GuardList",
-];
-
-/// Sample request instance for every known request kind.
-pub(crate) fn sample_request_for_kind(kind: &str) -> Option<Request> {
-    match kind {
-        "Hello" => Some(Request::Hello),
-        "ScanText" => Some(Request::ScanText {
-            path: None,
-            text: "test sample content".to_string(),
-            dogfood: false,
-            profile: false,
-        }),
-        "ScanPath" => Some(Request::ScanPath {
-            path: "/dev/null".to_string(),
-            working_dir: None,
-            dogfood: false,
-            profile: false,
-        }),
-        "MassBegin" => Some(Request::MassBegin {
-            dogfood: false,
-            profile: false,
-        }),
-        "MassBatch" => Some(Request::MassBatch { chunks: vec![] }),
-        "MassFilesystemBegin" => Some(Request::MassFilesystemBegin {
-            root: "/tmp".to_string(),
-            max_file_size: 1024 * 1024,
-            ignore_paths: vec![],
-            respect_default_excludes: true,
-            reader_threads: None,
-            incremental_cache: None,
-        }),
-        "MassFilesystemDrain" => Some(Request::MassFilesystemDrain),
-        "MassEnd" => Some(Request::MassEnd),
-        "Health" => Some(Request::Health),
-        "Shutdown" => Some(Request::Shutdown),
-        "GuardCommitBegin" => Some(Request::GuardCommitBegin {
-            repo_path: "/tmp".to_string(),
-            index_fingerprint: "0".repeat(64),
-            hash_algorithm: "sha1".to_string(),
-            entries: vec![],
-        }),
-        "GuardCommitBlob" => Some(Request::GuardCommitBlob {
-            transaction_id: 1,
-            blob_oid: "0".repeat(40),
-            object_size: 0,
-            payload: vec![],
-        }),
-        "GuardCommitFinish" => Some(Request::GuardCommitFinish {
-            transaction_id: 1,
-            client_objects_streamed: 0,
-            client_bytes_streamed: 0,
-        }),
-        "GuardAdd" => Some(Request::GuardAdd {
-            root: "/tmp".to_string(),
-            mode: "audit".to_string(),
-        }),
-        "GuardRemove" => Some(Request::GuardRemove {
-            root: "/tmp".to_string(),
-        }),
-        "GuardStatus" => Some(Request::GuardStatus {
-            root: "/tmp".to_string(),
-        }),
-        "GuardReconcile" => Some(Request::GuardReconcile {
-            root: "/tmp".to_string(),
-        }),
-        "GuardList" => Some(Request::GuardList),
-        _ => None,
     }
 }
 /// One-word kind label for a daemon [`Response`]. Use this in user-facing

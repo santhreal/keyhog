@@ -607,8 +607,6 @@ pub(crate) struct CoverageCounts {
     pub(crate) scanner_invalid_pattern_index_skips: usize,
     /// Boundary reassembly skipped by chunk/result cardinality drift (invariant).
     pub(crate) scanner_boundary_cardinality_mismatches: usize,
-    /// Boundary reassembly context was truncated to MAX_BOUNDARY_SEAM_BYTES (128 KiB).
-    pub(crate) scanner_boundary_seam_truncations: usize,
     /// Multiline attribution used a fallback source offset (approximate lines).
     pub(crate) scanner_line_offset_mismatches: usize,
     /// Chunks whose per-chunk deadline elapsed mid-scan: detection and/or
@@ -686,7 +684,6 @@ impl CoverageCounts {
             scanner_invalid_pattern_index_skips: telemetry::invalid_pattern_index_skip_count(),
             scanner_boundary_cardinality_mismatches:
                 telemetry::boundary_result_cardinality_mismatch_count(),
-            scanner_boundary_seam_truncations: telemetry::boundary_seam_truncation_count(),
             scanner_line_offset_mismatches: telemetry::line_offset_mapping_mismatch_count(),
             scanner_chunk_deadline_aborts: telemetry::chunk_deadline_abort_count(),
             scanner_binary_strings_named_exclusions:
@@ -771,7 +768,6 @@ pub(crate) enum CoverageGapKind {
     ScannerDecodeOversizeSkip,
     ScannerInvalidPatternIndexSkip,
     ScannerBoundaryCardinalityMismatch,
-    ScannerBoundarySeamTruncation,
     ScannerLineOffsetMismatch,
     ScannerChunkDeadlineAbort,
     ScannerBinaryStringsNamedExclusion,
@@ -797,7 +793,7 @@ impl CoverageGapKind {
     /// Canonical emission order: the whole-scan "did we look at anything" row
     /// first, then scanner-engine gaps, then source-walker gaps, then
     /// binary-source gaps. Both surfaces emit non-zero categories in this order.
-    pub(crate) const ALL: [CoverageGapKind; 28] = [
+    pub(crate) const ALL: [CoverageGapKind; 27] = [
         Self::NothingScannedNoInput,
         Self::NothingScannedAllSkipped,
         Self::ScannerStructuredParseFailure,
@@ -806,7 +802,6 @@ impl CoverageGapKind {
         Self::ScannerDecodeOversizeSkip,
         Self::ScannerInvalidPatternIndexSkip,
         Self::ScannerBoundaryCardinalityMismatch,
-        Self::ScannerBoundarySeamTruncation,
         Self::ScannerLineOffsetMismatch,
         Self::ScannerChunkDeadlineAbort,
         Self::ScannerBinaryStringsNamedExclusion,
@@ -852,7 +847,6 @@ impl CoverageGapKind {
             Self::ScannerBoundaryCardinalityMismatch => {
                 counts.scanner_boundary_cardinality_mismatches
             }
-            Self::ScannerBoundarySeamTruncation => counts.scanner_boundary_seam_truncations,
             Self::ScannerLineOffsetMismatch => counts.scanner_line_offset_mismatches,
             Self::ScannerChunkDeadlineAbort => counts.scanner_chunk_deadline_aborts,
             Self::ScannerBinaryStringsNamedExclusion => {
@@ -903,8 +897,7 @@ impl CoverageGapKind {
             | Self::ScannerDecodeTruncation
             | Self::ScannerDecodeOversizeSkip
             | Self::ScannerInvalidPatternIndexSkip
-            | Self::ScannerBoundaryCardinalityMismatch
-            | Self::ScannerBoundarySeamTruncation => CoverageSeverity::Warn,
+            | Self::ScannerBoundaryCardinalityMismatch => CoverageSeverity::Warn,
             // Genuine "these bytes were NOT covered" (or line identity is wrong)
             // → red FAIL: a clean bill is unsafe while any of these is non-zero.
             // Line-offset mismatch is FAIL so incomplete exit 13 and SARIF
@@ -960,9 +953,6 @@ impl CoverageGapKind {
             }
             Self::ScannerBoundaryCardinalityMismatch => {
                 "scanner boundary reassembly skipped by chunk/result cardinality mismatch (scanner invariant violation; scan partial)"
-            }
-            Self::ScannerBoundarySeamTruncation => {
-                "scanner boundary reassembly context truncated by seam size cap (raw chunk bytes scanned; unbounded match straddling a seam wider than the cap was not reassembled)"
             }
             Self::ScannerLineOffsetMismatch => {
                 "scanner multiline attribution used fallback source offsets (line-offset metadata mismatch; scan partial)"
@@ -1084,12 +1074,6 @@ impl CoverageGapKind {
                 "{n} boundary reassembly pass(es) were NOT applied: chunk/result cardinality \
                  drift made cross-chunk findings unsafe to append. This is a scanner invariant \
                  violation; treat the scan as partial."
-            ),
-            Self::ScannerBoundarySeamTruncation => format!(
-                "{n} boundary reassembly pass(es) were TRUNCATED to the seam size cap: \
-                 raw chunk bytes were scanned, but an unbounded pattern match wider than \
-                 the cap straddling a seam was not reassembled. Split chunks or scan as a continuous stream \
-                 to prove cross-seam coverage."
             ),
             Self::ScannerLineOffsetMismatch => format!(
                 "{n} multiline attribution mapping(s) used a fallback source offset because \

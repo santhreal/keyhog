@@ -10,241 +10,6 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-/// The exact set of program entry points permitted to compile detector artifacts.
-pub const PERMITTED_DETECTOR_COMPILATION_ENTRY_POINTS: &[&str] = &["install", "update"];
-
-/// Exact repair command for missing/unusable execution-pack artifacts.
-pub const REPAIR_COMMAND: &str = "keyhog install";
-
-/// Distinct identity input dimensions bound to installed artifact classes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
-pub enum ArtifactIdentityInput {
-    BinaryDigest,
-    TargetHardwareDigest,
-    FeatureDigest,
-    DetectorCorpusDigest,
-    ConfigDigest,
-    SigningKeyIdentity,
-    GpuDeviceIdentity,
-}
-
-impl ArtifactIdentityInput {
-    pub const ALL: &[Self] = &[
-        Self::BinaryDigest,
-        Self::TargetHardwareDigest,
-        Self::FeatureDigest,
-        Self::DetectorCorpusDigest,
-        Self::ConfigDigest,
-        Self::SigningKeyIdentity,
-        Self::GpuDeviceIdentity,
-    ];
-
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::BinaryDigest => "binary digest",
-            Self::TargetHardwareDigest => "target hardware digest",
-            Self::FeatureDigest => "feature digest",
-            Self::DetectorCorpusDigest => "detector corpus digest",
-            Self::ConfigDigest => "config digest",
-            Self::SigningKeyIdentity => "signing key identity",
-            Self::GpuDeviceIdentity => "GPU device identity",
-        }
-    }
-}
-
-/// Distinct artifact classes in an execution-pack installation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
-pub enum InstalledArtifactClass {
-    Manifest,
-    VerificationKey,
-    ExecutionPack,
-    Signature,
-    GpuLiteralArtifact,
-    AutorouteCalibration,
-}
-
-impl InstalledArtifactClass {
-    pub const ALL: &[Self] = &[
-        Self::Manifest,
-        Self::VerificationKey,
-        Self::ExecutionPack,
-        Self::Signature,
-        Self::GpuLiteralArtifact,
-        Self::AutorouteCalibration,
-    ];
-
-    pub const EXECUTION_PACK_CLASSES: &[Self] = &[
-        Self::Manifest,
-        Self::VerificationKey,
-        Self::ExecutionPack,
-        Self::Signature,
-    ];
-
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Manifest => "execution-pack manifest",
-            Self::VerificationKey => "execution-pack verification key",
-            Self::ExecutionPack => "execution pack",
-            Self::Signature => "execution-pack signature",
-            Self::GpuLiteralArtifact => "gpu literal artifact",
-            Self::AutorouteCalibration => "autoroute calibration",
-        }
-    }
-
-    pub const fn file_pattern(self) -> &'static str {
-        match self {
-            Self::Manifest => "manifest.json",
-            Self::VerificationKey => "signing.key",
-            Self::ExecutionPack => "*.khpack",
-            Self::Signature => "*.sig",
-            Self::GpuLiteralArtifact => "*.bin",
-            Self::AutorouteCalibration => "autoroute.json",
-        }
-    }
-
-    pub const fn identity_inputs(self) -> &'static [ArtifactIdentityInput] {
-        match self {
-            Self::Manifest => &[
-                ArtifactIdentityInput::BinaryDigest,
-                ArtifactIdentityInput::TargetHardwareDigest,
-                ArtifactIdentityInput::FeatureDigest,
-                ArtifactIdentityInput::DetectorCorpusDigest,
-            ],
-            Self::VerificationKey => &[ArtifactIdentityInput::SigningKeyIdentity],
-            Self::ExecutionPack => &[
-                ArtifactIdentityInput::BinaryDigest,
-                ArtifactIdentityInput::TargetHardwareDigest,
-                ArtifactIdentityInput::FeatureDigest,
-                ArtifactIdentityInput::DetectorCorpusDigest,
-                ArtifactIdentityInput::SigningKeyIdentity,
-            ],
-            Self::Signature => &[
-                ArtifactIdentityInput::SigningKeyIdentity,
-                ArtifactIdentityInput::BinaryDigest,
-                ArtifactIdentityInput::DetectorCorpusDigest,
-            ],
-            Self::GpuLiteralArtifact => &[
-                ArtifactIdentityInput::BinaryDigest,
-                ArtifactIdentityInput::DetectorCorpusDigest,
-                ArtifactIdentityInput::GpuDeviceIdentity,
-            ],
-            Self::AutorouteCalibration => &[
-                ArtifactIdentityInput::BinaryDigest,
-                ArtifactIdentityInput::TargetHardwareDigest,
-                ArtifactIdentityInput::FeatureDigest,
-                ArtifactIdentityInput::DetectorCorpusDigest,
-                ArtifactIdentityInput::GpuDeviceIdentity,
-            ],
-        }
-    }
-
-    pub const fn is_produced_by_installer(self) -> bool {
-        true
-    }
-
-    pub const fn is_consumed_by_scan(self) -> bool {
-        true
-    }
-}
-
-/// Unified registry connecting artifact production, update regeneration, and scan loading.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct InstalledArtifactRegistry;
-
-impl InstalledArtifactRegistry {
-    /// Return all registered artifact classes.
-    pub fn all_classes() -> &'static [InstalledArtifactClass] {
-        InstalledArtifactClass::ALL
-    }
-
-    /// Return the set of all artifact classes produced by the installer.
-    pub fn produced_classes() -> BTreeSet<InstalledArtifactClass> {
-        InstalledArtifactClass::ALL
-            .iter()
-            .copied()
-            .filter(|class| class.is_produced_by_installer())
-            .collect()
-    }
-
-    /// Return the set of all artifact classes consumed by the scan path.
-    pub fn consumed_classes() -> BTreeSet<InstalledArtifactClass> {
-        InstalledArtifactClass::ALL
-            .iter()
-            .copied()
-            .filter(|class| class.is_consumed_by_scan())
-            .collect()
-    }
-
-    /// Validate bidirectional set equality between produced and consumed classes.
-    pub fn assert_bidirectional_registry_equality() -> Result<()> {
-        let produced = Self::produced_classes();
-        let consumed = Self::consumed_classes();
-
-        if produced != consumed {
-            let produced_not_consumed: Vec<_> = produced.difference(&consumed).copied().collect();
-            let consumed_not_produced: Vec<_> = consumed.difference(&produced).copied().collect();
-            bail!(
-                "installed artifact registry set inequality: produced_not_consumed={produced_not_consumed:?}, consumed_not_produced={consumed_not_produced:?}"
-            );
-        }
-
-        for class in InstalledArtifactClass::ALL {
-            if class.identity_inputs().is_empty() {
-                bail!("artifact class {:?} has empty identity inputs", class);
-            }
-        }
-        Ok(())
-    }
-
-    /// Execute the installer producer loop over every registered artifact class.
-    pub fn execute_installer_producer_loop<F>(
-        mut producer: F,
-    ) -> Result<BTreeSet<InstalledArtifactClass>>
-    where
-        F: FnMut(InstalledArtifactClass) -> Result<()>,
-    {
-        let mut produced = BTreeSet::new();
-        for &class in Self::all_classes() {
-            producer(class).with_context(|| {
-                format!("installer producer failed for artifact class {class:?}")
-            })?;
-            produced.insert(class);
-        }
-        Ok(produced)
-    }
-
-    /// Execute the updater regeneration loop over every registered artifact class.
-    pub fn execute_updater_regeneration_loop<F>(
-        mut regenerator: F,
-    ) -> Result<BTreeSet<InstalledArtifactClass>>
-    where
-        F: FnMut(InstalledArtifactClass) -> Result<()>,
-    {
-        let mut regenerated = BTreeSet::new();
-        for &class in Self::all_classes() {
-            regenerator(class).with_context(|| {
-                format!("updater regeneration failed for artifact class {class:?}")
-            })?;
-            regenerated.insert(class);
-        }
-        Ok(regenerated)
-    }
-
-    /// Execute the scan loader verification loop over every registered artifact class.
-    pub fn execute_scan_loader_loop<F>(mut loader: F) -> Result<BTreeSet<InstalledArtifactClass>>
-    where
-        F: FnMut(InstalledArtifactClass) -> Result<()>,
-    {
-        let mut loaded = BTreeSet::new();
-        for &class in Self::all_classes() {
-            loader(class)
-                .with_context(|| format!("scan loader failed for artifact class {class:?}"))?;
-            loaded.insert(class);
-        }
-        Ok(loaded)
-    }
-}
-
 pub(crate) const MANIFEST_VERSION: u16 = 1;
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 
@@ -385,7 +150,7 @@ pub(crate) fn load_installed_execution_pack(
         })
         .with_context(|| {
             format!(
-                "installed generation has no {} {} execution pack. Fix: run `keyhog install` or `keyhog update`",
+                "installed generation has no {} {} execution pack",
                 policy.lowercase_name(),
                 backend.lowercase_name(),
             )
@@ -409,7 +174,7 @@ pub(crate) fn load_installed_preferred_matcher_pack(
                 .find(|row| row.policy == policy && row.backend == "cpu")
         })
         .with_context(|| {
-            format!("installed generation has no {policy} SIMD or CPU execution pack. Fix: run `keyhog install` or `keyhog update`")
+            format!("installed generation has no {policy} SIMD or CPU execution pack")
         })?;
     authenticate_manifest_pack(&directory, &manifest, row, &signing_key)
 }
@@ -458,90 +223,74 @@ fn load_manifest(
     let manifest_path = directory.join("manifest.json");
     let metadata = fs::symlink_metadata(&manifest_path).with_context(|| {
         format!(
-            "inspecting execution-pack manifest {}. Fix: run `keyhog install` or `keyhog update`",
+            "inspecting execution-pack manifest {}",
             manifest_path.display()
         )
     })?;
     if !metadata.file_type().is_file() || metadata.len() == 0 || metadata.len() > MAX_MANIFEST_BYTES
     {
         bail!(
-            "execution-pack manifest {} must be a nonempty regular file no larger than {MAX_MANIFEST_BYTES} bytes. Fix: run `keyhog install` or `keyhog update`",
+            "execution-pack manifest {} must be a nonempty regular file no larger than {MAX_MANIFEST_BYTES} bytes",
             manifest_path.display()
         );
     }
     let bytes = fs::read(&manifest_path).with_context(|| {
         format!(
-            "reading execution-pack manifest {}. Fix: run `keyhog install` or `keyhog update`",
+            "reading execution-pack manifest {}",
             manifest_path.display()
         )
     })?;
     let manifest: InstallPackManifest = serde_json::from_slice(&bytes).with_context(|| {
         format!(
-            "parsing execution-pack manifest {}. Fix: run `keyhog install` or `keyhog update`",
+            "parsing execution-pack manifest {}",
             manifest_path.display()
         )
     })?;
     if manifest.version != MANIFEST_VERSION {
         bail!(
-            "execution-pack manifest version {} is unsupported; reinstall with version {MANIFEST_VERSION}. Fix: run `keyhog install` or `keyhog update`",
+            "execution-pack manifest version {} is unsupported; reinstall with version {MANIFEST_VERSION}",
             manifest.version
         );
     }
     if manifest.packs.is_empty() {
-        bail!("execution-pack manifest contains no packs. Fix: run `keyhog install` or `keyhog update`");
+        bail!("execution-pack manifest contains no packs");
     }
-    let embedded_detectors = keyhog_core::load_embedded_detectors_or_fail()
-        .context("loading embedded detectors for execution-pack verification")?;
-    let embedded_ir =
-        keyhog_scanner::execution_pack::CanonicalDetectorExecutionIr::compile(&embedded_detectors)
-            .map_err(anyhow::Error::msg)
-            .context("compiling canonical detector execution IR for verification")?;
-    let expected_detector_digest = keyhog_core::hex_encode(&embedded_ir.digest());
-    let current_binary = keyhog_core::hex_encode(&current_binary_digest()?);
-    let current_target = keyhog_core::hex_encode(&current_target_digest());
-    let current_feature = keyhog_core::hex_encode(&current_feature_digest());
-
     for (name, actual, expected) in [
-        (
-            "detector",
-            manifest.detector_digest.as_str(),
-            expected_detector_digest.as_str(),
-        ),
         (
             "binary",
             manifest.binary_digest.as_str(),
-            current_binary.as_str(),
+            keyhog_core::hex_encode(&current_binary_digest()?),
         ),
         (
             "target",
             manifest.target_digest.as_str(),
-            current_target.as_str(),
+            keyhog_core::hex_encode(&current_target_digest()),
         ),
         (
             "feature",
             manifest.feature_digest.as_str(),
-            current_feature.as_str(),
+            keyhog_core::hex_encode(&current_feature_digest()),
         ),
     ] {
         if actual != expected {
             bail!(
-                "execution-pack manifest identity for '{name}' is stale (manifest {actual}, host {expected}); \
-                 rebuild packs with this binary before scanning. Fix: run `keyhog install` or `keyhog update`"
+                "execution-pack {name} identity is stale (manifest {actual}, host {expected}); \
+                 rebuild packs with this binary before calibration"
             );
         }
     }
     let key_path = directory
         .parent()
         .map(|parent| parent.join("signing.key"))
-        .context("execution-pack generation has no installation root. Fix: run `keyhog install` or `keyhog update`")?;
+        .context("execution-pack generation has no installation root")?;
     let key_bytes = fs::read(&key_path).with_context(|| {
         format!(
-            "reading execution-pack verification key {}. Fix: run `keyhog install` or `keyhog update`",
+            "reading execution-pack verification key {}",
             key_path.display()
         )
     })?;
     let signing_key = ExecutionPackSigningKey::from_bytes(key_bytes.try_into().map_err(|_| {
-        anyhow::anyhow!("execution-pack verification key must be exactly 32 bytes. Fix: run `keyhog install` or `keyhog update`")
+        anyhow::anyhow!("execution-pack verification key must be exactly 32 bytes")
     })?)
     .map_err(anyhow::Error::msg)?;
     Ok((bytes, manifest, signing_key))
@@ -557,40 +306,19 @@ fn authenticate_manifest_pack(
     validate_filename(&row.signature_file)?;
     let pack_path = directory.join(&row.file);
     let signature_path = directory.join(&row.signature_file);
-    let metadata = fs::symlink_metadata(&pack_path).with_context(|| {
-        format!(
-            "inspecting execution pack {}. Fix: run `keyhog install` or `keyhog update`",
-            pack_path.display()
-        )
-    })?;
+    let metadata = fs::symlink_metadata(&pack_path)
+        .with_context(|| format!("inspecting execution pack {}", pack_path.display()))?;
     if !metadata.file_type().is_file() || metadata.len() != row.bytes as u64 {
         bail!(
-            "execution pack {} has {} bytes, manifest requires {}. Fix: run `keyhog install` or `keyhog update`",
+            "execution pack {} has {} bytes, manifest requires {}",
             pack_path.display(),
             metadata.len(),
             row.bytes
         );
     }
-    let sig_metadata = fs::symlink_metadata(&signature_path).with_context(|| {
-        format!(
-            "inspecting execution-pack signature {}. Fix: run `keyhog install` or `keyhog update`",
-            signature_path.display()
-        )
-    })?;
-    if !sig_metadata.file_type().is_file() || sig_metadata.len() == 0 {
-        bail!(
-            "execution-pack signature {} is missing or empty. Fix: run `keyhog install` or `keyhog update`",
-            signature_path.display()
-        );
-    }
     let pack = ExecutionPack::open_authenticated_discover(&pack_path, &signature_path, signing_key)
         .map_err(anyhow::Error::msg)
-        .with_context(|| {
-            format!(
-                "authenticating execution pack {}. Fix: run `keyhog install` or `keyhog update`",
-                pack_path.display()
-            )
-        })?;
+        .with_context(|| format!("authenticating execution pack {}", pack_path.display()))?;
     let identity = pack.identity();
     for (name, actual, expected) in [
         (
@@ -626,7 +354,7 @@ fn authenticate_manifest_pack(
     ] {
         if actual != expected {
             bail!(
-                "execution pack {} '{name}' identity does not match its manifest. Fix: run `keyhog install` or `keyhog update`",
+                "execution pack {} {name} identity does not match its manifest",
                 pack_path.display()
             );
         }
@@ -635,20 +363,20 @@ fn authenticate_manifest_pack(
         || identity.backend.lowercase_name() != row.backend
     {
         bail!(
-            "execution pack {} 'policy/backend' identity does not match its manifest. Fix: run `keyhog install` or `keyhog update`",
+            "execution pack {} policy/backend identity does not match its manifest",
             pack_path.display()
         );
     }
     let signature_bytes = fs::read(&signature_path).with_context(|| {
         format!(
-            "reading execution-pack signature {}. Fix: run `keyhog install` or `keyhog update`",
+            "reading execution-pack signature {}",
             signature_path.display()
         )
     })?;
     let signature = ExecutionPackSignature::decode(&signature_bytes).map_err(anyhow::Error::msg)?;
     if keyhog_core::hex_encode(&signature.pack_digest) != row.signed_pack_digest {
         bail!(
-            "execution-pack signature {} signed digest does not match its manifest identity. Fix: run `keyhog install` or `keyhog update`",
+            "execution pack {} signed digest does not match its manifest identity",
             pack_path.display()
         );
     }

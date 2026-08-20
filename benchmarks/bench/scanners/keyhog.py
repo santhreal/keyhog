@@ -26,7 +26,7 @@ The default config (``variants()[0]``) is ``simd-nocache-nodaemon-full``,
 the deterministic build the README leaderboard cites. Note that the default
 cargo install uses ``default = ["portable"]`` (pure-Rust CPU); the benchmark
 SIMD backend requires building or installing with ``--features simd``
-(or ``--features portable,simd`` / ``--no-default-features --features ci-lean``).
+(e.g. ``cargo build --release -p keyhog --features simd``).
 """
 
 from __future__ import annotations
