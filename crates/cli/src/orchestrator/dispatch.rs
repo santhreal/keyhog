@@ -131,8 +131,8 @@ pub(super) fn finalize_source_outcome(src_chunks: usize, src_errored: bool) {
 /// wait is the summed time consumer threads spent with no batch to scan. That
 /// is [`keyhog_profile::Stage::ScannerQueueWait`], and it is the only place the
 /// figure is produced.
-struct TimedBatches<I> {
-    batches: I,
+pub(crate) struct TimedBatches<I> {
+    pub(crate) batches: I,
 }
 
 impl<I> Iterator for TimedBatches<I>
@@ -142,8 +142,12 @@ where
     type Item = Vec<Chunk>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerQueueWait);
-        self.batches.next()
+        let _profile_span = keyhog_profile::blocked(keyhog_profile::Stage::ScannerQueueWait);
+        let next = self.batches.next();
+        if next.is_some() {
+            keyhog_profile::record_queue_depth_dequeue(keyhog_profile::QueueId::ScannerWork);
+        }
+        next
     }
 }
 
@@ -1111,7 +1115,10 @@ impl CoalescedBatchProducer {
             c.data.as_bytes(),
         );
         if unchanged {
+            keyhog_profile::record_cache_hit(keyhog_profile::CacheId::IncrementalUnchanged);
             self.skipped_unchanged += 1;
+        } else {
+            keyhog_profile::record_cache_miss(keyhog_profile::CacheId::IncrementalUnchanged);
         }
         unchanged
     }
@@ -1153,8 +1160,12 @@ impl CoalescedBatchProducer {
         let payload = std::mem::take(&mut self.batch);
         self.batch_bytes = 0;
         let send_result = {
-            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
-            self.tx.send(payload)
+            let _profile_span = keyhog_profile::blocked(keyhog_profile::Stage::SourceQueueWait);
+            let res = self.tx.send(payload);
+            if res.is_ok() {
+                keyhog_profile::record_queue_depth_enqueue(keyhog_profile::QueueId::ScannerWork);
+            }
+            res
         };
         if send_result.is_err() {
             self.pipeline_alive = false;
@@ -1227,12 +1238,7 @@ impl ScanOrchestrator {
             return self.scan_sources_fused(sources, show_progress, merkle, incremental_path);
         }
 
-        keyhog_sources::reset_skipped_over_max_size();
-        // Binary-source degradation counters live in a separate module from the
-        // walker skip counters, so reset them alongside (otherwise Ghidra-fallback
-        // / unreadable-binary totals leak across scans in `watch`/multi-scan runs).
-        #[cfg(feature = "binary")]
-        keyhog_sources::reset_binary_counters();
+        keyhog_sources::reset_for_scan();
 
         let progress = CoalescedProgressTicker::spawn(show_progress && !self.args.stream);
 

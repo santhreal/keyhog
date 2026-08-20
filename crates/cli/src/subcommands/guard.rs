@@ -200,8 +200,8 @@ async fn run_add(
     };
     let canonical_for_reconcile = match conn.round_trip(&request).await? {
         Response::GuardAdded {
-            root: ref added_root,
-            state: ref add_state,
+            root: added_root,
+            state: add_state,
             terminal_sequence,
         } => {
             let palette = style::for_stderr();
@@ -1176,8 +1176,8 @@ async fn run_rebuild(
     };
     let added_root = match conn.round_trip(&add_request).await? {
         Response::GuardAdded {
-            root: ref added_root,
-            state: ref add_state,
+            root: added_root,
+            state: add_state,
             terminal_sequence,
         } => {
             eprintln!(

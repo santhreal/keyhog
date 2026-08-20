@@ -201,6 +201,7 @@ serde_yaml = { workspace = true }
 tempfile = { workspace = true }
 regex = { workspace = true }
 toml = { workspace = true }
+goblin = { workspace = true }
 # Property-based suite (tests/property.rs). These proptests reference `proptest`
 # but the dep was missing, the whole property/ dir was orphaned (empty mod.rs)
 # so it never compiled and the gap stayed hidden. Pinned via the workspace.

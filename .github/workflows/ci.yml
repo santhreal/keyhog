@@ -169,6 +169,7 @@ jobs:
           --no-default-features --features ci-lean --profile ci-test
           --test perf_alloc_batch_topology
           --test perf_alloc_trigger_scratch
+          --test perf_scan_path_counting_instrument
       - name: scanner CI target wiring gates
         run: cargo test -p keyhog-scanner --test unit_gates_live ci_scanner --no-default-features --features ci-lean --profile ci-test -- --nocapture
       - name: scanner GPU literal artifact writer
@@ -225,6 +226,10 @@ jobs:
           --test regression_lockdown_custom_incremental_cache
           --test regression_explicit_backend_ignores_autoroute_cache
           --test regression_scan_setup_error_exits_cleanly
+      - name: Shipped release profile panic isolation regressions
+        run: >
+          cargo test -p keyhog --release
+          --test regression_daemon_panic_isolation
 
   gpu-wiring:
     name: GPU wiring (hardware-free)
@@ -252,6 +257,8 @@ jobs:
         run: >
           cargo test -p keyhog-scanner --features gpu --profile ci-test
           --test gpu_wiring_contract
+          --test regression_row_103_gpu_upload_readback_latency
+          --test regression_row_118_gpu_dispatch_concurrency_pool
       - name: Require-GPU fails closed on an adapter-free host
         run: >
           cargo test -p keyhog --features gpu --profile ci-test

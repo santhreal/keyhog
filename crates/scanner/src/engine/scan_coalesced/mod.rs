@@ -685,7 +685,6 @@ impl CompiledScanner {
         prefilter: &super::SimdPhase1Prefilter,
         admission_plan: Option<&super::Phase1AdmissionPlan>,
     ) -> Result<Vec<Option<Vec<u64>>>, String> {
-        use rayon::prelude::*;
         let ac_len = self.ac_map.len();
         let words_needed = super::trigger_bitmap::words_for(ac_len);
         let profile_runtime = keyhog_profile::current_runtime();
@@ -774,7 +773,7 @@ impl CompiledScanner {
         let triggers =
             if chunks.len() <= workers || chunks.iter().all(|chunk| chunk.data.len() > threshold) {
                 chunks
-                    .par_iter()
+                    .iter()
                     .enumerate()
                     .map(|(chunk_index, chunk)| compute_single_trigger(chunk_index, chunk))
                     .collect::<Result<Vec<_>, String>>()?
@@ -782,7 +781,7 @@ impl CompiledScanner {
                 let work_lanes = super::batch_topology::coalesced_work_lanes(chunks, threshold);
                 let lane_triggers: Vec<Vec<(usize, Option<Vec<u64>>)>> = work_lanes
                     .lanes()
-                    .par_iter()
+                    .iter()
                     .map(|lane| match lane {
                         super::batch_topology::CoalescedLane::Large(index) => {
                             if is_representative(*index) {
@@ -1107,8 +1106,6 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
-        use rayon::prelude::*;
-
         let triggers = self.normalize_coalesced_phase2_triggers(chunks, triggers, route);
         // No stopwatch here. The phase-2 region below is the profiler's phase-2
         // leaves, and the seam rescan that follows is `Stage::BoundaryScan`,
@@ -1138,8 +1135,8 @@ impl CompiledScanner {
         }
 
         let mut outputs: Vec<CoalescedChunkOutput> = chunks
-            .par_iter()
-            .zip(triggers.into_par_iter())
+            .iter()
+            .zip(triggers.into_iter())
             .enumerate()
             .map(|(chunk_index, (chunk, triggered_opt))| {
                 let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
@@ -1431,8 +1428,8 @@ impl CompiledScanner {
         }
 
         let mut results: Vec<Vec<keyhog_core::RawMatch>> = outputs
-            .into_par_iter()
-            .zip(chunks.par_iter())
+            .into_iter()
+            .zip(chunks.iter())
             .map(|(mut output, chunk)| {
                 let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
                 crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {

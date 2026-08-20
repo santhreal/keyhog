@@ -110,6 +110,8 @@ fn micro_functions_have_exact_macro_stage_ownership() {
         (Stage::BackendAcquire, MacroStageId::Scan),
         (Stage::BackendInit, MacroStageId::Scan),
         (Stage::Teardown, MacroStageId::Scan),
+        (Stage::ScanPipeline, MacroStageId::Scan),
+        (Stage::ScannerCompile, MacroStageId::Scan),
         (Stage::Suppression, MacroStageId::Resolve),
         (Stage::ResultMerge, MacroStageId::Resolve),
         (Stage::LiveVerification, MacroStageId::Verify),

@@ -119,9 +119,7 @@ fn linux_numa_digest() -> Evidence<String> {
 impl HostIdentityV2 {
     /// Capture the timing-relevant host identity without recording hostnames or environment values.
     pub fn capture() -> Self {
-        let logical_cpus = std::thread::available_parallelism()
-            .map(|count| u32::try_from(count.get()).unwrap_or(u32::MAX))
-            .unwrap_or(1);
+        let logical_cpus = crate::host_parallelism::logical_cpus();
         #[cfg(not(feature = "host-identity"))]
         {
             let disabled = EvidenceGap::CollectorDisabled;

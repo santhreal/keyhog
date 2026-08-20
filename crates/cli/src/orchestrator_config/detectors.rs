@@ -260,7 +260,15 @@ fn save_detector_cache(
         schema_version: corpus.schema_version,
         detectors: corpus.specs.clone(),
     })?;
-    crate::atomic_file::write_bytes(cache_path, &json)
+    crate::atomic_file::write_bytes(cache_path, &json)?;
+    if let Some(parent) = cache_path.parent() {
+        keyhog_scanner::evict_cache_dir_with_policy(
+            parent,
+            keyhog_core::CacheKind::DetectorPlans,
+            keyhog_core::CacheKind::DetectorPlans.default_policy(),
+        );
+    }
+    Ok(())
 }
 
 fn load_detector_cache(

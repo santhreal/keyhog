@@ -79,8 +79,8 @@ To update to the latest release, run:
 
 ```sh
 cargo install --locked --force keyhog
+keyhog doctor
 ```
-
 Every successful `main` CI run publishes the next patch version. KeyHog does
 not publish binary release assets or installer bundles.
 
@@ -91,8 +91,8 @@ Stop a running daemon before replacing the executable:
 ```sh
 keyhog daemon stop
 cargo install --locked --force keyhog
+keyhog doctor
 ```
-
 Cargo builds the replacement before it changes the installed binary. A compile
 or download failure leaves the previous executable in place.
 
@@ -102,8 +102,8 @@ To roll back, choose a version from the
 
 ```sh
 cargo install --locked --force --version '=MAJOR.MINOR.PATCH' keyhog
+keyhog doctor
 ```
-
 The commands are identical in Bash, Zsh, and PowerShell. If PowerShell reports
 that `keyhog.exe` is in use, stop the daemon and close other KeyHog processes,
 then retry. If Cargo reports that `libhs` is missing, remove an unintended

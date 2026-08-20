@@ -116,6 +116,11 @@ pub(crate) struct Phase2GpuDfaCatalogCache {
 }
 
 impl Phase2GpuDfaCatalog {
+    #[inline]
+    pub(crate) fn has_shards(&self) -> bool {
+        !self.shards.is_empty()
+    }
+
     pub(crate) fn coverage(&self) -> Phase2GpuDfaCoverage {
         let covered_ascii_patterns = self
             .evidence

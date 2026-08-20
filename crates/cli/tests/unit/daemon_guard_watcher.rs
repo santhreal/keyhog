@@ -64,21 +64,24 @@ fn file_change_produces_event() {
 
 #[test]
 fn normalize_create_event() {
-    let event = notify::Event::new(EventKind::Create(notify::event::CreateKind::File));
+    let mut event = notify::Event::new(EventKind::Create(notify::event::CreateKind::File));
+    event.paths.push(PathBuf::from("/a/test.txt"));
     let guard_events = normalize_notify_event(&event);
     assert_eq!(guard_events.len(), 1);
 }
 
 #[test]
 fn normalize_modify_event() {
-    let event = notify::Event::new(EventKind::Modify(notify::event::ModifyKind::Any));
+    let mut event = notify::Event::new(EventKind::Modify(notify::event::ModifyKind::Any));
+    event.paths.push(PathBuf::from("/a/test.txt"));
     let guard_events = normalize_notify_event(&event);
     assert_eq!(guard_events.len(), 1);
 }
 
 #[test]
 fn normalize_remove_event() {
-    let event = notify::Event::new(EventKind::Remove(notify::event::RemoveKind::File));
+    let mut event = notify::Event::new(EventKind::Remove(notify::event::RemoveKind::File));
+    event.paths.push(PathBuf::from("/a/test.txt"));
     let guard_events = normalize_notify_event(&event);
     assert_eq!(guard_events.len(), 1);
 }

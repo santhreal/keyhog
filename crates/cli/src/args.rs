@@ -235,6 +235,7 @@ where
 fn cli_from_matches(matches: &clap::ArgMatches) -> Result<Cli, clap::Error> {
     let mut cli = Cli::from_arg_matches(matches)?;
     mark_cli_value_sources(&mut cli, matches);
+    validate_cli_args(&cli)?;
     Ok(cli)
 }
 

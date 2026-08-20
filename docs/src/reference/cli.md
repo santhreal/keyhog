@@ -165,6 +165,7 @@ or incomplete coverage.
 | `--verify-concurrency` | `N` |  | Maximum in-flight verification requests per service (default: 5) |
 | `--verify-oob` |  |  | Enable out-of-band callback verification via an embedded interactsh client. For webhook- and callback-shaped credentials, OOB verification proves the credential is exfil-capable: we mint a per-finding subdomain on the configured collector, embed it in the verification probe, and confirm the service actually called back. Off by default. See docs/src/reference/oob-verification.md for the threat model and self-hosting guidance |
 | `--verify-rate` | `RPS` | `5.0` | Steady-state cap for verification calls *per service*, in requests-per-second. Default 5.0. Drop this to be polite to upstream APIs when scanning a tree with hundreds of legitimate findings (test fixtures, examples); every finding produces a live verify call and most public APIs throttle aggressively. The limiter applies even with `--verify-batch` (which adds per-service serialisation on top) |
+| `--window-overlap` | `SIZE` |  | Streaming window overlap size in bytes (default: 128KB) |
 <!-- /keyhog-generated: cli-reference command="scan" -->
 
 Hyperscan database cache location is explicit scan configuration: use
@@ -351,6 +352,7 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--verify-concurrency` | `N` |  | Maximum in-flight verification requests per service (default: 5) |
 | `--verify-oob` |  |  | Enable out-of-band callback verification via an embedded interactsh client. For webhook- and callback-shaped credentials, OOB verification proves the credential is exfil-capable: we mint a per-finding subdomain on the configured collector, embed it in the verification probe, and confirm the service actually called back. Off by default. See docs/src/reference/oob-verification.md for the threat model and self-hosting guidance |
 | `--verify-rate` | `RPS` | `5.0` | Steady-state cap for verification calls *per service*, in requests-per-second. Default 5.0. Drop this to be polite to upstream APIs when scanning a tree with hundreds of legitimate findings (test fixtures, examples); every finding produces a live verify call and most public APIs throttle aggressively. The limiter applies even with `--verify-batch` (which adds per-service serialisation on top) |
+| `--window-overlap` | `SIZE` |  | Streaming window overlap size in bytes (default: 128KB) |
 <!-- /keyhog-generated: cli-reference command="config" -->
 
 ## `keyhog detectors`

@@ -54,6 +54,11 @@ pub enum GuardRootMode {
 }
 
 impl GuardRootMode {
+    /// All variants in declaration order, for exhaustive test derivation.
+    pub fn all() -> &'static [GuardRootMode] {
+        &[GuardRootMode::Repo, GuardRootMode::Filesystem]
+    }
+
     /// Stable string label for status output and documentation.
     pub fn label(self) -> &'static str {
         match self {
@@ -191,7 +196,7 @@ pub enum GuardTransition {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum TransitionError {
     /// The transition event is not legal from the current state.
-    #[error("illegal guard transition: {event} from state {from}")]
+    #[error("illegal guard transition: {event} from state {from}. Fix: run `keyhog guard status <root>` or reconcile the root before dispatching events")]
     Illegal {
         /// The event that was rejected.
         event: GuardTransition,
@@ -200,22 +205,46 @@ pub enum TransitionError {
     },
 }
 
+impl GuardTransition {
+    /// All transition variants in declaration order.
+    pub fn all() -> &'static [GuardTransition] {
+        &[
+            GuardTransition::ReconciliationStarted,
+            GuardTransition::ReconciliationClean,
+            GuardTransition::ReconciliationFindings,
+            GuardTransition::ReconciliationDegraded,
+            GuardTransition::EventAccepted,
+            GuardTransition::EventsClean,
+            GuardTransition::EventsFindings,
+            GuardTransition::EventsDegraded,
+            GuardTransition::CoverageLost,
+            GuardTransition::PolicyChanged,
+            GuardTransition::RepairStarted,
+            GuardTransition::Stopped,
+        ]
+    }
+    /// Human-readable kebab-case label for this transition.
+    pub fn label(&self) -> &'static str {
+        match self {
+            GuardTransition::ReconciliationStarted => "reconciliation-started",
+            GuardTransition::ReconciliationClean => "reconciliation-clean",
+            GuardTransition::ReconciliationFindings => "reconciliation-findings",
+            GuardTransition::ReconciliationDegraded => "reconciliation-degraded",
+            GuardTransition::EventAccepted => "event-accepted",
+            GuardTransition::EventsClean => "events-clean",
+            GuardTransition::EventsFindings => "events-findings",
+            GuardTransition::EventsDegraded => "events-degraded",
+            GuardTransition::CoverageLost => "coverage-lost",
+            GuardTransition::PolicyChanged => "policy-changed",
+            GuardTransition::RepairStarted => "repair-started",
+            GuardTransition::Stopped => "stopped",
+        }
+    }
+}
+
 impl std::fmt::Display for GuardTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GuardTransition::ReconciliationStarted => write!(f, "reconciliation-started"),
-            GuardTransition::ReconciliationClean => write!(f, "reconciliation-clean"),
-            GuardTransition::ReconciliationFindings => write!(f, "reconciliation-findings"),
-            GuardTransition::ReconciliationDegraded => write!(f, "reconciliation-degraded"),
-            GuardTransition::EventAccepted => write!(f, "event-accepted"),
-            GuardTransition::EventsClean => write!(f, "events-clean"),
-            GuardTransition::EventsFindings => write!(f, "events-findings"),
-            GuardTransition::EventsDegraded => write!(f, "events-degraded"),
-            GuardTransition::CoverageLost => write!(f, "coverage-lost"),
-            GuardTransition::PolicyChanged => write!(f, "policy-changed"),
-            GuardTransition::RepairStarted => write!(f, "repair-started"),
-            GuardTransition::Stopped => write!(f, "stopped"),
-        }
+        write!(f, "{}", self.label())
     }
 }
 
@@ -479,7 +508,7 @@ impl GuardReceipt {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ReceiptError {
     /// Object count does not conserve.
-    #[error("receipt object mismatch: requested {requested}, accounted {accounted}")]
+    #[error("receipt object mismatch: requested {requested}, accounted {accounted}. Fix: ensure all transaction items are accounted for before finalizing the guard receipt")]
     ObjectMismatch {
         /// Objects requested in the transaction.
         requested: u64,
@@ -487,7 +516,7 @@ pub enum ReceiptError {
         accounted: u64,
     },
     /// Byte count does not conserve.
-    #[error("receipt byte mismatch: requested {requested}, accounted {accounted}")]
+    #[error("receipt byte mismatch: requested {requested}, accounted {accounted}. Fix: ensure all byte ranges are accounted for before finalizing the guard receipt")]
     ByteMismatch {
         /// Bytes requested in the transaction.
         requested: u64,
@@ -498,6 +527,51 @@ pub enum ReceiptError {
 
 // ── Root registration ────────────────────────────────────────────────────
 
+/// Backing filesystem authority assessment for guard root event delivery.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct FilesystemAuthority {
+    /// Filesystem type name (e.g. "ext4", "btrfs", "apfs", "ntfs", "nfs", "fuse", "unknown").
+    pub filesystem_type: String,
+    /// Whether the filesystem reliably generates kernel-level change events for all modifications.
+    pub authoritative: bool,
+    /// Reason if unauthoritative (e.g. "network filesystem does not propagate remote change events").
+    pub unauthoritative_reason: Option<String>,
+}
+
+impl Default for FilesystemAuthority {
+    fn default() -> Self {
+        Self {
+            filesystem_type: "unknown".to_string(),
+            authoritative: false,
+            unauthoritative_reason: Some(
+                "unprobed filesystem defaults to unauthoritative".to_string(),
+            ),
+        }
+    }
+}
+
+impl FilesystemAuthority {
+    /// Authoritative local filesystem.
+    #[must_use]
+    pub fn authoritative(filesystem_type: impl Into<String>) -> Self {
+        Self {
+            filesystem_type: filesystem_type.into(),
+            authoritative: true,
+            unauthoritative_reason: None,
+        }
+    }
+
+    /// Unauthoritative filesystem requiring periodic scrubbing.
+    #[must_use]
+    pub fn unauthoritative(filesystem_type: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self {
+            filesystem_type: filesystem_type.into(),
+            authoritative: false,
+            unauthoritative_reason: Some(reason.into()),
+        }
+    }
+}
+
 /// Persistent record for one registered guard root.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GuardRootRecord {
@@ -505,6 +579,9 @@ pub struct GuardRootRecord {
     pub canonical_path: Vec<u8>,
     /// Filesystem identity (device + inode on Unix, volume serial on Windows).
     pub filesystem_identity: FilesystemIdentity,
+    /// Filesystem authority assessment (Row 132).
+    #[serde(default)]
+    pub filesystem_authority: FilesystemAuthority,
     /// Repository or filesystem mode.
     pub mode: GuardRootMode,
     /// Current root state.

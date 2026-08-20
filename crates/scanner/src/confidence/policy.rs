@@ -15,7 +15,10 @@ pub(crate) struct CompiledMatchConfidencePolicy {
 
 impl CompiledMatchConfidencePolicy {
     pub(crate) fn compile(detector: &keyhog_core::DetectorSpec) -> Result<Self, String> {
-        Self::hydrate(
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::ConfidencePolicy,
+        );
+        Self::hydrate_parts(
             &detector.id,
             detector.owns_entropy_policy(),
             detector.match_confidence,
@@ -23,6 +26,17 @@ impl CompiledMatchConfidencePolicy {
     }
 
     pub(crate) fn hydrate(
+        detector_id: &str,
+        owns_entropy_policy: bool,
+        spec: Option<keyhog_core::DetectorMatchConfidenceSpec>,
+    ) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_load(
+            keyhog_profile::CompileSurfaceId::ConfidencePolicy,
+        );
+        Self::hydrate_parts(detector_id, owns_entropy_policy, spec)
+    }
+
+    fn hydrate_parts(
         detector_id: &str,
         owns_entropy_policy: bool,
         spec: Option<keyhog_core::DetectorMatchConfidenceSpec>,

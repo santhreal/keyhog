@@ -43,6 +43,7 @@ enum Command {
 enum OutputFormat {
     Text,
     Json,
+    Markdown,
 }
 
 fn read_profile(path: &Path) -> Result<RunProfile, String> {
@@ -106,6 +107,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 OutputFormat::Json => profile
                     .to_json_pretty()
                     .map_err(|error| format!("cannot serialize profile: {error}"))?,
+                OutputFormat::Markdown => profile.render_markdown(),
             };
             write_stdout(output.trim_end())?;
             Ok(0)
@@ -122,6 +124,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 OutputFormat::Text => comparison.render_text(),
                 OutputFormat::Json => serde_json::to_string_pretty(&comparison)
                     .map_err(|error| format!("cannot serialize comparison: {error}"))?,
+                OutputFormat::Markdown => comparison.render_markdown(),
             };
             write_stdout(output.trim_end())?;
             Ok(if comparison.comparable { 0 } else { 3 })

@@ -55,3 +55,29 @@ fn matcher_cache_path_rejects_relative_paths() {
         "relative rejection must name the flag; got {relative}"
     );
 }
+
+/// WHY: an explicit matcher cache path that fails validation must include the repair command in the error.
+///
+/// What it does not catch: validation on platforms without POSIX permissions.
+#[test]
+#[cfg(unix)]
+fn matcher_cache_path_explicit_group_writable_error_includes_repair_command() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let actual_home = dirs::home_dir().expect("home");
+    let cache_home = tempfile::Builder::new()
+        .prefix(".keyhog-matcher-cache-loose-")
+        .tempdir_in(actual_home)
+        .expect("secure cache home");
+    let explicit = cache_home.path().join("loose-matcher-cache");
+    std::fs::create_dir(&explicit).expect("create dir");
+    std::fs::set_permissions(&explicit, std::fs::Permissions::from_mode(0o775))
+        .expect("set loose mode");
+
+    let err = resolve_matcher_cache_path_with_default(Some(explicit.to_str().unwrap()), None)
+        .expect_err("explicit loose path must fail");
+    assert!(
+        err.contains("chmod 700"),
+        "explicit validation error must include repair command `chmod 700`, got: {err}"
+    );
+}

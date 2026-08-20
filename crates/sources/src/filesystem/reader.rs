@@ -13,12 +13,12 @@ use std::sync::{Arc, Mutex};
 /// source file enters the scanner as many independent chunks instead of one
 /// worker serially re-windowing the entire file. The overlap below preserves
 /// boundary-spanning secrets.
-pub(super) const DEFAULT_WINDOW_SIZE: usize = 1024 * 1024;
+pub(super) const DEFAULT_WINDOW_SIZE: usize = keyhog_core::DEFAULT_WINDOW_SIZE_BYTES;
 
 /// Default overlap between consecutive source windows. 128 KiB matches the
 /// scanner's own window overlap and covers PEM-sized and multiline secrets
 /// that straddle a source cut.
-pub(super) const DEFAULT_WINDOW_OVERLAP: usize = 128 * 1024;
+pub(super) const DEFAULT_WINDOW_OVERLAP: usize = keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES;
 
 /// Flush threshold, in bytes of chunk text, for one streamed slice of a single
 /// walk entry. A large file enters the scanner as hundreds of `window_size`

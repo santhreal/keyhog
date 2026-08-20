@@ -168,8 +168,12 @@ impl VerificationCache {
         // Per-shard read: O(1) hash, lock just one shard. Hot path for
         // unexpired entries. `?` on `Option` returns None for a miss; an
         // expired hit falls through to the eviction path below.
-        let entry = self.entries.get(&key)?;
+        let Some(entry) = self.entries.get(&key) else {
+            keyhog_profile::record_cache_miss(keyhog_profile::CacheId::VerifierResult);
+            return None;
+        };
         if now < entry.expires_at {
+            keyhog_profile::record_cache_hit(keyhog_profile::CacheId::VerifierResult);
             // Profile: a live cache hit is incremental-lookup work; a miss records
             // no span and falls into the enclosing verification span.
             let _span = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
@@ -183,12 +187,14 @@ impl VerificationCache {
             if now >= entry.get().expires_at {
                 entry.remove();
             } else {
+                keyhog_profile::record_cache_hit(keyhog_profile::CacheId::VerifierResult);
                 // Profile: expired-marker race resolved to a live hit, still a cache hit.
                 let _span = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
                 let entry = entry.get();
                 return Some((entry.result.clone(), entry.metadata.clone()));
             }
         }
+        keyhog_profile::record_cache_miss(keyhog_profile::CacheId::VerifierResult);
         None
     }
 

@@ -11,6 +11,20 @@ pub(crate) struct AssignmentKeywordMatcher {
 
 impl AssignmentKeywordMatcher {
     pub(crate) fn compile(secret_keywords: &[String], detector_policy_keywords: &[String]) -> Self {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::AssignmentKeywordMatcher,
+        );
+        Self::build(secret_keywords, detector_policy_keywords)
+    }
+
+    pub(crate) fn hydrate(secret_keywords: &[String], detector_policy_keywords: &[String]) -> Self {
+        keyhog_profile::record_compile_surface_load(
+            keyhog_profile::CompileSurfaceId::AssignmentKeywordMatcher,
+        );
+        Self::build(secret_keywords, detector_policy_keywords)
+    }
+
+    fn build(secret_keywords: &[String], detector_policy_keywords: &[String]) -> Self {
         let mut seen = std::collections::HashSet::new();
         let patterns = secret_keywords
             .iter()
@@ -69,6 +83,30 @@ pub(crate) struct AssignmentKeywordMatcherCache {
 }
 
 impl AssignmentKeywordMatcherCache {
+    pub(crate) fn new_hydrated(
+        secret_keywords: &[String],
+        detector_policy_keywords: &[String],
+    ) -> Self {
+        let matcher = AssignmentKeywordMatcher::hydrate(secret_keywords, detector_policy_keywords);
+        Self {
+            secret_keywords: secret_keywords.to_vec(),
+            detector_policy_keywords: detector_policy_keywords.to_vec(),
+            matcher: Some(Arc::new(matcher)),
+        }
+    }
+
+    pub(crate) fn new_compiled(
+        secret_keywords: &[String],
+        detector_policy_keywords: &[String],
+    ) -> Self {
+        let matcher = AssignmentKeywordMatcher::compile(secret_keywords, detector_policy_keywords);
+        Self {
+            secret_keywords: secret_keywords.to_vec(),
+            detector_policy_keywords: detector_policy_keywords.to_vec(),
+            matcher: Some(Arc::new(matcher)),
+        }
+    }
+
     pub(crate) fn resolve(
         &mut self,
         secret_keywords: &[String],

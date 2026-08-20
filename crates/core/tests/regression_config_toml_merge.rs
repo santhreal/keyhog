@@ -296,7 +296,7 @@ fn out_of_range_min_confidence_rejected_exact_error() {
     let err = TestApi
         .scan_config_validate(&cfg)
         .expect_err("min_confidence 1.5 must be rejected");
-    assert_eq!(err, "min_confidence must be between 0.0 and 1.0, found 1.5");
+    assert_eq!(err, "min_confidence must be between 0.0 and 1.0, found 1.5. Fix: pass a confidence threshold between 0.0 and 1.0 (e.g. 0.8)");
 
     // Negative twin below the interval, exact message with the negative value.
     cfg.min_confidence = -0.25;
@@ -305,7 +305,7 @@ fn out_of_range_min_confidence_rejected_exact_error() {
         .expect_err("negative min_confidence must be rejected");
     assert_eq!(
         err,
-        "min_confidence must be between 0.0 and 1.0, found -0.25"
+        "min_confidence must be between 0.0 and 1.0, found -0.25. Fix: pass a confidence threshold between 0.0 and 1.0 (e.g. 0.8)"
     );
 }
 
@@ -316,7 +316,10 @@ fn out_of_range_max_decode_depth_rejected_exact_error() {
     let err = TestApi
         .scan_config_validate(&cfg)
         .expect_err("max_decode_depth 11 must be rejected");
-    assert_eq!(err, "max_decode_depth exceeds limit of 10, found 11");
+    assert_eq!(
+        err,
+        "max_decode_depth exceeds limit of 10, found 11. Fix: reduce max_decode_depth to <= 10"
+    );
 }
 
 #[test]
@@ -331,7 +334,7 @@ fn min_confidence_closed_interval_boundaries() {
     cfg.min_confidence = 1.0000001;
     assert_eq!(
         TestApi.scan_config_validate(&cfg),
-        Err("min_confidence must be between 0.0 and 1.0, found 1.0000001".to_string())
+        Err("min_confidence must be between 0.0 and 1.0, found 1.0000001. Fix: pass a confidence threshold between 0.0 and 1.0 (e.g. 0.8)".to_string())
     );
 }
 
@@ -348,7 +351,10 @@ fn max_decode_depth_boundary_valid_at_limit_invalid_above() {
     cfg.max_decode_depth = max_decode_depth_limit() + 1;
     assert_eq!(
         TestApi.scan_config_validate(&cfg),
-        Err("max_decode_depth exceeds limit of 10, found 11".to_string())
+        Err(
+            "max_decode_depth exceeds limit of 10, found 11. Fix: reduce max_decode_depth to <= 10"
+                .to_string()
+        )
     );
 }
 

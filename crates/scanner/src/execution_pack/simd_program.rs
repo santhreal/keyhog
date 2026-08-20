@@ -838,6 +838,7 @@ fn read_shared_shard(
                 .min(bytes.len());
             let chunk = &bytes[start..end];
             hasher.update(chunk);
+            // SAFETY: chunk is valid memory of chunk.len() bytes; target has capacity bytes.len() and chunks are non-overlapping.
             unsafe {
                 std::ptr::copy_nonoverlapping(
                     chunk.as_ptr(),
@@ -852,6 +853,7 @@ fn read_shared_shard(
                 "{label} shard {index} is corrupt; its content digest does not match"
             )));
         }
+        // SAFETY: every byte from 0..bytes.len() was written by the chunk loop above.
         let shared = SerializedHyperscanShard(SerializedHyperscanShardStorage::Owned(unsafe {
             owned.assume_init()
         }));

@@ -250,8 +250,8 @@ fn stdin_large_chunk_child() {
         .expect("KEYHOG_TEST_STDIN_LEN must be set by the parent")
         .parse()
         .expect("KEYHOG_TEST_STDIN_LEN must parse as usize");
-    const WINDOW: usize = 1024 * 1024;
-    const OVERLAP: usize = 128 * 1024;
+    const WINDOW: usize = keyhog_core::DEFAULT_WINDOW_SIZE_BYTES;
+    const OVERLAP: usize = keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES;
     const STRIDE: usize = WINDOW - OVERLAP;
 
     let rows: Vec<_> = StdinSource.chunks().collect();

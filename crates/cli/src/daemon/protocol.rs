@@ -174,7 +174,7 @@ pub(crate) const MASS_BATCH_CHUNKS: usize = 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
-pub(crate) enum Request {
+pub enum Request {
     /// First message on every connection. Server replies with
     /// [`Response::Hello`] containing its `WIRE_VERSION` so the client
     /// can refuse mismatched daemons.
@@ -496,6 +496,14 @@ pub enum Response {
         mode: String,
         /// Current state label.
         state: String,
+        /// Backing filesystem type (Row 132).
+        filesystem_type: String,
+        /// Whether the filesystem is authoritative for change events (Row 132).
+        filesystem_authoritative: bool,
+        /// Reason if unauthoritative (Row 132).
+        filesystem_unauthoritative_reason: Option<String>,
+        /// Effective periodic scrub interval in seconds (Row 132).
+        scrub_interval_secs: u64,
         /// Terminal event sequence.
         terminal_sequence: u64,
         /// Accepted event sequence (events received from the watcher).
@@ -657,7 +665,7 @@ pub(crate) fn guard_commit_receipt_wire_len(
 /// `GuardCommitBegin`. Carries no payload bytes, only identity metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct GuardWireManifestEntry {
+pub struct GuardWireManifestEntry {
     /// Path bytes as hex-encoded UTF-8 (non-UTF-8 paths are hex-escaped).
     pub path: String,
     /// Entry kind label: "file", "symlink", "submodule", "deletion".

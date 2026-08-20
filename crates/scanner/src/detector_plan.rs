@@ -179,6 +179,9 @@ impl DetectorResolutionIndex {
         detectors: &[T],
         interner: &crate::static_intern::StaticInterner,
     ) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::DetectorPlan,
+        );
         let expected_rows = detectors.len()
             + detectors
                 .iter()
@@ -253,6 +256,9 @@ impl CompiledDetectorRelationIndex {
         detectors: &[T],
         interner: &crate::static_intern::StaticInterner,
     ) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::DetectorPlan,
+        );
         let detector_ids = detectors
             .iter()
             .map(|detector| detector.id())
@@ -632,6 +638,9 @@ impl CompiledDetectorPlans {
         companions: Vec<Vec<crate::types::CompiledCompanion>>,
         decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
     ) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::DetectorPlan,
+        );
         if companions.len() != detectors.len() {
             return Err(format!(
                 "compiled companion rows ({}) do not match detector count ({})",
@@ -1000,6 +1009,9 @@ fn compile_detector_plan(
     confidence_policies: &mut Vec<crate::confidence::policy::CompiledMatchConfidencePolicy>,
     sparse_policies: &mut Vec<CompiledSparseDetectorPolicies>,
 ) -> Result<CompiledDetectorPlan, String> {
+    keyhog_profile::record_compile_surface_invocation(
+        keyhog_profile::CompileSurfaceId::DetectorPlan,
+    );
     let execution =
         crate::detector_execution_policy::CompiledDetectorExecutionPolicy::compile(detector)?;
     let entropy =
@@ -1092,7 +1104,7 @@ fn hydrate_detector_plan(
         crate::suppression::WeakAnchorBase::Never
     };
     Ok(CompiledDetectorPlan {
-        metadata: compile_metadata(
+        metadata: hydrate_metadata(
             interner,
             &detector.id,
             "primary",
@@ -1104,7 +1116,7 @@ fn hydrate_detector_plan(
             .entropy_fallback
             .as_ref()
             .map(|metadata| {
-                compile_metadata(
+                hydrate_metadata(
                     interner,
                     &detector.id,
                     "entropy fallback",
@@ -1141,6 +1153,32 @@ fn hydrate_detector_plan(
 }
 
 fn compile_metadata(
+    interner: &crate::static_intern::StaticInterner,
+    detector_id: &str,
+    identity_kind: &str,
+    id: &str,
+    name: &str,
+    service: &str,
+) -> Result<CompiledDetectorMetadata, String> {
+    keyhog_profile::record_compile_surface_invocation(
+        keyhog_profile::CompileSurfaceId::DetectorPlan,
+    );
+    resolve_metadata(interner, detector_id, identity_kind, id, name, service)
+}
+
+fn hydrate_metadata(
+    interner: &crate::static_intern::StaticInterner,
+    detector_id: &str,
+    identity_kind: &str,
+    id: &str,
+    name: &str,
+    service: &str,
+) -> Result<CompiledDetectorMetadata, String> {
+    keyhog_profile::record_compile_surface_load(keyhog_profile::CompileSurfaceId::DetectorPlan);
+    resolve_metadata(interner, detector_id, identity_kind, id, name, service)
+}
+
+fn resolve_metadata(
     interner: &crate::static_intern::StaticInterner,
     detector_id: &str,
     identity_kind: &str,

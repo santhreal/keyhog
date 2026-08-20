@@ -27,7 +27,7 @@ use metadata::*;
 // index) is its own subsystem; the `Allowlist` holds a precompiled index and
 // delegates every path decision to it.
 mod glob;
-use glob::{normalize_path, PathGlobIndex};
+use glob::{normalize_path, pattern_matches_path, PathGlobIndex};
 
 static NEXT_OBSERVED_PATHS_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -167,6 +167,42 @@ impl<T: AsRef<str>> PartialEq<Vec<T>> for ObservedPaths {
 /// assert!(allowlist.ignored_detectors.contains("demo-token"));
 /// # Ok(()) }
 /// ```
+/// Kind of allowlist rule parsed from `.keyhogignore`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AllowlistRuleKind {
+    /// Credential hash match.
+    Hash(CredentialHash),
+    /// Detector ID ignore match.
+    Detector(String),
+    /// File path ignore match.
+    Path(String),
+}
+
+/// Parsed allowlist rule with execution match counter.
+#[derive(Debug, Clone)]
+pub struct AllowlistRule {
+    /// 1-based source line number.
+    pub line_number: usize,
+    /// Raw rule entry text.
+    pub entry: String,
+    /// Parsed rule classification.
+    pub kind: AllowlistRuleKind,
+    /// Atomic match counter incremented upon rule evaluation match.
+    pub matches: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+/// Unused allowlist entry report descriptor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnusedAllowlistEntry {
+    /// 1-based source line number.
+    pub line_number: usize,
+    /// Raw rule entry text.
+    pub entry: String,
+    /// Number of times matched during scan (0 for unused).
+    pub match_count: usize,
+}
+
+/// Parsed `.keyhogignore` rules with compiled lookup structures and attribution.
 #[derive(Debug, serde::Serialize)]
 pub struct Allowlist {
     /// SHA-256 hashes of credentials to ignore.
@@ -193,8 +229,10 @@ pub struct Allowlist {
     /// error.
     #[serde(skip)]
     policy_violations: Vec<AllowlistPolicyViolation>,
+    /// Parsed suppression rules with match attribution tracking.
+    #[serde(skip)]
+    pub rules: Vec<AllowlistRule>,
 }
-
 #[derive(Debug, Clone)]
 struct ExpiredAllowlistEntry {
     line_number: usize,
@@ -243,6 +281,7 @@ impl Allowlist {
             ignored_paths,
             expired_entries: Vec::new(),
             policy_violations: Vec::new(),
+            rules: Vec::new(),
         }
     }
 
@@ -302,7 +341,7 @@ impl Allowlist {
     /// assert!(allowlist.is_path_ignored("app/.env"));
     /// # Ok(()) }
     /// ```
-    pub(crate) fn parse(content: &str) -> Self {
+    pub fn parse(content: &str) -> Self {
         Self::parse_with_policy(content, AllowlistMetadataPolicy::default())
     }
 
@@ -392,6 +431,12 @@ impl Allowlist {
                         continue;
                     }
                     al.credential_hashes.insert(valid_hash);
+                    al.rules.push(AllowlistRule {
+                        line_number: line_number + 1,
+                        entry: entry.to_string(),
+                        kind: AllowlistRuleKind::Hash(valid_hash),
+                        matches: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                    });
                     log_metadata_audit("hash", trimmed, &parsed_meta);
                 } else {
                     al.push_invalid_entry_violation(
@@ -430,6 +475,12 @@ impl Allowlist {
                         continue;
                     }
                     al.ignored_detectors.insert(detector.to_string());
+                    al.rules.push(AllowlistRule {
+                        line_number: line_number + 1,
+                        entry: entry.to_string(),
+                        kind: AllowlistRuleKind::Detector(detector.to_string()),
+                        matches: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                    });
                     log_metadata_audit("detector", detector, &parsed_meta);
                 }
             } else if let Some(path) = entry.strip_prefix("path:") {
@@ -456,6 +507,12 @@ impl Allowlist {
                         continue;
                     }
                     al.ignored_paths.push(path.to_string());
+                    al.rules.push(AllowlistRule {
+                        line_number: line_number + 1,
+                        entry: entry.to_string(),
+                        kind: AllowlistRuleKind::Path(path.to_string()),
+                        matches: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                    });
                     log_metadata_audit("path", path, &parsed_meta);
                 }
             } else if let Some(bytes) = parse_sha256_hex(entry) {
@@ -473,6 +530,12 @@ impl Allowlist {
                     continue;
                 }
                 al.credential_hashes.insert(bytes);
+                al.rules.push(AllowlistRule {
+                    line_number: line_number + 1,
+                    entry: entry.to_string(),
+                    kind: AllowlistRuleKind::Hash(bytes),
+                    matches: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                });
                 log_metadata_audit("hash", entry, &parsed_meta);
             } else if let Some((field, detail)) = invalid_bare_entry(entry) {
                 al.push_invalid_entry_violation(line_number + 1, entry, field, detail);
@@ -500,6 +563,12 @@ impl Allowlist {
                     continue;
                 }
                 al.ignored_paths.push(entry.to_string());
+                al.rules.push(AllowlistRule {
+                    line_number: line_number + 1,
+                    entry: entry.to_string(),
+                    kind: AllowlistRuleKind::Path(entry.to_string()),
+                    matches: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                });
                 log_metadata_audit("path", entry, &parsed_meta);
             }
         }
@@ -785,6 +854,107 @@ impl Allowlist {
     fn matches_ignored_hash_hex(&self, hash_hex: &str) -> bool {
         parse_sha256_hex(hash_hex).is_some_and(|bytes| self.matches_ignored_hash(&bytes))
     }
+
+    /// Record a match against allowlist rules for a verified finding.
+    pub fn record_match(&self, finding: &VerifiedFinding) -> bool {
+        let mut matched = false;
+        for rule in &self.rules {
+            match &rule.kind {
+                AllowlistRuleKind::Detector(det) => {
+                    if &*finding.detector_id == det {
+                        rule.matches.fetch_add(1, Ordering::Relaxed);
+                        matched = true;
+                    }
+                }
+                AllowlistRuleKind::Hash(h) => {
+                    if &finding.credential_hash == h {
+                        rule.matches.fetch_add(1, Ordering::Relaxed);
+                        matched = true;
+                    }
+                }
+                AllowlistRuleKind::Path(p) => {
+                    if let Some(path) = finding.location.file_path.as_deref() {
+                        let normalized = normalize_path(path);
+                        if self.path_matches(&normalized) && pattern_matches_path(p, &normalized) {
+                            rule.matches.fetch_add(1, Ordering::Relaxed);
+                            matched = true;
+                        }
+                    }
+                }
+            }
+        }
+        matched
+    }
+
+    /// Record a match on an ignored path.
+    pub fn record_path_match(&self, path: &str) -> bool {
+        let normalized = normalize_path(path);
+        let mut matched = false;
+        for rule in &self.rules {
+            if let AllowlistRuleKind::Path(p) = &rule.kind {
+                if pattern_matches_path(p, &normalized) {
+                    rule.matches.fetch_add(1, Ordering::Relaxed);
+                    matched = true;
+                }
+            }
+        }
+        matched
+    }
+
+    /// Record a match on an ignored detector.
+    pub fn record_detector_match(&self, detector_id: &str) -> bool {
+        let mut matched = false;
+        for rule in &self.rules {
+            if let AllowlistRuleKind::Detector(d) = &rule.kind {
+                if d == detector_id {
+                    rule.matches.fetch_add(1, Ordering::Relaxed);
+                    matched = true;
+                }
+            }
+        }
+        matched
+    }
+
+    /// Record a match on an ignored credential hash.
+    pub fn record_hash_match(&self, hash: &CredentialHash) -> bool {
+        let mut matched = false;
+        for rule in &self.rules {
+            if let AllowlistRuleKind::Hash(h) = &rule.kind {
+                if h == hash {
+                    rule.matches.fetch_add(1, Ordering::Relaxed);
+                    matched = true;
+                }
+            }
+        }
+        matched
+    }
+
+    /// Retrieve all allowlist entries that matched zero times during the scan.
+    pub fn unused_entries(&self) -> Vec<UnusedAllowlistEntry> {
+        self.rules
+            .iter()
+            .filter_map(|r| {
+                let count = r.matches.load(Ordering::Relaxed);
+                if count == 0 {
+                    Some(UnusedAllowlistEntry {
+                        line_number: r.line_number,
+                        entry: r.entry.clone(),
+                        match_count: 0,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Retrieve match attribution for every registered allowlist entry.
+    pub fn attributed_match_counts(&self) -> Vec<(String, usize)> {
+        self.rules
+            .iter()
+            .map(|r| (r.entry.clone(), r.matches.load(Ordering::Relaxed)))
+            .collect()
+    }
 }
 
 impl Default for Allowlist {
@@ -803,6 +973,7 @@ impl Clone for Allowlist {
             ignored_paths,
             expired_entries: self.expired_entries.clone(),
             policy_violations: self.policy_violations.clone(),
+            rules: self.rules.clone(),
         }
     }
 }

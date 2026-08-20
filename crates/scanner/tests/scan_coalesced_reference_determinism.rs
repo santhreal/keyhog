@@ -1,12 +1,11 @@
 //! Calibration-reference determinism: explicit `SimdCpu` coalesced scans must
-//! return a byte-identical
-//! canonical match set on every call over the SAME fixed chunk set.
+//! return a byte-identical canonical match set on every call over the SAME fixed chunk set.
 //!
-//! This is the contract autoroute calibration relies on: it measures an
-//! explicit `SimdCpu` backend and rejects inconsistent reference trials.
-//! Repeated parallel scans matter because Hyperscan scratch, fragment
-//! reassembly, and per-chunk scanning share concurrent state on high-core
-//! hosts.
+//! WHY: Closes the defect class of scan_coalesced finding parity divergence across
+//! thread pool worker counts and concurrency scheduling. Coalesced batch scanning and
+//! cross-chunk seam reassembly must produce byte-identical canonical findings regardless
+//! of thread pool size or worker count on both in-chunk and seam-straddling credentials.
+//! What it does not catch: thread allocation exhaustion outside rayon pools.
 //!
 //! On mismatch the test prints the symmetric difference of the canonical record
 //! sets (which `(detector, credential_hash, file, line, offset)` tuples appeared
@@ -107,14 +106,70 @@ fn fixed_chunks() -> Vec<Chunk> {
     // dominate the workspace despite adding no additional scheduling pressure.
     chunks.sort_by(|a, b| a.metadata.path.as_deref().cmp(&b.metadata.path.as_deref()));
     chunks.truncate(8);
-    let worker_chunks = std::thread::available_parallelism()
-        .map_or(32, std::num::NonZeroUsize::get)
-        .clamp(8, 64);
+    let worker_chunks = keyhog_profile::logical_cpu_count().clamp(8, 64);
     let seed = chunks.clone();
     while chunks.len() < worker_chunks {
         let remaining = worker_chunks - chunks.len();
         chunks.extend(seed.iter().take(remaining).cloned());
     }
+    chunks
+}
+
+/// Constructs chunks containing real credentials placed across chunk seams by construction.
+fn seam_straddling_chunks() -> Vec<Chunk> {
+    let mut chunks = Vec::new();
+    let credentials = [
+        ("AKIAIOSFODNN7EXAMPLE", 8),                      // AWS access key ID
+        ("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 15), // GitHub PAT
+        (
+            "xoxb-123456789012-1234567890123-abcdefghijklmnopqrstuvwx",
+            20,
+        ), // Slack token
+        (
+            "postgres://app_user:s3cr3t_p4ssw0rd@db.example.com:5432/production_db",
+            30,
+        ), // DB URL
+    ];
+
+    for (file_idx, (secret, split_at)) in credentials.iter().enumerate() {
+        let path = format!("src/seam_file_{file_idx}.rs");
+        let pad_a = "const PADDING_A: &str = \"filler line\\n\";\n".repeat(20);
+        let pad_b = "const PADDING_B: &str = \"filler line\\n\";\n".repeat(20);
+
+        let mut data_a = pad_a;
+        data_a.push_str(&secret[..*split_at]);
+
+        let mut data_b = secret[*split_at..].to_string();
+        data_b.push_str("\";\n");
+        data_b.push_str(&pad_b);
+
+        let len_a = data_a.len();
+        let chunk_a = Chunk {
+            data: data_a.into(),
+            metadata: ChunkMetadata {
+                source_type: "file".into(),
+                path: Some(path.clone().into()),
+                base_offset: 0,
+                base_line: 1,
+                ..Default::default()
+            },
+        };
+
+        let chunk_b = Chunk {
+            data: data_b.into(),
+            metadata: ChunkMetadata {
+                source_type: "file".into(),
+                path: Some(path.into()),
+                base_offset: len_a,
+                base_line: 21,
+                ..Default::default()
+            },
+        };
+
+        chunks.push(chunk_a);
+        chunks.push(chunk_b);
+    }
+
     chunks
 }
 
@@ -179,7 +234,8 @@ fn scan_coalesced_finding_parity_across_worker_counts() {
         keyhog_scanner::ScanBackend::SimdCpu,
     )
     .expect("compile exact SIMD scanner");
-    let chunks = fixed_chunks();
+    let mut chunks = fixed_chunks();
+    chunks.extend(seam_straddling_chunks());
 
     // Get reference matches using default pool
     scanner.clear_fragment_cache();
@@ -192,8 +248,17 @@ fn scan_coalesced_finding_parity_across_worker_counts() {
         "reference finding set must not be empty"
     );
 
-    // Sweep worker counts: 1 worker, 2 workers, 3 workers, 4 workers
-    for worker_count in [1, 2, 3, 4] {
+    // Derive worker count variant space dynamically at run time:
+    // 1 worker, 2 workers, an odd count, and host maximum from pool / available parallelism.
+    let host_max = rayon::current_num_threads().max(keyhog_profile::logical_cpu_count().max(4));
+    let odd_count = if host_max > 3 { (host_max / 2) | 1 } else { 3 };
+    let mut worker_counts = std::collections::BTreeSet::new();
+    worker_counts.insert(1);
+    worker_counts.insert(2);
+    worker_counts.insert(odd_count);
+    worker_counts.insert(host_max);
+
+    for worker_count in worker_counts {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(worker_count)
             .build()

@@ -301,10 +301,17 @@ fn resolve_root_exclusions(root: &std::path::Path) -> (Vec<String>, bool) {
 }
 
 /// Manages filesystem watchers for all guard roots.
+///
+/// Detects channel disconnection and thread failure to enforce fail-closed
+/// reconciliation across all registered roots when event monitoring is lost.
 pub struct GuardWatcher {
     /// The native watcher handle. One watcher serves all roots.
-    /// `None` when the platform watcher could not be created.
-    watcher: Option<RecommendedWatcher>,
+    /// `None` when the platform watcher could not be created or is disabled.
+    watcher: Option<ActiveWatcherHandle>,
+    /// Classified active watcher backend kind.
+    backend_kind: GuardWatcherBackendKind,
+    /// Polling interval in milliseconds if using a polling watcher.
+    poll_interval_ms: Option<u64>,
     /// Channel receiver for events from the native watcher.
     rx: mpsc::Receiver<notify::Result<notify::Event>>,
     /// Retained sender for null/disabled watchers to keep the channel open.
@@ -335,7 +342,9 @@ impl GuardWatcher {
         let poll_interval_ms = None;
         let skip_dirs = crate::skip_dirs::SkipDirPolicy::default();
         Ok(Self {
-            watcher: Some(watcher),
+            watcher: Some(ActiveWatcherHandle::Recommended(watcher)),
+            backend_kind,
+            poll_interval_ms,
             rx,
             _null_tx: None,
             roots: HashMap::new(),
@@ -401,6 +410,8 @@ impl GuardWatcher {
         let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
         Self {
             watcher: None,
+            backend_kind: GuardWatcherBackendKind::Disabled,
+            poll_interval_ms: None,
             rx,
             _null_tx: Some(tx),
             roots: HashMap::new(),
@@ -501,7 +512,15 @@ impl GuardWatcher {
         if self.roots.contains_key(&path) {
             return Err(format!("root already watched: {}", path.display()));
         }
-        if let Some(ref mut watcher) = self.watcher {
+        if self.is_disconnected() {
+            return Err(format!(
+                "failed to watch {}: watcher backend disconnected ({})",
+                path.display(),
+                self.disconnection_reason()
+                    .unwrap_or_else(|| "channel closed".to_string()) // LAW10: string format fallback for fail-closed error construction
+            ));
+        }
+        if let Some(watcher) = &mut self.watcher {
             watcher
                 .watch(&path, RecursiveMode::Recursive)
                 .map_err(|e| {
@@ -545,11 +564,12 @@ impl GuardWatcher {
     /// Remove a root from watching.
     pub fn remove_root(&mut self, path: &std::path::Path) {
         if self.roots.remove(path).is_some() {
-            if let Some(ref mut watcher) = self.watcher {
+            if let Some(watcher) = &mut self.watcher {
                 let _ = watcher.unwatch(path);
             }
         }
     }
+
     /// Poll for events from the native watcher. Returns normalized
     /// guard events grouped by root path. Non-blocking. Drains the
     /// per-root buffer as events are handed to the caller, so the
@@ -668,10 +688,10 @@ impl GuardWatcher {
         let mut matched = Vec::new();
         for root in self.roots.keys() {
             if path.starts_with(root) {
-                return Some(root.clone());
+                matched.push(root.clone());
             }
         }
-        None
+        matched
     }
 
     /// Number of watched roots.
@@ -755,20 +775,15 @@ fn normalize_notify_path_event(kind: &EventKind, path: &std::path::Path) -> Guar
 }
 
 /// Convert a notify::Event into normalized GuardEvent(s).
-fn normalize_notify_event(event: &notify::Event) -> Vec<GuardEvent> {
-    let path = event.paths.first().cloned().unwrap_or_default();
-    match event.kind {
-        EventKind::Create(_) => vec![GuardEvent::Create(path)],
-        EventKind::Modify(_) => vec![GuardEvent::Modify(path)],
-        EventKind::Remove(_) => vec![GuardEvent::Remove(path)],
-        _ => {
-            if !event.paths.is_empty() {
-                vec![GuardEvent::Modify(path)]
-            } else {
-                Vec::new()
-            }
-        }
+pub fn normalize_notify_event(event: &notify::Event) -> Vec<GuardEvent> {
+    if event.paths.is_empty() {
+        return Vec::new();
     }
+    event
+        .paths
+        .iter()
+        .map(|path| normalize_notify_path_event(&event.kind, path))
+        .collect()
 }
 #[cfg(test)]
 #[path = "../../tests/unit/daemon_guard_watcher.rs"]

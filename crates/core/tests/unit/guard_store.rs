@@ -41,6 +41,7 @@ fn sample_root_record(path: &str) -> GuardRootRecord {
             device: 1,
             inode: 2,
         },
+        filesystem_authority: keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         mode: GuardRootMode::Repo,
         state: GuardRootState::Current,
         terminal_sequence: 0,
@@ -239,6 +240,7 @@ fn root_registry_register_creates_stopped_record() {
             device: 1,
             inode: 2,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Repo,
     );
 
@@ -258,6 +260,7 @@ fn root_registry_get_by_path() {
             device: 1,
             inode: 2,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Repo,
     );
 
@@ -275,6 +278,7 @@ fn root_registry_get_mut_for_state_update() {
             device: 1,
             inode: 2,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Repo,
     );
 
@@ -299,6 +303,7 @@ fn root_registry_remove() {
             device: 1,
             inode: 2,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Repo,
     );
     assert_eq!(registry.len(), 1);
@@ -317,6 +322,7 @@ fn root_registry_list() {
             device: 1,
             inode: 1,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Repo,
     );
     registry.register(
@@ -325,9 +331,9 @@ fn root_registry_list() {
             device: 2,
             inode: 2,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Filesystem,
     );
-
     let list = registry.list();
     assert_eq!(list.len(), 2);
 }
@@ -341,6 +347,7 @@ fn root_registry_count_by_state() {
             device: 1,
             inode: 1,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Repo,
     );
     registry.register(
@@ -349,9 +356,9 @@ fn root_registry_count_by_state() {
             device: 2,
             inode: 2,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Repo,
     );
-
     // Both start as Stopped.
     assert_eq!(registry.count_by_state(GuardRootState::Stopped), 2);
     assert_eq!(registry.count_by_state(GuardRootState::Current), 0);
@@ -392,6 +399,7 @@ fn durable_store_save_and_load_root() {
             device: 1,
             inode: 2,
         },
+        filesystem_authority: keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         mode: GuardRootMode::Repo,
         state: GuardRootState::Current,
         terminal_sequence: 42,
@@ -424,6 +432,7 @@ fn durable_store_remove_root() {
             device: 1,
             inode: 2,
         },
+        filesystem_authority: keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         mode: GuardRootMode::Repo,
         state: GuardRootState::Stopped,
         terminal_sequence: 0,

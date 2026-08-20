@@ -54,9 +54,25 @@ PATTERNS = [
     (re.compile(r"\bqueued for a later release\b", re.I), "state the shipped contract"),
 ]
 
-ALLOW_FILES = {
-    "scripts/gates/no_deferral_markers.py",
+ALLOW_FILES: dict[str, str] = {
+    "scripts/gates/no_deferral_markers.py": "gate source definition containing deferral pattern regexes",
 }
+
+
+def validate_allowlists(repo: pathlib.Path = REPO) -> list[str]:
+    """Validate that roots and allowlist files exist and carry written reasons."""
+    errors: list[str] = []
+    for root in ROOTS:
+        path = repo / root
+        if not path.exists():
+            errors.append(f"configured scan ROOT does not exist on disk: {root}")
+    for rel_path, reason in ALLOW_FILES.items():
+        path = repo / rel_path
+        if not path.exists():
+            errors.append(f"ALLOW_FILES target does not exist on disk: {rel_path} (reason: {reason})")
+        if not reason.strip():
+            errors.append(f"ALLOW_FILES entry missing written reason: {rel_path}")
+    return errors
 
 
 def iter_files() -> list[pathlib.Path]:
@@ -119,6 +135,15 @@ def self_test() -> int:
 def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return self_test()
+    allowlist_errors = validate_allowlists()
+    if allowlist_errors:
+        print(
+            f"FAIL - {len(allowlist_errors)} invalid scan root(s) or allowlist entry/entries:",
+            file=sys.stderr,
+        )
+        for err in allowlist_errors:
+            print(f"  {err}", file=sys.stderr)
+        return 1
     hits = collect()
     if hits:
         print(

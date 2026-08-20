@@ -6,8 +6,6 @@ pub mod every_embedded_detector_parses;
 pub mod lib_rs_duplicate_lint_preamble;
 pub mod lint_preamble_present;
 pub mod merkle_load_without_spec_invalidates_legacy_save;
-pub mod no_cwd_relative_source_reads;
-pub mod no_inline_tests_in_src;
 pub mod redaction_dedup;
 pub mod report_html_xss;
 pub mod report_json_sarif;

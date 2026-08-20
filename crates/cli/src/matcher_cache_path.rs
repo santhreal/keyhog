@@ -83,7 +83,7 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
                     ))
                 }
             }
-        },
+        }
         Err(error) => {
             tracing::debug!(
                 error = %error,

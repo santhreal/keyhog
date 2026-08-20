@@ -510,18 +510,21 @@ fn load_guard_config() -> (
     let recon_config = keyhog_sources::guard::GuardReconciliationConfig {
         max_pending_events_per_root: guard
             .max_pending_events_per_root
-            .unwrap_or(defaults.max_pending_events_per_root),
+            .unwrap_or(defaults.max_pending_events_per_root), // LAW10: documented default resolution from configuration table
+        max_pending_events_total: guard
+            .max_pending_events_total
+            .unwrap_or(defaults.max_pending_events_total), // LAW10: documented default resolution from configuration table
         coalesce_window_ms: guard
             .coalesce_window
             .as_deref()
             .and_then(parse_duration_ms)
-            .unwrap_or(defaults.coalesce_window_ms),
+            .unwrap_or(defaults.coalesce_window_ms), // LAW10: documented default resolution from configuration table
         subtree_max_files: guard
             .subtree_max_files
-            .unwrap_or(defaults.subtree_max_files),
+            .unwrap_or(defaults.subtree_max_files), // LAW10: documented default resolution from configuration table
         subtree_max_depth: guard
             .subtree_max_depth
-            .unwrap_or(defaults.subtree_max_depth),
+            .unwrap_or(defaults.subtree_max_depth), // LAW10: documented default resolution from configuration table
     };
     if let Some(residency) = guard.scanner_residency.as_deref() {
         if residency != "warm" && residency != "idle-unload" {

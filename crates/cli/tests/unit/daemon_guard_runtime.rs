@@ -21,6 +21,9 @@ fn test_fs_identity() -> FilesystemIdentity {
     }
 }
 
+fn test_fs_authority() -> FilesystemAuthority {
+    FilesystemAuthority::authoritative("ext4")
+}
 #[test]
 fn runtime_starts_empty() {
     let rt = GuardRuntime::new();
@@ -35,6 +38,7 @@ fn add_root_creates_stopped_record() {
         .add_root(
             b"/work/project".to_vec(),
             test_fs_identity(),
+            test_fs_authority(),
             GuardRootMode::Repo,
         )
         .unwrap();
@@ -48,12 +52,14 @@ fn add_duplicate_root_fails() {
     rt.add_root(
         b"/work/project".to_vec(),
         test_fs_identity(),
+        test_fs_authority(),
         GuardRootMode::Repo,
     )
     .unwrap();
     let result = rt.add_root(
         b"/work/project".to_vec(),
         test_fs_identity(),
+        test_fs_authority(),
         GuardRootMode::Repo,
     );
     assert!(result.is_err());
@@ -65,6 +71,7 @@ fn remove_root_works() {
     rt.add_root(
         b"/work/project".to_vec(),
         test_fs_identity(),
+        test_fs_authority(),
         GuardRootMode::Repo,
     )
     .unwrap();
@@ -81,6 +88,7 @@ fn transition_root_stopped_to_indexing() {
     rt.add_root(
         b"/work/project".to_vec(),
         test_fs_identity(),
+        test_fs_authority(),
         GuardRootMode::Repo,
     )
     .unwrap();
@@ -97,6 +105,7 @@ fn transition_root_indexing_to_current() {
     rt.add_root(
         b"/work/project".to_vec(),
         test_fs_identity(),
+        test_fs_authority(),
         GuardRootMode::Repo,
     )
     .unwrap();
@@ -114,6 +123,7 @@ fn transition_illegal_returns_error() {
     rt.add_root(
         b"/work/project".to_vec(),
         test_fs_identity(),
+        test_fs_authority(),
         GuardRootMode::Repo,
     )
     .unwrap();
@@ -128,6 +138,7 @@ fn policy_identity_change_transitions_roots_to_stale() {
     rt.add_root(
         b"/work/project".to_vec(),
         test_fs_identity(),
+        test_fs_authority(),
         GuardRootMode::Repo,
     )
     .unwrap();
@@ -165,10 +176,20 @@ fn transaction_ids_are_unique() {
 #[test]
 fn count_by_state() {
     let rt = GuardRuntime::new();
-    rt.add_root(b"/a".to_vec(), test_fs_identity(), GuardRootMode::Repo)
-        .unwrap();
-    rt.add_root(b"/b".to_vec(), test_fs_identity(), GuardRootMode::Repo)
-        .unwrap();
+    rt.add_root(
+        b"/a".to_vec(),
+        test_fs_identity(),
+        test_fs_authority(),
+        GuardRootMode::Repo,
+    )
+    .unwrap();
+    rt.add_root(
+        b"/b".to_vec(),
+        test_fs_identity(),
+        test_fs_authority(),
+        GuardRootMode::Repo,
+    )
+    .unwrap();
 
     assert_eq!(rt.count_by_state(GuardRootState::Stopped), 2);
     assert_eq!(rt.count_by_state(GuardRootState::Current), 0);
@@ -184,15 +205,20 @@ fn count_by_state() {
 #[test]
 fn list_roots_returns_all() {
     let rt = GuardRuntime::new();
-    rt.add_root(b"/a".to_vec(), test_fs_identity(), GuardRootMode::Repo)
-        .unwrap();
+    rt.add_root(
+        b"/a".to_vec(),
+        test_fs_identity(),
+        test_fs_authority(),
+        GuardRootMode::Repo,
+    )
+    .unwrap();
     rt.add_root(
         b"/b".to_vec(),
         test_fs_identity(),
+        test_fs_authority(),
         GuardRootMode::Filesystem,
     )
     .unwrap();
-
     let list = rt.list_roots();
     assert_eq!(list.len(), 2);
 }
@@ -203,6 +229,7 @@ fn scanner_residency_is_resident_after_activity() {
     rt.add_root(
         b"/work/project".to_vec(),
         test_fs_identity(),
+        test_fs_authority(),
         GuardRootMode::Repo,
     )
     .unwrap();
@@ -216,6 +243,7 @@ fn scanner_residency_is_active_during_transaction() {
     rt.add_root(
         b"/work/project".to_vec(),
         test_fs_identity(),
+        test_fs_authority(),
         GuardRootMode::Repo,
     )
     .unwrap();
@@ -589,6 +617,7 @@ fn mutation_indexing_to_current_requires_clean_transition() {
     rt.add_root(
         b"/mutation/transition".to_vec(),
         test_fs_identity(),
+        test_fs_authority(),
         GuardRootMode::Repo,
     )
     .unwrap();
@@ -625,6 +654,7 @@ fn coverage_lost_during_indexing_survives_until_taken() {
     rt.add_root(
         b"/overflow/root".to_vec(),
         test_fs_identity(),
+        test_fs_authority(),
         GuardRootMode::Repo,
     )
     .unwrap();
@@ -654,6 +684,7 @@ fn remove_root_clears_indexing_event_flags() {
     rt.add_root(
         b"/clear/flags".to_vec(),
         test_fs_identity(),
+        test_fs_authority(),
         GuardRootMode::Filesystem,
     )
     .unwrap();
@@ -662,4 +693,25 @@ fn remove_root_clears_indexing_event_flags() {
     assert!(rt.remove_root(b"/clear/flags").is_some());
     assert!(!rt.take_dirty_during_indexing(b"/clear/flags"));
     assert!(!rt.take_coverage_lost_during_indexing(b"/clear/flags"));
+}
+
+#[test]
+fn watcher_disconnection_records_reason_and_status() {
+    let rt = GuardRuntime::new();
+    assert!(!rt.is_watcher_disconnected());
+    assert!(rt.watcher_disconnection_reason().is_none());
+
+    rt.set_watcher_status("watching");
+    assert_eq!(rt.watcher_status().as_deref(), Some("watching"));
+
+    rt.record_watcher_disconnection("notify event channel closed");
+    assert!(rt.is_watcher_disconnected());
+    assert_eq!(
+        rt.watcher_disconnection_reason().as_deref(),
+        Some("notify event channel closed")
+    );
+    assert_eq!(
+        rt.watcher_status().as_deref(),
+        Some("disconnected: notify event channel closed")
+    );
 }

@@ -239,6 +239,7 @@ that does it.
 | `backend` | inspect hardware, routing heuristics, and autoroute evidence |
 | `bloom-diagnostic` | measure the production Bloom rejection gate and prove enabled-versus-bypassed finding parity |
 | `doctor` | health-check the install: host, PATH, corpus, scan and GPU self-test |
+
 | `uninstall` | remove the binary (dry run unless `--yes`) |
 | `completion` | emit shell completions (bash, zsh, fish, powershell, elvish) |
 

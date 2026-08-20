@@ -115,6 +115,8 @@ pub fn coalesce_events(existing: &GuardEvent, incoming: &GuardEvent) -> GuardEve
 pub struct GuardReconciliationConfig {
     /// Maximum queued events per root.
     pub max_pending_events_per_root: usize,
+    /// Maximum total queued events across all roots.
+    pub max_pending_events_total: usize,
     /// Coalescing window in milliseconds.
     pub coalesce_window_ms: u64,
     /// Maximum files for one subtree reconciliation.
@@ -127,6 +129,7 @@ impl Default for GuardReconciliationConfig {
     fn default() -> Self {
         Self {
             max_pending_events_per_root: 8192,
+            max_pending_events_total: 65536,
             coalesce_window_ms: 100,
             subtree_max_files: 10_000,
             subtree_max_depth: 64,
@@ -399,6 +402,7 @@ mod tests {
     fn reconciliation_config_defaults() {
         let config = GuardReconciliationConfig::default();
         assert_eq!(config.max_pending_events_per_root, 8192);
+        assert_eq!(config.max_pending_events_total, 65536);
         assert_eq!(config.coalesce_window_ms, 100);
         assert_eq!(config.subtree_max_files, 10_000);
         assert_eq!(config.subtree_max_depth, 64);

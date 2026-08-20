@@ -25,7 +25,8 @@
 use crate::metrics::{MacroStageId, MetricId};
 use crate::schema::{RunState, StateMeasurement};
 use crate::schema_v2::{
-    CacheEffectivenessV2, CausalProfileV2, Evidence, QueueDepthV2, RetryRecordV2,
+    CacheEffectivenessV2, CausalProfileV2, CompileSurfaceRecordV2, Evidence, QueueDepthV2,
+    RetryRecordV2,
 };
 use serde::{Deserialize, Serialize};
 
@@ -374,6 +375,8 @@ pub struct RunInsightV2 {
     pub backends: Vec<BackendAttributionV2>,
     pub caches: Vec<CacheEffectivenessV2>,
     pub retries: Vec<RetryRecordV2>,
+    #[serde(default)]
+    pub compile_surfaces: Vec<CompileSurfaceRecordV2>,
     pub coverage: InsightCoverageV2,
 }
 
@@ -438,6 +441,7 @@ impl RunInsightV2 {
             backends,
             caches: profile.caches.clone(),
             retries: profile.retries.clone(),
+            compile_surfaces: profile.compile_surfaces.clone(),
             coverage,
         }
     }
@@ -624,6 +628,18 @@ impl RunInsightV2 {
                 cache.hits,
                 cache.misses,
                 format_percent_ppm(cache.hit_rate_ppm),
+            ));
+        }
+
+        for surface in &self.compile_surfaces {
+            out.push_str(&format!(
+                "compile {:<28} runtime_compiles={} loads={} install_compiles={} update_compiles={} developer_compiles={}\n",
+                surface.surface.as_str(),
+                surface.runtime_compiles,
+                surface.loads,
+                surface.install_compiles,
+                surface.update_compiles,
+                surface.developer_compiles,
             ));
         }
 

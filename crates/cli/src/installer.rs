@@ -53,6 +53,7 @@ pub(crate) fn process_is_running(pid: u32) -> bool {
     if pid <= 0 {
         return false;
     }
+    // SAFETY: pid is validated positive; signal 0 performs an existence check without sending a signal.
     let rc = unsafe { libc::kill(pid, 0) };
     if rc == 0 {
         return true;
@@ -77,6 +78,7 @@ pub(crate) fn process_is_running(pid: u32) -> bool {
         fn GetLastError() -> u32;
     }
 
+    // SAFETY: OpenProcess has no pointer preconditions and receives a numeric PID.
     let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
     if handle.is_null() {
         // ERROR_INVALID_PARAMETER is the normal "PID does not exist" result.
@@ -84,8 +86,10 @@ pub(crate) fn process_is_running(pid: u32) -> bool {
         // owned at a privilege boundary; reaping its artifact would race live
         // higher-privilege work.
         const ERROR_INVALID_PARAMETER: u32 = 87;
+        // SAFETY: GetLastError reads the calling thread's last error code and has no preconditions.
         return unsafe { GetLastError() } != ERROR_INVALID_PARAMETER;
     }
+    // SAFETY: handle is non-null and was returned by successful OpenProcess above.
     unsafe {
         CloseHandle(handle);
     }

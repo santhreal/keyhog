@@ -60,21 +60,19 @@ CONTENT_PATTERNS = [
     re.compile(r"everything wired so far"),
 ]
 
-ALLOWED = {
-    ".gitignore",
-    "CHANGELOG.md",
-    # Absence guards: these tests/gates name the retired artifacts precisely to
-    # prove they stay gone.
-    "crates/scanner/tests/gap/findings_registry_integrity.rs",
-    "tools/ci-operability/tests/gap/execution_plan_no_retired_registry.rs",
-    "scripts/gates/no_stale_internal_refs.py",
+ALLOWED: dict[str, str] = {
+    ".gitignore": "ignores local backlog and internal scratch directories",
+    "CHANGELOG.md": "historical release notes documenting purged artifacts and registry removals",
+    "crates/scanner/tests/gap/findings_registry_integrity.rs": "absence guard testing that findings registry is deleted",
+    "tools/ci-operability/tests/gap/execution_plan_no_retired_registry.rs": "absence guard testing execution plan has no retired registry",
+    "scripts/gates/no_stale_internal_refs.py": "gate source definition containing pattern strings",
 }
 
 # Narrow policy references that remain valid. Keep these pattern-specific so a
 # policy file cannot accidentally become exempt from every retired-artifact
 # check merely because it documents the one local ledger contract.
-ALLOWED_PATTERN_HITS = {
-    ("AGENTS.md", "BACKLOG.md"),
+ALLOWED_PATTERN_HITS: dict[tuple[str, str], str] = {
+    ("AGENTS.md", "BACKLOG.md"): "operator instructions defining backlog file policy",
 }
 
 SKIP_DIRS = {
@@ -136,6 +134,26 @@ def iter_files() -> list[pathlib.Path]:
         if path.name in {".gitignore", "Dockerfile"} or path.suffix in TEXT_SUFFIXES:
             files.append(path)
     return files
+
+
+def validate_allowlists(repo: pathlib.Path = REPO) -> list[str]:
+    """Validate that every allowlist entry names an existing target and has a reason."""
+    errors: list[str] = []
+    for rel_path, reason in ALLOWED.items():
+        target = repo / rel_path
+        if not target.exists():
+            errors.append(f"ALLOWED target does not exist on disk: {rel_path} (reason: {reason})")
+        if not reason.strip():
+            errors.append(f"ALLOWED entry missing written reason: {rel_path}")
+    for (rel_path, pattern), reason in ALLOWED_PATTERN_HITS.items():
+        target = repo / rel_path
+        if not target.exists():
+            errors.append(f"ALLOWED_PATTERN_HITS target does not exist on disk: {rel_path} (pattern: {pattern})")
+        if not reason.strip():
+            errors.append(f"ALLOWED_PATTERN_HITS entry missing written reason: {rel_path}:{pattern}")
+        if pattern not in PATTERNS and not any(m.pattern == pattern for m in CONTENT_PATTERNS):
+            errors.append(f"ALLOWED_PATTERN_HITS pattern is not in defined patterns: {pattern}")
+    return errors
 
 
 def collect() -> list[tuple[str, int, str, str]]:
@@ -203,6 +221,15 @@ def self_test() -> int:
 def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return self_test()
+    allowlist_errors = validate_allowlists()
+    if allowlist_errors:
+        print(
+            f"FAIL - {len(allowlist_errors)} invalid or stale allowlist entry/entries:",
+            file=sys.stderr,
+        )
+        for err in allowlist_errors:
+            print(f"  {err}", file=sys.stderr)
+        return 1
     hits = collect()
     if hits:
         print(

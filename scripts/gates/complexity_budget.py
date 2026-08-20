@@ -46,6 +46,21 @@ BUDGET = {
     "engine_loc": 9920,          # non-blank LOC in those top-level modules
 }
 
+def validate_owners_and_budgets(repo: pathlib.Path = REPO) -> list[str]:
+    """Validate that engine and owner targets exist on disk and budgets are complete."""
+    errors: list[str] = []
+    engine = repo / "crates" / "scanner" / "src" / "engine"
+    backend_owner = repo / "crates" / "scanner" / "src" / "hw_probe" / "mod.rs"
+    if not engine.is_dir():
+        errors.append(f"complexity budget target engine directory missing: {engine}")
+    if not backend_owner.is_file():
+        errors.append(f"complexity budget target backend owner file missing: {backend_owner}")
+    required_metrics = {"phase2_lanes", "scan_backends", "engine_files", "engine_loc"}
+    missing = required_metrics - set(BUDGET.keys())
+    if missing:
+        errors.append(f"complexity budget missing required metrics: {sorted(missing)}")
+    return errors
+
 
 def count_phase2_lanes() -> int:
     return len(list(ENGINE.glob("phase2*.rs")))
@@ -389,6 +404,12 @@ def argument_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = argument_parser().parse_args(argv)
+    target_errors = validate_owners_and_budgets()
+    if target_errors:
+        print("\nFAIL, complexity budget targets are missing or invalid:", file=sys.stderr)
+        for err in target_errors:
+            print(f"  {err}", file=sys.stderr)
+        return 1
     measured = {
         "phase2_lanes": count_phase2_lanes(),
         "scan_backends": count_scan_backends(),

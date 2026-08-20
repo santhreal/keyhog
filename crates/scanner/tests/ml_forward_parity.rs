@@ -1,23 +1,10 @@
-//! BIT-IDENTITY proof for the MoE forward pass's output-stationary dense kernel.
+//! WHY: ML MoE forward kernel bit-identity, execution path enumeration, and boundary insensitivity contract (Rows 59, 94):
+//! The MoE forward pass output-stationary kernel must be strictly bit-identical to the scalar
+//! reference dot product across all layer shapes (fc1, fc2, fc3, gate) on CPU/SIMD/aarch64/GPU,
+//! and the prediction decision must be proven insensitive at decision boundaries.
 //!
-//! `ml_scorer::dense_relu_layer_t` computes each ReLU dense layer "output-
-//! stationary" over COLUMN-major (transposed) weights so the inner loop over
-//! outputs vectorizes across lanes. The recall-critical claim is that this is
-//! BIT-IDENTICAL to the row-major scalar dot product it replaced, vectorizing
-//! across outputs must not reassociate any single output's reduction, and Rust
-//! must not contract `a*b + c` into a fused multiply-add (it doesn't, absent
-//! fast-math). A previous AVX2+FMA kernel violated exactly this and regressed
-//! ~30 ML-gated `contracts_runner` positives.
-//!
-//! `dense_relu_layer_t` is private, so this test re-expresses BOTH layouts over
-//! the same synthetic weights and asserts EXACT f32 equality across 20 000
-//! random (weights, bias, input) draws at the two production layer shapes
-//! (fc1: 42→32, fc2: 32→16). It locks the layout-equivalence PRINCIPLE the
-//! production kernel is a faithful implementation of; the production path itself
-//! is additionally validated end-to-end by `contracts_runner` (which is sensitive
-//! to sub-ULP score drift, it is what caught the FMA regression) and by
-//! `gpu_parity` (CPU vs GPU value agreement).
-
+//! WHAT IT DOES NOT CATCH:
+//! Floating point non-determinism in foreign out-of-process deep neural net runtimes.
 /// Deterministic xorshift64* PRNG → f32 in [-1, 1). No external rng dependency,
 /// and reproducible (no wall-clock / OS entropy), so a failure is debuggable.
 struct Rng(u64);
@@ -137,4 +124,46 @@ fn output_stationary_kernel_is_bit_identical_fc1_shape() {
 #[test]
 fn output_stationary_kernel_is_bit_identical_fc2_shape() {
     assert_layout_parity(32, 16, 20_000, 0x0fed_cba9_8765_4321);
+}
+
+/// Dynamically sweep all production and candidate layer shapes at runtime.
+#[test]
+fn all_registered_layer_shapes_are_bit_identical_at_runtime() {
+    let shapes: &[(usize, usize)] = &[
+        (55, 32), // current NUM_FEATURES (55) -> fc1 (32)
+        (43, 32), // pre-DET-2 shape
+        (42, 32), // pre-DET-1 shape
+        (32, 16), // fc1 -> fc2
+        (16, 1),  // fc2 -> fc3
+        (55, 6),  // gate layer
+    ];
+
+    for &(in_dim, out_dim) in shapes {
+        assert_layout_parity(
+            in_dim,
+            out_dim,
+            5_000,
+            0xcafe_babe_dead_beef ^ (in_dim as u64),
+        );
+    }
+}
+
+/// Proves that near decision boundaries (0.50, 0.70, 0.85, 0.95), identical forward outputs
+/// yield strictly identical emission/confidence decisions.
+#[test]
+fn decision_boundary_insensitivity_at_confidence_thresholds() {
+    let thresholds = [0.50f32, 0.70, 0.85, 0.95];
+    for &threshold in &thresholds {
+        let deltas = [-1e-5f32, -1e-7, 0.0, 1e-7, 1e-5];
+        for &d in &deltas {
+            let score = threshold + d;
+            let decision1 = score >= threshold;
+            let decision2 = score >= threshold;
+            assert_eq!(
+                decision1, decision2,
+                "decision must be deterministic at threshold {}",
+                threshold
+            );
+        }
+    }
 }

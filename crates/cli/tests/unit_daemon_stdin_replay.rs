@@ -41,8 +41,8 @@ fn buffered_stdin_replay_uses_one_source_with_exact_lossy_decoding() {
 /// twice the input size instead of one shared body plus one scan window.
 #[test]
 fn buffered_stdin_replay_emits_bounded_overlapping_windows() {
-    const WINDOW: usize = 1024 * 1024;
-    const OVERLAP: usize = 128 * 1024;
+    const WINDOW: usize = keyhog_core::DEFAULT_WINDOW_SIZE_BYTES;
+    const OVERLAP: usize = keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES;
     let mut args =
         ScanArgs::try_parse_from(["scan", "--stdin"]).expect("stdin scan arguments must parse");
     let mut bytes = vec![b'a'; WINDOW + 16];

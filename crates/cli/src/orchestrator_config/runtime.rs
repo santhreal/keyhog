@@ -191,6 +191,7 @@ pub(crate) struct ScanRuntimeInput {
     pub(crate) reader_threads: Option<usize>,
     pub(crate) fused_batch: usize,
     pub(crate) fused_depth: Option<usize>,
+    pub(crate) window_overlap: usize,
     pub(crate) gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy,
     pub(crate) autoroute_gpu: bool,
     pub(crate) autoroute_calibration: bool,
@@ -219,6 +220,9 @@ impl ScanRuntimeInput {
             reader_threads: args.reader_threads,
             fused_batch: args.fused_batch.unwrap_or(FUSED_BATCH_DEFAULT), // LAW10: absent fused-batch config => documented compiled throughput default; no recall path changes and the value is printed/hashes into autoroute identity
             fused_depth: args.fused_depth,
+            window_overlap: args
+                .window_overlap
+                .unwrap_or(keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES), // LAW10: absent window-overlap config => canonical window overlap default; printed in effective config
             gpu_runtime_policy: gpu_runtime_policy_from_args(args),
             autoroute_gpu: args.autoroute_gpu && !args.no_autoroute_gpu,
             autoroute_calibration: args.autoroute_calibrate,

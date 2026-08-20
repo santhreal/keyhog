@@ -41,6 +41,7 @@ mod frame_incremental_tests;
 #[cfg(test)]
 #[path = "frame_streaming_tests.rs"]
 mod frame_streaming_tests;
+pub(crate) mod fs_probe;
 #[cfg(feature = "git")]
 pub(crate) mod guard_commit;
 pub(crate) mod guard_runtime;

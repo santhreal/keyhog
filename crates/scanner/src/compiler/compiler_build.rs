@@ -158,7 +158,9 @@ pub(crate) const MIN_HOMOGLYPH_PREFIX_LEN: usize = 3;
 
 pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
     BUILD_COMPILE_STATE_INVOCATIONS.set(BUILD_COMPILE_STATE_INVOCATIONS.get() + 1);
-    use rayon::prelude::*;
+    keyhog_profile::record_compile_surface_invocation(
+        keyhog_profile::CompileSurfaceId::CompileState,
+    );
 
     // De-duplicate identical regex strings BEFORE compilation. The 888-
     // detector corpus has ~6-15% duplicate patterns (e.g. multiple
@@ -190,7 +192,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
     // per pattern, so it belongs in the `par_iter`; Phase 2 is now pure
     // assembly (cheap vec pushes, no regex work).
     let compiled_results: Vec<Result<(Vec<PatternArtifacts>, Vec<CompiledCompanion>)>> = detectors
-        .par_iter()
+        .iter()
         .enumerate()
         .map(|(detector_index, detector)| {
             let companions = compile_detector_companions(detector)?;

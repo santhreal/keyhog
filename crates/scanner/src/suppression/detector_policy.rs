@@ -94,6 +94,9 @@ pub(crate) struct DetectorSuppressionPolicy {
 
 impl DetectorSuppressionPolicy {
     pub(crate) fn compile(spec: &keyhog_core::DetectorSpec) -> Result<Option<Self>, String> {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::DetectorPlan,
+        );
         Self::hydrate_parts(
             &spec.id,
             &spec.allowlist_paths,
@@ -106,6 +109,7 @@ impl DetectorSuppressionPolicy {
     pub(crate) fn hydrate(
         spec: &crate::execution_pack::detector_plan::DetectorPlanRecord,
     ) -> Result<Option<Self>, String> {
+        keyhog_profile::record_compile_surface_load(keyhog_profile::CompileSurfaceId::DetectorPlan);
         Self::hydrate_parts(
             &spec.id,
             &spec.allowlist_paths,

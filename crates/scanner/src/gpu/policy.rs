@@ -85,6 +85,25 @@ pub(crate) fn gpu_probe() -> GpuRuntimeProbe {
     if gpu_disabled_by_policy() {
         return GpuRuntimeProbe::default();
     }
+    #[cfg(all(feature = "gpu", target_os = "linux"))]
+    if let Ok(cuda) = super::probe_cuda_peer() {
+        // LAW10: hardware probe for CUDA peer; absent accelerator is surfaced and recall preserved through CPU/SIMD path
+        let name = if cuda.name.is_empty() {
+            format!(
+                "NVIDIA GPU (CUDA cap {}.{})",
+                cuda.compute_capability.0, cuda.compute_capability.1
+            )
+        } else {
+            cuda.name.clone()
+        };
+        return GpuRuntimeProbe {
+            available: true,
+            name: Some(name),
+            buffer_limit_mb: Some(cuda.total_memory / (1024 * 1024)),
+            runtime_identity: super::linux_cuda_runtime_identity().ok(), // LAW10: optional driver identity probe; diagnostic accessor reporting-only
+            is_software: false,
+        };
+    }
     #[cfg(feature = "gpu")]
     if let Some(gpu) = super::gpu_adapter_probe() {
         return GpuRuntimeProbe {

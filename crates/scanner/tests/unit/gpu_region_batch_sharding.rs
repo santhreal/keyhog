@@ -146,18 +146,18 @@ fn backend_limits_keep_wgpu_inside_its_portable_grid() {
     );
     assert_eq!(
         region_presence_batch_byte_limit("cuda"),
-        WGPU_BYTE_SCAN_DISPATCH_LIMIT.min(crate::gpu_input_budget::gpu_batch_input_limit())
+        CUDA_BYTE_SCAN_DISPATCH_LIMIT.min(crate::gpu_input_budget::gpu_batch_input_limit())
     );
     assert_eq!(WGPU_BYTE_SCAN_DISPATCH_LIMIT, 8_388_480);
     assert_eq!(
         region_presence_batch_byte_limit_for_input_budget("cuda", 128 * 1024 * 1024),
-        WGPU_BYTE_SCAN_DISPATCH_LIMIT,
-        "CUDA positioned-match shards must stay within the exact replay-safe portable grid"
+        CUDA_BYTE_SCAN_DISPATCH_LIMIT,
+        "CUDA positioned-match shards derive from CUDA limits"
     );
     assert_eq!(
         region_presence_batch_byte_limit_for_input_budget("wgpu", 128 * 1024 * 1024),
         WGPU_BYTE_SCAN_DISPATCH_LIMIT,
-        "WGPU and CUDA share one exact positioned-match shard ceiling"
+        "WGPU shards stay bounded to 8 MiB portable grid"
     );
     assert_eq!(
         region_presence_batch_byte_limit_for_input_budget("cuda", 4 * 1024 * 1024),
@@ -236,7 +236,11 @@ fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
             .expect("compile scalar WGPU shard reference");
     let scanner = CompiledScanner::compile_for_backend(vec![detector], ScanBackend::GpuWgpu)
         .expect("compile exact WGPU shard scanner");
-    if !crate::hw_probe::probe_hardware().gpu_available {
+    if !crate::capability_ledger::register_capability_test(
+        "production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity",
+        "gpu",
+        crate::hw_probe::probe_hardware().gpu_available,
+    ) {
         eprintln!("GPU parity fixture requires a physical GPU");
         return;
     }

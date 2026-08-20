@@ -18,6 +18,8 @@ const GHIDRA_SCAN_CHUNK_BYTES: usize = crate::strings::BOUNDED_DERIVED_TEXT_CHUN
 pub(in crate::binary) struct GhidraAnalyzer {
     executable: PathBuf,
     arguments: Vec<OsString>,
+    #[allow(dead_code)]
+    version: Option<String>,
 }
 
 impl GhidraAnalyzer {
@@ -29,10 +31,18 @@ impl GhidraAnalyzer {
         executable: impl Into<PathBuf>,
         arguments: impl IntoIterator<Item = OsString>,
     ) -> Self {
+        let executable = executable.into();
+        let version = probe_ghidra_version(&executable);
         Self {
-            executable: executable.into(),
+            executable,
             arguments: arguments.into_iter().collect(),
+            version,
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn version(&self) -> Option<&str> {
+        self.version.as_deref()
     }
 }
 
@@ -449,6 +459,45 @@ pub(in crate::binary) fn find_ghidra_headless() -> Option<PathBuf> {
     }
 
     None
+}
+
+/// Probe Ghidra's installation directory for its version string (from `application.properties`).
+pub(in crate::binary) fn probe_ghidra_version(executable: &Path) -> Option<String> {
+    if let Ok(dir) = std::env::var("GHIDRA_INSTALL_DIR") {
+        // LAW10: optional environment override for Ghidra location; falls through to executable parent probe
+        let prop = Path::new(&dir).join("Ghidra/application.properties");
+        if let Some(v) = parse_ghidra_properties_version(&prop) {
+            return Some(v);
+        }
+    }
+    if let Some(parent) = executable.parent() {
+        if let Some(root) = parent.parent() {
+            let prop = root.join("Ghidra/application.properties");
+            if let Some(v) = parse_ghidra_properties_version(&prop) {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+fn parse_ghidra_properties_version(path: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?; // LAW10: best-effort version metadata read; unreadable properties file returns None with no effect on scan recall
+    let mut version = None;
+    let mut release = None;
+    for line in content.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("application.version=") {
+            version = Some(rest.trim().to_string());
+        } else if let Some(rest) = line.strip_prefix("application.release.name=") {
+            release = Some(rest.trim().to_string());
+        }
+    }
+    match (version, release) {
+        (Some(v), Some(r)) if !r.is_empty() => Some(format!("{v} {r}")),
+        (Some(v), _) => Some(v),
+        _ => None,
+    }
 }
 
 /// Write a Ghidra postScript that runs analysis and exports decompiled C.

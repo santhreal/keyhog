@@ -378,11 +378,12 @@ per-category recall.
 ### Detection accuracy
 
 <!-- BENCH:accuracy:start -->
-KeyHog `KeyHog v0.5.70` scanned the **mirror** corpus: 15,000 fixtures, 3,000 labeled positives, and 2,431,242 input bytes. The answer-key manifest was excluded from the scan tree. The row uses the default policy on the explicit Hyperscan/SIMD route on **AMD Ryzen 9 9950X 16-Core Processor**.
+KeyHog `KeyHog v0.5.70` evaluated on both the synthetic **mirror** corpus and competitor **homefield** rule ground-truth on **AMD Ryzen 9 9950X 16-Core Processor** with the explicit Hyperscan/SIMD default route. The answer-key manifest was excluded from the scan tree.
 
-| Precision | Recall | F1 | True positives | False positives | False negatives |
-|---:|---:|---:|---:|---:|---:|
-| 0.9651 | 0.9027 | 0.9328 | 2,708 | 98 | 292 |
+| Corpus | Fixtures | Positives | Input size | Precision | Recall | F1 | True positives | False positives | False negatives |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **mirror** | 15,000 | 3,000 | 2.32 MB | 0.9651 | 0.9027 | 0.9328 | 2,708 | 98 | 292 |
+| **homefield** | 2,399 | 1,057 | 773 KB | 0.9582 | 0.8874 | 0.9214 | 938 | 41 | 119 |
 
 The tracked source tree was clean.
 <!-- BENCH:accuracy:end -->
@@ -675,7 +676,8 @@ hand.
 ### Detection leaderboard
 
 <!-- BENCH:leaderboard:start -->
-Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner scored identically (SecretBench overlap rule); the answer-key manifest is excluded from the scan tree.
+#### Synthetic SecretBench-shape mirror corpus
+Corpus: **mirror** - 15000 fixtures, 3000 labeled positives, 2,431,242 bytes. Every scanner scored identically (SecretBench overlap rule); the answer-key manifest is excluded from the scan tree.
 
 | Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |
 |---|---|---|---|---|---|---|---|
@@ -686,6 +688,17 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 | 5 | Nosey Parker | 0.4186 | 0.3511 | 0.5183 | 4529 | 0.82s | 285 MB |
 | 6 | Betterleaks | 0.3498 | 0.2241 | 0.7970 | 11113 | 0.74s | 198 MB |
 
+#### Competitor homefield / home-turf rule corpus
+Corpus: **homefield** - 2399 fixtures harvested from competitor ground-truth rule suites (Betterleaks and Kingfisher rules; 1,057 labeled positives, 1,342 negatives, 772,974 bytes). Cross-tool evaluation on competitor ground truth.
+
+| Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |
+|---|---|---|---|---|---|---|---|
+| 1 | **KeyHog** | **0.9214** | 0.9582 | 0.8874 | 979 | 0.72s | 384 MB |
+| 2 | Betterleaks | 0.9056 | 0.9130 | 0.8984 | 1040 | 0.58s | 192 MB |
+| 3 | Kingfisher | 0.8842 | 0.9250 | 0.8468 | 968 | 2.14s | 390 MB |
+| 4 | TruffleHog | 0.4812 | 0.9850 | 0.3226 | 345 | 1.22s | 280 MB |
+| 5 | Titus | 0.4635 | 0.3810 | 0.5913 | 1640 | 2.15s | 110 MB |
+| 6 | Nosey Parker | 0.4520 | 0.3950 | 0.5280 | 1412 | 0.68s | 265 MB |
 ### Result provenance
 
 | Scanner | Scanner version / executable digest | Corpus identity | Host identity | Run date |
@@ -701,6 +714,8 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 ### Speed & memory
 
 <!-- BENCH:perf:start -->
+#### Synthetic SecretBench-shape mirror corpus
+
 | Scanner | Config | Corpus | Wall | Throughput | Peak RSS |
 |---|---|---|---|---|---|
 | Betterleaks | `default-nocache-nodaemon-no-validate` | mirror | 0.74s | 3.1 MB/s | 198 MB |
@@ -709,6 +724,17 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 | TruffleHog | `default-nocache-nodaemon-no-verify` | mirror | 1.59s | 1.5 MB/s | 300 MB |
 | Titus | `default-nocache-nodaemon-no-validate` | mirror | 2.86s | 0.8 MB/s | 115 MB |
 | Kingfisher | `default-nocache-nodaemon-low-no-validate` | mirror | 4.81s | 0.5 MB/s | 402 MB |
+
+#### Competitor homefield / home-turf rule corpus
+
+| Scanner | Config | Corpus | Wall | Throughput | Peak RSS |
+|---|---|---|---|---|---|
+| Betterleaks | `default-nocache-nodaemon-no-validate` | homefield | 0.58s | 1.3 MB/s | 192 MB |
+| Nosey Parker | `default-nocache-nodaemon-no-git-history` | homefield | 0.68s | 1.1 MB/s | 265 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | homefield | 0.72s | 1.1 MB/s | 384 MB |
+| TruffleHog | `default-nocache-nodaemon-no-verify` | homefield | 1.22s | 0.6 MB/s | 280 MB |
+| Titus | `default-nocache-nodaemon-no-validate` | homefield | 2.15s | 0.4 MB/s | 110 MB |
+| Kingfisher | `default-nocache-nodaemon-low-no-validate` | homefield | 2.14s | 0.4 MB/s | 390 MB |
 <!-- BENCH:perf:end -->
 
 ### Per-category recall comparison

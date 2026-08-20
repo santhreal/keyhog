@@ -109,6 +109,8 @@ run "Gate #1 self-test: both idiom classes catch real fallbacks, ignore benign c
   python3 -B scripts/gates/no_silent_fallbacks.py --self-test
 run "Gate #1: no silent fallbacks (scanner/sources/core/cli/verifier)" \
   python3 -B scripts/gates/no_silent_fallbacks.py
+run "Gate #1 unit tests: shrink-only baseline ratchet and self-test invariants" \
+  python3 -B -m unittest scripts.tests.test_no_silent_fallbacks -v
 run "Gate #1b self-test: Law 10 semantic classifier catches unsafe waivers" \
   python3 -B scripts/gates/law10_semantics.py --self-test
 run "Gate #1b: Law 10 annotations prove conservation or loud surfacing" \
@@ -177,6 +179,12 @@ run "Gate #5: exact complexity ratchet (growth, slack, and metric drift)" \
   python3 -B scripts/gates/complexity_budget.py
 run "VYRE pin consistency: 6 crates at one immutable Git revision, no vendor build-path" \
   python3 -B scripts/gates/vyre_pin_consistency.py
+run "Gate allowlists validation self-test: unvalidated allowlists and missing targets are caught" \
+  python3 -B scripts/gates/gate_allowlists_validated.py --self-test
+run "Gate allowlists validation: all gate allowlists and exemptions are validated against reality (Row 137)" \
+  python3 -B scripts/gates/gate_allowlists_validated.py
+run "Gate allowlists validation unit tests: AST inspection across gates" \
+  python3 -B -m unittest scripts.tests.test_gate_allowlists_validated -v
 run "GPU wiring self-test: unfeatured, absorbed, orphaned, and unarmed GPU lanes are detected" \
   python3 -B scripts/gates/gpu_wired.py --self-test
 run "GPU wiring: GPU targets are feature-built, unabsorbed, wired, and the release lane is armed" \
@@ -199,6 +207,76 @@ run "Vacuous tests: capability-conditional tests safely arm policies or register
   python3 -B scripts/gates/vacuous_tests.py
 run "Vacuous tests unit tests: static early-return analysis across test targets" \
   python3 -B -m unittest scripts.tests.test_vacuous_tests -v
+run "Regression contracts self-test: class-closing WHY comments and variant derivation" \
+  python3 -B scripts/gates/regression_contracts.py --self-test
+run "Regression contracts: class-closing WHY comments and runtime variant derivation" \
+  python3 -B scripts/gates/regression_contracts.py
+run "Regression contracts unit tests: static analysis of class-closing regression tests" \
+  python3 -B -m unittest scripts.tests.test_regression_contracts -v
+run "Profile divergence self-test: semantic vs cosmetic profile key taxonomy" \
+  python3 -B scripts/gates/profile_divergence.py --self-test
+run "Profile divergence: workspace profile table keys are classified and release unwinds" \
+  python3 -B scripts/gates/profile_divergence.py
+run "Profile divergence unit tests: static analysis of profile tables" \
+  python3 -B -m unittest scripts.tests.test_profile_divergence -v
+run "Unsafe guards self-test: safety precondition and debug_assert hazard detection" \
+  python3 -B scripts/gates/unsafe_guards.py --self-test
+run "Unsafe guards: workspace unsafe blocks carry written safety preconditions and release asserts" \
+  python3 -B scripts/gates/unsafe_guards.py
+run "Unsafe guards unit tests: static analysis of unsafe block invariants" \
+  python3 -B -m unittest scripts.tests.test_unsafe_guards -v
+run "Artifact size ceiling self-test: release profile strip and platform ceilings" \
+  python3 -B scripts/gates/artifact_size_ceiling.py --self-test
+run "Artifact size ceiling: release profiles strip symbols and binaries meet ceilings" \
+  python3 -B scripts/gates/artifact_size_ceiling.py
+run "Artifact size ceiling unit tests: platform ceiling thresholds" \
+  python3 -B -m unittest scripts.tests.test_artifact_size_ceiling -v
+run "Unified counter ownership self-test: single counter owner and static mapping" \
+  python3 -B scripts/gates/unified_counter_ownership.py --self-test
+run "Unified counter ownership: profile metrics ownership and zero stray counters" \
+  python3 -B scripts/gates/unified_counter_ownership.py
+run "Unified counter ownership unit tests: static analysis of process-global counter ownership" \
+  python3 -B -m unittest scripts.tests.test_unified_counter_ownership -v
+run "Unified host parallelism self-test: single host width owner and zero stray queries" \
+  python3 -B scripts/gates/unified_host_parallelism.py --self-test
+run "Unified host parallelism: canonical keyhog_profile host width ownership" \
+  python3 -B scripts/gates/unified_host_parallelism.py
+run "Unified window overlap self-test: single canonical window overlap owner and zero redeclarations" \
+  python3 -B scripts/gates/unified_window_overlap.py --self-test
+run "Unified window overlap: canonical keyhog_core window overlap ownership" \
+  python3 -B scripts/gates/unified_window_overlap.py
+run "Unified byte size parser self-test: single canonical byte size parser and zero private implementations" \
+  python3 -B scripts/gates/unified_byte_size_parser.py --self-test
+run "Unified byte size parser: canonical value_parsers::parse_byte_size ownership" \
+  python3 -B scripts/gates/unified_byte_size_parser.py
+run "Unified operational constants self-test: configuration schema reflection and range validation" \
+  python3 -B scripts/gates/unified_operational_constants.py --self-test
+run "Unified operational constants: Tier-A operational performance knobs governance" \
+  python3 -B scripts/gates/unified_operational_constants.py
+run "Timing log profile identity self-test: diagnostic log lines without profile identity are detected" \
+  python3 -B scripts/gates/timing_log_profile_identity.py --self-test
+run "Timing log profile identity: all diagnostic timing figures derive from registered profile metrics" \
+  python3 -B scripts/gates/timing_log_profile_identity.py
+run "Timing log profile identity unit tests: static analysis of diagnostic timing logging" \
+  python3 -B -m unittest scripts.tests.test_timing_log_profile_identity -v
+run "No scan compile self-test: in-process compilation reachability and declaration checks" \
+  python3 -B scripts/gates/no_scan_compile.py --self-test
+run "No scan compile: fail-closed scan execution path and permitted entrypoints (Row 124)" \
+  python3 -B scripts/gates/no_scan_compile.py
+run "No scan compile unit tests: static analysis of scan compile guards and declarations" \
+  python3 -B -m unittest scripts.tests.test_no_scan_compile -v
+run "No inline tests in src self-test: inline test module and function detection (Row 149)" \
+  python3 -B scripts/gates/no_inline_tests_in_src.py --self-test
+run "No inline tests in src: single structural gate across workspace crates (Row 149)" \
+  python3 -B scripts/gates/no_inline_tests_in_src.py
+run "No inline tests in src unit tests: syntax recognition and allowlist validation" \
+  python3 -B -m unittest scripts.tests.test_no_inline_tests_in_src -v
+run "No CWD-relative source reads self-test: manifest-anchored reader contracts (Row 149)" \
+  python3 -B scripts/gates/no_cwd_relative_source_reads.py --self-test
+run "No CWD-relative source reads: test paths resolution safety (Row 149)" \
+  python3 -B scripts/gates/no_cwd_relative_source_reads.py
+run "No CWD-relative source reads unit tests: relative source path detection" \
+  python3 -B -m unittest scripts.tests.test_no_cwd_relative_source_reads -v
 run "Mutation gate self-test: AST mutation generator catches surviving mutants" \
   python3 -B scripts/gates/mutation_gate.py --self-test
 run "Mutation gate unit tests: operator inversion and comment preservation" \

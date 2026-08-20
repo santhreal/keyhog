@@ -10,4 +10,6 @@ mod max_file_size_cap;
 #[path = "../regression_oom_unbounded_read_caps.rs"]
 mod oom_unbounded_read_caps;
 mod raw_container_read_errors_visible;
+#[path = "../regression_row_100_derived_counter_reset.rs"]
+mod regression_row_100_derived_counter_reset;
 mod tar_entry_errors_visible;

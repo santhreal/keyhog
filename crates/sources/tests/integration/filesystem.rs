@@ -427,7 +427,10 @@ fn default_windowing_splits_multimegabyte_source_files() {
         .iter()
         .all(|chunk| chunk.metadata.source_type.as_ref() == "filesystem/windowed"));
     assert_eq!(chunks[0].metadata.base_offset, 0);
-    assert_eq!(chunks[1].metadata.base_offset, 1024 * 1024 - 128 * 1024);
+    assert_eq!(
+        chunks[1].metadata.base_offset,
+        keyhog_core::DEFAULT_WINDOW_SIZE_BYTES - keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES
+    );
 }
 
 #[test]

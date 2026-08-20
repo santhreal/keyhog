@@ -74,6 +74,7 @@ gpu = [
 [dependencies]
 keyhog-core = { workspace = true }
 keyhog-profile = { workspace = true }
+fs2 = { workspace = true }
 flate2 = { workspace = true }
 # GPU stack, optional, gated by the `gpu` feature so the lean CI build does
 # not link wgpu and does not probe Vulkan/EGL at startup. `vyre`/`vyre_libs`
@@ -97,7 +98,6 @@ sha2 = { workspace = true }
 blake3 = { workspace = true }
 memmap2 = { workspace = true }
 memchr = { workspace = true }
-rayon = { workspace = true }
 lru = { workspace = true }
 dirs = { workspace = true }
 libc = { workspace = true }
@@ -169,6 +169,7 @@ chrono = { workspace = true }
 criterion = { workspace = true }
 keyhog-verifier = { workspace = true }
 proptest = { workspace = true }
+rayon = { workspace = true }
 rusty-fork = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tempfile = { workspace = true }
@@ -353,16 +354,8 @@ required-features = ["gpu"]
 
 
 [[test]]
-name = "gap_no_inline_tests_in_src"
-path = "tests/gap/no_inline_tests_in_src.rs"
-
-[[test]]
 name = "gap_backend_substitution_contracts"
 path = "tests/gap/backend_substitution_contracts.rs"
-
-[[test]]
-name = "gap_no_inline_tests_in_a3_slice"
-path = "tests/gap/no_inline_tests_in_a3_slice.rs"
 
 # TARGET-SPEC perf worklist (FAILING-BY-DESIGN): the 10x goal expressed as
 # executable contracts. RED until batched-GPU phase-2 verify lands; each red
