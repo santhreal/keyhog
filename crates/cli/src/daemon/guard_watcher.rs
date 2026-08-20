@@ -195,6 +195,11 @@ impl WatchedRoot {
         if self.respect_default_excludes {
             for component in rel_path.components() {
                 if let std::path::Component::Normal(os) = component {
+                    if let Some(s) = os.to_str() {
+                        if skip_dirs.is_watch_component(s) {
+                            return true;
+                        }
+                    }
                     if keyhog_sources::is_default_excluded_dir_name(os) {
                         return true;
                     }
