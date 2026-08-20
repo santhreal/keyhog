@@ -78,6 +78,7 @@ pub mod regression_row_142_guard_policy_identity_digests;
 pub mod regression_row_143_pass_gate_terminal_output;
 pub mod regression_row_144_clean_pass_no_internal_warnings;
 pub mod regression_row_149_structural_gate_consolidation;
+pub mod regression_row_162_benchmark_corpus_synthetic_packs;
 pub mod regression_scan_system_mount_filters_tier_b;
 pub mod regression_scanargs_field_contract;
 pub mod regression_stable_hash_field_identity;
