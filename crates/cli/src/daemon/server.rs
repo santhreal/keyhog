@@ -27,6 +27,7 @@ pub const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
 static TEST_PANIC_INJECTION_KIND: parking_lot::RwLock<Option<String>> =
     parking_lot::RwLock::new(None);
 
+#[cfg(test)]
 pub(crate) fn set_test_panic_injection(kind: Option<&str>) {
     *TEST_PANIC_INJECTION_KIND.write() = kind.map(str::to_string);
 }
@@ -1792,6 +1793,7 @@ async fn handle_connection(
             let state_cloned = state.clone();
             let mass_session_ref = &mut mass_session;
             let streamed_result = std::panic::AssertUnwindSafe(async {
+                #[cfg(test)]
                 if let Some(target_kind) = TEST_PANIC_INJECTION_KIND.read().as_deref() {
                     if target_kind == "MassFilesystemDrain" {
                         panic!("simulated test panic on daemon request kind: MassFilesystemDrain");
@@ -1848,6 +1850,7 @@ async fn handle_connection(
         let mass_session_ref = &mut mass_session;
 
         let dispatch_result = std::panic::AssertUnwindSafe(async {
+            #[cfg(test)]
             if let Some(target_kind) = TEST_PANIC_INJECTION_KIND.read().as_deref() {
                 if target_kind == crate::daemon::protocol::request_kind(&request) {
                     panic!("simulated test panic on daemon request kind: {target_kind}");

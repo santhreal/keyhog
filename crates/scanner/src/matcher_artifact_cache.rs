@@ -802,7 +802,7 @@ pub fn store_matcher_artifact(
         )
     })?;
     #[cfg(unix)]
-    {
+    if created_cache_dir {
         use std::os::unix::fs::PermissionsExt;
         if created_cache_dir {
             if let Ok(meta) = std::fs::symlink_metadata(cache_dir) {

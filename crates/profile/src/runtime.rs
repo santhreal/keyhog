@@ -984,6 +984,9 @@ impl Runtime {
         _stack_slot: Option<usize>,
         worker_id: u64,
     ) -> Option<SpanTrace> {
+        if !self.inner.session_recording {
+            return None;
+        }
         let reservation = self
             .inner
             .session_span_reservations
@@ -2428,7 +2431,7 @@ impl Drop for AsyncSpan {
             SpanOutcome {
                 start_offset_ns: runtime.offset_ns(started),
                 elapsed_ns,
-                self_ns: elapsed_ns,
+                self_ns: 0,
                 blocked: false,
                 serial: false,
                 outermost: false,
@@ -2677,7 +2680,7 @@ impl DecisionTimer {
                     SpanOutcome {
                         start_offset_ns: runtime.offset_ns(self.started),
                         elapsed_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
-                        self_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
+                        self_ns: 0,
                         blocked: false,
                         serial: false,
                         outermost: false,
