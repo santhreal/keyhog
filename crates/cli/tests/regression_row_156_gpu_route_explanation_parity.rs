@@ -139,84 +139,56 @@ fn gpu_absent_caps_reports_probe_miss_when_gpu_feature_compiled() {
 
 #[test]
 fn format_gpu_display_matrix() {
-    // Helper replicating the format logic used in backend report and doctor
-    fn format_gpu_status(
-        gpu_available: bool,
-        gpu_name: Option<&str>,
-        gpu_is_software: bool,
-        gpu_compiled: bool,
-        multi_backend: bool,
-    ) -> String {
-        if gpu_available {
-            let name = gpu_name.unwrap_or("yes");
-            if gpu_is_software {
-                format!("{name} (software renderer: disabled)")
-            } else {
-                name.to_string()
-            }
-        } else if let Some(name) = gpu_name {
-            if gpu_is_software {
-                format!("{name} (software renderer: disabled)")
-            } else if !gpu_compiled {
-                if !multi_backend {
-                    format!("{name} (compiled without GPU backend / single compiled backend)")
-                } else {
-                    format!("{name} (compiled without GPU backend)")
-                }
-            } else {
-                format!("{name} (runtime unavailable)")
-            }
-        } else if !gpu_compiled {
-            if !multi_backend {
-                "not detected (compiled without GPU backend / single compiled backend)".to_string()
-            } else {
-                "not detected (binary built without --features gpu)".to_string()
-            }
-        } else {
-            "not detected".to_string()
-        }
-    }
-
-    // Case 1: GPU physically present, compiled with GPU
+    // Case 1: GPU available, not software
+    let c1 = test_caps(true, Some("NVIDIA GeForce RTX 5090"), false, true);
     assert_eq!(
-        format_gpu_status(true, Some("NVIDIA GeForce RTX 5090"), false, true, true),
+        keyhog_scanner::hw_probe::format_gpu_status(&c1),
         "NVIDIA GeForce RTX 5090"
     );
 
-    // Case 2: GPU physically present, compiled without GPU feature (multi-backend with SIMD)
-    let s2 = format_gpu_status(false, Some("NVIDIA GeForce RTX 5090"), false, false, true);
-    assert_eq!(s2, "NVIDIA GeForce RTX 5090 (compiled without GPU backend)");
-    assert!(!s2.contains("not detected"));
-
-    // Case 3: GPU physically present, single compiled backend (scalar only)
-    let s3 = format_gpu_status(false, Some("NVIDIA GeForce RTX 5090"), false, false, false);
+    // Case 2: GPU software renderer (whether available or not)
+    let c2 = test_caps(true, Some("llvmpipe"), true, true);
     assert_eq!(
-        s3,
-        "NVIDIA GeForce RTX 5090 (compiled without GPU backend / single compiled backend)"
-    );
-    assert!(!s3.contains("not detected"));
-
-    // Case 4: GPU physically absent, compiled with GPU
-    assert_eq!(
-        format_gpu_status(false, None, false, true, true),
-        "not detected"
-    );
-
-    // Case 5: GPU physically absent, compiled without GPU (multi-backend with SIMD)
-    assert_eq!(
-        format_gpu_status(false, None, false, false, true),
-        "not detected (binary built without --features gpu)"
-    );
-
-    // Case 6: GPU physically absent, single compiled backend
-    assert_eq!(
-        format_gpu_status(false, None, false, false, false),
-        "not detected (compiled without GPU backend / single compiled backend)"
-    );
-
-    // Case 7: Software renderer
-    assert_eq!(
-        format_gpu_status(true, Some("llvmpipe"), true, true, true),
+        keyhog_scanner::hw_probe::format_gpu_status(&c2),
         "llvmpipe (software renderer: disabled)"
     );
+
+    let c2_unavail = test_caps(false, Some("llvmpipe"), true, true);
+    assert_eq!(
+        keyhog_scanner::hw_probe::format_gpu_status(&c2_unavail),
+        "llvmpipe (software renderer: disabled)"
+    );
+
+    // Case 3: GPU physically present but not available
+    let c3 = test_caps(false, Some("NVIDIA GeForce RTX 5090"), false, true);
+    let s3 = keyhog_scanner::hw_probe::format_gpu_status(&c3);
+    if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
+        if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
+            assert_eq!(
+                s3,
+                "NVIDIA GeForce RTX 5090 (compiled without GPU backend / single compiled backend)"
+            );
+        } else {
+            assert_eq!(s3, "NVIDIA GeForce RTX 5090 (compiled without GPU backend)");
+        }
+        assert!(!s3.contains("not detected"));
+    } else {
+        assert_eq!(s3, "NVIDIA GeForce RTX 5090 (runtime unavailable)");
+    }
+
+    // Case 4: GPU physically absent
+    let c4 = test_caps(false, None, false, true);
+    let s4 = keyhog_scanner::hw_probe::format_gpu_status(&c4);
+    if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
+        if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
+            assert_eq!(
+                s4,
+                "not detected (compiled without GPU backend / single compiled backend)"
+            );
+        } else {
+            assert_eq!(s4, "not detected (binary built without --features gpu)");
+        }
+    } else {
+        assert_eq!(s4, "not detected");
+    }
 }

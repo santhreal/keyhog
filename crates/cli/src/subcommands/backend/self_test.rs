@@ -267,20 +267,12 @@ pub(super) fn unavailable_gpu_self_test_report(
         "GPU adapter is a software renderer and is disabled for scans"
     } else if hw.gpu_name.is_some() {
         if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
-            if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
-                "compiled without GPU backend / single compiled backend"
-            } else {
-                "compiled without GPU backend"
-            }
+            keyhog_scanner::hw_probe::uncompiled_gpu_backend_explanation()
         } else {
             "GPU runtime unavailable or failed initialization"
         }
     } else if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
-        if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
-            "compiled without GPU backend / single compiled backend"
-        } else {
-            "compiled without GPU backend"
-        }
+        keyhog_scanner::hw_probe::uncompiled_gpu_backend_explanation()
     } else {
         "no GPU adapter detected"
     };
