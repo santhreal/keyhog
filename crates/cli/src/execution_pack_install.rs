@@ -658,13 +658,7 @@ fn load_manifest(
     if manifest.packs.is_empty() {
         bail!("execution-pack manifest contains no packs. Fix: run `keyhog install` or `keyhog update`");
     }
-    let embedded_detectors = keyhog_core::load_embedded_detectors_or_fail()
-        .context("loading embedded detectors for execution-pack verification")?;
-    let embedded_ir =
-        keyhog_scanner::execution_pack::CanonicalDetectorExecutionIr::compile(&embedded_detectors)
-            .map_err(anyhow::Error::msg)
-            .context("compiling canonical detector execution IR for verification")?;
-    let expected_detector_digest = keyhog_core::hex_encode(&embedded_ir.digest());
+    let expected_detector_digest = keyhog_core::hex_encode(&current_embedded_detector_digest()?);
     let current_binary = keyhog_core::hex_encode(&current_binary_digest()?);
     let current_target = keyhog_core::hex_encode(&current_target_digest());
     let current_feature = keyhog_core::hex_encode(&current_feature_digest());

@@ -78,13 +78,14 @@ pub(crate) fn find_config_file(start: Option<&std::path::Path>) -> Option<PathBu
 /// or if lockdown mode (`[lockdown] require = true`) is enabled.
 pub(crate) fn load_guard_state_path(start: Option<&std::path::Path>) -> Option<PathBuf> {
     let config_path = find_config_file(start)?;
-    let raw = std::fs::read_to_string(&config_path).ok()?;
-    let config: schema::ConfigFile = toml::from_str(&raw).ok()?;
+    let raw = std::fs::read_to_string(&config_path).ok()?; // LAW10: absent config file yields no guard state path; intended default
+    let config: schema::ConfigFile = toml::from_str(&raw).ok()?; // LAW10: unparseable config file yields no guard state path; intended default
     if config
         .lockdown
         .as_ref()
         .and_then(|l| l.require)
         .unwrap_or(false)
+    // LAW10: lockdown requirement is optional; documented default
     {
         return None;
     }

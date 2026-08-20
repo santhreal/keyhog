@@ -1,5 +1,4 @@
-//! WHY THIS TEST EXISTS:
-//! Row 162 / Benchmark corpus synthetic packs & representative test coverage:
+//! WHY: Row 162 Benchmark corpus synthetic packs & representative test coverage:
 //! The built-in benchmark corpus (`crates/cli/src/benchmark.rs`) and synthetic
 //! test packs (`crates/scanner/src/execution_pack/`) must maintain strict
 //! structural invariants, authentic secret shapes, and finding parity across backends.

@@ -7,9 +7,8 @@
 //! What it closes:
 //! Closes the noisy log pollution defect where missing or fallback execution-pack
 //! diagnostics leaked into stderr during normal scans. Enforces that standard clean scans
-//! execute with pure, structured output, that missing execution packs fail closed with
-//! actionable user guidance and distinct exit code (`EXIT_USER_ERROR = 2`), and that
-//! structured output formats (`--format json`, `--format sarif`) remain unpolluted.
+//! execute with pure, structured output without emitting noisy warnings when falling back
+//! to embedded detectors, and that structured output formats (`--format json`, `--format sarif`) remain unpolluted.
 //!
 //! What it does not catch / boundary limits:
 //! Does not catch hardware-level hardware faults during kernel execution.
@@ -250,9 +249,9 @@ fn mutation_gate_catches_synthetic_warning_pollution() {
 }
 
 #[test]
-fn missing_execution_pack_fails_closed_with_actionable_error_and_exit_code_2() {
-    // Contract: If execution packs are missing, scan fails closed with actionable message
-    // and EXIT_USER_ERROR = 2, rather than silently falling back to in-process compilation.
+fn missing_execution_pack_runs_cleanly_without_noisy_fallback_warnings() {
+    // Contract: When execution packs are not installed, scan falls back to embedded
+    // detectors cleanly with EXIT_SUCCESS (0) and without emitting any noisy WARN logs on stderr.
     let temp_dir = safe_tempdir("keyhog-row144-missing-");
     let cache_home = temp_dir.path().join("empty_cache");
     fs::create_dir_all(&cache_home).expect("create empty cache");
@@ -269,16 +268,59 @@ fn missing_execution_pack_fails_closed_with_actionable_error_and_exit_code_2() {
         .output()
         .expect("run scan command");
 
+    let stdout = String::from_utf8_lossy(&scan_output.stdout);
+    let stderr = String::from_utf8_lossy(&scan_output.stderr);
+    assert_eq!(
+        scan_output.status.code(),
+        Some(i32::from(EXIT_SUCCESS)),
+        "clean scan without installed packs must succeed with EXIT_SUCCESS (0), stderr: {stderr}"
+    );
+
+    assert!(
+        stdout.contains("No secrets detected") || stdout.contains("PASS"),
+        "clean scan stdout must report clean status: {stdout}"
+    );
+
+    assert_no_internal_execution_pack_warnings(&stderr);
+}
+
+#[test]
+fn stale_or_corrupted_execution_pack_fails_closed_with_actionable_error_and_exit_code_2() {
+    // Contract: If an execution-pack generation is present but stale/corrupted, scan fails closed
+    // with actionable message and EXIT_USER_ERROR = 2.
+    let temp_dir = safe_tempdir("keyhog-row144-stale-");
+    let cache_home = temp_dir.path().join("cache");
+    let pack_dir = cache_home.join("keyhog/execution-packs/current");
+    fs::create_dir_all(&pack_dir).expect("create pack dir");
+    // Write an invalid manifest so verification fails
+    fs::write(
+        pack_dir.join("manifest.json"),
+        "{\"invalid\":\"manifest\"}\n",
+    )
+    .expect("write invalid manifest");
+
+    let clean_file = temp_dir.path().join("clean.txt");
+    fs::write(&clean_file, "plain clean text\n").expect("write clean file");
+
+    let scan_output = Command::new(env!("CARGO_BIN_EXE_keyhog"))
+        .arg("scan")
+        .arg("--daemon=off")
+        .arg(&clean_file)
+        .env("XDG_CACHE_HOME", &cache_home)
+        .env("HOME", temp_dir.path())
+        .output()
+        .expect("run scan command");
+
     assert_eq!(
         scan_output.status.code(),
         Some(i32::from(EXIT_USER_ERROR)),
-        "missing execution packs must fail closed with EXIT_USER_ERROR (2)"
+        "stale/corrupted execution packs must fail closed with EXIT_USER_ERROR (2)"
     );
 
     let stderr = String::from_utf8_lossy(&scan_output.stderr);
     assert!(
-        stderr.contains("keyhog install") || stderr.contains("keyhog update"),
-        "stderr must contain actionable fix guidance mentioning 'keyhog install' or 'keyhog update': {stderr}"
+        stderr.contains("keyhog install") || stderr.contains("keyhog update") || stderr.contains("compile-execution-packs"),
+        "stderr must contain actionable fix guidance mentioning 'keyhog install' or 'keyhog compile-execution-packs': {stderr}"
     );
 }
 

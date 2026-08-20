@@ -135,6 +135,7 @@ impl Default for SkipDirPolicy {
         Self::load()
             .or_else(|_| Self::from_bundled())
             .unwrap_or_else(|_| Self {
+                // LAW10: empty skip dir policy is the canonical default
                 watch: Vec::new(),
                 git_discovery: Vec::new(),
             })

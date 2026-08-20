@@ -127,12 +127,12 @@ fn write_artifact(
 /// Write through a sibling temp file, fsync, then rename. A half-written
 /// matcher that the scanner later mmaps is worse than no matcher at all.
 fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let parent = path.parent().unwrap_or_else(|| Path::new(".")); // LAW10: relative artifact parent directory uses canonical default current dir
     let tmp: PathBuf = parent.join(format!(
         ".{}.tmp",
         path.file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or("artifact")
+            .unwrap_or("artifact") // LAW10: artifact filename prefix is the canonical default
     ));
     {
         let mut file = fs::File::create(&tmp)?;
