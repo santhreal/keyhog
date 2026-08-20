@@ -949,6 +949,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
     // same way the cache-enabled path does so enabling the cache cannot change
     // scanner assembly ordering.
     if cache_dir.is_none() {
+        let reason = configured_matcher_artifact_cache_disable_reason();
         return compile_without_matcher_artifact_cache(
             detectors,
             gpu_policy,
