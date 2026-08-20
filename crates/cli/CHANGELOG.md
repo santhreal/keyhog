@@ -21,6 +21,7 @@
 - fix(backend): GPU route explanation parity reporting compiled-in feature state when GPU hardware is physically present rather than false probe misses (Row 156).
 - feat(execution-pack): optimize startup footprint and execution pack pre-installation floor with lazy canonical IR compilation and zero-compile scan path (Row 158).
 - feat(pipeline): scale fused CPU wave concurrency across worker pool and enable parallel wave dispatch in auto backend mode (Row 160).
+- feat(pipeline): enable parallel fused wave dispatch in auto backend mode, keeping autoroute calibration serial (Row 160).
 - feat(compiler): install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata (Row 128).
 - feat(cache): load-only scan execution and zero compilation fallback on prepared artifact caches (Row 127).
 - feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).
