@@ -40,7 +40,8 @@ fn disabling_required_target_removes_its_dependent() {
         detector("unrelated", vec![]),
     ];
 
-    let dropped = filter_disabled_detectors(&mut detectors, &disabled(&["target"]));
+    let mut disabled_set = disabled(&["target"]);
+    let dropped = filter_disabled_detectors(&mut detectors, &mut disabled_set);
 
     assert_eq!(dropped, 2);
     assert_eq!(
@@ -68,7 +69,8 @@ fn disabling_required_target_cascades_transitively() {
         ),
     ];
 
-    let dropped = filter_disabled_detectors(&mut detectors, &disabled(&["leaf"]));
+    let mut disabled_set = disabled(&["leaf"]);
+    let dropped = filter_disabled_detectors(&mut detectors, &mut disabled_set);
 
     assert_eq!(dropped, 3);
     assert!(detectors.is_empty());
@@ -90,7 +92,8 @@ fn surviving_relations_to_disabled_targets_are_pruned() {
         ),
     ];
 
-    let dropped = filter_disabled_detectors(&mut detectors, &disabled(&["target"]));
+    let mut disabled_set = disabled(&["target"]);
+    let dropped = filter_disabled_detectors(&mut detectors, &mut disabled_set);
 
     assert_eq!(dropped, 1);
     assert_eq!(detectors.len(), 2);
@@ -111,7 +114,8 @@ fn unknown_relation_targets_are_not_silently_pruned() {
         ),
     ];
 
-    let dropped = filter_disabled_detectors(&mut detectors, &disabled(&["disabled"]));
+    let mut disabled_set = disabled(&["disabled"]);
+    let dropped = filter_disabled_detectors(&mut detectors, &mut disabled_set);
 
     assert_eq!(dropped, 1);
     assert_eq!(detectors.len(), 1);
