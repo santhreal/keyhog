@@ -160,11 +160,19 @@ fn row_104_109_dynamic_stage_sweep_preserves_self_time_invariant() {
             "stage {:?} must have non-zero elapsed_ns",
             m.stage
         );
-        assert!(
-            m.attributed_ns > 0,
-            "stage {:?} must have non-zero attributed_ns for leaf execution",
-            m.stage
-        );
+        if !m.stage.is_container() {
+            assert!(
+                m.attributed_ns > 0,
+                "stage {:?} must have non-zero attributed_ns for leaf execution",
+                m.stage
+            );
+        } else {
+            assert_eq!(
+                m.attributed_ns, 0,
+                "container stage {:?} must have zero attributed_ns",
+                m.stage
+            );
+        }
         assert!(
             m.attributed_ns <= m.elapsed_ns,
             "stage {:?} attributed_ns ({}) must not exceed elapsed_ns ({})",
@@ -173,4 +181,41 @@ fn row_104_109_dynamic_stage_sweep_preserves_self_time_invariant() {
             m.elapsed_ns
         );
     }
+}
+
+#[test]
+fn container_span_and_decision_timer_do_not_inflate_occupancy() {
+    let session = Session::start(test_identity("container-occupancy")).expect("start session");
+    let runtime = session.runtime();
+
+    // Open a container span wrapping child work
+    let container = span(Stage::ScanPipeline);
+    std::thread::sleep(Duration::from_millis(5));
+
+    let leaf = span(Stage::BackendDispatch);
+    std::thread::sleep(Duration::from_millis(5));
+    drop(leaf);
+
+    // Run a decision timer inside the container
+    let timer = keyhog_profile::decision_timer(Stage::AutorouteCalibration);
+    std::thread::sleep(Duration::from_millis(5));
+    let _ = timer.finish();
+
+    drop(container);
+
+    let occupancy = runtime.take_session_worker_occupancy();
+    // Busy time should only reflect leaf execution, not the enclosing container duration
+    assert!(
+        occupancy.busy_ns < 25_000_000,
+        "occupancy.busy_ns inflated by container: got {} ns",
+        occupancy.busy_ns
+    );
+
+    let profile = session.finish(RunState::Completed);
+    let pipeline_stage = profile
+        .stages
+        .iter()
+        .find(|s| s.stage == Stage::ScanPipeline)
+        .expect("ScanPipeline stage present");
+    assert_eq!(pipeline_stage.attributed_ns, 0);
 }

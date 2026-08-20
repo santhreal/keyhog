@@ -420,18 +420,20 @@ pub(crate) fn report_scanner_materialization_summary(
     ansi: bool,
     materialization: Option<&crate::orchestrator::ScannerMaterialization>,
 ) {
+    let Some(materialization) = materialization else {
+        return;
+    };
     let palette = terminal_palette(ansi, false);
     let line = match materialization {
-        Some(crate::orchestrator::ScannerMaterialization::MappedPack { generation }) => {
+        crate::orchestrator::ScannerMaterialization::MappedPack { generation } => {
             format!("scanner: mapped from execution pack {generation}")
         }
-        Some(crate::orchestrator::ScannerMaterialization::Compiled { matcher_outcome }) => {
+        crate::orchestrator::ScannerMaterialization::Compiled { matcher_outcome } => {
             format!(
                 "scanner: compiled in process (developer escape hatch active; matcher-artifact: {})",
                 matcher_outcome.as_str()
             )
         }
-        None => "scanner: materialization unknown".to_string(),
     };
     eprintln!("{}INFO{} {line}", palette.cyan, palette.reset);
 }

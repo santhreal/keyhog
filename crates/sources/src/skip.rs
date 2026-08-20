@@ -559,9 +559,10 @@ pub(crate) fn subtract_excluded(delta: usize) {
         return;
     }
     let t = current_source_telemetry();
+    // LAW10: closure always returns Some, so the update cannot fail; no fallback path
     let _ = t.counters[2].fetch_update(Relaxed, Relaxed, |current| {
         Some(current.saturating_sub(delta))
-    }); // LAW10: closure always returns Some, so the update cannot fail; no fallback path
+    });
 }
 
 pub(crate) fn store_skip_counts(counts: SkipCounts) {
