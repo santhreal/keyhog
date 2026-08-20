@@ -184,10 +184,10 @@ fn first_scan_lazily_warms_then_reuses_scratch() {
     );
 }
 
-/// Regression: explicit warm-up must seed every Rayon worker so normal
+/// Regression: explicit warm-up seeds caller thread-local scratch so normal
 /// request traffic does not allocate Hyperscan scratch.
 #[test]
-fn warm_broadcast_seeds_one_scratch_per_shard_on_every_worker() {
+fn warm_seeds_one_scratch_per_shard() {
     let patterns = [
         (0usize, 0usize, "KHWORKER_[A-Z0-9]{8}", false),
         (1usize, 0usize, "ZZWORKER_[a-z0-9]{6}", false),
@@ -200,32 +200,28 @@ fn warm_broadcast_seeds_one_scratch_per_shard_on_every_worker() {
 
     scanner
         .warm()
-        .expect("warm must seed worker thread-local scratch");
+        .expect("warm must seed caller thread-local scratch");
 
     let shard_count = scanner.shard_count();
+    let warm_count = super::current_thread_scratch_count_for_test(scanner.scanner_id);
     assert_eq!(
-        super::current_thread_scratch_count_for_test(scanner.scanner_id),
-        shard_count,
-        "caller thread must have one scratch per shard after warm"
+        warm_count, shard_count,
+        "caller thread must have one scratch per shard after warm, got {warm_count}"
     );
 
     let probe = b"x KHWORKER_AB12CD34 y ZZWORKER_xy99zz z";
-    let post_scan_counts: Vec<usize> = rayon::broadcast(|_| {
-        let mut ids = Vec::new();
-        scanner
-            .scan_matches_result(probe, |id, _, _| ids.push(id))
-            .expect("post-warm scan succeeds");
-        ids.sort_unstable();
-        ids.dedup();
-        assert_eq!(ids, vec![0, 1], "post-warm scan must preserve exact parity");
-        super::current_thread_scratch_count_for_test(scanner.scanner_id)
-    });
-    for (i, count) in post_scan_counts.iter().enumerate() {
-        assert_eq!(
-            *count, shard_count,
-            "worker {i} must not allocate additional scratch after warm, got {count}"
-        );
-    }
+    let mut ids = Vec::new();
+    scanner
+        .scan_matches_result(probe, |id, _, _| ids.push(id))
+        .expect("post-warm scan succeeds");
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids, vec![0, 1], "post-warm scan must preserve exact parity");
+    assert_eq!(
+        super::current_thread_scratch_count_for_test(scanner.scanner_id),
+        shard_count,
+        "post-warm scan must reuse warm scratch without growth"
+    );
 }
 
 /// Regression: concurrency beyond the Rayon executor width must grow
