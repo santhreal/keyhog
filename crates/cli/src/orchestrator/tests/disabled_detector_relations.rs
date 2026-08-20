@@ -52,6 +52,8 @@ fn disabling_required_target_removes_its_dependent() {
             .collect::<Vec<_>>(),
         vec!["unrelated"]
     );
+    assert!(disabled_set.contains("target"));
+    assert!(disabled_set.contains("dependent"));
 }
 
 /// Required relations form a dependency graph, so disabling a leaf must remove
@@ -77,6 +79,9 @@ fn disabling_required_target_cascades_transitively() {
 
     assert_eq!(dropped.len(), 3);
     assert!(detectors.is_empty());
+    assert!(disabled_set.contains("leaf"));
+    assert!(disabled_set.contains("middle"));
+    assert!(disabled_set.contains("root"));
 }
 
 /// Conflict and subsumption owners remain useful without a disabled target;

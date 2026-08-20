@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Gate #1: NO SILENT FALLBACKS (Law 10), enforced as a shrink-only ratchet.
 
-Law 10 was written in CLAUDE.md the whole time 196 silent fallbacks accumulated.
+Law 10 was written in CLAUDE.md the whole time 195 silent fallbacks accumulated.
 A rule a human has to remember is a rule that gets skipped. This gate makes a
 NEW silent-swallow idiom in the detection crates a RED BUILD.
 
@@ -30,7 +30,7 @@ BASELINE RATCHET: the current (unfixed) candidates are recorded in
 appears that is not in the baseline (a NEW silent fallback), so new ones can't
 land. Fixing or annotating an existing one removes it from the live set; the gate
 also FAILS if the baseline contains entries no longer present UNLESS you
-regenerate it, so the baseline can only SHRINK. The 196 audited violations live in
+regenerate it, so the baseline can only SHRINK. The 195 audited violations live in
 this baseline as visible, shrinking debt.
 
 Keys are `relpath::normalized_code` (NOT line numbers) so they survive line moves.

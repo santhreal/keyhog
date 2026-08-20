@@ -85,8 +85,29 @@ def check_binary_sizes() -> None:
 
 
 def self_test() -> int:
+    import tempfile
+
+    with tempfile.NamedTemporaryFile("w+", suffix=".toml") as tmp:
+        tmp.write('[profile.release]\npanic = "unwind"\n')
+        tmp.flush()
+        try:
+            check_cargo_profiles(pathlib.Path(tmp.name))
+            raise AssertionError("self_test failed: missing strip must be caught")
+        except ValueError:
+            pass
+
+    with tempfile.NamedTemporaryFile("w+", suffix=".toml") as tmp:
+        tmp.write('[profile.release]\nstrip = "symbols"\npanic = "abort"\n')
+        tmp.flush()
+        try:
+            check_cargo_profiles(pathlib.Path(tmp.name))
+            raise AssertionError("self_test failed: panic != unwind must be caught")
+        except ValueError:
+            pass
+
     check_cargo_profiles(CARGO_TOML)
     check_binary_sizes()
+    print("Artifact size ceiling self-test passed.")
     return 0
 
 
