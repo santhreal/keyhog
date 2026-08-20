@@ -963,6 +963,9 @@ impl Runtime {
         _stack_slot: Option<usize>,
         worker_id: u64,
     ) -> Option<SpanTrace> {
+        if !self.inner.session_recording {
+            return None;
+        }
         let reservation = self
             .inner
             .session_span_reservations
@@ -1018,9 +1021,11 @@ impl Runtime {
     ) -> (Option<SpanTrace>, Option<usize>) {
         let stack_slot = ACTIVE_SPANS.with(|stack| stack.borrow().iter().position(Option::is_none));
         let Some(stack_slot) = stack_slot else {
-            self.inner
-                .session_dropped_spans
-                .fetch_add(1, Ordering::Relaxed);
+            if self.inner.session_recording {
+                self.inner
+                    .session_dropped_spans
+                    .fetch_add(1, Ordering::Relaxed);
+            }
             return (None, None);
         };
         let trace = self.reserve_span(stage, started, parent_span_id, Some(stack_slot), worker_id);
@@ -2273,7 +2278,7 @@ impl Drop for AsyncSpan {
                 self_ns: elapsed_ns,
                 blocked: false,
                 serial: false,
-                outermost: true,
+                outermost: false,
             },
         );
         if let Some(trace) = self.trace {
@@ -2522,7 +2527,7 @@ impl DecisionTimer {
                         self_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
                         blocked: false,
                         serial: false,
-                        outermost: true,
+                        outermost: false,
                     },
                 );
             }

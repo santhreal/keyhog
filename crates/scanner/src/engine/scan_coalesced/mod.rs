@@ -142,7 +142,7 @@ impl CompiledScanner {
         #[cfg(not(feature = "gpu"))] _recover_gpu_dispatch_faults: bool,
     ) -> crate::error::Result<super::CoalescedScanOutcome> {
         if let Some(materialized) = self.selected_backend() {
-            if (materialized.is_gpu() || backend.is_gpu()) && materialized != backend {
+            if materialized != backend {
                 return Err(crate::error::ScanError::BackendPlanMismatch {
                     materialized: materialized.label(),
                     requested: backend.label(),
@@ -768,7 +768,7 @@ impl CompiledScanner {
         };
 
         let threshold = self.tuning.chunk_lane_threshold();
-        let workers = keyhog_profile::host_parallelism::logical_cpu_count();
+        let workers = keyhog_profile::logical_cpu_count();
 
         let triggers =
             if chunks.len() <= workers || chunks.iter().all(|chunk| chunk.data.len() > threshold) {

@@ -394,6 +394,19 @@ pub(crate) fn parse_dedup_scope(s: &str) -> Option<crate::args::CliDedupScope> {
     parse_value_enum(s)
 }
 
+/// `--window-overlap SIZE` / `[scan].window_overlap`: streaming window overlap between 1KB and 16MB.
+pub(crate) fn parse_window_overlap(s: &str) -> Result<usize, String> {
+    let bytes = parse_byte_size(s)?;
+    if (1024..=16 * 1024 * 1024).contains(&bytes) {
+        Ok(bytes)
+    } else {
+        Err(out_of_range(
+            "window_overlap must be between 1KB and 16MB",
+            "128KB",
+        ))
+    }
+}
+
 #[cfg(test)]
 #[path = "../tests/unit/value_parser_diagnostics.rs"]
 mod tests;
