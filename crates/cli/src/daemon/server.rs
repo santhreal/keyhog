@@ -24,16 +24,16 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{mpsc, Mutex, Notify, OwnedMutexGuard, Semaphore};
 
 const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
-#[cfg(any(test, feature = "test-support", feature = "ci-lean"))]
+#[cfg(any(test, feature = "ci-lean"))]
 static TEST_PANIC_INJECTION_KIND: std::sync::LazyLock<parking_lot::RwLock<Option<String>>> =
     std::sync::LazyLock::new(|| parking_lot::RwLock::new(None));
 
-#[cfg(any(test, feature = "test-support", feature = "ci-lean"))]
+#[cfg(any(test, feature = "ci-lean"))]
 pub(crate) fn set_test_panic_injection(kind: Option<&str>) {
     *TEST_PANIC_INJECTION_KIND.write() = kind.map(str::to_string);
 }
 
-#[cfg(not(any(test, feature = "test-support", feature = "ci-lean")))]
+#[cfg(not(any(test, feature = "ci-lean")))]
 pub(crate) fn set_test_panic_injection(_kind: Option<&str>) {}
 
 const DEFAULT_REQUEST_READ_TIMEOUT_SECS: u64 = 300;
@@ -1633,7 +1633,7 @@ async fn handle_connection(
             let state_cloned = state.clone();
             let mass_session_ref = &mut mass_session;
             let streamed_result = std::panic::AssertUnwindSafe(async {
-                #[cfg(any(test, feature = "test-support", feature = "ci-lean"))]
+                #[cfg(any(test, feature = "ci-lean"))]
                 if let Some(target_kind) = TEST_PANIC_INJECTION_KIND.read().as_deref() {
                     if target_kind == "MassFilesystemDrain" {
                         panic!("simulated test panic on daemon request kind: MassFilesystemDrain");
@@ -1689,7 +1689,7 @@ async fn handle_connection(
         let mass_session_ref = &mut mass_session;
 
         let dispatch_result = std::panic::AssertUnwindSafe(async {
-            #[cfg(any(test, feature = "test-support", feature = "ci-lean"))]
+            #[cfg(any(test, feature = "ci-lean"))]
             if let Some(target_kind) = TEST_PANIC_INJECTION_KIND.read().as_deref() {
                 if target_kind == crate::daemon::protocol::request_kind(&request) {
                     panic!("simulated test panic on daemon request kind: {target_kind}");

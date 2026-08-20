@@ -133,7 +133,7 @@ enum ActiveWatcherHandle {
     Poll(notify::PollWatcher),
     Null(
         notify::NullWatcher,
-        mpsc::Sender<notify::Result<notify::Event>>,
+        #[allow(dead_code)] mpsc::Sender<notify::Result<notify::Event>>,
     ),
 }
 

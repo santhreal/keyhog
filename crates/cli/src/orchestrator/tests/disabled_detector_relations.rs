@@ -42,7 +42,7 @@ fn disabling_required_target_removes_its_dependent() {
 
     let dropped = filter_disabled_detectors(&mut detectors, &disabled(&["target"]));
 
-    assert_eq!(dropped, 2);
+    assert_eq!(dropped.len(), 2);
     assert_eq!(
         detectors
             .iter()
@@ -70,7 +70,7 @@ fn disabling_required_target_cascades_transitively() {
 
     let dropped = filter_disabled_detectors(&mut detectors, &disabled(&["leaf"]));
 
-    assert_eq!(dropped, 3);
+    assert_eq!(dropped.len(), 3);
     assert!(detectors.is_empty());
 }
 
@@ -92,7 +92,7 @@ fn surviving_relations_to_disabled_targets_are_pruned() {
 
     let dropped = filter_disabled_detectors(&mut detectors, &disabled(&["target"]));
 
-    assert_eq!(dropped, 1);
+    assert_eq!(dropped.len(), 1);
     assert_eq!(detectors.len(), 2);
     assert!(detectors
         .iter()
@@ -113,7 +113,7 @@ fn unknown_relation_targets_are_not_silently_pruned() {
 
     let dropped = filter_disabled_detectors(&mut detectors, &disabled(&["disabled"]));
 
-    assert_eq!(dropped, 1);
+    assert_eq!(dropped.len(), 1);
     assert_eq!(detectors.len(), 1);
     assert_eq!(detectors[0].detector_relations[0].detector_id, "missing");
 }
