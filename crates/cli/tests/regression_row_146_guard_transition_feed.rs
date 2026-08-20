@@ -10,6 +10,7 @@
 //!   sequenced transition record with prior state, new state, trigger event, and causal explanation.
 //! - Root records retain per-root transition history for `guard status` inspectability.
 //! - Global feed ring buffer retains cross-root transitions for `guard feed` inspectability.
+//! - Transitions include policy change reconciliation, watcher event ingestion, and transaction commits.
 //!
 //! WHAT IT DOES NOT CATCH:
 //! Unrecorded kernel-level process terminations (SIGKILL) before transition records are materialized in memory.
