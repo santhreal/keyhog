@@ -89,7 +89,9 @@ fn findings(path: &str, backend: &str, no_gpu: bool) -> BTreeSet<(String, String
 }
 
 fn available_gpu_routes() -> Vec<String> {
+    let cache_dir = std::env::temp_dir().join(format!("kh-parity-cache-{}", std::process::id()));
     let output = Command::new(bin())
+        .env("XDG_CACHE_HOME", &cache_dir)
         .args(["backend", "--self-test", "--json"])
         .output()
         .expect("backend self-test runs");
