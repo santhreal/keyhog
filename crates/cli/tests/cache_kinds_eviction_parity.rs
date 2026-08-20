@@ -2,7 +2,7 @@
 //! Row 69 / Unbounded cache growth and multi-kind eviction totality contract:
 //! Proves that all cache kinds (Hyperscan shards, detector plans, GPU programs,
 //! matcher artifacts, and lock files) are enumerated at run time, each obeys
-//! registered count and byte eviction bounds, LRU eviction order is strictly enforced,
+//! registered count and byte eviction bounds, least-recently-written eviction order is strictly enforced,
 //! and stale lock files older than bounded age are collected.
 //!
 //! WHAT IT DOES NOT CATCH:
@@ -361,4 +361,68 @@ fn installed_gpu_artifacts_and_manifests_are_never_evicted() {
         "Installed GPU sidecar must be protected from eviction"
     );
     assert!(prog_dir.join(".installed_manifest.json").exists());
+}
+
+#[test]
+fn corrupt_manifest_skips_gpu_program_eviction_fail_closed() {
+    let temp = TempDir::new().expect("tempdir");
+    let cache_dir = temp.path();
+    let prog_dir = cache_dir.join("programs");
+    std::fs::create_dir(&prog_dir).expect("create programs dir");
+
+    let sidecar_file = prog_dir.join("installed_sidecar.bin");
+    std::fs::write(&sidecar_file, b"installed binary").expect("write sidecar");
+
+    // Write corrupt/invalid manifest
+    std::fs::write(
+        prog_dir.join(".installed_manifest.json"),
+        b"{ not valid json ...",
+    )
+    .expect("write corrupt manifest");
+
+    let policy = CacheEvictionPolicy::new(0, 0, 600);
+    let report = evict_cache_dir_with_policy(cache_dir, CacheKind::GpuPrograms, policy);
+
+    assert_eq!(
+        report.evicted_count, 0,
+        "Corrupt manifest must cause fail-closed skip of GpuPrograms eviction"
+    );
+    assert!(
+        sidecar_file.exists(),
+        "Sidecar file must not be deleted when manifest is unreadable"
+    );
+}
+
+#[test]
+fn lock_files_eviction_report_parity() {
+    let temp = TempDir::new().expect("tempdir");
+    let cache_dir = temp.path();
+
+    let fresh_lock = cache_dir.join("calibration.json.lock");
+    let stale_lock = cache_dir.join("merkle_index.json.lock");
+
+    std::fs::write(&fresh_lock, b"active").expect("write fresh lock");
+    std::fs::write(&stale_lock, b"abandoned").expect("write stale lock");
+
+    set_mtime(&fresh_lock, SystemTime::now());
+    set_mtime(&stale_lock, SystemTime::now() - Duration::from_secs(7200));
+
+    let policy = CacheKind::LockFiles.default_policy();
+    let report = evict_cache_dir_with_policy(cache_dir, CacheKind::LockFiles, policy);
+
+    assert_eq!(report.initial_count, 2);
+    assert_eq!(report.stale_locks_removed, 1);
+    assert_eq!(report.evicted_count, 1);
+    assert_eq!(report.retained_count, 1);
+    assert!(fresh_lock.exists());
+    assert!(!stale_lock.exists());
+}
+
+#[test]
+fn matcher_artifact_max_entries_constant_matches_policy() {
+    assert_eq!(
+        keyhog_scanner::MATCHER_ARTIFACT_MAX_ENTRIES,
+        CacheKind::MatcherArtifacts.default_policy().max_entries,
+        "MATCHER_ARTIFACT_MAX_ENTRIES must match policy default exactly"
+    );
 }

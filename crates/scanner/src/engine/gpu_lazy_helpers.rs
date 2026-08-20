@@ -41,7 +41,13 @@ pub(super) fn compile_gpu_literal_set(
                 let res = vyre::scan::cached_load_or_compile(&cache_dir, &cache_key, || {
                     vyre::scan::GpuLiteralSet::compile_case_insensitive(&literal_refs)
                 });
-                crate::cache_eviction::evict_cache_dir_with_policy(&cache_dir, keyhog_core::CacheKind::GpuPrograms, keyhog_core::CacheKind::GpuPrograms.default_policy());
+                if !is_hit {
+                    crate::cache_eviction::evict_cache_dir_with_policy(
+                        &cache_dir,
+                        keyhog_core::CacheKind::GpuPrograms,
+                        keyhog_core::CacheKind::GpuPrograms.default_policy(),
+                    );
+                }
                 res
             }
             Err(error) => {

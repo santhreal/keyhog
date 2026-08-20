@@ -35,9 +35,23 @@ impl StateFileWriteLock {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        let file = options.open(lock_path)?;
-        file.lock_exclusive()?;
-        Ok(Self { file })
+        loop {
+            let file = options.open(&lock_path)?;
+            file.lock_exclusive()?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                if let (Ok(meta1), Ok(meta2)) = (file.metadata(), std::fs::metadata(&lock_path)) {
+                    if meta1.ino() == meta2.ino() && meta1.dev() == meta2.dev() && meta1.nlink() > 0
+                    {
+                        return Ok(Self { file });
+                    }
+                    let _ = FileExt::unlock(&file);
+                    continue;
+                }
+            }
+            return Ok(Self { file });
+        }
     }
 }
 
