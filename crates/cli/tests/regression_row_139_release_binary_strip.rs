@@ -739,12 +739,20 @@ fn regression_row_139_binary_stripping_and_dwarf_bloat_detection() {
         .push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/keyhog"));
     candidate_paths
         .push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/keyhog.exe"));
+    candidate_paths
+        .push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release-fast/keyhog"));
+    candidate_paths.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release-fast/keyhog.exe"),
+    );
     if let Some(target_dir) =
         std::env::var_os("CARGO_TARGET_DIR").or_else(|| std::env::var_os("CARGO_BUILD_TARGET_DIR"))
     {
-        let p = PathBuf::from(target_dir).join("release");
-        candidate_paths.push(p.join("keyhog"));
-        candidate_paths.push(p.join("keyhog.exe"));
+        let p_rel = PathBuf::from(&target_dir).join("release");
+        candidate_paths.push(p_rel.join("keyhog"));
+        candidate_paths.push(p_rel.join("keyhog.exe"));
+        let p_fast = PathBuf::from(&target_dir).join("release-fast");
+        candidate_paths.push(p_fast.join("keyhog"));
+        candidate_paths.push(p_fast.join("keyhog.exe"));
     }
 
     let mut validated_any = false;

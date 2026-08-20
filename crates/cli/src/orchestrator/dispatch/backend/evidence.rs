@@ -1244,19 +1244,33 @@ impl AutorouteDecision {
         // whole generation, so the installer could not finish.
         let mut merged: Vec<&AutorouteCalibrationPoint> = self.calibration_points.iter().collect();
         merged.push(&point);
-        let (Some(expected_one_shot), Some(expected_daemon)) = (
-            resolve_route_across_points(&merged, false, None),
-            resolve_route_across_points(&merged, true, None),
-        ) else {
-            return Err(format!(
-                "workload class changes its confidence-supported backend across measured points: existing one-shot={} daemon={}, new {}-byte/{}-chunk point one-shot={} daemon={}; the disagreeing backends are separated by measurement, so this is a real crossover: split the workload identity here and recalibrate",
-                render_measured_route(expected_one_shot),
-                render_measured_route(expected_daemon),
-                point.sample_bytes,
-                point.sample_chunks,
-                render_measured_route(measured_one_shot),
-                render_measured_route(measured_daemon),
-            ));
+        let expected_one_shot = match resolve_route_across_points(&merged, false, None) {
+            Some(r) => r,
+            None => {
+                return Err(format!(
+                    "workload class changes its confidence-supported backend across measured points: existing one-shot={} daemon={}, new {}-byte/{}-chunk point one-shot={} daemon={}; the disagreeing backends are separated by measurement, so this is a real crossover: split the workload identity here and recalibrate",
+                    render_measured_route(expected_one_shot),
+                    render_measured_route(expected_daemon),
+                    point.sample_bytes,
+                    point.sample_chunks,
+                    render_measured_route(measured_one_shot),
+                    render_measured_route(measured_daemon),
+                ));
+            }
+        };
+        let expected_daemon = match resolve_route_across_points(&merged, true, None) {
+            Some(r) => r,
+            None => {
+                return Err(format!(
+                    "workload class changes its confidence-supported backend across measured points: existing one-shot={} daemon={}, new {}-byte/{}-chunk point one-shot={} daemon={}; the disagreeing backends are separated by measurement, so this is a real crossover: split the workload identity here and recalibrate",
+                    render_measured_route(expected_one_shot),
+                    render_measured_route(expected_daemon),
+                    point.sample_bytes,
+                    point.sample_chunks,
+                    render_measured_route(measured_one_shot),
+                    render_measured_route(measured_daemon),
+                ));
+            }
         };
         for (runtime_label, persistent_runtime, expected_route) in [
             ("one-shot", false, expected_one_shot),
