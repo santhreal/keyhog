@@ -47,6 +47,9 @@ pub(crate) struct BackendBenchmark {
 /// GPU throughput row.
 pub(crate) fn format_gpu_summary() -> String {
     let hw = probe_hardware();
+    if !hw.gpu_available || hw.gpu_is_software {
+        return "unavailable".to_string();
+    }
     match (&hw.gpu_name, hw.gpu_vram_mb) {
         (Some(name), Some(vram_mb)) => format!("{} ({}GB)", name, (vram_mb / 1024).max(1)),
         (Some(name), None) => name.clone(),
