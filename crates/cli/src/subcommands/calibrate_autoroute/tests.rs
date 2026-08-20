@@ -47,6 +47,7 @@ fn isolated_policy_children_inherit_the_parents_measurement_flags() {
                 let parent = CalibrateAutorouteArgs {
                     autoroute_cache: Some("/home/user/.cache/keyhog/autoroute.json".to_string()),
                     execution_packs: packs.clone(),
+                    signing_key: None,
                     measurement_receipts: None,
                     policy: AutorouteCalibrationPolicy::All,
                     no_config,

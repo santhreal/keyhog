@@ -24,18 +24,6 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{mpsc, Mutex, Notify, OwnedMutexGuard, Semaphore};
 
 pub const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
-static TEST_PANIC_INJECTION_KIND: parking_lot::RwLock<Option<String>> =
-    parking_lot::RwLock::new(None);
-
-#[cfg(test)]
-pub(crate) fn set_test_panic_injection(kind: Option<&str>) {
-    *TEST_PANIC_INJECTION_KIND.write() = kind.map(str::to_string);
-    HAS_TEST_PANIC_INJECTION.store(kind.is_some(), std::sync::atomic::Ordering::Release);
-}
-
-#[cfg(not(any(test, feature = "ci-lean")))]
-pub(crate) fn set_test_panic_injection(_kind: Option<&str>) {}
-
 const DEFAULT_REQUEST_READ_TIMEOUT_SECS: u64 = 300;
 /// Ceiling on one response write. Without it a client that sends a request and
 /// never reads the reply parks its handler inside `Sink::flush` forever once the
@@ -1413,15 +1401,12 @@ pub(crate) fn is_transient_accept_error(e: &std::io::Error) -> bool {
     false
 }
 
-#[allow(dead_code)]
 enum MassFilesystemMessage {
     Batch(Vec<Chunk>),
     Complete {
         source_coverage_gaps: SourceCoverageGaps,
         skipped_unchanged: usize,
     },
-    #[allow(dead_code)]
-    Error(String),
 }
 
 fn spawn_mass_filesystem_source(
@@ -2011,7 +1996,6 @@ async fn handle_connection(
         let response = match dispatch_result {
             Ok(resp) => resp,
             Err(panic_payload) => {
-                mass_session = None;
                 let detail = if let Some(s) = panic_payload.downcast_ref::<&'static str>() {
                     (*s).to_string()
                 } else if let Some(s) = panic_payload.downcast_ref::<String>() {
@@ -2743,7 +2727,6 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             let bytes_hit = txn.bytes_hit;
             let terminal_state =
                 guard_commit_terminal_state(txn.blocking_findings_count, txn.coverage_gaps);
-            let identity = state.guard.root_policy_identity(txn.repo_path.as_bytes());
             let commit_root = match std::fs::canonicalize(&txn.repo_path) {
                 Ok(p) => p,
                 Err(_) => std::path::PathBuf::from(&txn.repo_path),
@@ -3035,17 +3018,11 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     last_reconciliation_time: record.last_reconciliation_time,
                     scanner_residency: state.guard.scanner_residency().to_string(),
                     backend_route_label: record.backend_route_label.clone(),
-                    build_identity_short: state
-                        .guard
-                        .get_root_policy_identity(root.as_bytes())
-                        .or_else(|| state.guard.policy_identity())
+                    build_identity_short: root_policy
                         .as_ref()
                         .and_then(|id| id.short_digest().ok())
                         .unwrap_or_default(),
-                    detector_digest_short: state
-                        .guard
-                        .get_root_policy_identity(root.as_bytes())
-                        .or_else(|| state.guard.policy_identity())
+                    detector_digest_short: root_policy
                         .as_ref()
                         .map(|id| {
                             id.detector_digest
@@ -3054,10 +3031,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                                 .to_string()
                         })
                         .unwrap_or_default(),
-                    suppression_digest_short: state
-                        .guard
-                        .get_root_policy_identity(root.as_bytes())
-                        .or_else(|| state.guard.policy_identity())
+                    suppression_digest_short: root_policy
                         .as_ref()
                         .map(|id| {
                             id.suppression_digest
@@ -3066,10 +3040,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                                 .to_string()
                         })
                         .unwrap_or_default(),
-                    config_digest_short: state
-                        .guard
-                        .get_root_policy_identity(root.as_bytes())
-                        .or_else(|| state.guard.policy_identity())
+                    config_digest_short: root_policy
                         .as_ref()
                         .map(|id| {
                             id.config_digest

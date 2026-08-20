@@ -91,7 +91,7 @@ fn bench_detector_validation_and_corpus(c: &mut Criterion) {
     group.bench_function("validate_single_detector", |b| {
         b.iter(|| {
             let issues = validate_detector(black_box(&sample_spec));
-            let _ = black_box(issues);
+            black_box(issues);
         });
     });
 
@@ -103,7 +103,7 @@ fn bench_detector_validation_and_corpus(c: &mut Criterion) {
             |b, specs| {
                 b.iter(|| {
                     let digest = compute_detector_corpus_digest(black_box(specs));
-                    let _ = black_box(digest);
+                    black_box(digest.expect("compute detector corpus digest"));
                 });
             },
         );
@@ -181,7 +181,7 @@ severity_lte = "medium"
     group.bench_function("parse_rule_suppressor_toml", |b| {
         b.iter(|| {
             let supp = RuleSuppressor::parse(black_box(rule_toml)).expect("parse");
-            let _ = black_box(supp);
+            black_box(supp);
         });
     });
 
@@ -218,7 +218,7 @@ fn bench_merkle_index_operations(c: &mut Criterion) {
                 black_box(1024),
                 black_box(content_hash.as_bytes()),
             );
-            let _ = black_box(unchanged);
+            black_box(unchanged);
         });
     });
 
@@ -229,7 +229,7 @@ fn bench_merkle_index_operations(c: &mut Criterion) {
                 black_box(1_700_000_000_000_000_000),
                 black_box(1024),
             );
-            let _ = black_box(unchanged);
+            black_box(unchanged);
         });
     });
 
@@ -259,7 +259,7 @@ fn bench_finding_dedup_and_correlation(c: &mut Criterion) {
             |b, ms| {
                 b.iter(|| {
                     let deduped = dedup_matches(black_box(ms.clone()), &DedupScope::File);
-                    let _ = black_box(deduped);
+                    black_box(deduped);
                 });
             },
         );
@@ -284,7 +284,7 @@ fn bench_finding_dedup_and_correlation(c: &mut Criterion) {
             |b, fs| {
                 b.iter(|| {
                     let correlated = correlate_findings(black_box(fs));
-                    let _ = black_box(correlated);
+                    black_box(correlated);
                 });
             },
         );
@@ -314,7 +314,7 @@ fn bench_guard_state_and_policy(c: &mut Criterion) {
     group.bench_function("guard_policy_identity_digest", |b| {
         b.iter(|| {
             let digest = policy.short_digest().expect("short digest");
-            let _ = black_box(digest);
+            black_box(digest);
         });
     });
 
@@ -331,7 +331,7 @@ fn bench_guard_state_and_policy(c: &mut Criterion) {
                 .transition(&GuardTransition::EventAccepted)
                 .expect("event");
             let s4 = s3.transition(&GuardTransition::EventsClean).expect("clean");
-            let _ = black_box(s4);
+            black_box(s4);
         });
     });
 

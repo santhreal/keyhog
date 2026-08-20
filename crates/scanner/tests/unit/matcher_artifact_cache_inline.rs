@@ -1,7 +1,4 @@
-use std::io::Write;
-
 use super::*;
-use std::io::Write;
 
 /// WHY: hostile section lengths must fail before allocating the serialized artifact.
 #[test]

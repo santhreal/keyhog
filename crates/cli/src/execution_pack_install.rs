@@ -376,37 +376,24 @@ pub(crate) fn installed_execution_pack_directory() -> Result<PathBuf> {
         .join("current"))
 }
 
-pub fn current_binary_digest() -> Result<[u8; 32]> {
-    #[cfg(target_os = "linux")]
-    let mut file = File::open("/proc/self/exe")
-        .or_else(|_| {
-            let path = std::env::current_exe()?;
-            File::open(&path)
-        })
-        .context("opening current executable image")?;
-
-    #[cfg(not(target_os = "linux"))]
-    let mut file = {
-        let path = std::env::current_exe().context("resolving current KeyHog executable")?;
-        File::open(&path).with_context(|| format!("opening {}", path.display()))?
-    };
-    let mut hasher = blake3::Hasher::new();
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = file
-            .read(&mut buffer)
-            .context("hashing current executable image")?;
-        if read == 0 {
-            break;
-        }
-        let mut file =
-            File::open(&path).map_err(|error| format!("opening {}: {error}", path.display()))?;
+static CURRENT_BINARY_DIGEST: std::sync::LazyLock<Result<[u8; 32], String>> =
+    std::sync::LazyLock::new(|| {
+        #[cfg(target_os = "linux")]
+        let mut file = File::open("/proc/self/exe")
+            .or_else(|_| File::open(std::env::current_exe()?))
+            .map_err(|error| format!("opening current executable image: {error}"))?;
+        #[cfg(not(target_os = "linux"))]
+        let mut file = {
+            let path = std::env::current_exe()
+                .map_err(|error| format!("resolving current KeyHog executable: {error}"))?;
+            File::open(&path).map_err(|error| format!("opening {}: {error}", path.display()))?
+        };
         let mut hasher = blake3::Hasher::new();
         let mut buffer = [0u8; 64 * 1024];
         loop {
             let read = file
                 .read(&mut buffer)
-                .map_err(|error| format!("hashing {}: {error}", path.display()))?;
+                .map_err(|error| format!("hashing current executable image: {error}"))?;
             if read == 0 {
                 break;
             }
@@ -415,8 +402,8 @@ pub fn current_binary_digest() -> Result<[u8; 32]> {
         Ok(*hasher.finalize().as_bytes())
     });
 
-pub(crate) fn current_binary_digest() -> Result<[u8; 32]> {
-    CURRENT_BINARY_DIGEST.clone().map_err(anyhow::Error::msg)
+pub fn current_binary_digest() -> Result<[u8; 32]> {
+    (*CURRENT_BINARY_DIGEST).clone().map_err(anyhow::Error::msg)
 }
 
 static CURRENT_TARGET_DIGEST: std::sync::LazyLock<[u8; 32]> = std::sync::LazyLock::new(|| {
@@ -741,7 +728,7 @@ pub(crate) fn load_installed_execution_pack(
         })
         .with_context(|| {
             format!(
-                "installed generation has no {} {} execution pack. Fix: run `keyhog install` or `keyhog update`",
+                "installed generation has no {} {} execution pack. Fix: run `keyhog install`",
                 policy.lowercase_name(),
                 backend.lowercase_name(),
             )
@@ -765,7 +752,7 @@ pub(crate) fn load_installed_preferred_matcher_pack(
                 .find(|row| row.policy == policy && row.backend == "cpu")
         })
         .with_context(|| {
-            format!("installed generation has no {policy} SIMD or CPU execution pack. Fix: run `keyhog install` or `keyhog update`")
+            format!("installed generation has no {policy} SIMD or CPU execution pack. Fix: run `keyhog install`")
         })?;
     authenticate_manifest_pack(&directory, &manifest, row, &signing_key)
 }
@@ -816,37 +803,37 @@ fn load_manifest(
     let manifest_path = directory.join("manifest.json");
     let metadata = fs::symlink_metadata(&manifest_path).with_context(|| {
         format!(
-            "inspecting execution-pack manifest {}. Fix: run `keyhog install` or `keyhog update`",
+            "inspecting execution-pack manifest {}. Fix: run `keyhog install`",
             manifest_path.display()
         )
     })?;
     if !metadata.file_type().is_file() || metadata.len() == 0 || metadata.len() > MAX_MANIFEST_BYTES
     {
         bail!(
-            "execution-pack manifest {} must be a nonempty regular file no larger than {MAX_MANIFEST_BYTES} bytes. Fix: run `keyhog install` or `keyhog update`",
+            "execution-pack manifest {} must be a nonempty regular file no larger than {MAX_MANIFEST_BYTES} bytes. Fix: run `keyhog install`",
             manifest_path.display()
         );
     }
     let bytes = fs::read(&manifest_path).with_context(|| {
         format!(
-            "reading execution-pack manifest {}. Fix: run `keyhog install` or `keyhog update`",
+            "reading execution-pack manifest {}. Fix: run `keyhog install`",
             manifest_path.display()
         )
     })?;
     let manifest: InstallPackManifest = serde_json::from_slice(&bytes).with_context(|| {
         format!(
-            "parsing execution-pack manifest {}. Fix: run `keyhog install` or `keyhog update`",
+            "parsing execution-pack manifest {}. Fix: run `keyhog install`",
             manifest_path.display()
         )
     })?;
     if manifest.version != MANIFEST_VERSION {
         bail!(
-            "execution-pack manifest version {} is unsupported; reinstall with version {MANIFEST_VERSION}. Fix: run `keyhog install` or `keyhog update`",
+            "execution-pack manifest version {} is unsupported; reinstall with version {MANIFEST_VERSION}. Fix: run `keyhog install`",
             manifest.version
         );
     }
     if manifest.packs.is_empty() {
-        bail!("execution-pack manifest contains no packs. Fix: run `keyhog install` or `keyhog update`");
+        bail!("execution-pack manifest contains no packs. Fix: run `keyhog install`");
     }
     let expected_detector_digest = keyhog_core::hex_encode(&current_embedded_detector_digest()?);
     let current_binary = keyhog_core::hex_encode(&current_binary_digest()?);
@@ -878,7 +865,7 @@ fn load_manifest(
         if actual != expected {
             bail!(
                 "execution-pack manifest identity for '{name}' is stale (manifest {actual}, host {expected}); \
-                 rebuild packs with this binary before scanning. Fix: run `keyhog install` or `keyhog update`"
+                 rebuild packs with this binary before scanning. Fix: run `keyhog install`"
             );
         }
     }
@@ -892,18 +879,20 @@ fn load_manifest(
         .filter(|path| path.is_file())
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "execution-pack generation at {} has no sibling signing.key. Fix: run `keyhog install` or `keyhog update`",
+                "execution-pack generation at {} has no sibling signing.key. Fix: run `keyhog install`",
                 directory.display()
             )
         })?;
     let key_bytes = fs::read(&key_path).with_context(|| {
         format!(
-            "reading execution-pack verification key {}. Fix: run `keyhog install` or `keyhog update`",
+            "reading execution-pack verification key {}. Fix: run `keyhog install`",
             key_path.display()
         )
     })?;
     let signing_key = ExecutionPackSigningKey::from_bytes(key_bytes.try_into().map_err(|_| {
-        anyhow::anyhow!("execution-pack verification key must be exactly 32 bytes. Fix: run `keyhog install` or `keyhog update`")
+        anyhow::anyhow!(
+            "execution-pack verification key must be exactly 32 bytes. Fix: run `keyhog install`"
+        )
     })?)
     .map_err(anyhow::Error::msg)?;
     Ok((bytes, manifest, signing_key))
@@ -921,13 +910,13 @@ fn authenticate_manifest_pack(
     let signature_path = directory.join(&row.signature_file);
     let metadata = fs::symlink_metadata(&pack_path).with_context(|| {
         format!(
-            "inspecting execution pack {}. Fix: run `keyhog install` or `keyhog update`",
+            "inspecting execution pack {}. Fix: run `keyhog install`",
             pack_path.display()
         )
     })?;
     if !metadata.file_type().is_file() || metadata.len() != row.bytes as u64 {
         bail!(
-            "execution pack {} has {} bytes, manifest requires {}. Fix: run `keyhog install` or `keyhog update`",
+            "execution pack {} has {} bytes, manifest requires {}. Fix: run `keyhog install`",
             pack_path.display(),
             metadata.len(),
             row.bytes
@@ -935,13 +924,13 @@ fn authenticate_manifest_pack(
     }
     let sig_metadata = fs::symlink_metadata(&signature_path).with_context(|| {
         format!(
-            "inspecting execution-pack signature {}. Fix: run `keyhog install` or `keyhog update`",
+            "inspecting execution-pack signature {}. Fix: run `keyhog install`",
             signature_path.display()
         )
     })?;
     if !sig_metadata.file_type().is_file() || sig_metadata.len() == 0 {
         bail!(
-            "execution-pack signature {} is missing or empty. Fix: run `keyhog install` or `keyhog update`",
+            "execution-pack signature {} is missing or empty. Fix: run `keyhog install`",
             signature_path.display()
         );
     }
@@ -949,7 +938,7 @@ fn authenticate_manifest_pack(
         .map_err(anyhow::Error::msg)
         .with_context(|| {
             format!(
-                "authenticating execution pack {}. Fix: run `keyhog install` or `keyhog update`",
+                "authenticating execution pack {}. Fix: run `keyhog install`",
                 pack_path.display()
             )
         })?;
@@ -988,7 +977,7 @@ fn authenticate_manifest_pack(
     ] {
         if actual != expected {
             bail!(
-                "execution pack {} '{name}' identity does not match its manifest. Fix: run `keyhog install` or `keyhog update`",
+                "execution pack {} '{name}' identity does not match its manifest. Fix: run `keyhog install`",
                 pack_path.display()
             );
         }
@@ -997,20 +986,20 @@ fn authenticate_manifest_pack(
         || identity.backend.lowercase_name() != row.backend
     {
         bail!(
-            "execution pack {} 'policy/backend' identity does not match its manifest. Fix: run `keyhog install` or `keyhog update`",
+            "execution pack {} 'policy/backend' identity does not match its manifest. Fix: run `keyhog install`",
             pack_path.display()
         );
     }
     let signature_bytes = fs::read(&signature_path).with_context(|| {
         format!(
-            "reading execution-pack signature {}. Fix: run `keyhog install` or `keyhog update`",
+            "reading execution-pack signature {}. Fix: run `keyhog install`",
             signature_path.display()
         )
     })?;
     let signature = ExecutionPackSignature::decode(&signature_bytes).map_err(anyhow::Error::msg)?;
     if keyhog_core::hex_encode(&signature.pack_digest) != row.signed_pack_digest {
         bail!(
-            "execution-pack signature {} signed digest does not match its manifest identity. Fix: run `keyhog install` or `keyhog update`",
+            "execution-pack signature {} signed digest does not match its manifest identity. Fix: run `keyhog install`",
             pack_path.display()
         );
     }

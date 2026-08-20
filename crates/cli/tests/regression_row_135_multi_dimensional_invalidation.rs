@@ -14,12 +14,12 @@
 //! Does not catch in-flight kernel-level GPU driver crashes during active execution.
 //! Does not catch filesystem bit flips occurring mid-read after initial authentication.
 
-use keyhog::execution_pack_install::{
+use keyhog::exit_codes::EXIT_USER_ERROR;
+use keyhog::testing::execution_pack_install::{
     check_installed_artifacts_freshness_at, current_binary_digest,
     current_embedded_detector_digest, invalidate_installed_artifacts_at, ArtifactFreshnessStatus,
     ArtifactIdentityInput, InstalledArtifactClass, InstalledArtifactRegistry,
 };
-use keyhog::exit_codes::EXIT_USER_ERROR;
 use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;

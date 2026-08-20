@@ -72,10 +72,9 @@ async fn all_daemon_request_kinds_isolate_panics_under_shipped_profile() {
     );
 
     for &kind in all_kinds {
-        let sample = API
-            .sample_daemon_request_for_kind(kind)
+        let serialized = API
+            .sample_daemon_request_json_for_kind(kind)
             .unwrap_or_else(|| panic!("Missing sample request for kind '{kind}'"));
-        let serialized = serde_json::to_string(&sample).expect("serialize sample request");
         assert!(
             !serialized.is_empty(),
             "Sample request for '{kind}' must serialize cleanly"
@@ -111,8 +110,7 @@ async fn all_daemon_request_kinds_isolate_panics_under_shipped_profile() {
 
         // If target is NOT Hello, we must send Hello first to complete the handshake
         if target_kind != "Hello" {
-            let hello_sample = API.sample_daemon_request_for_kind("Hello").unwrap();
-            let hello_json = serde_json::to_string(&hello_sample).unwrap();
+            let hello_json = API.sample_daemon_request_json_for_kind("Hello").unwrap();
             send_raw_frame(&mut stream, &hello_json).await.unwrap();
             let hello_resp = read_raw_frame(&mut stream).await.unwrap();
             assert_eq!(
@@ -123,8 +121,9 @@ async fn all_daemon_request_kinds_isolate_panics_under_shipped_profile() {
         }
 
         // Send target request which triggers the injected panic
-        let target_sample = API.sample_daemon_request_for_kind(target_kind).unwrap();
-        let target_json = serde_json::to_string(&target_sample).unwrap();
+        let target_json = API
+            .sample_daemon_request_json_for_kind(target_kind)
+            .unwrap();
         send_raw_frame(&mut stream, &target_json).await.unwrap();
 
         let resp = read_raw_frame(&mut stream).await.unwrap_or_else(|e| {
@@ -151,22 +150,16 @@ async fn all_daemon_request_kinds_isolate_panics_under_shipped_profile() {
         let mut health_stream = UnixStream::connect(&socket_path)
             .await
             .expect("Connect to daemon after panic must succeed");
-        let hello_sample = API.sample_daemon_request_for_kind("Hello").unwrap();
-        send_raw_frame(
-            &mut health_stream,
-            &serde_json::to_string(&hello_sample).unwrap(),
-        )
-        .await
-        .unwrap();
+        let hello_json = API.sample_daemon_request_json_for_kind("Hello").unwrap();
+        send_raw_frame(&mut health_stream, &hello_json)
+            .await
+            .unwrap();
         let _ = read_raw_frame(&mut health_stream).await.unwrap();
 
-        let health_sample = API.sample_daemon_request_for_kind("Health").unwrap();
-        send_raw_frame(
-            &mut health_stream,
-            &serde_json::to_string(&health_sample).unwrap(),
-        )
-        .await
-        .unwrap();
+        let health_json = API.sample_daemon_request_json_for_kind("Health").unwrap();
+        send_raw_frame(&mut health_stream, &health_json)
+            .await
+            .unwrap();
         let health_resp = read_raw_frame(&mut health_stream).await.unwrap();
 
         assert_eq!(
@@ -186,14 +179,12 @@ async fn all_daemon_request_kinds_isolate_panics_under_shipped_profile() {
 
     // 6. Graceful shutdown
     let mut stop_stream = UnixStream::connect(&socket_path).await.unwrap();
-    let hello = API.sample_daemon_request_for_kind("Hello").unwrap();
-    send_raw_frame(&mut stop_stream, &serde_json::to_string(&hello).unwrap())
-        .await
-        .unwrap();
+    let hello_json = API.sample_daemon_request_json_for_kind("Hello").unwrap();
+    send_raw_frame(&mut stop_stream, &hello_json).await.unwrap();
     let _ = read_raw_frame(&mut stop_stream).await.unwrap();
 
-    let shutdown = API.sample_daemon_request_for_kind("Shutdown").unwrap();
-    send_raw_frame(&mut stop_stream, &serde_json::to_string(&shutdown).unwrap())
+    let shutdown_json = API.sample_daemon_request_json_for_kind("Shutdown").unwrap();
+    send_raw_frame(&mut stop_stream, &shutdown_json)
         .await
         .unwrap();
     let _ = read_raw_frame(&mut stop_stream).await.unwrap();

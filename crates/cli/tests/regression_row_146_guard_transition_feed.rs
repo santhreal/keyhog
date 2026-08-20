@@ -16,7 +16,6 @@
 //! Unrecorded kernel-level process terminations (SIGKILL) before transition records are materialized in memory.
 
 use keyhog::testing::daemon::guard_runtime::GuardRuntime;
-use keyhog::testing::daemon::protocol::Request;
 use keyhog_core::guard_state::{
     FilesystemAuthority, FilesystemIdentity, GuardPolicyIdentity, GuardReceipt, GuardRootMode,
     GuardRootState, GuardTransition, GuardTransitionRecord,
@@ -463,21 +462,13 @@ fn policy_identity_change_records_transition_with_cause() {
 
 #[test]
 fn wire_protocol_guard_feed_and_status_roundtrip() {
-    // Test Request::GuardFeed wire serialization and deserialization
-    let feed_request = Request::GuardFeed {
-        root: Some("/var/project".to_string()),
-        limit: Some(25),
-    };
-    let req_serialized = serde_json::to_string(&feed_request).expect("serialize GuardFeed request");
-    let req_deserialized: Request =
-        serde_json::from_str(&req_serialized).expect("deserialize GuardFeed request");
-    match req_deserialized {
-        Request::GuardFeed { root, limit } => {
-            assert_eq!(root, Some("/var/project".to_string()));
-            assert_eq!(limit, Some(25));
-        }
-        other => panic!("expected GuardFeed, got {:?}", other),
-    }
+    // The guard-feed request must survive the wire codec with its root and limit.
+    let (root, limit) = keyhog::testing::daemon::protocol::guard_feed_request_round_trip(
+        Some("/var/project"),
+        Some(25),
+    );
+    assert_eq!(root.as_deref(), Some("/var/project"));
+    assert_eq!(limit, Some(25));
 
     // Test GuardFeedResult JSON shape and deserialization
     let feed_json = serde_json::json!({

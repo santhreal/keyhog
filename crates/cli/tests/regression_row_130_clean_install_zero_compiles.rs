@@ -76,8 +76,8 @@ fn clean_cache_scan_fails_closed_without_installation() {
 
     let stderr = String::from_utf8_lossy(&scan_output.stderr);
     assert!(
-        stderr.contains("keyhog install") || stderr.contains("keyhog update"),
-        "stderr must guide user to run `keyhog install` or `keyhog update`; got:\n{stderr}"
+        stderr.contains("keyhog install"),
+        "stderr must guide user to run `keyhog install`; got:\n{stderr}"
     );
     assert!(
         stderr.contains("in-process compilation is forbidden")

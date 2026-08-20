@@ -336,7 +336,6 @@ fn acquire_metal_peer() -> Result<AcquiredGpuPeer, String> {
 
 #[cfg(not(all(feature = "gpu", target_os = "macos")))]
 fn acquire_metal_peer() -> Result<AcquiredGpuPeer, String> {
-    super::super::evidence::record_gpu_api_initialized(super::super::evidence::GpuApiKind::Metal);
     Err("native Metal peer is not compiled for this platform".to_string())
 }
 

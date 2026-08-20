@@ -17,14 +17,18 @@ fn init_git_repo(dir: &Path) {
         .output()
         .expect("git init");
     assert!(out.status.success(), "git init must succeed");
-    let _ = SysCommand::new("git")
+    let email = SysCommand::new("git")
         .args(["config", "user.email", "bench@test.local"])
         .current_dir(dir)
-        .output();
-    let _ = SysCommand::new("git")
+        .output()
+        .expect("git config user.email");
+    assert!(email.status.success(), "git config user.email must succeed");
+    let name = SysCommand::new("git")
         .args(["config", "user.name", "Bench Runner"])
         .current_dir(dir)
-        .output();
+        .output()
+        .expect("git config user.name");
+    assert!(name.status.success(), "git config user.name must succeed");
 }
 
 /// Create and stage `count` synthetic files into the Git index.
@@ -33,7 +37,7 @@ fn create_and_stage_files(repo: &Path, count: usize) {
         let rel_path = format!("src/pkg_{:03}/module_{:05}.rs", i / 100, i);
         let full_path = repo.join(&rel_path);
         if let Some(parent) = full_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            std::fs::create_dir_all(parent).expect("create parent dir");
         }
         std::fs::write(
             &full_path,
@@ -83,7 +87,7 @@ fn bench_hook_canonical_args_resolution(c: &mut Criterion) {
         b.iter(|| {
             let parsed = Cli::try_parse_from(black_box(&raw_tokens)).expect("parse canonical args");
             if let Some(Command::Scan(scan_args)) = parsed.command {
-                let _ = black_box(scan_args);
+                black_box(scan_args);
             } else {
                 panic!("expected Scan command");
             }
@@ -105,14 +109,14 @@ fn bench_hook_install_lifecycle(c: &mut Criterion) {
     group.bench_function("find_hooks_dir_for_repo", |b| {
         b.iter(|| {
             let hooks_dir = find_hooks_dir_for_repo(black_box(&repo_path)).expect("find hooks dir");
-            let _ = black_box(hooks_dir);
+            black_box(hooks_dir);
         });
     });
 
     group.bench_function("install_at_repo_fresh_or_update", |b| {
         b.iter(|| {
             let res = install_at_repo(black_box(&repo_path), false).expect("install at repo");
-            let _ = black_box(res);
+            black_box(res);
         });
     });
 
@@ -137,7 +141,7 @@ fn bench_hook_staged_acquisition_and_sources(c: &mut Criterion) {
                 b.iter(|| {
                     let manifest = StagedManifest::acquire(black_box(repo_path))
                         .expect("acquire staged manifest");
-                    let _ = black_box(manifest);
+                    black_box(manifest);
                 });
             },
         );
@@ -161,7 +165,7 @@ fn bench_hook_staged_acquisition_and_sources(c: &mut Criterion) {
                     let sources = API
                         .build_sources(black_box(&args), Vec::new(), None)
                         .expect("build sources");
-                    let _ = black_box(sources);
+                    black_box(sources);
                 });
             },
         );

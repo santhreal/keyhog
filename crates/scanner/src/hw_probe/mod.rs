@@ -19,6 +19,7 @@
 use std::sync::OnceLock;
 
 mod banner;
+mod host_class;
 pub(crate) mod platform;
 pub(crate) mod select;
 mod tier;
@@ -26,6 +27,7 @@ mod tier;
 pub(crate) mod thresholds;
 
 pub use banner::startup_banner;
+pub use host_class::HostClass;
 pub use select::{
     gpu_could_engage, parse_backend_str, select_backend, select_backend_verdict,
     BackendRoutingReason, BackendRoutingVerdict, BACKEND_OVERRIDE_VALUES,

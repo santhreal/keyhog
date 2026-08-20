@@ -915,7 +915,7 @@ where
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
-                    "matcher artifact writer produced {actual_len} bytes, expected {artifact_len}"
+                    "matcher artifact writer produced {actual_len} bytes, expected {expected_len}"
                 ),
             ));
         }
@@ -963,7 +963,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
     pack_generation: Option<&str>,
     runtime_identity: Option<&str>,
 ) -> Result<(CompiledScanner, MatcherArtifactCacheOutcome)> {
-    let (cache_dir, configured_reason) = configured_matcher_artifact_cache_state();
+    let cache_dir = configured_matcher_artifact_cache_dir();
     let Some(backend) = matcher_backend_for_gpu_policy(gpu_policy) else {
         return compile_without_matcher_artifact_cache(
             detectors,
@@ -977,7 +977,6 @@ pub fn compile_shared_with_matcher_artifact_cache(
     // same way the cache-enabled path does so enabling the cache cannot change
     // scanner assembly ordering.
     if cache_dir.is_none() {
-        let reason = configured_matcher_artifact_cache_disable_reason();
         return compile_without_matcher_artifact_cache(
             detectors,
             gpu_policy,
@@ -1035,13 +1034,11 @@ pub fn compile_shared_with_matcher_artifact_cache(
     };
 
     let Some(cache_dir) = cache_dir.as_ref() else {
-        let disable_reason = configured_matcher_artifact_cache_disable_reason();
         return compile_without_matcher_artifact_cache(
             sorted,
             gpu_policy,
             tuning_config,
-            // LAW10: absent disable reason implies default configured-off cache policy (recall-irrelevant caching).
-            configured_reason.unwrap_or(MatcherArtifactCacheDisableReason::ConfiguredOff),
+            configured_matcher_artifact_cache_disable_reason(),
         );
     };
     let path = cache_dir.join(identity.cache_filename());

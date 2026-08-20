@@ -1244,7 +1244,7 @@ impl AutorouteDecision {
         // whole generation, so the installer could not finish.
         let mut merged: Vec<&AutorouteCalibrationPoint> = self.calibration_points.iter().collect();
         merged.push(&point);
-        let (Some(expected_one_shot), Some(expected_daemon)) = (
+        let (Some(reconciled_one_shot), Some(reconciled_daemon)) = (
             resolve_route_across_points(&merged, false, None),
             resolve_route_across_points(&merged, true, None),
         ) else {
@@ -1257,9 +1257,9 @@ impl AutorouteDecision {
                 render_measured_route(measured_one_shot),
                 render_measured_route(measured_daemon),
             ));
-        }
-        let expected_one_shot = reconciled_one_shot.unwrap_or(expected_one_shot); // LAW10: checked above: is_none() returned Err; same value preserved; no runtime effect
-        let expected_daemon = reconciled_daemon.unwrap_or(expected_daemon); // LAW10: checked above: is_none() returned Err; same value preserved; no runtime effect
+        };
+        let expected_one_shot = reconciled_one_shot;
+        let expected_daemon = reconciled_daemon;
         for (runtime_label, persistent_runtime, expected_route) in [
             ("one-shot", false, expected_one_shot),
             ("daemon", true, expected_daemon),

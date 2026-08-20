@@ -23,6 +23,10 @@ pub(crate) use hs_mark_timing::{format_hs_mark_split, hs_mark_split_from_typed, 
 pub(crate) use hs_mark_timing::{hs_mark_dropped_span, hs_mark_scan_span};
 
 mod verification_stats;
+pub(crate) use verification_stats::{
+    anchor_collect_span, record_anchor_candidates, record_anchored_verify_candidates,
+    record_anchored_verify_matches, record_whole_chunk_matches, record_whole_chunk_pattern,
+};
 pub use verification_stats::{
     format_phase2_verification_profile, phase2_verification_profile_from_typed,
     Phase2VerificationProfile,

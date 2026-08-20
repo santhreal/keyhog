@@ -672,9 +672,7 @@ fn resolve_execution_pack_binding(
     if !installed.exists() {
         return Ok(None);
     }
-    Ok(
-        crate::execution_pack_install::load_authenticated_binding(&installed, signing_key).ok(),
-    )
+    Ok(crate::execution_pack_install::load_authenticated_binding(&installed, signing_key).ok())
 }
 
 pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {

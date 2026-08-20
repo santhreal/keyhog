@@ -54,7 +54,7 @@ fn bench_cli_arg_parsing(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(*name), argv, |b, args| {
             b.iter(|| {
                 let parsed = Cli::try_parse_from(black_box(*args));
-                let _ = black_box(parsed);
+                black_box(parsed.expect("parse cli argv"));
             });
         });
     }
@@ -88,7 +88,7 @@ coalesce_window = "100ms"
     group.bench_function("parse_config_file_from_str", |b| {
         b.iter(|| {
             let res = API.parse_config_file_from_str(black_box(sample_config));
-            let _ = black_box(res);
+            black_box(res.expect("parse sample config"));
         });
     });
 
@@ -97,7 +97,7 @@ coalesce_window = "100ms"
         std::fs::create_dir_all(&scan_root).expect("create nested");
         b.iter(|| {
             let found = API.find_config_file(Some(black_box(&scan_root)));
-            let _ = black_box(found);
+            black_box(found);
         });
     });
 
@@ -121,14 +121,14 @@ fn bench_cli_banner_formatting(c: &mut Criterion) {
     group.bench_function("write_banner_colored", |b| {
         b.iter(|| {
             let out = API.write_banner(true, black_box(150));
-            let _ = black_box(out);
+            black_box(out.expect("write colored banner"));
         });
     });
 
     group.bench_function("write_banner_plain", |b| {
         b.iter(|| {
             let out = API.write_banner(false, black_box(150));
-            let _ = black_box(out);
+            black_box(out.expect("write plain banner"));
         });
     });
 

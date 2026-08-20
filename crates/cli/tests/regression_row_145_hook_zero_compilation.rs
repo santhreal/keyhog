@@ -14,8 +14,8 @@
 //! Does not catch hardware GPU adapter faults during kernel execution or hardware memory bit flips.
 //! Does not catch OS kernel-level process SIGKILL termination.
 
-use keyhog::execution_pack_install::{InstalledArtifactClass, InstalledArtifactRegistry};
 use keyhog::exit_codes::{EXIT_CREDENTIALS_FOUND, EXIT_SUCCESS, EXIT_USER_ERROR};
+use keyhog::testing::execution_pack_install::{InstalledArtifactClass, InstalledArtifactRegistry};
 use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;

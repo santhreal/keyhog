@@ -490,6 +490,11 @@ fn profiler_cache_transitions(
         Some(super::ScannerMaterialization::Compiled { matcher_outcome }) => Some(matcher_outcome),
         _ => None,
     };
+    let hyperscan_cache_dir = orchestrator
+        .effective_config
+        .hyperscan_cache_dir
+        .clone()
+        .or_else(|| dirs::cache_dir().map(|base| base.join("keyhog")));
     vec![
         super::workflow_state::detector_transition(),
         super::workflow_state::merkle_load_transition(merkle_status),
@@ -501,18 +506,14 @@ fn profiler_cache_transitions(
         ),
         super::workflow_state::verifier_transition(orchestrator.effective_config.report.verify, 0),
         super::workflow_state::hyperscan_shard_transition(
-            orchestrator
-                .effective_config
-                .hyperscan_cache_dir
-                .as_deref()
-                .or_else(|| dirs::cache_dir().map(|base| base.join("keyhog")).as_deref()),
-            keyhog_profile::cache_hits(keyhog_profile::CacheId::HyperscanShard) as usize,
-            keyhog_profile::cache_misses(keyhog_profile::CacheId::HyperscanShard) as usize,
+            hyperscan_cache_dir.as_deref(),
+            keyhog_profile::cache_hits(keyhog_profile::CacheId::HyperscanShard),
+            keyhog_profile::cache_misses(keyhog_profile::CacheId::HyperscanShard),
         ),
         super::workflow_state::matcher_artifact_transition(matcher_outcome),
         super::workflow_state::gpu_program_transition(
-            keyhog_profile::cache_hits(keyhog_profile::CacheId::GpuProgram) as usize,
-            keyhog_profile::cache_misses(keyhog_profile::CacheId::GpuProgram) as usize,
+            keyhog_profile::cache_hits(keyhog_profile::CacheId::GpuProgram),
+            keyhog_profile::cache_misses(keyhog_profile::CacheId::GpuProgram),
         ),
         super::workflow_state::lock_file_transition(),
         super::workflow_state::daemon_transition(),

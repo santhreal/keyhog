@@ -591,7 +591,7 @@ impl CompiledScanner {
                 break;
             }
             let (entry, _) = &self.phase2_patterns[index];
-            keyhog_profile::add_counter(keyhog_profile::CounterId::Phase2WholeChunkPatterns, 1);
+            record_whole_chunk_pattern();
             let t0 = if prof { Some(Instant::now()) } else { None };
             let m_before = scan_state.matches.len();
             self.extract_matches_inner(
@@ -603,13 +603,7 @@ impl CompiledScanner {
                 None,
                 deadline,
             );
-            let m_after = scan_state.matches.len();
-            if m_after > m_before {
-                keyhog_profile::add_counter(
-                    keyhog_profile::CounterId::Phase2WholeChunkMatches,
-                    (m_after - m_before) as u64,
-                );
-            }
+            record_whole_chunk_matches(m_before, scan_state.matches.len());
             if let Some(t0) = t0 {
                 phase2_pattern_prof_record(
                     self.phase2_patterns.len(),

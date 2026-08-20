@@ -8,7 +8,6 @@ use crate::daemon::client;
 use crate::daemon::protocol::{response_kind, Request, Response};
 use crate::exit_codes;
 use crate::style;
-use anyhow::Context;
 use std::process::ExitCode;
 
 use crate::daemon::server::default_socket_path;
@@ -756,7 +755,7 @@ async fn run_status(
         Ok(conn) => run_status_online(conn, root, &format).await,
         Err(err) => {
             if is_socket_absent(&socket) {
-                run_status_offline(root, &format)
+                run_status_offline(root, &format, &socket)
             } else {
                 anyhow::bail!(
                     "guard status: cannot connect to daemon at {}: {err}",
@@ -888,7 +887,7 @@ async fn run_status_online(
                 }
 
                 let mut views = Vec::with_capacity(roots.len());
-                let mut had_retrieval_failure = false;
+                let mut unqueried = 0usize;
                 for entry in &roots {
                     let req = Request::GuardStatus {
                         root: entry.root.clone(),
@@ -965,10 +964,17 @@ async fn run_status_online(
                             repair_command,
                             recent_transitions,
                         });
+                    } else {
+                        unqueried += 1;
                     }
                 }
 
-                let overall_exit = aggregate_guard_exit_codes(&views);
+                let mut overall_exit = aggregate_guard_exit_codes(&views);
+                if unqueried > 0 && overall_exit == exit_codes::EXIT_SUCCESS {
+                    // A root the daemon would not report on is unknown state,
+                    // not a clean root.
+                    overall_exit = exit_codes::EXIT_SYSTEM_ERROR;
+                }
 
                 if format == "json" {
                     let root_jsons: Vec<_> = views.iter().map(|v| v.to_json()).collect();

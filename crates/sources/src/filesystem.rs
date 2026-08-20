@@ -827,23 +827,12 @@ impl FilesystemSource {
         self.respect_default_excludes = respect;
         self
     }
-    /// Configure streaming window overlap size.
-    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
-        assert!(self.window_size > overlap, "window must exceed overlap");
-        self.window_overlap = overlap;
-        self
-    }
 
-    /// Override the windowed-scan overlap in bytes.
-    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
-        assert!(self.window_size > overlap, "window must exceed overlap");
-        self.window_overlap = overlap;
-        self
-    }
-
-    /// Configure streaming window overlap in bytes.
+    /// Override the streaming window overlap in bytes. The window size must
+    /// strictly exceed the overlap.
     #[must_use]
     pub fn with_window_overlap(mut self, overlap: usize) -> Self {
+        assert!(self.window_size > overlap, "window must exceed overlap");
         self.window_overlap = overlap;
         self
     }
@@ -856,79 +845,6 @@ impl FilesystemSource {
     pub fn with_window_config(mut self, window_size: usize, overlap: usize) -> Self {
         assert!(window_size > overlap, "window must exceed overlap");
         self.window_size = window_size;
-        self.window_overlap = overlap;
-        self
-    }
-    /// Override the window overlap size in bytes.
-    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
-        self.window_overlap = overlap;
-        self
-    }
-
-    /// Override the streaming window overlap in bytes.
-    #[must_use]
-    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
-        assert!(self.window_size > overlap, "window must exceed overlap");
-        self.window_overlap = overlap;
-        self
-    }
-
-    /// Override the streaming window overlap in bytes.
-    #[must_use]
-    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
-        assert!(
-            self.window_size > overlap,
-            "window size must exceed overlap"
-        );
-        self.window_overlap = overlap;
-        self
-    }
-
-    /// Override the window overlap size.
-    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
-        assert!(self.window_size > overlap, "window must exceed overlap");
-        self.window_overlap = overlap;
-        self
-    }
-
-    /// Override the streaming window overlap size.
-    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
-        assert!(
-            self.window_size > overlap,
-            "window size must exceed overlap"
-        );
-        self.window_overlap = overlap;
-        self
-    }
-
-    /// Override the window overlap size.
-    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
-        assert!(self.window_size > overlap, "window must exceed overlap");
-        self.window_overlap = overlap;
-        self
-    }
-
-    /// Override the streaming window overlap size in bytes.
-    #[must_use]
-    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
-        assert!(self.window_size > overlap, "window must exceed overlap");
-        self.window_overlap = overlap;
-        self
-    }
-
-    /// Override the windowed-scan overlap parameter.
-    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
-        assert!(
-            self.window_size > overlap,
-            "window size must exceed overlap"
-        );
-        self.window_overlap = overlap;
-        self
-    }
-
-    /// Override the streaming window overlap size in bytes.
-    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
-        assert!(self.window_size > overlap, "window must exceed overlap");
         self.window_overlap = overlap;
         self
     }

@@ -341,47 +341,9 @@ fn row_147_guard_status_protocol_and_state_transitions() {
     {
         use keyhog::testing::daemon::fs_probe::probe_filesystem_authority;
         use keyhog::testing::daemon::guard_runtime::GuardRuntime;
-        use keyhog::testing::daemon::protocol::{response_kind, Request, Response};
-
-        let status_req = Request::GuardStatus {
-            root: "/srv/repo".to_string(),
-        };
-        use keyhog::testing::daemon::GuardRuntime;
-
-        let status_resp = Response::GuardStatusResult {
-            root: "/srv/repo".to_string(),
-            mode: "repo".to_string(),
-            state: "current".to_string(),
-            filesystem_type: "ext4".to_string(),
-            filesystem_authoritative: true,
-            filesystem_unauthoritative_reason: None,
-            scrub_interval_secs: 60,
-            terminal_sequence: 1,
-            accepted_event_sequence: 1,
-            completed_event_sequence: 1,
-            pending_events: 0,
-            files_scanned: 100,
-            bytes_scanned: 1024,
-            attestation_hits: 50,
-            attestation_misses: 50,
-            findings_count: 0,
-            coverage_gaps: 0,
-            initial_reconciliation_time: Some(1787140800),
-            last_reconciliation_time: Some(1787140800),
-            scanner_residency: "resident".to_string(),
-            watcher_backend: "inotify".to_string(),
-            watcher_latency_tier: "instant".to_string(),
-            watcher_poll_interval_ms: None,
-            backend_route_label: "cpu".to_string(),
-            build_identity_short: "abc123456789".to_string(),
-            detector_digest_short: "def123456789".to_string(),
-            suppression_digest_short: String::new(),
-            config_digest_short: "789123456789".to_string(),
-            autoroute_evidence_status: "valid".to_string(),
-            store_schema_version: 1,
-            store_path: "/srv/repo/.keyhog-guard.db".to_string(),
-            repair_command: "keyhog guard reconcile /srv/repo".to_string(),
-            recent_transitions: Vec::new(),
+        use keyhog::testing::daemon::protocol::{
+            deserialize_status_response, response_kind_classification,
+            sample_guard_status_result_frame, serialize_status_response,
         };
 
         let status_resp_frame = sample_guard_status_result_frame("/srv/repo");

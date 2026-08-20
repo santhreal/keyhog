@@ -38,12 +38,10 @@ fn matcher_cache_path_config_overrides_and_disable() {
     }
 
     let explicit = home.join(".cache/keyhog/matcher-artifacts");
-    let (explicit_dir, explicit_reason) =
-        resolve_matcher_cache_path_with_default(Some(explicit.to_str().unwrap()), None)
-            .expect("explicit")
-            .path(),
-        Some(explicit)
-    );
+    let resolved = resolve_matcher_cache_path_with_default(Some(explicit.to_str().unwrap()), None)
+        .expect("explicit");
+    assert_eq!(resolved.path(), Some(explicit));
+    assert_eq!(resolved.disable_reason(), None);
 }
 
 #[test]

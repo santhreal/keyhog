@@ -302,7 +302,7 @@ fn run_fix(args: &DetectorArgs) -> Result<ExitCode> {
                 "failed to invalidate stale execution packs after detector fix"
             );
         } else {
-            eprintln!("info: invalidated installed execution packs; run `keyhog install` or `keyhog update` to regenerate packs with updated detector definitions");
+            eprintln!("info: invalidated installed execution packs; run `keyhog install` to regenerate packs with updated detector definitions");
         }
     }
 

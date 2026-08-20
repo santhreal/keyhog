@@ -84,6 +84,23 @@ impl SkipDirPolicy {
             .map_err(|error| anyhow::anyhow!("invalid path skip-dir policy: {error}"))
     }
 
+    /// Bundled policy without user overrides, for surfaces that never read a
+    /// user config (disabled and null watchers). Bundled data is validated by
+    /// the crate's own tests, so a parse failure here is a build defect.
+    pub(crate) fn bundled() -> Self {
+        static BUNDLED: std::sync::LazyLock<SkipDirPolicy> = std::sync::LazyLock::new(|| {
+            let section = match parse_section(BUNDLED_SKIP_DIRS) {
+                Ok(section) => section,
+                Err(error) => panic!("data/path_skip_dirs.toml is invalid: {error}"),
+            };
+            match SkipDirPolicy::from_section(section) {
+                Ok(policy) => policy,
+                Err(error) => panic!("data/path_skip_dirs.toml is invalid: {error}"),
+            }
+        });
+        BUNDLED.clone()
+    }
+
     pub(crate) fn is_watch_component(&self, component: &str) -> bool {
         contains_component(&self.watch, component)
     }

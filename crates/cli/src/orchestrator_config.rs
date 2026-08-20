@@ -27,8 +27,8 @@ pub(crate) use policy::{ResolvedAllowlistConfig, ResolvedReportPolicy, ResolvedV
 pub(crate) use runtime::MAX_COMMITS_DEFAULT;
 pub(crate) use runtime::{
     backend_override_cli_value, backend_override_label, configure_hyperscan_cache_dir,
-    configure_matcher_artifact_cache_dir_with_reason, configure_persistent_daemon_threads,
-    configure_threads, fused_batch_calibration_counts, fused_cpu_wave_width, fused_depth_default,
+    configure_matcher_artifact_cache_dir, configure_persistent_daemon_threads, configure_threads,
+    fused_batch_calibration_counts, fused_cpu_wave_width, fused_depth_default,
     gpu_runtime_policy_for_backend_override, gpu_runtime_policy_from_args, keyhog_worker_threads,
     parse_backend_override, ScanRuntimeInput, FUSED_BATCH_BYTES, FUSED_BATCH_DEFAULT,
     MAX_THREADS_CAP, ML_THRESHOLD_DEFAULT, VERIFY_MAX_CONCURRENT_DEFAULT,
@@ -211,15 +211,12 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
             keyhog_scanner::MatcherArtifactCacheDisableReason::LockdownActive,
         )
     } else {
-        match resolved_matcher_cache {
-            crate::matcher_cache_path::ResolvedMatcherCacheConfig::Enabled(path) => (
-                Some(path),
-                keyhog_scanner::MatcherArtifactCacheDisableReason::ConfiguredOff,
-            ),
-            crate::matcher_cache_path::ResolvedMatcherCacheConfig::Disabled(reason) => {
-                (None, reason)
-            }
-        }
+        (
+            resolved_matcher_cache.path(),
+            resolved_matcher_cache
+                .disable_reason()
+                .unwrap_or(keyhog_scanner::MatcherArtifactCacheDisableReason::ConfiguredOff),
+        )
     };
 
     configure_matcher_artifact_cache_dir(matcher_cache_path.clone(), matcher_cache_disable_reason)?;

@@ -186,7 +186,12 @@ impl WatchedRoot {
     }
 
     /// Check whether a path should be excluded/ignored according to scan path semantics.
-    fn is_path_excluded(&self, root: &std::path::Path, path: &std::path::Path) -> bool {
+    fn is_path_excluded(
+        &self,
+        root: &std::path::Path,
+        path: &std::path::Path,
+        skip_dirs: &crate::skip_dirs::SkipDirPolicy,
+    ) -> bool {
         let Ok(rel_path) = path.strip_prefix(root) else {
             return false;
         };
@@ -245,9 +250,7 @@ impl WatchedRoot {
     #[allow(dead_code)]
     fn maybe_reload_ignore_matcher(&self, root: &std::path::Path, path: &std::path::Path) {
         if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-            if file_name == ".keyhogignore"
-                || file_name == ".gitignore"
-            {
+            if file_name == ".keyhogignore" || file_name == ".gitignore" {
                 if file_name == ".keyhog.toml" {
                     let (new_ignore_paths, _) = resolve_root_exclusions(root);
                     *self.ignore_paths.write() = new_ignore_paths;
@@ -329,8 +332,6 @@ pub struct GuardWatcher {
     disconnection_reason: parking_lot::Mutex<Option<String>>,
     /// Directory skip policy for guard event filtering.
     skip_dirs: crate::skip_dirs::SkipDirPolicy,
-    /// Retained sender to prevent premature channel disconnection in null/disabled modes.
-    _hold_tx: Option<mpsc::Sender<notify::Result<notify::Event>>>,
 }
 
 impl GuardWatcher {
@@ -353,8 +354,7 @@ impl GuardWatcher {
             config,
             disabled: false,
             disconnection_reason: parking_lot::Mutex::new(None),
-            skip_dirs,
-            _hold_tx: None,
+            skip_dirs: crate::skip_dirs::SkipDirPolicy::load().map_err(|e| e.to_string())?,
         })
     }
 
@@ -382,8 +382,7 @@ impl GuardWatcher {
             config,
             disabled: false,
             disconnection_reason: parking_lot::Mutex::new(None),
-            skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
-            _hold_tx: None,
+            skip_dirs: crate::skip_dirs::SkipDirPolicy::load().map_err(|e| e.to_string())?,
         })
     }
 
@@ -395,13 +394,12 @@ impl GuardWatcher {
             backend_kind: GuardWatcherBackendKind::NullWatcher,
             poll_interval_ms: None,
             rx,
-            _null_tx: Some(tx),
+            _null_tx: None,
             roots: HashMap::new(),
             config,
             disabled: true,
             disconnection_reason: parking_lot::Mutex::new(None),
-            skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
-            _hold_tx: None,
+            skip_dirs: crate::skip_dirs::SkipDirPolicy::bundled(),
         })
     }
 
@@ -420,8 +418,7 @@ impl GuardWatcher {
             config: GuardReconciliationConfig::default(),
             disabled: true,
             disconnection_reason: parking_lot::Mutex::new(None),
-            skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
-            _hold_tx: Some(tx),
+            skip_dirs: crate::skip_dirs::SkipDirPolicy::bundled(),
         }
     }
 
@@ -441,8 +438,7 @@ impl GuardWatcher {
             config,
             disabled: false,
             disconnection_reason: parking_lot::Mutex::new(None),
-            skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
-            _hold_tx: None,
+            skip_dirs: crate::skip_dirs::SkipDirPolicy::bundled(),
         }
     }
     /// Create a guard watcher connected to a custom event channel.
@@ -462,8 +458,7 @@ impl GuardWatcher {
                 config,
                 disabled: false,
                 disconnection_reason: parking_lot::Mutex::new(None),
-                skip_dirs: crate::skip_dirs::SkipDirPolicy::default(),
-                _hold_tx: None,
+                skip_dirs: crate::skip_dirs::SkipDirPolicy::bundled(),
             },
             tx,
         )
@@ -548,7 +543,7 @@ impl GuardWatcher {
     pub fn is_path_excluded(&self, root: &std::path::Path, path: &std::path::Path) -> bool {
         self.roots
             .get(root)
-            .is_some_and(|w| w.is_path_excluded(root, path))
+            .is_some_and(|w| w.is_path_excluded(root, path, &self.skip_dirs))
     }
 
     /// Explicit ignore paths configured for a watched root, if watched.
@@ -610,7 +605,7 @@ impl GuardWatcher {
                             for root in roots {
                                 if let Some(watched) = self.roots.get(&root) {
                                     watched.maybe_reload_ignore_matcher(&root, path);
-                                    if watched.is_path_excluded(&root, path) {
+                                    if watched.is_path_excluded(&root, path, &self.skip_dirs) {
                                         continue;
                                     }
                                     let guard_event =
@@ -658,8 +653,6 @@ impl GuardWatcher {
                 .or_default()
                 .push(GuardEvent::ReconcileSubtree(root));
         }
-        let total_buffered: usize = self.roots.values().map(|w| w.buffer.lock().len()).sum();
-        let total_overflow = total_buffered > self.config.max_pending_events_total;
         // Drain each root's buffer and check for overflow. If overflowed,
         // emit a ReconcileSubtree event and reset the overflow flag so
         // the buffer can accept new events after reconciliation.

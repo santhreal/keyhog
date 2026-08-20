@@ -10,10 +10,10 @@
 //! What it does not catch / boundary limits:
 //! Does not catch hardware-level GPU driver execution failures at runtime (handled by hardware fault injection).
 //! Does not catch filesystem corruption occurring mid-read after initial authentication (handled by hash checks).
-use keyhog::execution_pack_install::{
+use keyhog::exit_codes::EXIT_SUCCESS;
+use keyhog::testing::execution_pack_install::{
     ArtifactIdentityInput, InstalledArtifactClass, InstalledArtifactRegistry,
 };
-use keyhog::exit_codes::EXIT_SUCCESS;
 use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;

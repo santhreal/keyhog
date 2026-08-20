@@ -302,11 +302,6 @@ pub fn set_matcher_artifact_cache_state(
     matcher_artifact_cache::set_matcher_artifact_cache_state(path, disable_reason);
 }
 
-/// Currently configured MatcherArtifact cache disable reason.
-pub fn configured_matcher_artifact_cache_disable_reason() -> MatcherArtifactCacheDisableReason {
-    matcher_artifact_cache::configured_matcher_artifact_cache_disable_reason()
-}
-
 /// Validate an explicit MatcherArtifact cache directory without compiling.
 pub fn validate_matcher_artifact_cache_dir(
     path: &std::path::Path,
@@ -317,7 +312,7 @@ pub use cache_eviction::{
     collect_stale_lock_files, evict_cache_dir_with_policy, reconcile_all_cache_kinds,
     EvictionReport,
 };
-pub use matcher_artifact_cache::{MATCHER_ARTIFACT_FILE_BYTES, MATCHER_ARTIFACT_MAX_ENTRIES};
+pub use matcher_artifact_cache::MATCHER_ARTIFACT_MAX_ENTRIES;
 
 /// Validate a MatcherArtifact cache directory with optional auto-tightening for default locations.
 pub fn validate_and_tighten_matcher_artifact_cache_dir(

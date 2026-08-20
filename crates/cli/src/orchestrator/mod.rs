@@ -1377,7 +1377,7 @@ impl ScanOrchestrator {
         args.threads = Some(worker_threads);
         effective_config.threads = Some(worker_threads);
 
-        let (requested_detector_mode, detectors_path, custom_corpus_requested) = {
+        let (requested_detector_mode, detectors_path) = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorValidate);
             let requested_detector_mode = args.detectors_mode.map(Into::into);
             validate_detector_mode_selection(args.detectors_cli_explicit, requested_detector_mode)?;
@@ -1390,11 +1390,7 @@ impl ScanOrchestrator {
             } else {
                 args.detectors.clone()
             };
-            (
-                requested_detector_mode,
-                detectors_path,
-                custom_corpus_requested,
-            )
+            (requested_detector_mode, detectors_path)
         };
         let resolved_config_digest =
             crate::orchestrator_config::matcher_resolved_config_digest(&effective_config);
@@ -1549,8 +1545,7 @@ impl ScanOrchestrator {
         // their matches during postprocess filtering when using precompiled execution packs.
         if !disabled_detectors.is_empty() {
             let before = detectors.len();
-            let dropped =
-                filter_disabled_detectors(&mut detectors, &mut disabled_detectors).len();
+            let dropped = filter_disabled_detectors(&mut detectors, &mut disabled_detectors).len();
             if dropped > 0 {
                 if detectors.is_empty() {
                     let mut disabled_ids: Vec<&str> =

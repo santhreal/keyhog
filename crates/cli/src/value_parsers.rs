@@ -356,18 +356,25 @@ pub(crate) fn parse_decode_size_limit(s: &str) -> Result<usize, String> {
     Ok(size)
 }
 
-/// `--window-overlap SIZE`: must be between 1KB and 16MB.
+/// `--window-overlap SIZE` / `[scan].window_overlap`: at least 1KB and strictly
+/// less than the 1MB streaming window size, which the slicer asserts.
 pub(crate) fn parse_window_overlap(s: &str) -> Result<usize, String> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return Err(
-            "window overlap cannot be empty. Expected a byte size between 1KB and 16MB; example: 128KB".to_string()
+            "window overlap cannot be empty. Minimum window overlap is 1KB; example: 128KB"
+                .to_string(),
         );
     }
     let size = parse_byte_size(trimmed)?;
-    if !(1024..=16 * 1024 * 1024).contains(&size) {
+    if size < 1024 {
         return Err(format!(
-            "window overlap '{trimmed}' must be between 1KB and 16MB"
+            "window overlap '{trimmed}' is too small. Minimum window overlap is 1KB; example: 128KB"
+        ));
+    }
+    if size >= keyhog_core::DEFAULT_WINDOW_SIZE_BYTES {
+        return Err(format!(
+            "window overlap '{trimmed}' must be strictly less than the 1MB window size; example: 128KB"
         ));
     }
     Ok(size)
@@ -409,19 +416,6 @@ pub(crate) fn parse_output_format(s: &str) -> Option<crate::args::OutputFormat> 
 /// Parse a dedup-scope string. Shared by the flat `dedup` field and `[scan]`.
 pub(crate) fn parse_dedup_scope(s: &str) -> Option<crate::args::CliDedupScope> {
     parse_value_enum(s)
-}
-
-/// `--window-overlap SIZE` / `[scan].window_overlap`: streaming window overlap between 1KB and 16MB.
-pub(crate) fn parse_window_overlap(s: &str) -> Result<usize, String> {
-    let bytes = parse_byte_size(s)?;
-    if (1024..=16 * 1024 * 1024).contains(&bytes) {
-        Ok(bytes)
-    } else {
-        Err(out_of_range(
-            "window_overlap must be between 1KB and 16MB",
-            "128KB",
-        ))
-    }
 }
 
 #[cfg(test)]

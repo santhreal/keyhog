@@ -1076,7 +1076,7 @@ impl CompileSurfaceId {
 pub enum CompilePhase {
     /// Compilation during installer generation (`keyhog install` or compile-execution-packs).
     Install = 0,
-    /// Compilation during candidate update generation (`keyhog update`).
+    /// Compilation while generating packs for a candidate binary.
     Update,
     /// In-process compilation during scan execution.
     Scan,

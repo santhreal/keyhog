@@ -65,7 +65,7 @@ pub(crate) fn run(args: CalibrateArgs) -> Result<()> {
                 "failed to invalidate stale artifacts after calibration update"
             );
         } else {
-            eprintln!("info: invalidated installed execution packs; run `keyhog install` or `keyhog update` to regenerate packs with updated calibration");
+            eprintln!("info: invalidated installed execution packs; run `keyhog install` to regenerate packs with updated calibration");
         }
     }
 

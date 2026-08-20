@@ -66,3 +66,41 @@ pub fn format_phase2_verification_profile(p: &Phase2VerificationProfile) -> Stri
         p.whole_chunk_matches,
     )
 }
+
+/// Count one candidate-collection call and time it until the span drops.
+pub(crate) fn anchor_collect_span() -> keyhog_profile::CounterSpan {
+    keyhog_profile::add_counter(CounterId::Phase2AnchorCollectCalls, 1);
+    keyhog_profile::counter_span(CounterId::Phase2AnchorCollectNs)
+}
+
+/// Record the candidate positions produced by one collection call.
+pub(crate) fn record_anchor_candidates(count: usize) {
+    keyhog_profile::add_counter(CounterId::Phase2AlwaysAnchorCandidateCount, count as u64);
+}
+
+/// Record the candidates handed to anchored verification.
+pub(crate) fn record_anchored_verify_candidates(count: usize) {
+    keyhog_profile::add_counter(CounterId::Phase2AnchoredVerifyCandidates, count as u64);
+}
+
+/// Record matches emitted by anchored verification of one pattern group.
+pub(crate) fn record_anchored_verify_matches(before: usize, after: usize) {
+    if after > before {
+        keyhog_profile::add_counter(
+            CounterId::Phase2AnchoredVerifyMatches,
+            (after - before) as u64,
+        );
+    }
+}
+
+/// Record one whole-chunk pattern scan.
+pub(crate) fn record_whole_chunk_pattern() {
+    keyhog_profile::add_counter(CounterId::Phase2WholeChunkPatterns, 1);
+}
+
+/// Record matches emitted by one whole-chunk pattern scan.
+pub(crate) fn record_whole_chunk_matches(before: usize, after: usize) {
+    if after > before {
+        keyhog_profile::add_counter(CounterId::Phase2WholeChunkMatches, (after - before) as u64);
+    }
+}

@@ -6,10 +6,10 @@
 //! In-process compilation is permitted ONLY behind `--developer-compile-embedded-detectors`, which is hidden
 //! from help and self-identifying in results and profile artifacts.
 
-use keyhog::execution_pack_install::{
+use keyhog::exit_codes::EXIT_USER_ERROR;
+use keyhog::testing::execution_pack_install::{
     InstalledArtifactClass, PERMITTED_DETECTOR_COMPILATION_ENTRY_POINTS,
 };
-use keyhog::exit_codes::EXIT_USER_ERROR;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};

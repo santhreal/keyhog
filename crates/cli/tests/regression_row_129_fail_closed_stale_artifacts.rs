@@ -3,7 +3,7 @@
 //! WHY: Prepared execution-pack artifacts must carry identity inputs (detector corpus digest,
 //! binary digest, target platform, feature digest, and manifest version). Any identity mismatch or
 //! stale artifact MUST fail closed with EXIT_USER_ERROR (2) naming the mismatched input and the exact
-//! repair command (`keyhog install` / `keyhog update`), without falling back to in-process compilation
+//! repair command (`keyhog install`), without falling back to in-process compilation
 //! or serving stale artifacts.
 //! Running the repair command must successfully restore zero-compilation scan execution.
 //!
@@ -14,8 +14,8 @@
 //! What it does not catch:
 //! Hardware faults during memory bus reads or OS kernel thread scheduler panics.
 
-use keyhog::execution_pack_install::{ArtifactIdentityInput, InstalledArtifactClass};
 use keyhog::exit_codes::{EXIT_SUCCESS, EXIT_USER_ERROR};
+use keyhog::testing::execution_pack_install::{ArtifactIdentityInput, InstalledArtifactClass};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -154,8 +154,8 @@ fn runtime_derived_identity_inputs_fail_closed_on_staleness_and_repair_restores_
         );
 
         assert!(
-            stderr.contains("keyhog install") || stderr.contains("keyhog update"),
-            "stderr must instruct operator to run repair command `keyhog install` or `keyhog update`; got:\n{stderr}"
+            stderr.contains("keyhog install"),
+            "stderr must instruct operator to run `keyhog install`; got:\n{stderr}"
         );
     }
 
@@ -292,8 +292,7 @@ fn unsupported_manifest_version_fails_closed() {
         "unsupported manifest version must fail closed with exit code 2; got {exit_code}\nstderr={stderr}"
     );
     assert!(
-        stderr.contains("version")
-            && (stderr.contains("keyhog install") || stderr.contains("keyhog update")),
+        stderr.contains("version") && stderr.contains("keyhog install"),
         "stderr must name version mismatch and repair command; got:\n{stderr}"
     );
 }

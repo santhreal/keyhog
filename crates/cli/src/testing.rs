@@ -284,10 +284,7 @@ pub trait CliTestApi {
     #[cfg(unix)]
     fn all_daemon_request_kinds(&self) -> &'static [&'static str];
     #[cfg(unix)]
-    fn sample_daemon_request_for_kind(
-        &self,
-        kind: &str,
-    ) -> Option<crate::daemon::protocol::Request>;
+    fn sample_daemon_request_json_for_kind(&self, kind: &str) -> Option<String>;
     #[cfg(unix)]
     fn spawn_daemon_for_test(
         &self,
@@ -806,11 +803,10 @@ impl CliTestApi for TestApi {
         crate::daemon::protocol::ALL_REQUEST_KINDS
     }
     #[cfg(unix)]
-    fn sample_daemon_request_for_kind(
-        &self,
-        kind: &str,
-    ) -> Option<crate::daemon::protocol::Request> {
-        crate::daemon::protocol::sample_request_for_kind(kind)
+    fn sample_daemon_request_json_for_kind(&self, kind: &str) -> Option<String> {
+        crate::daemon::protocol::sample_request_for_kind(kind).map(|request| {
+            serde_json::to_string(&request).expect("serialize sample daemon request")
+        })
     }
     #[cfg(unix)]
     fn spawn_daemon_for_test(
@@ -1742,6 +1738,28 @@ pub mod daemon {
     pub mod protocol {
         use serde::{Deserialize, Serialize};
 
+        /// Round-trip a `guard feed` request through the wire codec and return
+        /// the decoded root and limit.
+        pub fn guard_feed_request_round_trip(
+            root: Option<&str>,
+            limit: Option<usize>,
+        ) -> (Option<String>, Option<usize>) {
+            let request = crate::daemon::protocol::Request::GuardFeed {
+                root: root.map(str::to_string),
+                limit,
+            };
+            let serialized = serde_json::to_string(&request).expect("serialize guard feed request");
+            let decoded: crate::daemon::protocol::Request =
+                serde_json::from_str(&serialized).expect("deserialize guard feed request");
+            match decoded {
+                crate::daemon::protocol::Request::GuardFeed { root, limit } => (root, limit),
+                other => panic!(
+                    "expected GuardFeed, got {}",
+                    crate::daemon::protocol::request_kind(&other)
+                ),
+            }
+        }
+
         /// Sample guard status request payload for framing benchmarks.
         #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
         pub struct GuardStatusRequestFrame {
@@ -1852,12 +1870,17 @@ pub mod daemon {
             }
         }
 
-        /// Serialize a guard status response frame to JSON bytes.
-        pub fn serialize_status_response(frame: &GuardStatusResultFrame) -> Vec<u8> {
-            let resp = crate::daemon::protocol::Response::GuardStatusResult {
+        /// Build the wire response for a sample frame. Wire fields the bench
+        /// frame does not model are fixed representative values.
+        fn status_response(frame: &GuardStatusResultFrame) -> crate::daemon::protocol::Response {
+            crate::daemon::protocol::Response::GuardStatusResult {
                 root: frame.root.clone(),
                 mode: frame.mode.clone(),
                 state: frame.state.clone(),
+                filesystem_type: "ext4".to_string(),
+                filesystem_authoritative: true,
+                filesystem_unauthoritative_reason: None,
+                scrub_interval_secs: 3600,
                 terminal_sequence: frame.terminal_sequence,
                 accepted_event_sequence: frame.accepted_event_sequence,
                 completed_event_sequence: frame.completed_event_sequence,
@@ -1871,6 +1894,9 @@ pub mod daemon {
                 initial_reconciliation_time: frame.initial_reconciliation_time,
                 last_reconciliation_time: frame.last_reconciliation_time,
                 scanner_residency: frame.scanner_residency.clone(),
+                watcher_backend: "inotify".to_string(),
+                watcher_latency_tier: "native".to_string(),
+                watcher_poll_interval_ms: None,
                 backend_route_label: frame.backend_route_label.clone(),
                 build_identity_short: frame.build_identity_short.clone(),
                 detector_digest_short: frame.detector_digest_short.clone(),
@@ -1880,8 +1906,13 @@ pub mod daemon {
                 store_schema_version: frame.store_schema_version,
                 store_path: frame.store_path.clone(),
                 repair_command: frame.repair_command.clone(),
-            };
-            serde_json::to_vec(&resp).expect("serialize guard status response")
+                recent_transitions: Vec::new(),
+            }
+        }
+
+        /// Serialize a guard status response frame to JSON bytes.
+        pub fn serialize_status_response(frame: &GuardStatusResultFrame) -> Vec<u8> {
+            serde_json::to_vec(&status_response(frame)).expect("serialize guard status response")
         }
 
         /// Deserialize a guard status response frame from JSON bytes.
@@ -1899,34 +1930,7 @@ pub mod daemon {
 
         /// Classify a response frame using the internal classifier.
         pub fn response_kind_classification(frame: &GuardStatusResultFrame) -> &'static str {
-            let resp = crate::daemon::protocol::Response::GuardStatusResult {
-                root: frame.root.clone(),
-                mode: frame.mode.clone(),
-                state: frame.state.clone(),
-                terminal_sequence: frame.terminal_sequence,
-                accepted_event_sequence: frame.accepted_event_sequence,
-                completed_event_sequence: frame.completed_event_sequence,
-                pending_events: frame.pending_events,
-                files_scanned: frame.files_scanned,
-                bytes_scanned: frame.bytes_scanned,
-                attestation_hits: frame.attestation_hits,
-                attestation_misses: frame.attestation_misses,
-                findings_count: frame.findings_count,
-                coverage_gaps: frame.coverage_gaps,
-                initial_reconciliation_time: frame.initial_reconciliation_time,
-                last_reconciliation_time: frame.last_reconciliation_time,
-                scanner_residency: frame.scanner_residency.clone(),
-                backend_route_label: frame.backend_route_label.clone(),
-                build_identity_short: frame.build_identity_short.clone(),
-                detector_digest_short: frame.detector_digest_short.clone(),
-                suppression_digest_short: frame.suppression_digest_short.clone(),
-                config_digest_short: frame.config_digest_short.clone(),
-                autoroute_evidence_status: frame.autoroute_evidence_status.clone(),
-                store_schema_version: frame.store_schema_version,
-                store_path: frame.store_path.clone(),
-                repair_command: frame.repair_command.clone(),
-            };
-            crate::daemon::protocol::response_kind(&resp)
+            crate::daemon::protocol::response_kind(&status_response(frame))
         }
     }
     pub mod server {
@@ -1934,10 +1938,12 @@ pub mod daemon {
     }
 }
 
-pub mod hook {
-    pub use crate::subcommands::hook::*;
-}
-
 pub mod config {
     pub use crate::config::*;
+}
+
+/// Installed execution-pack registry and freshness surface.
+#[doc(hidden)]
+pub mod execution_pack_install {
+    pub use crate::execution_pack_install::*;
 }

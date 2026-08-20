@@ -3,7 +3,7 @@
 use keyhog_core::{DetectorRelationKind, DetectorRelationSpec, DetectorSpec, EvidenceDirection};
 use std::collections::HashSet;
 
-use super::super::{filter_disabled_detectors, filter_disabled_detectors_collect};
+use super::super::filter_disabled_detectors;
 
 fn relation(detector_id: &str, kind: DetectorRelationKind) -> DetectorRelationSpec {
     DetectorRelationSpec {
@@ -130,10 +130,10 @@ fn unknown_relation_targets_are_not_silently_pruned() {
     assert_eq!(detectors[0].detector_relations[0].detector_id, "missing");
 }
 
-/// WHY: filter_disabled_detectors_collect must populate the full set of removed IDs,
-/// including transitive required dependents, so post-scan match filters suppress findings from both.
+/// WHY: the removed-detector set must include transitive required dependents,
+/// so post-scan match filters suppress findings from every removed detector.
 #[test]
-fn filter_disabled_detectors_collects_transitive_dependents() {
+fn filter_disabled_detectors_returns_transitive_dependents() {
     let mut detectors = vec![
         detector("leaf", vec![]),
         detector(
@@ -147,14 +147,13 @@ fn filter_disabled_detectors_collects_transitive_dependents() {
         detector("unrelated", vec![]),
     ];
 
-    let mut all_removed = HashSet::new();
-    let dropped =
-        filter_disabled_detectors_collect(&mut detectors, &disabled(&["leaf"]), &mut all_removed);
+    let mut disabled_set = disabled(&["leaf"]);
+    let removed = filter_disabled_detectors(&mut detectors, &mut disabled_set);
 
-    assert_eq!(dropped, 3);
+    assert_eq!(removed.len(), 3);
     assert_eq!(detectors.len(), 1);
     assert_eq!(detectors[0].id, "unrelated");
-    assert!(all_removed.contains("leaf"));
-    assert!(all_removed.contains("middle"));
-    assert!(all_removed.contains("root"));
+    assert!(removed.contains("leaf"));
+    assert!(removed.contains("middle"));
+    assert!(removed.contains("root"));
 }

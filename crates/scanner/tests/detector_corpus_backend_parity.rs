@@ -63,12 +63,15 @@ fn unicode_regex_semantics_are_backend_invariant() {
         unicode_rule_detector("unicode-digit", r"(?-i)udigit(\d{2})END", 1),
         unicode_rule_detector("unicode-casefold", r"(?i)casekey:([A-F0-9]{16})", 1),
         unicode_rule_detector("unicode-codepoint", r"(?-i)multi.([A-F0-9]{16})", 1),
-    ])
-    .expect("Unicode parity scanner compiles");
-    if !scanner.simd_backend_available() {
+    ];
+    let scanner_cpu = CompiledScanner::compile_for_backend(specs.clone(), ScanBackend::CpuFallback)
+        .expect("Unicode parity scalar scanner compiles");
+    if !scanner_cpu.simd_backend_available() {
         eprintln!("SIMD backend not available in this build; skipping SIMD invariant test");
         return;
     }
+    let scanner_simd = CompiledScanner::compile_for_backend(specs, ScanBackend::SimdCpu)
+        .expect("Unicode parity SIMD scanner compiles");
     let cases: [(&str, &str, &[&str]); 5] = [
         ("positive", "udigit៤꘩END", &["unicode-digit"]),
         ("negative", "udigitABEND", &[]),
@@ -100,11 +103,14 @@ fn unicode_regex_semantics_are_backend_invariant() {
 #[test]
 fn cpu_and_simd_agree_on_every_detector_example() {
     let specs = keyhog_core::embedded_detector_specs().to_vec();
-    let scanner = CompiledScanner::compile(specs.clone()).expect("scanner compile");
-    if !scanner.simd_backend_available() {
+    let scanner_cpu = CompiledScanner::compile_for_backend(specs.clone(), ScanBackend::CpuFallback)
+        .expect("scalar scanner compile");
+    if !scanner_cpu.simd_backend_available() {
         eprintln!("SIMD backend not available in this build; skipping SIMD corpus parity test");
         return;
     }
+    let scanner_simd = CompiledScanner::compile_for_backend(specs.clone(), ScanBackend::SimdCpu)
+        .expect("SIMD scanner compile");
     let mut runner = TestRunner::deterministic();
     let mut checked = 0u32;
     let mut unicode_divergences = 0u32;

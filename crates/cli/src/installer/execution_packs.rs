@@ -112,47 +112,20 @@ pub(crate) fn install_execution_generation(
         reject_symlink_or_non_file(&current_cache)?;
     }
 
-    let probe = Command::new(candidate)
+    // With `update` and `repair` retired the candidate is always the binary the
+    // operator just installed, so a candidate that cannot compile packs is a
+    // broken install, not an older channel to fall back to.
+    let supports_execution_packs = Command::new(candidate)
         .arg("compile-execution-packs")
         .arg("--help")
-        .output();
-
-    let supports_execution_packs = match &probe {
-        Ok(output) => output.status.success(),
-        Err(_) => false, // LAW10: candidate probe failure indicates a legacy binary or non-executable candidate; warning surfaced loudly via tracing and stale artifacts are cleared below
-    };
-
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false);
     if !supports_execution_packs {
-        // Candidate binary genuinely lacks compile-execution-packs (legacy version).
-        // Surface warning via tracing. We back up existing artifacts to stage so rollbacks
-        // remain valid if candidate verification fails, and clear current artifacts so
-        // stale previous-version artifacts do not linger if the legacy binary is committed.
-        tracing::warn!(
-            candidate = %candidate.display(),
-            "candidate binary does not support compile-execution-packs; removing stale execution packs and autoroute cache"
+        bail!(
+            "candidate binary {} cannot compile execution packs. Fix: reinstall with `cargo install --locked --force keyhog`, then run `keyhog install`.",
+            candidate.display()
         );
-        let transaction = ExecutionGenerationInstallTransaction {
-            current_packs,
-            current_cache,
-            old_packs,
-            old_cache,
-            _stage: Some(stage),
-            packs_published: false,
-            cache_published: false,
-            had_old_packs,
-            had_old_cache,
-            created_signing_key: None,
-            committed: false,
-        };
-        if transaction.had_old_packs {
-            fs::rename(&transaction.current_packs, &transaction.old_packs)
-                .context("backing up current execution-pack generation")?;
-        }
-        if transaction.had_old_cache {
-            fs::rename(&transaction.current_cache, &transaction.old_cache)
-                .context("backing up current autoroute cache")?;
-        }
-        return Ok(transaction);
     }
     let signing_key = pack_root.join("signing.key");
     let mut new_signing_key =

@@ -205,6 +205,7 @@ fn clean_pass_json_and_sarif_formats_are_unpolluted() {
             .expect("run scan command");
 
         let stderr = String::from_utf8_lossy(&scan_output.stderr);
+        let stdout = String::from_utf8_lossy(&scan_output.stdout);
 
         assert_eq!(
             scan_output.status.code(),
@@ -317,7 +318,7 @@ fn stale_or_corrupted_execution_pack_fails_closed_with_actionable_error_and_exit
 
     let stderr = String::from_utf8_lossy(&scan_output.stderr);
     assert!(
-        stderr.contains("keyhog install") || stderr.contains("keyhog update") || stderr.contains("compile-execution-packs"),
+        stderr.contains("keyhog install") || stderr.contains("compile-execution-packs"),
         "stderr must contain actionable fix guidance mentioning 'keyhog install' or 'keyhog compile-execution-packs': {stderr}"
     );
 }

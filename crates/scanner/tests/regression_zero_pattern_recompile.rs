@@ -41,10 +41,7 @@ fn run_isolated_counter_test() -> bool {
         .name()
         .expect("test thread has a name")
         .to_owned();
-    #[cfg(target_os = "linux")]
-    let exe = std::path::PathBuf::from("/proc/self/exe");
-    #[cfg(not(target_os = "linux"))]
-    let exe = std::env::current_exe().expect("current scanner test executable is available");
+    let exe = current_test_exe();
     let output = std::process::Command::new(exe)
         .env(CHILD_ENV, "1")
         .arg(&test_name)

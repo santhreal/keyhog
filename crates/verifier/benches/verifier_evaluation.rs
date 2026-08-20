@@ -32,7 +32,7 @@ fn bench_template_interpolation(c: &mut Criterion) {
                 black_box(match_val),
                 black_box(&companions),
             );
-            let _ = black_box(res);
+            black_box(res);
         });
     });
 
@@ -43,7 +43,7 @@ fn bench_template_interpolation(c: &mut Criterion) {
                 black_box(match_val),
                 black_box(&companions),
             );
-            let _ = black_box(res);
+            black_box(res);
         });
     });
 
@@ -54,7 +54,7 @@ fn bench_template_interpolation(c: &mut Criterion) {
                 black_box(match_val),
                 black_box(&companions),
             );
-            let _ = black_box(res);
+            black_box(res);
         });
     });
 
@@ -92,14 +92,14 @@ fn bench_response_selection_and_classification(c: &mut Criterion) {
     group.bench_function("json_selector_validate", |b| {
         b.iter(|| {
             let sel = json_selector::validate(black_box(selector_str));
-            let _ = black_box(sel);
+            black_box(sel.expect("validate selector"));
         });
     });
 
     group.bench_function("json_selector_select_value", |b| {
         b.iter(|| {
             let val = json_selector::select(black_box(&response_json), black_box(selector_str));
-            let _ = black_box(val);
+            black_box(val.expect("select selector value"));
         });
     });
 
@@ -126,14 +126,14 @@ fn bench_verification_cache_operations(c: &mut Criterion) {
     group.bench_function("cache_get_hit", |b| {
         b.iter(|| {
             let hit = cache.get(black_box("cred_key_0500"), black_box("aws-access-key"));
-            let _ = black_box(hit);
+            black_box(hit);
         });
     });
 
     group.bench_function("cache_get_miss", |b| {
         b.iter(|| {
             let miss = cache.get(black_box("nonexistent_cred"), black_box("aws-access-key"));
-            let _ = black_box(miss);
+            black_box(miss);
         });
     });
 
@@ -188,7 +188,7 @@ fn bench_ssrf_and_domain_policy(c: &mut Criterion) {
         b.iter(|| {
             for url in &urls {
                 let blocked = is_private_url(black_box(url));
-                let _ = black_box(blocked);
+                black_box(blocked);
             }
         });
     });
@@ -197,7 +197,7 @@ fn bench_ssrf_and_domain_policy(c: &mut Criterion) {
         b.iter(|| {
             for ip in &ips {
                 let blocked = is_private_ip_addr(black_box(ip));
-                let _ = black_box(blocked);
+                black_box(blocked);
             }
         });
     });
@@ -210,7 +210,7 @@ fn bench_ssrf_and_domain_policy(c: &mut Criterion) {
                 TestApi.host_is_allowed(black_box("hooks.stripe.com"), black_box(&allowlist));
             let allowed_evil =
                 TestApi.host_is_allowed(black_box("evil.internal.local"), black_box(&allowlist));
-            let _ = black_box((allowed_gh, allowed_stripe, allowed_evil));
+            black_box((allowed_gh, allowed_stripe, allowed_evil));
         });
     });
 
@@ -238,21 +238,21 @@ fn bench_sigv4_canonicalization(c: &mut Criterion) {
     group.bench_function("aws_uri_encode", |b| {
         b.iter(|| {
             let encoded = aws_uri_encode(black_box(raw_uri));
-            let _ = black_box(encoded);
+            black_box(encoded);
         });
     });
 
     group.bench_function("canonical_query_string", |b| {
         b.iter(|| {
             let qs = canonical_query_string(black_box(&query_params));
-            let _ = black_box(qs);
+            black_box(qs);
         });
     });
 
     group.bench_function("format_sigv4_timestamps", |b| {
         b.iter(|| {
             let (date, datetime) = TestApi.format_sigv4_timestamps(black_box(1787140800));
-            let _ = black_box((date, datetime));
+            black_box((date, datetime));
         });
     });
 

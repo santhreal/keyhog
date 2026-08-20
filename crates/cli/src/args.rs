@@ -297,10 +297,10 @@ fn validate_cli_args(cli: &Cli) -> Result<(), clap::Error> {
         Some(Command::Scan(args)) => {
             validate_backend_and_gpu_flags(args.backend.as_deref(), args.no_gpu, args.require_gpu)?;
             if let Some(overlap) = args.window_overlap {
-                if !(1024..=16 * 1024 * 1024).contains(&overlap) {
+                if !(1024..keyhog_core::DEFAULT_WINDOW_SIZE_BYTES).contains(&overlap) {
                     return Err(clap::Error::raw(
                         clap::error::ErrorKind::ValueValidation,
-                        format!("error: --window-overlap must be between 1KB and 16MB (got {overlap} bytes)\n"),
+                        format!("error: --window-overlap must be at least 1KB and strictly less than the 1MB window size (got {overlap} bytes)\n"),
                     ));
                 }
             }
@@ -312,10 +312,10 @@ fn validate_cli_args(cli: &Cli) -> Result<(), clap::Error> {
                 args.scan.require_gpu,
             )?;
             if let Some(overlap) = args.scan.window_overlap {
-                if !(1024..=16 * 1024 * 1024).contains(&overlap) {
+                if !(1024..keyhog_core::DEFAULT_WINDOW_SIZE_BYTES).contains(&overlap) {
                     return Err(clap::Error::raw(
                         clap::error::ErrorKind::ValueValidation,
-                        format!("error: --window-overlap must be between 1KB and 16MB (got {overlap} bytes)\n"),
+                        format!("error: --window-overlap must be at least 1KB and strictly less than the 1MB window size (got {overlap} bytes)\n"),
                     ));
                 }
             }

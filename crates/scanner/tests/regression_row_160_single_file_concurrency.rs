@@ -9,10 +9,6 @@ use keyhog_scanner::pipeline::{
     compute_line_offsets, deduplicate_partition_matches, partition_chunk,
     partition_chunk_for_workers, scan_chunk_partitioned,
 };
-use keyhog_scanner::testing::{
-    partition_chunk as testing_partition_chunk,
-    partition_chunk_for_workers as testing_partition_for_workers,
-};
 use keyhog_scanner::CompiledScanner;
 use std::path::PathBuf;
 
@@ -256,7 +252,7 @@ fn row_160_adversarial_multibyte_utf8_boundary_alignment() {
 
     // Subdivide with small window sizes to force boundaries near multibyte sequences
     for window_size in [128, 256, 512, 1024] {
-        let sub_chunks = testing_partition_chunk(&chunk, window_size, window_size / 2);
+        let sub_chunks = partition_chunk(&chunk, window_size, window_size / 2);
         for sub in &sub_chunks {
             // Must be valid UTF-8 string without panics or corrupt boundaries
             assert!(!sub.data.is_empty());
@@ -279,7 +275,7 @@ fn row_160_empty_and_small_chunk_no_op_invariants() {
     };
     assert_eq!(partition_chunk(&small_chunk, 1024, 256).len(), 1);
     assert_eq!(
-        testing_partition_for_workers(&small_chunk, 8, 1024, 256).len(),
+        partition_chunk_for_workers(&small_chunk, 8, 1024, 256).len(),
         1
     );
 }
