@@ -1236,6 +1236,7 @@ enum MassFilesystemMessage {
         source_coverage_gaps: SourceCoverageGaps,
         skipped_unchanged: usize,
     },
+    #[allow(dead_code)]
     Error(String),
 }
 
@@ -1643,30 +1644,21 @@ async fn handle_connection(
                 Ok(streamed) => {
                     streamed?;
                 }
-                Err(panic_payload) => {
-                    let detail = if let Some(s) = panic_payload.downcast_ref::<&'static str>() {
-                        (*s).to_string()
-                    } else if let Some(s) = panic_payload.downcast_ref::<String>() {
-                        s.clone()
-                    } else {
-                        "unknown panic payload".to_string()
-                    };
+                Err(_panic_payload) => {
                     let recovery = BackendRecoveryStatus {
                         failed_backend: "daemon-request-dispatch".to_string(),
                         recovery_backend: "error-response".to_string(),
                         recovered_ranges: Vec::new(),
                         recovered_chunks: 0,
                         recovered_bytes: 0,
-                        reason: format!("daemon: internal panic during filesystem drain: {detail}"),
+                        reason: "daemon: internal panic during filesystem drain".to_string(),
                     };
                     let _ = state.record_backend_recovery(recovery); // LAW10: fault recording during panic recovery; no effect on scan findings
                     let _ = send_response(
                         // LAW10: reporting-only error frame delivery during panic unwind; caller transport closed; no effect on scan findings
                         &mut transport,
                         Response::Error {
-                            message: format!(
-                                "daemon: internal panic during filesystem drain: {detail}"
-                            ),
+                            message: "daemon: internal panic during filesystem drain".to_string(),
                         },
                     )
                     .await;
@@ -1837,25 +1829,18 @@ async fn handle_connection(
 
         let response = match dispatch_result {
             Ok(resp) => resp,
-            Err(panic_payload) => {
-                let detail = if let Some(s) = panic_payload.downcast_ref::<&'static str>() {
-                    (*s).to_string()
-                } else if let Some(s) = panic_payload.downcast_ref::<String>() {
-                    s.clone()
-                } else {
-                    "unknown panic payload".to_string()
-                };
+            Err(_panic_payload) => {
                 let recovery = BackendRecoveryStatus {
                     failed_backend: "daemon-request-dispatch".to_string(),
                     recovery_backend: "error-response".to_string(),
                     recovered_ranges: Vec::new(),
                     recovered_chunks: 0,
                     recovered_bytes: 0,
-                    reason: format!("daemon: internal panic during request: {detail}"),
+                    reason: "daemon: internal panic during request dispatch".to_string(),
                 };
                 let _ = state.record_backend_recovery(recovery); // LAW10: fault recording during panic recovery; no effect on scan findings
                 Response::Error {
-                    message: format!("daemon: internal panic during request: {detail}"),
+                    message: "daemon: internal panic during request dispatch".to_string(),
                 }
             }
         };

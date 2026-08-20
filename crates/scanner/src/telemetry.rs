@@ -1265,9 +1265,6 @@ pub(crate) fn record_gpu_dispatch() {
 /// Reset process-global telemetry that is scoped to one scan.
 pub fn reset_for_scan() {
     current_scan_telemetry().reset();
-    CURRENT_SCAN_TELEMETRY.with(|slot| {
-        *slot.borrow_mut() = None;
-    });
 }
 
 #[cfg(test)]

@@ -1044,7 +1044,11 @@ impl Runtime {
                 .fetch_add(1, Ordering::Relaxed);
             return (None, None);
         };
-        let trace = self.reserve_span(stage, started, parent_span_id, Some(stack_slot), worker_id);
+        let trace = if self.inner.session_recording {
+            self.reserve_span(stage, started, parent_span_id, Some(stack_slot), worker_id)
+        } else {
+            None
+        };
         let runtime_key = Arc::as_ptr(&self.inner) as usize;
         let span_id = trace.as_ref().map_or(0, |t| t.span_id);
         ACTIVE_SPANS.with(|stack| {
@@ -1254,15 +1258,15 @@ impl Runtime {
             // for each nanosecond it actually spends executing or waiting in blocked state.
             if outcome.outermost {
                 shard.top_level_calls.fetch_add(1, Ordering::Relaxed);
-            }
-            if outcome.blocked {
-                shard
-                    .top_level_blocked_ns
-                    .fetch_add(self_ns, Ordering::Relaxed);
-            } else {
-                shard
-                    .top_level_busy_ns
-                    .fetch_add(self_ns, Ordering::Relaxed);
+                if outcome.blocked {
+                    shard
+                        .top_level_blocked_ns
+                        .fetch_add(self_ns, Ordering::Relaxed);
+                } else {
+                    shard
+                        .top_level_busy_ns
+                        .fetch_add(self_ns, Ordering::Relaxed);
+                }
             }
             return;
         }
@@ -2407,7 +2411,7 @@ impl Drop for AsyncSpan {
                 self_ns: elapsed_ns,
                 blocked: false,
                 serial: false,
-                outermost: true,
+                outermost: false,
             },
         );
         if let Some(trace) = self.trace {
@@ -2656,7 +2660,7 @@ impl DecisionTimer {
                         self_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
                         blocked: false,
                         serial: false,
-                        outermost: true,
+                        outermost: false,
                     },
                 );
             }

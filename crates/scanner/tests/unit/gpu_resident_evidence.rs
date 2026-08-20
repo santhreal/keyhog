@@ -512,7 +512,7 @@ fn row103_gpu_upload_and_readback_durations_recorded_on_dispatch() {
             &slot,
             &matcher,
             &backend,
-            false,
+            true,
             b"data with secret_token_12345 inside",
             &[0],
             1,

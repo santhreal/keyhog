@@ -525,13 +525,11 @@ fn scan_gpu_literal_evidence_by_region_borrowed<R>(
                 Ok(output) => {
                     let elapsed_ns = dispatch_wall.elapsed().as_nanos() as u64;
                     evidence::record_dispatch_submitted();
-                    let upload_ns = (elapsed_ns / 2).max(1);
-                    let readback_ns = elapsed_ns.saturating_sub(upload_ns).max(1);
-                    evidence::record_upload(upload_bytes, Some(upload_ns));
+                    evidence::record_upload(upload_bytes, None);
                     evidence::record_submit_to_complete(elapsed_ns);
                     evidence::record_readback(
                         (output.len() * 4 + state.matches.len() * 12) as u64,
-                        Some(readback_ns),
+                        None,
                     );
                     state.output = output;
                     let consume = consume.take().ok_or_else(|| {

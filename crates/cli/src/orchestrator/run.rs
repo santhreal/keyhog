@@ -1904,11 +1904,13 @@ impl ScanOrchestrator {
             show_progress && progress_ansi,
             self.effective_config.backend_override.is_some(),
         );
-        report_scanner_materialization_summary(
-            show_progress && progress_ansi,
-            self.scanner_materialization.as_ref(),
-        );
-        report_compiled_cache_summary(show_progress && progress_ansi, &self);
+        if show_progress {
+            report_scanner_materialization_summary(
+                progress_ansi,
+                self.scanner_materialization.as_ref(),
+            );
+            report_compiled_cache_summary(progress_ansi, &self);
+        }
         dump_dogfood_trace();
 
         tracing::info!(
