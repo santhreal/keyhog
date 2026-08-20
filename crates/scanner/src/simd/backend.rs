@@ -332,6 +332,7 @@ pub(crate) struct HsCompileOpts<'a> {
     /// compilation disables this because it begins while a scan worker owns
     /// thread-local phase-2 scratch; nested work stealing could re-enter that
     /// non-reentrant scratch borrow.
+    #[allow(dead_code)]
     pub(crate) parallel_prepare: bool,
 }
 
@@ -865,9 +866,7 @@ impl HsScanner {
     /// determines how many persistent workers explicit warm-up seeds; callers
     /// outside Rayon can still allocate their own exact TLS scratch lazily.
     fn executor_width() -> usize {
-        std::thread::available_parallelism()
-            .map_or(1, std::num::NonZeroUsize::get)
-            .clamp(1, MAX_COMPILE_SHARDS)
+        keyhog_profile::logical_cpu_count().clamp(1, MAX_COMPILE_SHARDS)
     }
 
     /// Warm the scanner for steady-state execution: allocate one

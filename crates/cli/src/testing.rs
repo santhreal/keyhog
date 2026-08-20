@@ -818,10 +818,12 @@ impl CliTestApi for TestApi {
             crate::daemon::server::testing::finish_daemon_service_for_test(socket_path, fixture),
         )
     }
-    #[cfg(unix)]
+    #[cfg(all(unix, test))]
     fn set_daemon_panic_injection(&self, kind: Option<&str>) {
         crate::daemon::server::set_test_panic_injection(kind);
     }
+    #[cfg(all(unix, not(test)))]
+    fn set_daemon_panic_injection(&self, _kind: Option<&str>) {}
     #[cfg(unix)]
     fn all_daemon_request_kinds(&self) -> &'static [&'static str] {
         crate::daemon::protocol::ALL_REQUEST_KINDS
