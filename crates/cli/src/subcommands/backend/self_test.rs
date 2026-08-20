@@ -265,7 +265,7 @@ pub(super) fn unavailable_gpu_self_test_report(
 ) -> BackendSelfTestReport {
     let reason = if hw.gpu_is_software {
         "GPU adapter is a software renderer and is disabled for scans"
-    } else if let Some(name) = hw.gpu_name.as_deref() {
+    } else if hw.gpu_name.is_some() {
         if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
             if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
                 "compiled without GPU backend / single compiled backend"
