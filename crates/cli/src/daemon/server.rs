@@ -1833,6 +1833,7 @@ async fn handle_connection(
                         },
                     )
                     .await;
+                    break;
                 }
             }
             continue;

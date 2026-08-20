@@ -42,6 +42,7 @@ fn disabling_required_target_removes_its_dependent() {
 
     let mut disabled_set = disabled(&["target"]);
     let dropped = filter_disabled_detectors(&mut detectors, &mut disabled_set);
+    assert!(disabled_set.contains("dependent"));
 
     assert_eq!(dropped.len(), 2);
     assert_eq!(
@@ -71,6 +72,8 @@ fn disabling_required_target_cascades_transitively() {
 
     let mut disabled_set = disabled(&["leaf"]);
     let dropped = filter_disabled_detectors(&mut detectors, &mut disabled_set);
+    assert!(disabled_set.contains("middle"));
+    assert!(disabled_set.contains("root"));
 
     assert_eq!(dropped.len(), 3);
     assert!(detectors.is_empty());
