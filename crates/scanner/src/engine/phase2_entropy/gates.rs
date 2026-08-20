@@ -298,9 +298,14 @@ pub(crate) fn entropy_match_suppression_stage(
     }
     // Vendored 3rd-party minified bundle: any "secret-like"
     // sequence is a minification coincidence, not a leak.
-    if crate::suppression::path_filter::looks_like_vendored_minified_path(
+    // Recorded because `--no-default-excludes` recovers this value too.
+    if crate::suppression::path_filter::vendored_minified_path_policy_applies(
         chunk.metadata.path.as_deref(),
     ) {
+        crate::telemetry::record_vendored_path_suppression(
+            chunk.metadata.path.as_deref(),
+            &entropy_match.value,
+        );
         return Some(EntropyShapeStage::VendoredMinifiedPath);
     }
     // Raw base64 files (`.b64`, `.base64`, `base64_string.txt`):

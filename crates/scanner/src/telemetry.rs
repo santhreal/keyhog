@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -313,7 +314,8 @@ pub struct ScanTelemetry {
     pub(crate) emitted_suppression_events: Mutex<HashSet<EmittedDogfoodKey>>,
     pub(crate) detail_events_dropped: AtomicUsize,
     pub(crate) static_recovery: StaticRecoveryTelemetry,
-    pub(crate) vendored_path_suppressions: AtomicUsize,
+    /// `(path, credential)` hashes suppressed by the vendored/minified policy.
+    pub(crate) vendored_path_suppressions: Mutex<HashSet<u64>>,
     pub(crate) vendored_path_suppression_enabled: AtomicBool,
     pub(crate) coverage_gaps: [AtomicUsize; ScannerCoverageGapEvent::ALL.len()],
     pub(crate) files_scanned: AtomicUsize,
@@ -332,7 +334,7 @@ impl Default for ScanTelemetry {
             emitted_suppression_events: Mutex::new(HashSet::new()),
             detail_events_dropped: AtomicUsize::new(0),
             static_recovery: StaticRecoveryTelemetry::default(),
-            vendored_path_suppressions: AtomicUsize::new(0),
+            vendored_path_suppressions: Mutex::new(HashSet::new()),
             vendored_path_suppression_enabled: AtomicBool::new(true),
             coverage_gaps: std::array::from_fn(|_| AtomicUsize::new(0)),
             files_scanned: AtomicUsize::new(0),
@@ -354,7 +356,7 @@ impl ScanTelemetry {
         self.example_suppressions.store(0, Ordering::Relaxed);
         self.detail_events_dropped.store(0, Ordering::Relaxed);
         self.static_recovery.reset();
-        self.vendored_path_suppressions.store(0, Ordering::Relaxed);
+        recover_telemetry_lock(&self.vendored_path_suppressions).clear();
         self.vendored_path_suppression_enabled
             .store(true, Ordering::Relaxed);
         for gap in &self.coverage_gaps {
@@ -659,17 +661,25 @@ pub fn vendored_path_suppression_enabled() -> bool {
         .load(Ordering::Relaxed)
 }
 
-pub(crate) fn record_vendored_path_suppression() {
-    current_scan_telemetry()
-        .vendored_path_suppressions
-        .fetch_add(1, Ordering::Relaxed);
-    keyhog_profile::add_counter(keyhog_profile::CounterId::VendoredPathSuppressions, 1);
+/// Record one vendored/minified path suppression, keyed by `(path, credential)`.
+///
+/// The count is what `--no-default-excludes` would recover, so it counts
+/// distinct credentials and not adjudication events. One credential is offered
+/// to every detector that can match it, and candidates a later gate would have
+/// dropped anyway reach this gate first, so the raw event count overstated a
+/// single planted key as two or more.
+pub(crate) fn record_vendored_path_suppression(path: Option<&str>, credential: &str) {
+    let mut hasher = DefaultHasher::new();
+    path.hash(&mut hasher);
+    credential.hash(&mut hasher);
+    let key = hasher.finish();
+    if recover_telemetry_lock(&current_scan_telemetry().vendored_path_suppressions).insert(key) {
+        keyhog_profile::add_counter(keyhog_profile::CounterId::VendoredPathSuppressions, 1);
+    }
 }
 
 pub fn vendored_path_suppression_count() -> usize {
-    current_scan_telemetry()
-        .vendored_path_suppressions
-        .load(Ordering::Relaxed)
+    recover_telemetry_lock(&current_scan_telemetry().vendored_path_suppressions).len()
 }
 
 /// Record one example/placeholder suppression. The default path is only the

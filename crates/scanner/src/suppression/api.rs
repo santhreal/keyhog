@@ -6,7 +6,7 @@ use super::decision::suppression_stage_inner;
 use super::detector_policy::DetectorSuppressionPolicy;
 use super::path_filter::{
     looks_like_raw_base64_file_path, looks_like_secret_scanner_source,
-    looks_like_vendored_minified_path,
+    vendored_minified_path_policy_applies,
 };
 use super::shape::{
     contains_uuid_v4_substring, looks_like_credential_colliding_punctuation,
@@ -466,7 +466,8 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // Vendored 3rd-party minified bundle path: applies to ALL detectors,
     // not just generic-*. A "secret-like" sequence in a minified
     // codemirror/pdfjs/jquery/etc. bundle is never a real leak.
-    if looks_like_vendored_minified_path(path) {
+    if vendored_minified_path_policy_applies(path) {
+        crate::telemetry::record_vendored_path_suppression(path, credential);
         crate::adjudicate::record_example_suppression(
             "pipeline",
             path,

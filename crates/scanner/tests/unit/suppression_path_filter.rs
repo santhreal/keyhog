@@ -48,31 +48,55 @@ fn vendored_paths_match_repository_relative_sources() {
     assert!(!path_is_vendored_minified(Some("src/app.js")));
 }
 
-/// Every drop must be counted. An uncounted drop is the silent miss: a
-/// `sk_live_` key inlined into `app.min.js` reached the report as
-/// "No secrets detected" precisely because nothing incremented here.
+/// Every dropped credential must be counted exactly once. An uncounted drop is
+/// the silent miss: a `sk_live_` key inlined into `app.min.js` reached the
+/// report as "No secrets detected" precisely because nothing incremented here.
+/// A double count is the opposite lie: the summary promised two recoverable
+/// credentials where `--no-default-excludes` reports one.
 ///
-/// Asserts a DELTA, not an absolute: the counter is process-global and other
+/// Asserts a DELTA, not an absolute: the count is process-global and other
 /// tests in this binary suppress vendored paths too.
 #[test]
-fn suppressing_a_vendored_path_increments_the_reported_counter() {
+fn a_suppressed_vendored_credential_is_counted_once_per_identity() {
+    const PATH: &str = "node_modules/pkg/dist/bundle.min.js";
     let before = crate::telemetry::vendored_path_suppression_count();
-    assert!(looks_like_vendored_minified_path(Some(
-        "node_modules/pkg/dist/bundle.min.js"
-    )));
+    assert!(vendored_minified_path_policy_applies(Some(PATH)));
+
+    crate::telemetry::record_vendored_path_suppression(Some(PATH), "sk_live_abcdef0123456789");
     let after = crate::telemetry::vendored_path_suppression_count();
-    assert!(
-        after > before,
-        "a dropped finding must be counted so the CLI can report it; {before} -> {after}"
+    assert_eq!(
+        after,
+        before + 1,
+        "a dropped credential must be counted so the CLI can report it"
+    );
+
+    // Every detector that can match the credential adjudicates it, and gates
+    // downstream of this one would have dropped some of those candidates
+    // anyway. Identity keying is what keeps the count equal to what the
+    // recovery flag reports.
+    crate::telemetry::record_vendored_path_suppression(Some(PATH), "sk_live_abcdef0123456789");
+    assert_eq!(
+        crate::telemetry::vendored_path_suppression_count(),
+        after,
+        "the same (path, credential) must not be counted twice"
+    );
+
+    crate::telemetry::record_vendored_path_suppression(Some(PATH), "sk_live_9876543210fedcba");
+    assert_eq!(
+        crate::telemetry::vendored_path_suppression_count(),
+        after + 1,
+        "a second distinct credential in the same bundle is a second drop"
     );
 }
 
-/// A path the policy does not match must not be counted as a drop, or the
-/// reported gap count would be pure noise.
+/// A path the policy does not match is never offered to the counter, so the
+/// reported gap count is not pure noise.
 #[test]
-fn a_non_vendored_path_does_not_increment_the_counter() {
+fn a_non_vendored_path_does_not_apply_the_policy() {
     let before = crate::telemetry::vendored_path_suppression_count();
-    assert!(!looks_like_vendored_minified_path(Some("src/config.js")));
+    assert!(!vendored_minified_path_policy_applies(Some(
+        "src/config.js"
+    )));
     assert_eq!(
         crate::telemetry::vendored_path_suppression_count(),
         before,

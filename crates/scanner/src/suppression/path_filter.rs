@@ -1,7 +1,7 @@
 //! Path-based suppression predicates. These look only at the source-file
 //! path, not the credential value. Used by the api layer to short-circuit
 //! whole files (`looks_like_secret_scanner_source`) or whole subdirectories
-//! (`looks_like_vendored_minified_path`).
+//! (`vendored_minified_path_policy_applies`).
 
 use crate::ascii_ci::{ci_find, contains_path_segment, contains_path_segment_two};
 
@@ -79,22 +79,21 @@ pub(crate) fn looks_like_secret_scanner_source(path: Option<&str>) -> bool {
 ///     "disable the exclusions" that left a second, silent exclusion running
 ///     was a false affordance: it made the walker read `app.min.js`, reported
 ///     the 1441 bytes as scanned, and still dropped the `sk_live_` key inside.
-///   * Every drop is counted. The CLI surfaces the total as its own coverage-gap
-///     row, so a suppressed finding is visible and recoverable instead of
-///     vanishing between the matcher and the report.
+///   * Every dropped credential is counted, once per `(path, credential)`. The
+///     CLI surfaces the total as its own coverage-gap row, so a suppressed
+///     finding is visible and recoverable instead of vanishing between the
+///     matcher and the report.
 ///
 /// A minified frontend bundle is one of the most common places a real credential
 /// leaks, because build tooling inlines API keys into it. Silently dropping that
 /// class was worse than the false positives it avoided.
-pub(crate) fn looks_like_vendored_minified_path(path: Option<&str>) -> bool {
-    if !crate::telemetry::vendored_path_suppression_enabled() {
-        return false;
-    }
-    if !path_is_vendored_minified(path) {
-        return false;
-    }
-    crate::telemetry::record_vendored_path_suppression();
-    true
+///
+/// This answers the policy question only. Every gate that drops a value on this
+/// policy records it through `telemetry::record_vendored_path_suppression`,
+/// which is keyed by `(path, credential)`, so one credential dropped by several
+/// gates or detectors counts once.
+pub(crate) fn vendored_minified_path_policy_applies(path: Option<&str>) -> bool {
+    crate::telemetry::vendored_path_suppression_enabled() && path_is_vendored_minified(path)
 }
 
 /// True if `path` looks like a vendored 3rd-party JS/CSS/wasm bundle.
@@ -102,8 +101,8 @@ pub(crate) fn looks_like_vendored_minified_path(path: Option<&str>) -> bool {
 /// any "secret-like" match inside them is a coincidence in the minified
 /// byte stream, not a leaked credential.
 ///
-/// Pure classification, no policy and no counter: callers that want the
-/// suppression decision use [`looks_like_vendored_minified_path`].
+/// Pure classification, no policy: callers that want the suppression decision
+/// use [`vendored_minified_path_policy_applies`].
 ///
 /// Catches:
 ///   * `gogs/public/plugins/codemirror-5.17.0/mode/dockerfile/dockerfile.js`

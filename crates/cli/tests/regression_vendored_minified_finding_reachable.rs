@@ -124,7 +124,20 @@ fn no_default_excludes_reaches_the_credential_in_a_vendored_path() {
     )
     .expect("write vendored config");
 
-    let run = scan(&["--format", "json", "--no-default-excludes"], dir.path());
+    // `--evidence-policy paranoid` blocks on `review` too. A `.php` body is not
+    // a structured-config context, so the recovered finding is `review` tier and
+    // the default policy would exit 0 with the finding present: that would pin
+    // reachability without pinning a blocking exit.
+    let run = scan(
+        &[
+            "--format",
+            "json",
+            "--no-default-excludes",
+            "--evidence-policy",
+            "paranoid",
+        ],
+        dir.path(),
+    );
 
     assert_eq!(
         finding_count(&run.stdout),

@@ -302,9 +302,14 @@ impl CompiledScanner {
         }
         // Vendored 3rd-party minified bundle: drop generic-secret
         // hits in vendored codemirror/pdfjs/wp-includes/etc. paths.
-        if crate::suppression::path_filter::looks_like_vendored_minified_path(
+        // Recorded because `--no-default-excludes` recovers this value too.
+        if crate::suppression::path_filter::vendored_minified_path_policy_applies(
             chunk.metadata.path.as_deref(),
         ) {
+            crate::telemetry::record_vendored_path_suppression(
+                chunk.metadata.path.as_deref(),
+                value,
+            );
             return Some(GenericValueShapeStage::VendoredMinifiedPath);
         }
         // Regex-literal suppression: the fast-path hot patterns and

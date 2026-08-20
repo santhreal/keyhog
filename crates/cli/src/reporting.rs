@@ -1117,8 +1117,8 @@ impl CoverageGapKind {
                 "{n} credential match(es) were DROPPED before the report because their file \
                  is a minified or vendored bundle (`.min.js`, `.bundle.js`, `.min.css`, \
                  `node_modules/`, `site-packages/`, `wp-includes/`, `dist/assets/`, and \
-                 similar). One credential can be matched by more than one detector, so this \
-                 counts drops, not distinct secrets. Build tooling routinely inlines real \
+                 similar). The count is distinct credentials, so it is what \
+                 `--no-default-excludes` reports back. Build tooling routinely inlines real \
                  API keys into those bundles, so this is a precision trade, not proof they \
                  are noise. Re-scan with `--no-default-excludes` to report them."
             ),
