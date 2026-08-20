@@ -830,7 +830,7 @@ fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<
     })
 }
 
-/// Trigger reconciliation for Current roots whose scrub interval has elapsed (Row 132).
+/// Mark Current roots dirty for re-reconciliation when their scrub interval has elapsed (Row 132).
 ///
 /// If an operator scrub interval is configured, roots are scrubbed on that schedule.
 /// If no operator scrub interval is configured, unauthoritative roots (NFS, SMB/CIFS, FUSE, 9P)
