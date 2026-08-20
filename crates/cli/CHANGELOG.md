@@ -1,6 +1,7 @@
 # Changelog
 
 ## 0.5.80 - 2026-08-17
+- Benchmark corpus synthetic packs & representative test coverage (Row 162). Fixed AWS Access Key token shape in the built-in benchmark corpus template to match 20-character credential length (`AKIA` + 16 chars). Added integration tests verifying benchmark corpus structure, metadata, planted credential shapes, and synthetic execution pack finding parity invariants.
 
 - feat(cli): optimize startup execution path for informational commands with fast zero-allocation dispatch, deferred runtime initialization, and zero detector corpus parsing (Row 138).
 - Include known reason and repair command in daemon warm-route errors and startup banner instead of hiding them behind a generic fallback. Apply the same fix to the daemon status command. Make is_work_request exhaustive so adding a new Request variant causes a compile error. Add regression tests pinning daemon server pure-function behaviors before modularization.

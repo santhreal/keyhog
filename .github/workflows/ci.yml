@@ -413,6 +413,7 @@ jobs:
           --test regression_uninstall_surfaces_cache
           --test regression_vendored_minified_finding_reachable
           --test regression_zip64_duplicate_scan_gap_visible
+          --test regression_row_138_startup_latency
 
   integration-detector-contracts:
     name: Integration (detector + recall contracts)
