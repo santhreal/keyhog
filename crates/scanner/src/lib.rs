@@ -84,7 +84,7 @@ pub mod checksum;
 /// Candidate-bounded source-code semantic roles.
 pub(crate) mod code_semantics;
 /// Compiled scanner construction and lifecycle implementation.
-mod compiled_scanner;
+pub mod compiled_scanner;
 /// Detector compilation into high-performance matching structures.
 pub(crate) mod compiler;
 /// Heuristic and ML-based confidence scoring for candidate matches.
@@ -133,7 +133,7 @@ pub mod gpu;
 /// Scanner GPU batch input policy.
 pub(crate) mod gpu_input_budget;
 /// GPU literal artifact compilation from the typed detector plan.
-pub(crate) mod gpu_literal_artifacts;
+pub mod gpu_literal_artifacts;
 /// Persistent GPU matcher artifact cache.
 pub(crate) mod gpu_matcher_cache;
 /// Hardware capability detection and backend selection.

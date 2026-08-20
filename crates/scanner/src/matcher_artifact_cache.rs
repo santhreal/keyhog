@@ -35,6 +35,9 @@ pub use keyhog_core::MATCHER_ARTIFACT_FORMAT_VERSION as MATCHER_ARTIFACT_VERSION
 pub use keyhog_core::MATCHER_ARTIFACT_MAGIC;
 /// Filename suffix for MatcherArtifact cache files.
 pub use keyhog_core::MATCHER_ARTIFACT_SUFFIX;
+/// The compiled artifact class for persistent matcher artifacts.
+pub const ARTIFACT_CLASS: keyhog_core::CompiledArtifactClass =
+    keyhog_core::CompiledArtifactClass::MatcherArtifact;
 /// Hard cap for one MatcherArtifact cache file, including header.
 pub const MATCHER_ARTIFACT_FILE_BYTES: u64 = 256 * 1024 * 1024;
 
@@ -120,6 +123,10 @@ pub fn validate_and_tighten_matcher_artifact_cache_dir(
             if meta.mode() & 0o022 != 0 {
                 if auto_tighten {
                     use std::os::unix::fs::PermissionsExt;
+                    tracing::info!(
+                        path = %path.display(),
+                        "tightening loose permissions on default matcher-artifact cache directory to 0700"
+                    );
                     if let Err(error) =
                         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
                     {
@@ -207,8 +214,29 @@ pub struct MatcherArtifactIdentity {
     /// Route-matcher section schema version.
     pub route_matcher_section_version: u16,
 }
-
 impl MatcherArtifactIdentity {
+    /// The compiled artifact class for persistent matcher artifacts.
+    pub const ARTIFACT_CLASS: keyhog_core::CompiledArtifactClass =
+        keyhog_core::CompiledArtifactClass::MatcherArtifact;
+
+    /// Return the compiled artifact class for this identity.
+    pub const fn artifact_class(&self) -> keyhog_core::CompiledArtifactClass {
+        keyhog_core::CompiledArtifactClass::MatcherArtifact
+    }
+
+    /// Derive the canonical compiled artifact identity representation.
+    pub fn canonical_identity(&self) -> keyhog_core::CompiledArtifactIdentity {
+        keyhog_core::CompiledArtifactIdentity {
+            artifact_class: keyhog_core::CompiledArtifactClass::MatcherArtifact,
+            binary_digest: self.binary_digest.clone(),
+            detector_digest: self.detector_corpus_digest.clone(),
+            config_digest: self.resolved_config_digest.clone(),
+            platform: self.target.clone(),
+            adapter_identity: (self.runtime_identity != "none")
+                .then(|| self.runtime_identity.clone()),
+        }
+    }
+
     /// Build the identity for one compile request.
     pub fn new(
         detector_corpus_digest: [u8; 32],
@@ -695,8 +723,9 @@ pub fn store_matcher_artifact(
         return Err("matcher artifact backend does not match identity".to_owned());
     }
     validate_matcher_artifact_cache_dir(cache_dir)?;
-    // Only tighten mode on directories we create. Do not chmod a pre-existing
-    // operator-supplied path (for example $HOME or $HOME/.cache).
+    // Only tighten mode on directories we create, or when auto-tightening the
+    // default cache root during initial resolution. Do not chmod a pre-existing
+    // explicit operator-supplied path (for example $HOME or $HOME/.cache).
     let created_cache_dir = !cache_dir.exists();
     std::fs::create_dir_all(cache_dir).map_err(|error| {
         format!(

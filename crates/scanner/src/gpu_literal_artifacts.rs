@@ -13,7 +13,10 @@ use crate::engine::{phase2_anchor, phase2_generic, scan_postprocess};
 use crate::error::{Result, ScanError};
 use crate::gpu_matcher_cache as gpu_cache;
 use crate::scanner_config::ScannerTuningConfig;
-use keyhog_core::DetectorSpec;
+use keyhog_core::{CompiledArtifactClass, DetectorSpec};
+
+/// The compiled artifact class for GPU literal match sets.
+pub const ARTIFACT_CLASS: CompiledArtifactClass = CompiledArtifactClass::GpuLiteralSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use vyre::scan::GpuLiteralSet;
@@ -42,6 +45,16 @@ pub struct GpuLiteralArtifact {
     pub wire_magic: [u8; 4],
     /// VYRE wire version stamped into `bytes`.
     pub wire_version: u32,
+}
+
+impl GpuLiteralArtifact {
+    /// The compiled artifact class for this artifact.
+    pub const ARTIFACT_CLASS: CompiledArtifactClass = CompiledArtifactClass::GpuLiteralSet;
+
+    /// The compiled artifact class for this artifact.
+    pub const fn artifact_class(&self) -> CompiledArtifactClass {
+        CompiledArtifactClass::GpuLiteralSet
+    }
 }
 
 /// The runtime GPU presence matcher artifacts derivable without a GPU device.

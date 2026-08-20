@@ -39,6 +39,36 @@ fn compiled_artifact_classes_are_enumerable_and_have_compile_owners() {
             "Compiled artifact class {label} compile owner must reside in keyhog-scanner"
         );
     }
+
+    // Direct producer alignment assertions
+    assert_eq!(
+        keyhog_scanner::gpu_literal_artifacts::ARTIFACT_CLASS,
+        CompiledArtifactClass::GpuLiteralSet
+    );
+    assert_eq!(
+        keyhog_scanner::gpu_literal_artifacts::GpuLiteralArtifact::ARTIFACT_CLASS,
+        CompiledArtifactClass::GpuLiteralSet
+    );
+    assert_eq!(
+        keyhog_scanner::compiled_scanner::ARTIFACT_CLASS,
+        CompiledArtifactClass::DetectorPlan
+    );
+    assert_eq!(
+        keyhog_scanner::execution_pack::ARTIFACT_CLASS,
+        CompiledArtifactClass::ExecutionPack
+    );
+    assert_eq!(
+        keyhog_scanner::execution_pack::ExecutionPackIdentity::ARTIFACT_CLASS,
+        CompiledArtifactClass::ExecutionPack
+    );
+    assert_eq!(
+        keyhog_scanner::matcher_artifact_cache::ARTIFACT_CLASS,
+        CompiledArtifactClass::MatcherArtifact
+    );
+    assert_eq!(
+        keyhog_scanner::MatcherArtifactIdentity::ARTIFACT_CLASS,
+        CompiledArtifactClass::MatcherArtifact
+    );
 }
 
 #[test]
@@ -61,6 +91,36 @@ fn compiled_artifact_identity_round_trips_canonical_serialization() {
         deserialized.artifact_class,
         CompiledArtifactClass::MatcherArtifact
     );
+
+    let matcher_identity = keyhog_scanner::MatcherArtifactIdentity {
+        version: keyhog_scanner::MATCHER_ARTIFACT_VERSION,
+        binary_digest: "a".repeat(64),
+        binary_version: "0.5.80".to_string(),
+        git_hash: "0123456789abcdef".to_string(),
+        target: "x86_64-linux".to_string(),
+        features: "default".to_string(),
+        detector_corpus_digest: "b".repeat(64),
+        resolved_config_digest: "c".repeat(64),
+        pack_generation: "none".to_string(),
+        backend: "Cpu".to_string(),
+        runtime_identity: "none".to_string(),
+        route_matcher_section_version: 1,
+    };
+
+    assert_eq!(
+        matcher_identity.artifact_class(),
+        CompiledArtifactClass::MatcherArtifact
+    );
+    let canonical = matcher_identity.canonical_identity();
+    assert_eq!(
+        canonical.artifact_class,
+        CompiledArtifactClass::MatcherArtifact
+    );
+    assert_eq!(canonical.binary_digest, "a".repeat(64));
+    assert_eq!(canonical.detector_digest, "b".repeat(64));
+    assert_eq!(canonical.config_digest, "c".repeat(64));
+    assert_eq!(canonical.platform, "x86_64-linux");
+    assert_eq!(canonical.adapter_identity, None);
 }
 #[cfg(unix)]
 fn allowlisted_tempdir() -> tempfile::TempDir {
