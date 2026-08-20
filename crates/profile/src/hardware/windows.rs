@@ -342,9 +342,3 @@ pub(crate) fn span_counter_reading() -> Option<SpanCounterReading> {
         instructions: None,
     })
 }
-
-/// Process CPU time in nanoseconds, used by session-level utilization checks.
-#[allow(dead_code)]
-pub(crate) fn process_cpu_time_ns() -> Option<u64> {
-    process_cpu_ns()
-}

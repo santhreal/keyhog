@@ -68,7 +68,7 @@ pub(crate) use phase2_hs::hs_prefilter_requires_host_regex as hs_prefilter_requi
 pub(crate) use phase2_hs::Phase2HsEngine;
 mod phase2_prefilter;
 pub(crate) use crate::phase2_truncate;
-#[cfg_attr(not(feature = "simd"), allow(unused_imports))]
+#[cfg(feature = "simd")]
 pub(crate) use phase2_prefilter::canonical_phase2_scope_indices;
 mod process;
 pub(crate) use crate::scan_profile as profile;

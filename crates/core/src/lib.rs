@@ -86,17 +86,13 @@ pub mod triage;
 /// verifier.
 pub mod verification_domain;
 pub mod winpath;
-pub use cache_layout::{CacheEvictionPolicy, CacheKind};
 use std::borrow::Cow;
 
 pub use api::*;
-pub use compiled_artifact::{CompiledArtifactClass, CompiledArtifactIdentity};
 pub use detector_corpus::{
     compose_detector_corpus, compute_detector_corpus_digest,
     compute_detector_corpus_digest_for_schema, DetectorCorpusError, DetectorCorpusMode,
 };
-pub use guard_state::{GuardRootState, GuardTransition, ReceiptError, TransitionError};
-pub use guard_store::GuardStoreError;
 /// Auto-fix suggestion logic for SARIF output.
 mod auto_fix;
 /// Bayesian confidence calibration for detectors.

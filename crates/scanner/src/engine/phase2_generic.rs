@@ -1,63 +1,21 @@
 use super::*;
-use std::sync::Mutex;
 
 pub(crate) mod keywords;
 mod metrics;
 mod pattern;
 
+#[cfg(test)]
+pub(crate) use self::keywords::retained_keyword_line_bytes_after_for_test;
 use self::keywords::{
     collect_generic_keyword_lines_from_positions, collect_generic_keyword_lines_with,
-    is_strong_keyword_anchored_encoded_text_secret,
+    is_strong_keyword_anchored_encoded_text_secret, release_keyword_lines_scratch,
+    take_keyword_lines_scratch,
 };
 pub(crate) use self::metrics::{format_generic_profile, generic_profile_from_typed};
 pub(crate) use self::pattern::{
     build_generic_re, compile_generic_re_with_max, compile_generic_re_with_policy,
     generic_keyword_alternation, generic_keyword_alternation_from, generic_vendor_suffix_arm,
 };
-
-const MAX_IDLE_KEYWORD_LINE_BUFFERS: usize = 4;
-static KEYWORD_LINES_POOL: Mutex<Vec<Vec<u32>>> = Mutex::new(Vec::new());
-
-fn normalize_keyword_lines_scratch(lines: &mut Vec<u32>) {
-    lines.clear();
-    if lines.capacity().saturating_mul(std::mem::size_of::<u32>())
-        > super::MAX_RETAINED_WORKER_SCRATCH_BYTES
-    {
-        *lines = Vec::new();
-    }
-}
-
-fn take_keyword_lines_scratch() -> Vec<u32> {
-    KEYWORD_LINES_POOL
-        .lock()
-        // LAW10: poison recovery retains the complete scratch pool value.
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .pop()
-        // LAW10: no idle buffer means a fresh empty scratch vector with identical matching behavior.
-        .unwrap_or_default()
-}
-
-fn release_keyword_lines_scratch(mut lines: Vec<u32>) {
-    normalize_keyword_lines_scratch(&mut lines);
-    if lines.capacity() == 0 {
-        return;
-    }
-    let mut pool = KEYWORD_LINES_POOL
-        .lock()
-        // LAW10: poison recovery retains the complete scratch pool before bounded reinsertion.
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if pool.len() < MAX_IDLE_KEYWORD_LINE_BUFFERS {
-        pool.push(lines);
-    }
-}
-
-#[cfg(test)]
-pub(crate) fn retained_keyword_line_bytes_after_for_test(requested_bytes: usize) -> usize {
-    let elements = requested_bytes.div_ceil(std::mem::size_of::<u32>());
-    let mut lines = Vec::with_capacity(elements);
-    normalize_keyword_lines_scratch(&mut lines);
-    lines.capacity().saturating_mul(std::mem::size_of::<u32>())
-}
 
 impl CompiledScanner {
     #[doc(hidden)]
