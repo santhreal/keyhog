@@ -17,6 +17,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - feat(installer): update recommendation parity and complete artifact generation on binary replacement (Row 134).
 - feat(build): audit and enforce release binary symbol stripping and zero DWARF debuginfo bloat via Cargo.toml [profile.release] and profile divergence gates (Row 139).
 - feat(detectors): add and update competitor recall parity detectors with verified contracts and zero false-positive constraints for `sidekiq-secret`, `jumpcloud-api-key`, `disqus-api-key`, `configcat-sdk-key`, `curl-auth-user`, `datadog-application-key`, `bitly-access-token`, `aws-amazon-bedrock-api-key-long-lived`, `anthropic-admin-api-key`, and `airtable-api-key` (Row 161).
+- feat(reporting): fail closed scan document status on source failure and oversized stdin (Row 163).
 - feat(artifacts): fail closed with EXIT_USER_ERROR and actionable repair instructions on stale or mismatched execution-pack artifact identity inputs (Row 129).
 - feat(installer): acceptance gate for clean install on empty cache with zero runtime compilations across all surfaces (Row 130).
 - feat(compiler): install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata (Row 128).

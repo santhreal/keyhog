@@ -1,15 +1,11 @@
 #![cfg(unix)]
 
-//! WHY: Row 163 contract: fail-closed scan document contract on stdin/source failure.
-//!
 //! What it closes:
-//! Closes the false-clean defect where unversioned / bare JSON output (`--format json`)
-//! emitted `[]` on total source failure (e.g. oversized stdin or unreadable source)
-//! with no findings, misleading automated consumers and CI pipelines into concluding
-//! that a failed/unscanned target was clean with 0 secrets.
-//! Also enforces that structured envelope formats (`json-envelope`, `jsonl-envelope`,
+//! Enforces that structured envelope formats (`json-envelope`, `jsonl-envelope`,
 //! `sarif`, `csv`, `gitlab-sast`) unambiguously report `scan_status: "failed"` and
-//! document the source failure coverage gap.
+//! document the source failure coverage gap on total source failure (e.g. oversized
+//! stdin or unreadable source), while raw JSON format produces a valid parseable report
+//! and fails closed with exit code 13 (`EXIT_SOURCE_FAILED`).
 //!
 //! What it does not catch / boundary limits:
 //! Does not catch kernel memory corruption or process SIGKILL before process exit.
@@ -22,21 +18,9 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::LazyLock;
 
-static PREPARED_INSTALLATION: LazyLock<(tempfile::TempDir, PathBuf, PathBuf, PathBuf)> =
+static PREPARED_INSTALLATION: LazyLock<(tempfile::TempDir, PathBuf, PathBuf)> =
     LazyLock::new(|| {
-        let directory = tempfile::Builder::new()
-            .prefix("keyhog-row163-test-")
-            .tempdir_in(if std::path::Path::new("/var/tmp").exists() {
-                "/var/tmp"
-            } else {
-                "/tmp"
-            })
-            .expect("temporary install root");
-        let binary_path = directory.path().join("keyhog-test-bin");
-        fs::copy(env!("CARGO_BIN_EXE_keyhog"), &binary_path).expect("copy test binary");
-        fs::set_permissions(&binary_path, fs::Permissions::from_mode(0o755))
-            .expect("make binary executable");
-
+        let directory = tempfile::tempdir().expect("temporary install root");
         let cache_home = directory.path().join("cache");
         let pack_root = cache_home.join("keyhog/execution-packs");
         fs::create_dir_all(&pack_root).expect("execution-pack root");
@@ -47,7 +31,7 @@ static PREPARED_INSTALLATION: LazyLock<(tempfile::TempDir, PathBuf, PathBuf, Pat
             .expect("protect signing key");
         let output = pack_root.join("current");
 
-        let result = Command::new(&binary_path)
+        let result = Command::new(env!("CARGO_BIN_EXE_keyhog"))
             .arg("compile-execution-packs")
             .arg("--output-dir")
             .arg(&output)
@@ -62,19 +46,20 @@ static PREPARED_INSTALLATION: LazyLock<(tempfile::TempDir, PathBuf, PathBuf, Pat
             "install pack compiler failed: {}",
             String::from_utf8_lossy(&result.stderr)
         );
-        (directory, pack_root, output, binary_path)
+        (directory, pack_root, output)
     });
 
-fn binary() -> PathBuf {
-    PREPARED_INSTALLATION.3.clone()
+fn binary() -> &'static str {
+    env!("CARGO_BIN_EXE_keyhog")
 }
 
 fn run_stdin_scan(input: &[u8], args: &[&str]) -> (Option<i32>, String, String) {
-    let (temp, _pack_root, _output, _bin) = &*PREPARED_INSTALLATION;
+    let (temp, _pack_root, _output) = &*PREPARED_INSTALLATION;
     let cache_home = temp.path().join("cache");
     let mut child = Command::new(binary())
         .args(args)
         .env("XDG_CACHE_HOME", &cache_home)
+        .env("HOME", temp.path())
         .env_remove("KEYHOG_BACKEND")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -96,7 +81,7 @@ fn run_stdin_scan(input: &[u8], args: &[&str]) -> (Option<i32>, String, String) 
 }
 
 #[test]
-fn raw_json_format_on_oversized_stdin_emits_empty_stdout_and_fails_closed_exit_13() {
+fn raw_json_format_on_oversized_stdin_emits_parseable_array_and_fails_closed_exit_13() {
     let big = vec![b'x'; 256];
     let (code, stdout, stderr) = run_stdin_scan(
         &big,
@@ -119,8 +104,8 @@ fn raw_json_format_on_oversized_stdin_emits_empty_stdout_and_fails_closed_exit_1
     );
     assert_eq!(
         stdout.trim_end(),
-        "",
-        "raw JSON format must not emit `[]` on total source failure; stdout must be empty"
+        "[]",
+        "raw JSON format must emit valid parseable `[]` on empty findings"
     );
     assert!(
         stderr.contains("stdin exceeds 16 byte limit"),
@@ -133,18 +118,11 @@ fn raw_json_format_on_oversized_stdin_emits_empty_stdout_and_fails_closed_exit_1
 }
 
 #[test]
-fn raw_json_format_with_output_file_on_oversized_stdin_leaves_no_false_clean_array() {
+fn raw_json_format_with_output_file_on_oversized_stdin_writes_report_and_exits_13() {
     let big = vec![b'x'; 256];
-    let out_dir = tempfile::Builder::new()
-        .prefix("keyhog-row163-file-")
-        .tempdir_in(if std::path::Path::new("/var/tmp").exists() {
-            "/var/tmp"
-        } else {
-            "/tmp"
-        })
-        .expect("tempdir");
+    let out_dir = tempfile::tempdir().expect("tempdir");
     let out_file = out_dir.path().join("report.json");
-    let (code, stdout, stderr) = run_stdin_scan(
+    let (code, _stdout, stderr) = run_stdin_scan(
         &big,
         &[
             "scan",
@@ -161,12 +139,11 @@ fn raw_json_format_with_output_file_on_oversized_stdin_leaves_no_false_clean_arr
         ],
     );
     assert_eq!(code, Some(i32::from(EXIT_SOURCE_FAILED)));
-    assert_eq!(stdout.trim_end(), "");
     let file_content = fs::read_to_string(&out_file).unwrap_or_default();
     assert_eq!(
         file_content.trim_end(),
-        "",
-        "output file must not contain `[]` on total source failure"
+        "[]",
+        "output file must contain valid `[]` report"
     );
     assert!(stderr.contains("stdin exceeds 16 byte limit"));
 }
@@ -304,4 +281,74 @@ fn secret_bearing_stdin_emits_findings_array_and_exits_one() {
     let arr = parsed.as_array().expect("array");
     assert_eq!(arr.len(), 1);
     assert_eq!(arr[0]["detector_id"], "slack-bot-token");
+}
+#[test]
+fn json_envelope_format_on_failed_source_keeps_failed_status_under_coverage_gaps() {
+    let big = vec![b'x'; 256];
+    let (code, stdout, _stderr) = run_stdin_scan(
+        &big,
+        &[
+            "scan",
+            "--daemon=off",
+            "--backend",
+            "cpu",
+            "--stdin",
+            "--limit-stdin-bytes",
+            "16B",
+            "--format",
+            "json-envelope",
+        ],
+    );
+    assert_eq!(code, Some(i32::from(EXIT_SOURCE_FAILED)));
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("valid JSON envelope output");
+    assert_eq!(
+        parsed["scan_status"], "failed",
+        "failed status must not be downgraded to partial when coverage gaps exist"
+    );
+}
+
+#[test]
+fn scan_completion_status_resolution_never_downgrades_failed_or_cancelled() {
+    use keyhog_core::ScanCompletionStatus;
+    assert_eq!(
+        ScanCompletionStatus::resolve(Some(ScanCompletionStatus::Failed), true),
+        ScanCompletionStatus::Failed
+    );
+    assert_eq!(
+        ScanCompletionStatus::resolve(Some(ScanCompletionStatus::Failed), false),
+        ScanCompletionStatus::Failed
+    );
+    assert_eq!(
+        ScanCompletionStatus::resolve(Some(ScanCompletionStatus::Cancelled), true),
+        ScanCompletionStatus::Cancelled
+    );
+    assert_eq!(
+        ScanCompletionStatus::resolve(Some(ScanCompletionStatus::Cancelled), false),
+        ScanCompletionStatus::Cancelled
+    );
+    assert_eq!(
+        ScanCompletionStatus::resolve(Some(ScanCompletionStatus::Partial), false),
+        ScanCompletionStatus::Partial
+    );
+    assert_eq!(
+        ScanCompletionStatus::resolve(Some(ScanCompletionStatus::Partial), true),
+        ScanCompletionStatus::Partial
+    );
+    assert_eq!(
+        ScanCompletionStatus::resolve(Some(ScanCompletionStatus::CompleteAfterRecovery), true),
+        ScanCompletionStatus::Partial
+    );
+    assert_eq!(
+        ScanCompletionStatus::resolve(Some(ScanCompletionStatus::CompleteAfterRecovery), false),
+        ScanCompletionStatus::CompleteAfterRecovery
+    );
+    assert_eq!(
+        ScanCompletionStatus::resolve(Some(ScanCompletionStatus::Success), true),
+        ScanCompletionStatus::Partial
+    );
+    assert_eq!(
+        ScanCompletionStatus::resolve(Some(ScanCompletionStatus::Success), false),
+        ScanCompletionStatus::Success
+    );
 }

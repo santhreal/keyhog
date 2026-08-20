@@ -36,7 +36,7 @@ use anyhow::{bail, Result};
 #[cfg(unix)]
 use anyhow::Context;
 #[cfg(unix)]
-use keyhog_core::{Chunk, RawMatch, RuleSuppressor, ScanCompletionStatus, VerifiedFinding};
+use keyhog_core::{Chunk, RawMatch, RuleSuppressor, VerifiedFinding};
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -1521,9 +1521,10 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
     }
     // Partial status when any gap (WARN or FAIL) was observed; exit 13 only
     // for FAIL-class gaps so daemon matches local scan (KH-1368).
-    if !source_coverage_gaps.is_empty() {
-        report_metadata.scan_status = ScanCompletionStatus::Partial;
-    }
+    report_metadata.scan_status = keyhog_core::ScanCompletionStatus::resolve(
+        Some(report_metadata.scan_status),
+        !source_coverage_gaps.is_empty(),
+    );
     crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
     if let Some(profile) = &profile {
         crate::orchestrator::render_daemon_request_profile(profile);
@@ -1609,9 +1610,10 @@ fn finish_guard_commit_scan(
         keyhog_core::embedded_detector_count(),
         None,
     );
-    if result.coverage_gaps > 0 || result.fingerprint_changed {
-        report_metadata.scan_status = keyhog_core::ScanCompletionStatus::Partial;
-    }
+    report_metadata.scan_status = keyhog_core::ScanCompletionStatus::resolve(
+        Some(report_metadata.scan_status),
+        result.coverage_gaps > 0 || result.fingerprint_changed,
+    );
     crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
 
     let finding_exit = crate::orchestrator::scan_exit_code(

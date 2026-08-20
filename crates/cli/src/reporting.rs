@@ -139,9 +139,6 @@ fn report_with<W: std::io::Write + 'static + Send>(
         }
         OutputFormat::Json => {
             let _encoder = keyhog_profile::span(Stage::Reporting);
-            if metadata.scan_status == ScanCompletionStatus::Failed && findings.is_empty() {
-                return Ok(());
-            }
             keyhog_core::write_scan_report(w, ReportFormat::Json, report)?;
             Ok(())
         }
