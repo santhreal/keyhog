@@ -11,9 +11,10 @@
 use keyhog_scanner::hw_probe::{startup_banner, HardwareCaps};
 
 #[allow(clippy::too_many_arguments)]
-fn caps(
+fn caps_with_availability(
     physical_cores: usize,
     gpu_name: Option<&str>,
+    gpu_available: bool,
     gpu_is_software: bool,
     has_avx512: bool,
     has_avx2: bool,
@@ -27,7 +28,7 @@ fn caps(
         has_avx2,
         has_avx512,
         has_neon,
-        gpu_available: gpu_name.is_some(),
+        gpu_available,
         gpu_name: gpu_name.map(str::to_string),
         gpu_vram_mb: None,
         gpu_runtime_identity: None,
@@ -37,6 +38,30 @@ fn caps(
         hyperscan_available,
         hyperscan_runtime_identity: None,
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn caps(
+    physical_cores: usize,
+    gpu_name: Option<&str>,
+    gpu_is_software: bool,
+    has_avx512: bool,
+    has_avx2: bool,
+    has_neon: bool,
+    hyperscan_available: bool,
+    io_uring_available: bool,
+) -> HardwareCaps {
+    caps_with_availability(
+        physical_cores,
+        gpu_name,
+        gpu_name.is_some(),
+        gpu_is_software,
+        has_avx512,
+        has_avx2,
+        has_neon,
+        hyperscan_available,
+        io_uring_available,
+    )
 }
 
 #[test]
@@ -85,5 +110,31 @@ fn scalar_fallback_banner_is_exact() {
     assert_eq!(
         startup_banner(&c, 1, 1),
         "2 cores | GPU: none | SIMD: scalar | AC | 1 detectors (1 patterns)"
+    );
+}
+#[test]
+fn named_gpu_unavailable_banner_is_exact() {
+    let c = caps_with_availability(
+        16,
+        Some("NVIDIA GeForce RTX 4090"),
+        false,
+        false,
+        true,
+        true,
+        false,
+        true,
+        true,
+    );
+    let expected_gpu = if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
+        format!(
+            "GPU: NVIDIA GeForce RTX 4090 ({})",
+            keyhog_scanner::hw_probe::uncompiled_gpu_backend_explanation()
+        )
+    } else {
+        "GPU: NVIDIA GeForce RTX 4090 (not active)".to_string()
+    };
+    assert_eq!(
+        startup_banner(&c, 42, 1234),
+        format!("16 cores | {expected_gpu} | SIMD: AVX-512 | Hyperscan | 42 detectors (1234 patterns) io_uring")
     );
 }
