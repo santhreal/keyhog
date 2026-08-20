@@ -844,6 +844,11 @@ impl FilesystemSource {
         self.window_overlap = overlap;
         self
     }
+    /// Override the window overlap size in bytes.
+    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
+        self.window_overlap = overlap;
+        self
+    }
 
     /// Override the streaming window overlap in bytes.
     #[must_use]

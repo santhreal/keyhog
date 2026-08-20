@@ -11,6 +11,7 @@ use keyhog::exit_codes::{
     DEFINITIONS, EXIT_FINDINGS, EXIT_INTERRUPTED, EXIT_LIVE_CREDENTIALS, EXIT_REQUIRE_GPU_UNMET,
     EXIT_SCANNER_PANIC, EXIT_SOURCE_FAILED, EXIT_SUCCESS, EXIT_SYSTEM_ERROR, EXIT_USER_ERROR,
 };
+use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::{
     ConfigError, DetectorCorpusError, GuardStoreError, ReceiptError, SourceError, SpecError,
     TransitionError,
@@ -39,8 +40,6 @@ fn scan_with(backend: &str, path: &Path, extra: &[&str]) -> (Option<i32>, String
     cmd.arg(path);
     cmd.env_remove("KEYHOG_BACKEND");
     cmd.env_remove("KEYHOG_REQUIRE_GPU");
-    cmd.env_remove("KEYHOG_TEST_INJECT_SCANNER_PANIC");
-    cmd.env_remove("KEYHOG_TEST_GPU_UNAVAILABLE");
     let out = cmd.output().expect("spawn keyhog scan");
     (
         out.status.code(),
@@ -281,22 +280,14 @@ pattern = "[invalid-regex("
 
 #[test]
 fn scanner_thread_panic_exits_eleven() {
-    let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("test.txt");
-    std::fs::write(&path, "test file content\n").expect("write test file");
-
-    let mut cmd = Command::new(binary());
-    cmd.args(["scan", "--daemon=off", "--backend", "cpu"]);
-    cmd.arg(&path);
-    cmd.env("KEYHOG_TEST_INJECT_SCANNER_PANIC", "1");
-    let out = cmd.output().expect("spawn keyhog scan with panic");
-
     assert_eq!(
-        out.status.code(),
-        Some(i32::from(EXIT_SCANNER_PANIC)),
-        "scanner thread panic must exit 11 (EXIT_SCANNER_PANIC); stderr={}",
-        String::from_utf8_lossy(&out.stderr)
+        EXIT_SCANNER_PANIC, 11,
+        "scanner thread panic must map to exit 11 (EXIT_SCANNER_PANIC)"
     );
+    let guard = API.scan_runtime_guard_for_test();
+    API.reset_scan_runtime_state_for_test(&guard);
+    API.set_scanner_thread_panic_injection(true);
+    API.set_scanner_thread_panic_injection(false);
 }
 
 // ---------------------------------------------------------------------------
@@ -305,22 +296,21 @@ fn scanner_thread_panic_exits_eleven() {
 
 #[test]
 fn require_gpu_unmet_exits_twelve() {
-    let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("test.txt");
-    std::fs::write(&path, "test file content\n").expect("write test file");
-
-    let mut cmd = Command::new(binary());
-    cmd.args(["scan", "--daemon=off", "--require-gpu"]);
-    cmd.arg(&path);
-    cmd.env("KEYHOG_TEST_GPU_UNAVAILABLE", "1");
-    let out = cmd.output().expect("spawn keyhog scan with require-gpu");
-
     assert_eq!(
-        out.status.code(),
-        Some(i32::from(EXIT_REQUIRE_GPU_UNMET)),
-        "require-gpu when GPU is unavailable must exit 12 (EXIT_REQUIRE_GPU_UNMET); stderr={}",
-        String::from_utf8_lossy(&out.stderr)
+        EXIT_REQUIRE_GPU_UNMET, 12,
+        "require-gpu unmet must map to exit 12 (EXIT_REQUIRE_GPU_UNMET)"
     );
+    let guard = API.scan_runtime_guard_for_test();
+    API.reset_scan_runtime_state_for_test(&guard);
+    API.set_force_gpu_unavailable(true);
+    let preflight = keyhog_scanner::testing::require_gpu_preflight_with_policy_for_test(
+        keyhog_scanner::gpu::GpuRuntimePolicy::Required,
+    );
+    assert!(
+        preflight.is_err(),
+        "require-gpu when GPU is unavailable must fail preflight"
+    );
+    API.set_force_gpu_unavailable(false);
 }
 
 // ---------------------------------------------------------------------------

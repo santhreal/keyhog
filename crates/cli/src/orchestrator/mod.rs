@@ -3,6 +3,7 @@
 mod allowlist;
 pub(crate) use allowlist::load_rule_suppressor;
 mod dispatch;
+pub(crate) use dispatch::set_test_scanner_thread_panic_injection;
 pub(crate) use dispatch::{
     automatic_backend_recovery_allowed, canonical_source_classes,
     record_completed_backend_recovery, scan_selected_batch, AutorouteMeasurementReceipt,

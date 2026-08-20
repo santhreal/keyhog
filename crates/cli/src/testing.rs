@@ -514,6 +514,8 @@ pub trait CliTestApi {
     ) -> Vec<keyhog_core::ScanBackendRecoverySummary>;
     fn scanned_chunks(&self, _guard: &ScanRuntimeGuard) -> usize;
     fn scanner_panicked(&self, _guard: &ScanRuntimeGuard) -> bool;
+    fn set_scanner_thread_panic_injection(&self, inject: bool);
+    fn set_force_gpu_unavailable(&self, force: bool);
 
     // Completion-summary & progress-ticker renderers (pure formatting fns whose
     // unit tests were relocated out of `orchestrator::reporting` for the
@@ -1419,6 +1421,12 @@ impl CliTestApi for TestApi {
     }
     fn scanner_panicked(&self, _guard: &ScanRuntimeGuard) -> bool {
         crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    fn set_scanner_thread_panic_injection(&self, inject: bool) {
+        crate::orchestrator::set_test_scanner_thread_panic_injection(inject);
+    }
+    fn set_force_gpu_unavailable(&self, force: bool) {
+        keyhog_scanner::gpu::set_force_gpu_unavailable_for_test(force);
     }
 
     fn verification_tally(&self, findings: &[VerifiedFinding]) -> VerificationTally {

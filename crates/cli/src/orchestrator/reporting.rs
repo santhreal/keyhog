@@ -420,6 +420,9 @@ pub(crate) fn report_scanner_materialization_summary(
     ansi: bool,
     materialization: Option<&crate::orchestrator::ScannerMaterialization>,
 ) {
+    if !ansi {
+        return;
+    }
     let palette = terminal_palette(ansi, false);
     let line = match materialization {
         Some(crate::orchestrator::ScannerMaterialization::MappedPack { generation }) => {
@@ -441,6 +444,9 @@ pub(crate) fn report_compiled_cache_summary(
     ansi: bool,
     orchestrator: &crate::orchestrator::ScanOrchestrator,
 ) {
+    if !ansi {
+        return;
+    }
     let palette = terminal_palette(ansi, false);
     let cache_base = dirs::cache_dir();
     for kind in keyhog_core::CacheKind::ALL {

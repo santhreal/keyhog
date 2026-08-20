@@ -208,6 +208,8 @@ pub(crate) fn reset_scan_runtime_state() {
     AUTOROUTE_PERSIST_ERRORS.store(0, Ordering::Relaxed);
     BATCHES_NOT_ROUTED.store(0, Ordering::Relaxed);
     SCANNER_PANICKED.store(false, Ordering::Relaxed);
+    crate::orchestrator::set_test_scanner_thread_panic_injection(false);
+    keyhog_scanner::gpu::set_force_gpu_unavailable_for_test(false);
     keyhog_scanner::telemetry::reset_for_scan();
 }
 

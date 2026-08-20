@@ -34,9 +34,16 @@ use keyhog_core::{Chunk, RawMatch, Source};
 use keyhog_scanner::hw_probe::ScanBackend;
 use keyhog_scanner::CompiledScanner;
 use pipeline::{coalesced_pipeline_plan, CoalescedPipelinePlan};
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Instant;
+
+static TEST_SCANNER_THREAD_PANIC: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn set_test_scanner_thread_panic_injection(inject: bool) {
+    TEST_SCANNER_THREAD_PANIC.store(inject, Ordering::SeqCst);
+}
 
 /// Single owner of the per-chunk scan ceiling. Enforced by the in-process
 /// coalesced pipeline (below) AND the daemon path (`daemon::server`), so both
@@ -1292,8 +1299,7 @@ impl ScanOrchestrator {
         let dispatch_starts = Arc::clone(&self.scanner_dispatch_starts);
         let scanner_thread = std::thread::spawn(move || {
             let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
-            #[cfg(test)]
-            if std::env::var_os("KEYHOG_TEST_INJECT_SCANNER_PANIC").is_some() {
+            if TEST_SCANNER_THREAD_PANIC.load(Ordering::SeqCst) {
                 panic!("test-injected scanner thread panic");
             }
             with_nonempty_batches(rx.into_iter(), |batches| {
