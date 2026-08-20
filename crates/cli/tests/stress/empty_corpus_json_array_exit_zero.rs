@@ -7,12 +7,14 @@ use tempfile::TempDir;
 #[test]
 fn empty_corpus_json_array_exit_zero() {
     let dir = TempDir::new().expect("tempdir");
+    std::fs::write(dir.path().join("clean.txt"), "plain text, no secrets\n")
+        .expect("write clean file");
     let output = Command::new(binary())
         .args([
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            crate::support::DIAGNOSTIC_BACKEND,
             "--format",
             "json",
         ])

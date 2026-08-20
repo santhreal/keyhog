@@ -1401,7 +1401,7 @@ impl ScanOrchestrator {
                 match installed {
                     Ok(pack) => (None, Some(pack)),
                     Err(error) if !execution_pack_directory.exists() => {
-                        tracing::warn!(
+                        tracing::debug!(
                             error = %error,
                             "no installed execution-pack generation; parsing embedded detectors"
                         );
