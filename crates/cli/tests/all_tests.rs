@@ -48,6 +48,7 @@ pub mod regression_install_static_analysis_gate;
 pub mod regression_install_windows_unblock;
 pub mod regression_ml_threshold_wired_to_confidence_floor;
 pub mod regression_row_156_gpu_route_explanation_parity;
+pub mod regression_row_162_benchmark_corpus_synthetic_packs;
 pub mod regression_scan_system_mount_filters_tier_b;
 pub mod regression_scanargs_field_contract;
 pub mod regression_stable_hash_field_identity;
