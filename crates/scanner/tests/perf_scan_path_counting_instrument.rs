@@ -28,7 +28,7 @@ unsafe impl GlobalAlloc for ScanCountingAllocator {
             ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
             TOTAL_BYTES.fetch_add(size, Ordering::Relaxed);
             let prev = CURRENT_BYTES.fetch_add(size, Ordering::Relaxed);
-            let cur = prev.saturating_add(size);
+            let cur = prev + size;
             let mut peak = PEAK_BYTES.load(Ordering::Relaxed);
             while cur > peak {
                 match PEAK_BYTES.compare_exchange_weak(
@@ -64,7 +64,7 @@ unsafe impl GlobalAlloc for ScanCountingAllocator {
                 let diff = new_size - old_size;
                 TOTAL_BYTES.fetch_add(diff, Ordering::Relaxed);
                 let prev = CURRENT_BYTES.fetch_add(diff, Ordering::Relaxed);
-                let cur = prev.saturating_add(diff);
+                let cur = prev + diff;
                 let mut peak = PEAK_BYTES.load(Ordering::Relaxed);
                 while cur > peak {
                     match PEAK_BYTES.compare_exchange_weak(
@@ -98,10 +98,7 @@ fn reset_instrument() {
     PEAK_BYTES.store(0, Ordering::SeqCst);
 }
 
-static SERIAL: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
-
 fn measure_scan<T>(f: impl FnOnce() -> T) -> (T, usize, usize, usize) {
-    let _guard = SERIAL.lock();
     reset_instrument();
     COUNTING.store(true, Ordering::SeqCst);
     let res = f();
