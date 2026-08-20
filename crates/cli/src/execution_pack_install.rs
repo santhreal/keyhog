@@ -109,7 +109,6 @@ impl InstalledArtifactClass {
                 ArtifactIdentityInput::TargetHardwareDigest,
                 ArtifactIdentityInput::FeatureDigest,
                 ArtifactIdentityInput::DetectorCorpusDigest,
-                ArtifactIdentityInput::ConfigDigest,
             ],
             Self::VerificationKey => &[ArtifactIdentityInput::SigningKeyIdentity],
             Self::ExecutionPack => &[
@@ -117,7 +116,6 @@ impl InstalledArtifactClass {
                 ArtifactIdentityInput::TargetHardwareDigest,
                 ArtifactIdentityInput::FeatureDigest,
                 ArtifactIdentityInput::DetectorCorpusDigest,
-                ArtifactIdentityInput::ConfigDigest,
                 ArtifactIdentityInput::SigningKeyIdentity,
             ],
             Self::Signature => &[
@@ -135,7 +133,6 @@ impl InstalledArtifactClass {
                 ArtifactIdentityInput::TargetHardwareDigest,
                 ArtifactIdentityInput::FeatureDigest,
                 ArtifactIdentityInput::DetectorCorpusDigest,
-                ArtifactIdentityInput::ConfigDigest,
                 ArtifactIdentityInput::GpuDeviceIdentity,
             ],
         }

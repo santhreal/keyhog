@@ -252,7 +252,7 @@ fn custom_ignore_paths_filtered_in_unit_watcher() {
 
     assert_eq!(
         watcher.root_ignore_paths(&root).unwrap(),
-        &["*.log", "build/**"]
+        vec!["*.log".to_string(), "build/**".to_string()]
     );
     assert_eq!(watcher.root_respects_default_excludes(&root), Some(true));
 

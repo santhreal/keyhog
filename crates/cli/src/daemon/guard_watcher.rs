@@ -157,11 +157,11 @@ struct WatchedRoot {
     /// Bounded event buffer with monotonic sequence.
     buffer: Arc<Mutex<EventBuffer>>,
     /// Explicit ignore paths / globs configured for this root.
-    ignore_paths: Vec<String>,
+    ignore_paths: parking_lot::RwLock<Vec<String>>,
     /// Gitignore matcher combining root .keyhogignore, .gitignore, and explicit ignore_paths.
     ignore_matcher: parking_lot::RwLock<Option<ignore::gitignore::Gitignore>>,
     /// Whether default excludes (.git, target, node_modules, lockfiles, minified files, binary extensions) are respected.
-    respect_default_excludes: bool,
+    respect_default_excludes: std::sync::atomic::AtomicBool,
 }
 
 impl WatchedRoot {
@@ -176,9 +176,9 @@ impl WatchedRoot {
             parking_lot::RwLock::new(build_root_ignore_matcher(root_path, &ignore_paths));
         Self {
             buffer,
-            ignore_paths,
+            ignore_paths: parking_lot::RwLock::new(ignore_paths),
             ignore_matcher,
-            respect_default_excludes,
+            respect_default_excludes: std::sync::atomic::AtomicBool::new(respect_default_excludes),
         }
     }
 
@@ -187,22 +187,30 @@ impl WatchedRoot {
         &self,
         root: &std::path::Path,
         path: &std::path::Path,
-        _skip_dirs: &crate::skip_dirs::SkipDirPolicy,
+        skip_dirs: &crate::skip_dirs::SkipDirPolicy,
     ) -> bool {
         let Ok(rel_path) = path.strip_prefix(root) else {
             return false;
         };
 
         // 1. Directory / path component exclusions matching source scan semantics.
-        if self.respect_default_excludes {
+        if self
+            .respect_default_excludes
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
             for component in rel_path.components() {
                 if let std::path::Component::Normal(os) = component {
-                    if keyhog_sources::is_default_excluded_dir_name(os) {
+                    if let Some(s) = os.to_str() {
+                        if skip_dirs.is_watch_component(s)
+                            || keyhog_sources::is_default_excluded_dir_name(os)
+                        {
+                            return true;
+                        }
+                    } else if keyhog_sources::is_default_excluded_dir_name(os) {
                         return true;
                     }
                 }
             }
-
             // 2. Default excluded files, suffixes, infixes, filenames.
             #[cfg(unix)]
             {
@@ -235,12 +243,19 @@ impl WatchedRoot {
 
     fn maybe_reload_ignore_matcher(&self, root: &std::path::Path, path: &std::path::Path) {
         if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-            if file_name == ".keyhogignore"
+            if file_name == ".keyhog.toml" {
+                let (new_ignores, new_respect) = resolve_root_exclusions(root);
+                *self.ignore_paths.write() = new_ignores;
+                self.respect_default_excludes
+                    .store(new_respect, std::sync::atomic::Ordering::Relaxed);
+                *self.ignore_matcher.write() =
+                    build_root_ignore_matcher(root, &self.ignore_paths.read());
+            } else if file_name == ".keyhogignore"
                 || file_name == ".keyhogignore.toml"
                 || file_name == ".gitignore"
-                || file_name == ".keyhog.toml"
             {
-                *self.ignore_matcher.write() = build_root_ignore_matcher(root, &self.ignore_paths);
+                *self.ignore_matcher.write() =
+                    build_root_ignore_matcher(root, &self.ignore_paths.read());
             }
         }
     }
@@ -270,26 +285,17 @@ fn build_root_ignore_matcher(
 }
 
 fn resolve_root_exclusions(root: &std::path::Path) -> (Vec<String>, bool) {
-    let dot_config = root.join(".keyhog.toml");
-    if let Ok(bytes) = std::fs::read(&dot_config) {
-        if let Ok(text) = std::str::from_utf8(&bytes) {
-            if let Ok(value) = toml::from_str::<toml::Value>(text) {
-                let ignore_paths = value
-                    .get("scan")
-                    .and_then(|s| s.get("ignore_paths"))
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let respect_default_excludes = value
-                    .get("scan")
-                    .and_then(|s| s.get("respect_default_excludes"))
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
-                return (ignore_paths, respect_default_excludes);
+    if let Some(config_path) = crate::config::find_config_file(Some(root)) {
+        if let Ok(bytes) = std::fs::read(&config_path) {
+            if let Ok(text) = std::str::from_utf8(&bytes) {
+                if let Ok(config) = toml::from_str::<crate::config::schema::ConfigFile>(text) {
+                    let ignore_paths = config
+                        .scan
+                        .as_ref()
+                        .and_then(|s| s.exclude.clone())
+                        .unwrap_or_default();
+                    return (ignore_paths, true);
+                }
             }
         }
     }
@@ -531,14 +537,17 @@ impl GuardWatcher {
 
     /// Explicit ignore paths configured for a watched root, if watched.
     #[must_use]
-    pub fn root_ignore_paths(&self, root: &std::path::Path) -> Option<&[String]> {
-        self.roots.get(root).map(|w| w.ignore_paths.as_slice())
+    pub fn root_ignore_paths(&self, root: &std::path::Path) -> Option<Vec<String>> {
+        self.roots.get(root).map(|w| w.ignore_paths.read().clone())
     }
 
     /// Whether default excludes are respected for a watched root, if watched.
     #[must_use]
     pub fn root_respects_default_excludes(&self, root: &std::path::Path) -> Option<bool> {
-        self.roots.get(root).map(|w| w.respect_default_excludes)
+        self.roots.get(root).map(|w| {
+            w.respect_default_excludes
+                .load(std::sync::atomic::Ordering::Relaxed)
+        })
     }
 
     /// Remove a root from watching.

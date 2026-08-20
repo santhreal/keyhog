@@ -837,6 +837,16 @@ pub(crate) fn write_matcher_artifact_atomically<F>(
 where
     F: FnOnce(&mut tempfile::NamedTempFile) -> std::io::Result<()>,
 {
+    if path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .is_none()
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "matcher artifact path must have a parent directory",
+        ));
+    }
     keyhog_core::state_file::write_atomically_with_writer(path, |tmp| {
         writer(tmp)?;
         let actual_len = usize::try_from(tmp.as_file().metadata()?.len()).map_err(|_| {

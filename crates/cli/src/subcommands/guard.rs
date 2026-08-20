@@ -894,17 +894,27 @@ async fn run_status_online(
                         "{}",
                         serde_json::json!({
                             "daemon": "active",
-                            "total": views.len(),
+                            "total": roots.len(),
+                            "queried": views.len(),
                             "roots": root_jsons,
                         })
                     );
                 } else {
-                    eprintln!(
-                        "{} {} guard root{} registered",
-                        style::pass("OK", &palette),
-                        views.len(),
-                        if views.len() == 1 { "" } else { "s" }
-                    );
+                    if views.len() == roots.len() {
+                        eprintln!(
+                            "{} {} guard root{} registered",
+                            style::pass("OK", &palette),
+                            views.len(),
+                            if views.len() == 1 { "" } else { "s" }
+                        );
+                    } else {
+                        eprintln!(
+                            "{} {} of {} guard roots successfully queried",
+                            style::fail("FAIL", &palette),
+                            views.len(),
+                            roots.len(),
+                        );
+                    }
                     for (i, view) in views.iter().enumerate() {
                         if i > 0 {
                             println!();

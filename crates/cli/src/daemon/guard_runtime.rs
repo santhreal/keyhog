@@ -640,6 +640,11 @@ impl GuardRuntime {
         self.current_identity.read().clone()
     }
 
+    /// Get the policy identity for a specific root, if set.
+    pub fn root_policy_identity(&self, root_path: &[u8]) -> Option<GuardPolicyIdentity> {
+        self.root_identities.read().get(root_path).cloned()
+    }
+
     /// Autoroute evidence status label for status display.
     /// Returns "established" when a policy identity is set, "pending"
     /// otherwise. The daemon does not hold autoroute calibration state;

@@ -460,6 +460,7 @@ fn handle_command_outcome(command_outcome: anyhow::Result<ExitCode>) -> ExitCode
 }
 
 pub fn cli_main() -> ExitCode {
+    interrupt::install();
     // Startup/dispatch setup (flag pre-scan) is synchronous.
     let startup_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     // `env::args()` panics on non-UTF-8 args (Linux allows raw-byte
@@ -513,7 +514,6 @@ pub fn cli_main() -> ExitCode {
 }
 
 fn dispatch_command(command: args::Command) -> ExitCode {
-    interrupt::install();
     let _warn_dedup_summary = init_tracing();
 
     match command {

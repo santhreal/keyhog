@@ -94,26 +94,40 @@ pub(crate) fn install_execution_generation(
             )
         })?;
     if !probe.status.success() {
-        // Candidate binary genuinely lacks compile-execution-packs (legacy version).
-        // Surface warning loudly. We do not stage or publish packs, but we preserve existing
-        // artifacts in place so rollbacks remain valid if the candidate fails later health gates.
-        eprintln!(
-            "warning: candidate binary {} does not support compile-execution-packs; skipping generation compilation",
-            candidate.display()
+        let stderr = String::from_utf8_lossy(&probe.stderr);
+        let is_unrecognized = probe.status.code() == Some(2)
+            && (stderr.contains("unrecognized subcommand")
+                || stderr.contains("invalid subcommand")
+                || stderr.contains("unexpected argument")
+                || stderr.contains("was not expected"));
+        if is_unrecognized {
+            // Candidate binary genuinely lacks compile-execution-packs (legacy version).
+            // Surface warning loudly. We do not stage or publish packs, but we preserve existing
+            // artifacts in place so rollbacks remain valid if the candidate fails later health gates.
+            eprintln!(
+                "warning: candidate binary {} does not support compile-execution-packs; skipping generation compilation",
+                candidate.display()
+            );
+            return Ok(ExecutionGenerationInstallTransaction {
+                current_packs: PathBuf::new(),
+                current_cache: PathBuf::new(),
+                old_packs: PathBuf::new(),
+                old_cache: PathBuf::new(),
+                _stage: None,
+                packs_published: false,
+                cache_published: false,
+                had_old_packs: false,
+                had_old_cache: false,
+                created_signing_key: None,
+                committed: true,
+            });
+        }
+        bail!(
+            "candidate binary {} failed execution-pack capability probe with {}: {}",
+            candidate.display(),
+            probe.status,
+            stderr.trim()
         );
-        return Ok(ExecutionGenerationInstallTransaction {
-            current_packs: PathBuf::new(),
-            current_cache: PathBuf::new(),
-            old_packs: PathBuf::new(),
-            old_cache: PathBuf::new(),
-            _stage: None,
-            packs_published: false,
-            cache_published: false,
-            had_old_packs: false,
-            had_old_cache: false,
-            created_signing_key: None,
-            committed: true,
-        });
     }
     let cache_root = dirs::cache_dir()
         .context("platform cache directory is unavailable; cannot publish execution packs")?
