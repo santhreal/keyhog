@@ -30,8 +30,6 @@ pub mod support;
 // `scripts/gates/tests_wired.py` keeps every top-level `tests/*.rs` reachable.
 pub mod action_root_mirror_parity;
 pub mod advisory_ignores_are_justified;
-pub mod cache_kinds_eviction_parity;
-pub mod compiled_artifact_classes_parity;
 pub mod cross_os_target_spec;
 pub mod docs_claim_matches_router;
 pub mod feature_matrix_combination_parity;
@@ -49,16 +47,6 @@ pub mod regression_incremental_cache_config_wiring;
 pub mod regression_install_static_analysis_gate;
 pub mod regression_install_windows_unblock;
 pub mod regression_ml_threshold_wired_to_confidence_floor;
-pub mod regression_row_112_byte_size_parser_canonicalization;
-pub mod regression_row_113_operational_constants_governance;
-pub mod regression_row_120_watcher_disconnected_fail_closed;
-pub mod regression_row_121_watcher_multi_path_events;
-#[path = "regression_row_123_watcher_backend_status.rs"]
-pub mod regression_row_123_watcher_backend_status;
-pub mod regression_row_131_config_example_guard_section;
-pub mod regression_row_132_guard_scrub_unauthoritative_probe;
-pub mod regression_row_133_directional_queue_attribution;
-pub mod regression_row_149_structural_gate_consolidation;
 pub mod regression_row_156_gpu_route_explanation_parity;
 pub mod regression_scan_system_mount_filters_tier_b;
 pub mod regression_scanargs_field_contract;

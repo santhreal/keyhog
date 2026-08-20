@@ -336,7 +336,7 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
             format!("{dim}not detected (binary built without --features gpu){reset}")
         }
     } else {
-        format!("{dim}not detected (CPU/SIMD path){reset}")
+        format!("{dim}not detected{reset}")
     };
     println!("  gpu            {gpu}");
     println!(

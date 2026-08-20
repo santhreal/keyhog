@@ -103,7 +103,8 @@ fn every_calibration_flag_has_a_forwarding_decision() {
         .map(|flag| (*flag).to_string())
         .collect();
     assert_eq!(
-        declared, decided,
+        declared,
+        decided,
         "every calibrate-autoroute flag must be forwarded to the isolated policy \
          children or explicitly owned by the parent\n  undecided: {:?}\n  stale: {:?}",
         declared.difference(&decided).collect::<Vec<_>>(),
@@ -188,7 +189,7 @@ fn calibration_argv_resolves_the_config_digest_a_plain_scan_requests() {
                     scanned,
                     "calibration for {} with include_gpu={include_gpu} no_config={no_config} must \
                      persist under the digest the same scan requests",
-                    policy.unwrap_or("the default policy"), // LAW10: test error assertion formatting default
+                    policy.unwrap_or("the default policy"),
                 );
             }
         }
