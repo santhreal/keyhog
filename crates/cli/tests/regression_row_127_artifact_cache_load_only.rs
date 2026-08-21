@@ -198,7 +198,11 @@ fn disabled_detector_and_its_dependent_produce_no_findings_under_prepared_pack()
     let cache_home = temp_dir.path().join("cache");
     let (_pack_root, _output_dir) = clone_prepared_installation(&cache_home);
 
-    let scan_file = temp_dir.path().join("razorpay_creds.txt");
+    // A dotenv file is a supported assignment context, so the planted pair is
+    // `likely` evidence and blocks. In a `.txt` file the same pair is
+    // `review` (`unsupported-context`) and exits 0, which would test the
+    // evidence policy instead of detector dependency silencing.
+    let scan_file = temp_dir.path().join(".env");
     fs::write(
         &scan_file,
         "RAZORPAY_KEY_ID=rzp_test_Kp4Qx7Rm2Sn5Tb\nRAZORPAY_KEY_SECRET=Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3\n",
@@ -330,5 +334,56 @@ fn scan_succeeds_when_local_detectors_folder_exists_by_loading_prepared_pack() {
     assert!(
         stderr.contains("cache detector-plans: hit"),
         "cache summary for detector-plans must report 'hit' under prepared pack; stderr:\n{stderr}"
+    );
+}
+
+/// The other half of the contract above: pack reuse is decided by corpus
+/// identity, so a `detectors/` directory that is NOT the installed generation
+/// gets neither the pack nor its calibrated routing. It has no measured
+/// decision of its own, so the scan fails closed and names the mismatch
+/// instead of scanning with evidence for another corpus.
+#[test]
+fn edited_local_detectors_folder_compiles_instead_of_reusing_the_pack() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+
+    let cache_home = temp_dir.path().join("cache");
+    let (_pack_root, _output_dir) = clone_prepared_installation(&cache_home);
+
+    let detectors_dir = temp_dir.path().join("detectors");
+    installed_generation::copy_dir_all(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors"),
+        &detectors_dir,
+    );
+    // A corpus missing one detector is a different corpus.
+    fs::remove_file(detectors_dir.join("aws-bedrock-api-key.toml"))
+        .expect("remove one detector from the copied corpus");
+
+    let scan_file = temp_dir.path().join("sample.txt");
+    fs::write(&scan_file, "sample payload for edited corpus scan\n").expect("write scan file");
+
+    let scan_output = Command::new(env!("CARGO_BIN_EXE_keyhog"))
+        .current_dir(temp_dir.path())
+        .arg("scan")
+        .arg("--daemon=off")
+        .arg(&scan_file)
+        .env("XDG_CACHE_HOME", &cache_home)
+        .env("HOME", temp_dir.path())
+        .output()
+        .expect("run scan command");
+
+    let stderr = String::from_utf8_lossy(&scan_output.stderr);
+    assert_eq!(
+        scan_output.status.code(),
+        Some(EXIT_USER_ERROR as i32),
+        "an edited corpus has no calibrated route and must fail closed; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("detector digest mismatch"),
+        "the refusal must name the corpus identity that did not match; stderr:\n{stderr}"
+    );
+    assert!(
+        scan_output.stdout.is_empty(),
+        "a run that never routed emits no report document; stdout:\n{}",
+        String::from_utf8_lossy(&scan_output.stdout)
     );
 }
