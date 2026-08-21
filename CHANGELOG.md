@@ -2,12 +2,12 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
-## [0.5.80] - 2026-08-17
+## [0.5.81] - 2026-08-20
+
 ### Added
 - feat(detectors): audit and expand checksum and structured offline validators (`Jwt`, `Uuid`, `HexHash`, `LuhnChecksum`, `PatternShape`, `Base62Crc32`) across detector corpus to eliminate false positives without false negatives (Row 152).
 - feat(guard): populate GuardPolicyIdentity digests for ignore file, suppressions, configuration, and source policy, triggering state transition to StalePolicy and attestation invalidation on policy file modifications (Row 142).
 - feat(hook): utilize prepared execution pack in pre-commit hook run for zero runtime compilations and sub-second execution (Row 145).
-
 - bench(product): add product-level criterion benchmarks for CLI startup, hook execution, guard status, core evaluation, and verifier evaluation (Row 147).
 - feat(guard): continuous guard transition feed and event log surface with causal attribution across registered roots (Row 146).
 - feat(cli): enhance pass-gate terminal output craft with structured volume, blob counts, bytes scanned, and execution timing (Row 143).
@@ -44,21 +44,13 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - feat(benchmarks): establish harness default config and install parity between CLI pure-Rust portable default and benchmark SIMD requirements with fail-closed non-SIMD handling and regression testing (Row 155).
 - feat(execution-pack): optimize startup footprint and execution pack pre-installation floor with lazy canonical IR compilation and zero-compile scan path (Row 158).
 - feat(profile): instrument fine-grained candidate confirmation and phase-2 verification timing metrics across suffix gating, companion gating, anchor collection, extraction, fragments, and dedup (Row 159).
-
-
 ### Added
-
 - feat(compiled_artifact): add canonical `CompiledArtifactClass` enumeration and `CompiledArtifactIdentity` contracts.
 - feat(cache): add `validate_and_tighten_matcher_artifact_cache_dir` to auto-repair loose default cache directory permissions to 0700 without disabling cache.
-
 ### Added
-
 - feat(daemon): report active watcher backend, latency tier, and polling interval in guard status (Row 123).
-
-### Changed
 - **fix(backend): GPU route explanation parity reporting compiled-in feature state when GPU hardware is physically present rather than false probe misses (Row 156).**
 - **Benchmark corpus synthetic packs & representative test coverage (Row 162).** Fixed AWS Access Key token shape in the built-in benchmark corpus template to match 20-character credential length (`AKIA` + 16 chars). Added integration tests verifying benchmark corpus structure, metadata, planted credential shapes, and synthetic execution pack finding parity invariants.
-
 - perf(scanner): optimize startup memory floor and scanner structure layouts (Row 153). Pack LazyRegexState flags into a single atomic byte, shrink CsrU32 to exact boxed slices, flatten GenericKeywordStemSet byte buckets, dynamically scale LRU thread-local caches, scale DashMap absence cache shards dynamically with host parallelism, and box immutable compiled pattern slices.
 - refactor(core): unify atomic durable writes across state artifacts and scanner caches into keyhog_core::state_file (Row 148).
 - fix(daemon): filter out ignored and excluded paths (.git, target, node_modules, ignore_paths, default excludes) in guard filesystem watcher to prevent unnecessary reconcile transactions (Row 141).
@@ -82,7 +74,6 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - fix(scanner): classify standard configuration and credentials paths (`credentials`, `.credentials`, `config`, `.config`, `secrets`, `.secrets`, `.conf`, `.properties`, `.txt`) as structured INI context to prevent false downgrade of AWS credentials to unsupported-context (Row 164).
 - fix(scanner): clamp decode-through window overlap to enforce strictly advancing window progress across UTF-8 scalar boundaries in release builds.
 - fix(cli): add `parse_decode_size_limit` rejecting empty and sub-4B `--decode-size-limit` inputs with actionable error diagnostic.
-- style: format guard massive diff test and git sources modules.
 - fix(detectors): resolve evasion gaps, required literal routing, and Unicode whitespace boundary handling across 8 detector specifications (`apple-push-notification-key`, `google-artifact-registry-key`, `near-api-credentials`, `netrc-password`, `twitter-ads-api-credentials`, `webex-access-token`, `wechat-api-credentials`, `wordpress-api-token`).
 - test(scanner): consolidate per-detector regression execution into sequential full-coverage suite to prevent parallel runner memory exhaustion.
 - **Removed the dead signed binary-asset release channel.** No workflow built, signed, or uploaded release binaries, but `install.sh`, `install.ps1`, `keyhog update`, and `keyhog repair` all still consumed that channel. Each searched backward for a release that still carried a complete asset bundle, so the dead channel did not fail: `sh install.sh` silently installed v0.5.47 while the current version was v0.5.80. Removed `keyhog update` and `keyhog repair`, the download/signature/asset-selection half of `crates/cli/src/installer` (including the unreachable self-replace, backup/rollback, and orphan-reaping machinery), and the network half of both install scripts. `--from-file` is now required to install and still verifies a sibling `.minisig` and `.sha256`; without it the scripts print `cargo install keyhog --locked`. Retired the `KEYHOG_VERSION` and `GITHUB_TOKEN` installer environment variables, the `--repair`/`--version` installer flags, and the dead `EXIT_REPAIR_FAILED`/`EXIT_UPDATE_AVAILABLE` exit aliases. Update and repair are now `cargo install --locked --force keyhog`.
@@ -95,13 +86,16 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - `readme_exit_codes_match_cli_contract` pinned five hand-picked prose fragments of the README exit-code table and could not see a new exit code at all. It now derives the expected rows from `exit_codes::DEFINITIONS`, so adding a code turns it red until the README documents it, and a documented code with no definition also fails.
 - **Autoroute calibration refused every generation on multi-core hosts, so no install could complete.** `calibrate-autoroute` measured 180 workload probes, then discarded the whole routing generation because the 4 MiB through 32 MiB classes reported `workload class changes its confidence-supported backend across measured points`. That check compared the two points' backends directly, with no test of whether the measurements separated them. They did not: across three retries of the same 4 MiB bucket the daemon route reported `simd-regex` and `cpu-fallback` on alternating runs, which is run-to-run variance between two statistically indistinguishable backends, not a crossover. Publication is all-or-nothing, so one such class cost the entire cache, `install.sh` rolled back, and every later scan exited 2 with `autoroute calibration required`. Backend selection across points now resolves through `resolve_route_across_points`, which keeps the lowest-complexity backend that is measured at every point and proved slower at none: a disagreement no point separates reconciles, and a disagreement some point does separate is still refused as a real crossover, with an error that says so. `calibrate-autoroute` now exits 0 and publishes 158 route decisions from 235 measured points on a 16-core AVX-512 host.
 - **Both installers required a GPU literal sidecar that nothing produced, so every install failed closed.** `install.sh` and `install.ps1` refused any `--from-file` install without a sibling `<binary>.gpu-literals.tar.gz`, and `--from-file` is now the only install mode. The sole producer of those artifacts is `keyhog-scanner-artifacts`, a development binary that is not shipped, and the tarball packaging existed only in CI and in test fixtures, so no user could satisfy the requirement. This is the same defect class as the execution packs above: a required artifact with no producer. Added `keyhog compile-gpu-literals`, which compiles the detector corpus embedded in the binary into the host matcher artifacts and publishes them, atomically per file, into the runtime program cache. A missing sidecar now generates through the installed binary rather than failing; a sidecar that IS supplied is still signature-checked, checksum-checked, and archive-validated before extraction. Generation failure still fails the install and rolls the binary back, because finishing without matchers would put detector compilation back on every scan.
-
-### Fixed
-
-- Include known reason and repair command in daemon warm-route errors and startup banner instead of hiding them behind a generic fallback. Apply the same fix to the daemon status command. Make is_work_request exhaustive so adding a new Request variant causes a compile error. Add regression tests pinning daemon server pure-function behaviors before modularization.
 - fix(daemon): fail-closed reconciliation and root degradation on watcher channel disconnection (Row 120).
 - fix(daemon): attribute multi-path watcher events across all enclosing roots and trigger subtree reconciliation on pathless events (Row 121).
 - fix(gates): enforce shrink-only ratchet in `no_silent_fallbacks` gate (Row 136).
+
+## [0.5.80] - 2026-08-17
+
+### Changed
+- style: format guard massive diff test and git sources modules.
+### Fixed
+- Include known reason and repair command in daemon warm-route errors and startup banner instead of hiding them behind a generic fallback. Apply the same fix to the daemon status command. Make is_work_request exhaustive so adding a new Request variant causes a compile error. Add regression tests pinning daemon server pure-function behaviors before modularization.
 
 ## [0.5.79] - 2026-08-16
 

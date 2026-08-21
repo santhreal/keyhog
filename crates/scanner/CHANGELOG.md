@@ -1,7 +1,8 @@
 # Changelog
 
 
-## 0.5.80 - 2026-08-17
+## 0.5.81 - 2026-08-20
+
 - perf(scanner): optimize startup memory floor and scanner structure layouts (Row 153). Pack LazyRegexState flags into a single atomic byte, shrink CsrU32 to exact boxed slices, flatten GenericKeywordStemSet byte buckets, dynamically scale LRU thread-local caches, scale DashMap absence cache shards dynamically with host parallelism, and box immutable compiled pattern slices.
 - feat(detectors): expand detector checksum and structured offline validators (Jwt, Uuid, HexHash, LuhnChecksum, PatternShape, Base62Crc32) to eliminate false positives and enforce checksum suppression (Row 152).
 - feat(scanner): instrument dynamic anchored regex compilation paths with `LAZY_REGEX_COMPILE_EVENTS` runtime counters to prevent invisible un-cached compilations (Row 150).
@@ -44,9 +45,12 @@
 - feat(scanner): expose `PackFindingParityEvidence::validate` with doc comments for parity validation across routes and generations.
 - test(scanner): add benchmark corpus and synthetic pack finding parity regression coverage (Row 162).
 - fix(scanner): clamp decode-through window overlap to enforce strictly advancing window progress across UTF-8 scalar boundaries in release builds.
-- style: format guard massive diff test and git sources modules.
 - fix(detectors): resolve evasion gaps, required literal routing, and Unicode whitespace boundary handling across 8 detector specifications (`apple-push-notification-key`, `google-artifact-registry-key`, `near-api-credentials`, `netrc-password`, `twitter-ads-api-credentials`, `webex-access-token`, `wechat-api-credentials`, `wordpress-api-token`).
 - test(scanner): consolidate per-detector regression execution into sequential full-coverage suite to prevent parallel runner memory exhaustion.
+
+## 0.5.80 - 2026-08-17
+
+- style: format guard massive diff test and git sources modules.
 
 ## 0.5.79 - 2026-08-16
 

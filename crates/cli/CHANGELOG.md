@@ -1,6 +1,7 @@
 # Changelog
 
-## 0.5.80 - 2026-08-17
+## 0.5.81 - 2026-08-20
+
 - feat(guard): derive effective root GuardPolicyIdentity digests across .keyhogignore, .keyhogignore.toml, .keyhog.toml, and suppression files, transitioning active roots to StalePolicy and invalidating attestations upon policy modifications (Row 142).
 - Benchmark corpus synthetic packs & representative test coverage (Row 162). Fixed AWS Access Key token shape in the built-in benchmark corpus template to match 20-character credential length (`AKIA` + 16 chars). Added integration tests verifying benchmark corpus structure, metadata, planted credential shapes, and synthetic execution pack finding parity invariants.
 - fix(guard): `guard list` exits with a system error when a registered root cannot be queried instead of reporting success for the roots it did reach.
@@ -14,7 +15,6 @@
 - fix(cli): a not-ready autoroute calibration reported by `keyhog install` names the identity that drifted. The verification step printed only the readiness status, so a stale cache gave no way to tell a replaced binary from a changed feature set or detector corpus.
 - fix(cli): a working directory carrying the same detector corpus the installed generation was built from hydrates that generation instead of compiling it in process. Reuse is decided by comparing the compiled digest of the on-disk `detectors/` against the pack identity, so an edited corpus still gets neither the pack nor its calibration and exits 2 with `detector digest mismatch`.
 - fix(cli): a per-detector `enabled = false` or `min_confidence` in `.keyhog.toml` no longer invalidates the installed autoroute table. The corpus route identity is computed before the disable filter, and `autoroute_config_digest` drops both per-detector fields: an install publishes 4 calibrated policy configs and these are per-invocation filters of unbounded cardinality whose routing-relevant effect, pattern-set size, the workload key already carries. `matcher_resolved_config_digest` still binds both. Autoroute caches installed by an earlier version no longer match: re-run `keyhog install`.
-
 - bench(cli): add criterion benchmarks for CLI startup latency, git hook execution lifecycle, and guard status protocol roundtrips (Row 147).
 - feat(guard): implement continuous guard transition feed / event log surface with causal attribution across registered roots (`keyhog guard feed`, `GuardFeed` protocol frame) (Row 146).
 - feat(cli): enhance pass-gate terminal output craft with structured volume, blob counts, bytes scanned, and execution timing (Row 143).
@@ -55,9 +55,12 @@
 - fix(daemon): wrap daemon request dispatch and filesystem drain in `catch_unwind` isolation boundaries under shipped `panic = "unwind"` release profile, preventing server crash on internal request panics.
 - feat(cache): hook detector plan save operations into `keyhog_scanner::evict_cache_dir_with_policy` using `CacheKind::DetectorPlans`.
 - Benchmark corpus synthetic packs & representative test coverage (Row 162). Fixed AWS Access Key token shape in the built-in benchmark corpus template to match 20-character credential length (`AKIA` + 16 chars). Added integration tests verifying benchmark corpus structure, metadata, planted credential shapes, and synthetic execution pack finding parity invariants.
-- Include known reason and repair command in daemon warm-route errors and startup banner instead of hiding them behind a generic fallback. Apply the same fix to the daemon status command. Make is_work_request exhaustive so adding a new Request variant causes a compile error. Add regression tests pinning daemon server pure-function behaviors before modularization.
 - Removed `keyhog update` and `keyhog repair`, and the download, signature-verification, asset-selection, self-replace, backup/rollback, and orphan-reaping code behind them. They installed from a signed binary-asset release channel that no workflow produces; because each searched backward for a release that still carried a complete bundle, the dead channel installed a 33-version-stale binary instead of failing. Update and repair with `cargo install --locked --force keyhog`. `EXIT_REPAIR_FAILED` and `EXIT_UPDATE_AVAILABLE` are gone; exit 4 is now produced by `doctor` and `backend --self-test` only.
 - Exit code 10 now means exactly one thing, a live credential confirmed by `scan --verify`. Its second meaning, a newer release found by `update --check`, went with the retired channel. Exit code 4 drops `repair` from its producer list.
+
+## 0.5.80 - 2026-08-17
+
+- Include known reason and repair command in daemon warm-route errors and startup banner instead of hiding them behind a generic fallback. Apply the same fix to the daemon status command. Make is_work_request exhaustive so adding a new Request variant causes a compile error. Add regression tests pinning daemon server pure-function behaviors before modularization.
 
 ## 0.5.79 - 2026-08-16
 

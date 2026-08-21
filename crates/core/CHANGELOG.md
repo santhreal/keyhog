@@ -1,10 +1,10 @@
 # Changelog
 
-## 0.5.80 - 2026-08-17
+## 0.5.81 - 2026-08-20
+
 - refactor(core): unify atomic durable writes across state artifacts and scanner caches into keyhog_core::state_file (Row 148).
 - feat(guard): populate GuardPolicyIdentity with canonical default digests and digest calculation helpers for ignore files, suppressions, config, and source policy (Row 142).
 - feat(spec): export `load_detectors_with_gate` so audit surfaces can load a corpus without the fail-closed quality gate.
-
 - bench(core): add criterion benchmarks for detector corpus validation, suppression evaluation, Merkle index cache lookups, match deduplication, and finding correlation (Row 147).
 - feat(guard): add GuardTransitionRecord and continuous transition history tracking with causal attribution (Row 146).
 - feat(guard): read-only durable guard store opening and single root query (Row 140).
@@ -12,6 +12,9 @@
 - feat(allowlist): implement match attribution tracking and unused suppression entry reporting across detector, path, and hash rules (`AllowlistRule`, `UnusedAllowlistEntry`).
 - feat(cache): add `cache_layout` module with canonical `CacheKind` enumeration, path classification, and `CacheEvictionPolicy` contracts.
 - feat(compiled_artifact): add canonical `CompiledArtifactClass` enumeration and `CompiledArtifactIdentity` contracts.
+
+## 0.5.80 - 2026-08-17
+
 - style: format guard massive diff test and git sources modules.
 
 ## 0.5.79 - 2026-08-16
