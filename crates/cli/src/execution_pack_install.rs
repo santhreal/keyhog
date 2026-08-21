@@ -879,8 +879,10 @@ fn load_manifest(
         .filter(|path| path.is_file())
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "execution-pack generation at {} has no sibling signing.key. Fix: run `keyhog install`",
-                directory.display()
+                "missing {} beside the execution-pack generation at {} (expected {}). Fix: run `keyhog install`",
+                InstalledArtifactClass::VerificationKey.name(),
+                directory.display(),
+                InstalledArtifactClass::VerificationKey.file_pattern(),
             )
         })?;
     let key_bytes = fs::read(&key_path).with_context(|| {

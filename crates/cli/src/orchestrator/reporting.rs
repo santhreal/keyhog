@@ -426,12 +426,10 @@ pub(crate) fn report_scanner_materialization_summary(
     let palette = terminal_palette(ansi, false);
     match materialization {
         crate::orchestrator::ScannerMaterialization::MappedPack { generation } => {
-            if ansi {
-                eprintln!(
-                    "{}INFO{} scanner: mapped from execution pack {generation}",
-                    palette.cyan, palette.reset
-                );
-            }
+            eprintln!(
+                "{}INFO{} scanner: mapped from execution pack {generation}",
+                palette.cyan, palette.reset
+            );
         }
         crate::orchestrator::ScannerMaterialization::Compiled { matcher_outcome } => {
             eprintln!(
@@ -449,9 +447,6 @@ pub(crate) fn report_compiled_cache_summary(
     ansi: bool,
     orchestrator: &crate::orchestrator::ScanOrchestrator,
 ) {
-    if !ansi {
-        return;
-    }
     let palette = terminal_palette(ansi, false);
     let cache_base = dirs::cache_dir();
     for kind in keyhog_core::CacheKind::ALL {

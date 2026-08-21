@@ -1908,17 +1908,21 @@ impl ScanOrchestrator {
                 progress_ansi,
                 self.effective_config.backend_override,
             );
+        } else {
+            report_skip_summary(false);
+        }
+        // Scanner materialization, cache state, and autoroute state are status,
+        // not decoration: a piped `--format json -o <file>` run is exactly the
+        // shape CI and installers use, and it is where "did this scan use the
+        // installed generation" has to be answerable. Only `--quiet` silences
+        // them.
+        if !self.args.quiet {
             report_scanner_materialization_summary(
                 progress_ansi,
                 self.scanner_materialization.as_ref(),
             );
             report_compiled_cache_summary(progress_ansi, &self);
-        } else {
-            report_skip_summary(false);
         }
-        // Autoroute cache state is status, not decoration, so it is reported in
-        // both modes. `--format json -o <file>` takes the non-progress branch,
-        // and that is the exact shape CI and calibration harnesses run.
         report_autoroute_cache_summary(
             show_progress && progress_ansi,
             self.effective_config.backend_override.is_some(),

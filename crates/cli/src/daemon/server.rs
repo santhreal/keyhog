@@ -1138,8 +1138,11 @@ pub fn guard_event_action_with_policy(
             Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
                 coverage_lost: true,
             },
+            // A stale-policy root is already in the repair state reconciliation
+            // clears, so an overflow adds nothing. A degraded root is not: the
+            // state machine keeps `(Degraded, CoverageLost)` legal precisely so
+            // repeat coverage loss stays counted and operator-visible.
             Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
-            Some(GuardRootState::Degraded) => GuardEventAction::Ignore,
             _ => GuardEventAction::Transition(GuardTransition::CoverageLost),
         }
     } else if has_policy_change {

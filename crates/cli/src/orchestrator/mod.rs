@@ -397,21 +397,45 @@ pub(crate) fn probe_route_hardware(
     probe_router_hardware(router_gpu_participates(backend_override, runtime_policy))
 }
 
+/// Autoroute's rules identity for a corpus this process compiled. It is the same
+/// value an execution pack built from that corpus carries as its compiled plan
+/// digest, so an installed generation's calibration is reusable by a scan that
+/// compiled the corpus itself, and the reverse. Keying it on the raw spec hash
+/// instead made every scan outside the install directory miss the table the
+/// install had just given it.
+///
+/// Per-invocation confidence floors must NOT reach this identity:
+/// `autoroute_config_digest` already carries them, and a pack hydration cannot
+/// see them at all, so folding them in made one calibrated profile supersede
+/// every other profile in the multi-config cache. Compute it before
+/// `compose_detector_min_confidence` mutates the corpus.
+pub(crate) fn corpus_rules_digest(detectors: &[DetectorSpec]) -> Result<String> {
+    keyhog_scanner::compiled_scanner::corpus_route_identity(detectors)
+        .map(|digest| keyhog_core::hex_encode(&digest))
+        .map_err(|error| anyhow::anyhow!("computing detector corpus route identity: {error}"))
+}
+
+/// The same identity read off a scanner hydrated from an authenticated pack,
+/// where the pack carries it and the specs are never materialized.
+pub(crate) fn pack_rules_digest(scanner: &CompiledScanner) -> String {
+    keyhog_core::hex_encode(&scanner.runtime_status().compiled_plan_digest)
+}
+
 pub(crate) fn cached_autoroute_router_for_default_config(
     scanner: &CompiledScanner,
     detectors: &[DetectorSpec],
     backend_override: Option<keyhog_scanner::ScanBackend>,
-) -> CachedBackendRouter {
-    let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(detectors));
+) -> Result<CachedBackendRouter> {
+    let rules_digest = corpus_rules_digest(detectors)?;
     let resolved = resolved_default_autoroute_config();
     let gpu_participates = router_gpu_participates(backend_override, resolved.gpu_runtime_policy);
-    cached_autoroute_router(
+    Ok(cached_autoroute_router(
         scanner,
         rules_digest,
         autoroute_config_digest(&resolved),
         gpu_participates,
         crate::autoroute_cache_path::resolve_autoroute_cache_path(None),
-    )
+    ))
 }
 
 fn cached_autoroute_router(
@@ -570,10 +594,11 @@ impl DefaultScanRuntime {
         scanner: Arc<CompiledScanner>,
         detectors: &[DetectorSpec],
         backend_override: Option<keyhog_scanner::ScanBackend>,
-    ) -> Self {
+    ) -> Result<Self> {
         let router =
-            cached_autoroute_router_for_default_config(&scanner, detectors, backend_override);
-        Self::new_with_router(scanner, detectors, router).with_backend_override(backend_override)
+            cached_autoroute_router_for_default_config(&scanner, detectors, backend_override)?;
+        Ok(Self::new_with_router(scanner, detectors, router)
+            .with_backend_override(backend_override))
     }
 
     fn new_with_router(
@@ -866,11 +891,7 @@ pub(crate) fn compile_default_scan_runtime(
         )
         .map_err(|error| map_compile_error(&error))?,
     );
-    Ok(DefaultScanRuntime::new(
-        scanner,
-        &detectors,
-        backend_override,
-    ))
+    DefaultScanRuntime::new(scanner, &detectors, backend_override)
 }
 
 /// Build the compile-once/scan-many runtime shared by `keyhog watch` and
@@ -1032,10 +1053,9 @@ fn setup_default_scan_runtime_with_rayon_policy(
         }
     }
 
-    // Performance identity describes the active corpus before per-invocation
-    // confidence floors are composed. The effective config digest below owns
-    // those overrides, keeping detector identity stable across scan profiles.
-    let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
+    // Before composition: per-invocation floors belong to the config digest, not
+    // to corpus identity.
+    let rules_digest = corpus_rules_digest(&detectors)?;
 
     // Compose detector TOML defaults and operator overrides BEFORE compilation.
     // `watch` and `scan-system` use this runtime; compiling first would let the
@@ -1583,16 +1603,12 @@ impl ScanOrchestrator {
             }
         }
 
-        // Autoroute's shared rules identity describes the active TOML corpus,
-        // before per-invocation confidence floors are composed into it. Those
-        // effective floors (including --precision clamping and operator
-        // overrides) already participate in `autoroute_config_digest`; folding
-        // them into this shared identity as well made calibrating one profile
-        // replace every previously calibrated profile in the multi-config
-        // cache. Disabled detectors remain part of corpus identity because they
-        // change the compiled pattern set and backend workload materially.
-        let mut detector_rules_digest =
-            keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
+        // Compiled-corpus route identity, taken before composition mutates the
+        // declared floors. A pack hydration reads the same value off the pack.
+        let compiled_corpus_rules_digest = (!direct_pack_hydration)
+            .then(|| corpus_rules_digest(&detectors))
+            .transpose()?;
+
         let mut detector_corpus_digest = keyhog_core::hex_encode(
             &keyhog_core::compute_detector_corpus_digest_for_schema(
                 &detectors,
@@ -1691,6 +1707,19 @@ impl ScanOrchestrator {
             )
         };
 
+        // One rules identity for both routes: a pack carries it, a compile
+        // derives the same value from the corpus it compiled.
+        let detector_rules_digest = match compiled_corpus_rules_digest {
+            Some(digest) => digest,
+            None => pack_rules_digest(&scanner),
+        };
+        tracing::debug!(
+            target: "keyhog::routing",
+            rules_digest = %detector_rules_digest,
+            direct_pack_hydration,
+            "autoroute rules identity"
+        );
+
         if direct_pack_hydration {
             detector_count = scanner.detector_count();
             signatures = scanner.detector_signature_sources();
@@ -1707,7 +1736,6 @@ impl ScanOrchestrator {
             }
 
             let runtime = scanner.runtime_status();
-            detector_rules_digest = keyhog_core::hex_encode(&runtime.compiled_plan_digest);
             let pack = detector_execution_pack.as_ref().context(
                 "direct scanner hydration requires a retained authenticated execution pack",
             )?;
@@ -1875,8 +1903,9 @@ impl ScanOrchestrator {
             .unwrap_or(crate::orchestrator_config::FUSED_BATCH_DEFAULT); // LAW10: absent fused-batch config => documented compiled throughput default; no scan feature disabled and effective config prints the concrete value
         let fused_depth = args.fused_depth;
         let detector_spec_hash = keyhog_core::compute_spec_hash(&detectors);
-        let detector_rules_digest = keyhog_core::hex_encode(&detector_spec_hash);
-        let detector_corpus_digest = detector_rules_digest.clone();
+        // Route on the identity the compiled scanner carries, as a scan does.
+        let detector_rules_digest = pack_rules_digest(&scanner);
+        let detector_corpus_digest = keyhog_core::hex_encode(&detector_spec_hash);
         let detector_corpus_provenance = DetectorCorpusProvenance {
             mode: "provided",
             source: "library/test constructor".to_string(),
