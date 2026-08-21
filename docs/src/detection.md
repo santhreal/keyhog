@@ -315,7 +315,11 @@ separate:
   unchanged.
 - The autoroute **rules identity** also describes the active detector
   specifications. Operator confidence-floor overrides are composed later so
-  different scan presets can coexist in one calibration cache.
+  different scan presets can coexist in one calibration cache. It is the
+  canonical corpus identity an execution pack carries, so a scan that compiles
+  the corpus and a scan that hydrates an installed generation of that same
+  corpus read the same calibrated table. Self-test fixtures and declaration
+  order are excluded.
 - The autoroute **configuration identity** binds the resolved scanner and
   operator policy. It includes the selected fast, deep, or precision preset,
   scan-wide and per-detector floors, the configured disabled-ID set, detector
