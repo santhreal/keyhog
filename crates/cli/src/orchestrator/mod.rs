@@ -1231,6 +1231,53 @@ fn execution_pack_policy_for_args(
     }
 }
 
+/// The installed execution pack for this scan, but only when it was built from
+/// exactly the corpus `detectors` resolves to.
+///
+/// A pack whose detector identity differs is a pack for another corpus: a
+/// custom or edited `detectors/` directory compiles in process, which is the
+/// documented behavior for a corpus no generation was installed for.
+fn installed_pack_for_corpus(
+    args: &ScanArgs,
+    backend_override: Option<keyhog_scanner::ScanBackend>,
+    detectors: &[DetectorSpec],
+) -> Result<Option<keyhog_scanner::execution_pack::ExecutionPack>> {
+    let policy = execution_pack_policy_for_args(args);
+    let installed = match backend_override {
+        Some(backend) => {
+            let Some(pack_backend) =
+                keyhog_scanner::execution_pack::ExecutionPackBackend::from_scan_backend(backend)
+            else {
+                return Ok(None);
+            };
+            crate::execution_pack_install::load_installed_detector_execution_pack_for_backend(
+                policy,
+                pack_backend,
+            )
+        }
+        None => {
+            crate::execution_pack_install::load_installed_preferred_detector_execution_pack(policy)
+        }
+    };
+    let Ok(pack) = installed else {
+        return Ok(None);
+    };
+    let corpus_digest =
+        keyhog_scanner::execution_pack::CanonicalDetectorExecutionIr::compile(detectors)
+            .map_err(anyhow::Error::msg)
+            .context("computing the detector identity of the resolved corpus")?
+            .digest();
+    if corpus_digest == pack.identity().detector_digest {
+        Ok(Some(pack))
+    } else {
+        tracing::debug!(
+            target: "keyhog::routing",
+            "resolved detector corpus differs from the installed generation; compiling in process"
+        );
+        Ok(None)
+    }
+}
+
 /// How the scanner runtime was materialized for this scan.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ScannerMaterialization {
@@ -1488,17 +1535,30 @@ impl ScanOrchestrator {
                     }
                 }
             } else {
-                (
-                    Some(
-                        load_effective_detector_corpus(
-                            &detectors_path,
-                            requested_detector_mode,
-                            !args.lockdown,
-                        )
-                        .context("loading effective detector corpus")?,
-                    ),
-                    None,
+                let loaded = load_effective_detector_corpus(
+                    &detectors_path,
+                    requested_detector_mode,
+                    !args.lockdown,
                 )
+                .context("loading effective detector corpus")?;
+                // A replacement corpus can be the same corpus. Scanning inside a
+                // tree that ships `detectors/` (KeyHog's own repository, a
+                // vendored copy) resolved a directory whose identity equals the
+                // installed generation and then compiled it again in process,
+                // losing every prepared artifact. Identity decides, not the
+                // presence of a directory.
+                let installed_matching_pack = installed_pack_for_corpus(
+                    &args,
+                    effective_config.backend_override,
+                    &loaded.detectors,
+                )?;
+                match installed_matching_pack {
+                    Some(pack) => {
+                        keyhog_profile::record_cache_hit(keyhog_profile::CacheId::DetectorPlan);
+                        (None, Some(pack))
+                    }
+                    None => (Some(loaded), None),
+                }
             }
         };
         #[cfg(feature = "verify")]
@@ -1557,6 +1617,15 @@ impl ScanOrchestrator {
                     )
                 }
             };
+        // Compiled-corpus route identity, taken before per-invocation config
+        // touches the corpus: `.keyhog.toml` disables and composed confidence
+        // floors are carried by `autoroute_config_digest`, and a pack hydration
+        // cannot see either, so folding them in here makes every scan that
+        // disables one detector reject the installed autoroute table.
+        let compiled_corpus_rules_digest = (!direct_pack_hydration)
+            .then(|| corpus_rules_digest(&detectors))
+            .transpose()?;
+
         let detector_validation_span =
             keyhog_profile::span(keyhog_profile::Stage::DetectorValidate);
 
@@ -1602,12 +1671,6 @@ impl ScanOrchestrator {
                 );
             }
         }
-
-        // Compiled-corpus route identity, taken before composition mutates the
-        // declared floors. A pack hydration reads the same value off the pack.
-        let compiled_corpus_rules_digest = (!direct_pack_hydration)
-            .then(|| corpus_rules_digest(&detectors))
-            .transpose()?;
 
         let mut detector_corpus_digest = keyhog_core::hex_encode(
             &keyhog_core::compute_detector_corpus_digest_for_schema(

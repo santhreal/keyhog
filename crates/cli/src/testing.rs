@@ -418,6 +418,7 @@ pub trait CliTestApi {
     fn render_effective_config_for_scanner(&self, scanner: ScannerConfig) -> String;
     fn autoroute_config_digest_for_args(&self, args: &mut ScanArgs) -> Result<u64>;
     fn autoroute_config_digest_for_scanner(&self, scanner: ScannerConfig) -> u64;
+    fn matcher_resolved_config_digest_for_args(&self, args: &mut ScanArgs) -> Result<[u8; 32]>;
     fn profiling_config_digests_for_args(
         &self,
         args: &mut ScanArgs,
@@ -1123,6 +1124,12 @@ impl CliTestApi for TestApi {
     fn autoroute_config_digest_for_scanner(&self, scanner: ScannerConfig) -> u64 {
         let resolved = crate::orchestrator_config::resolved_scan_config_for_scanner(scanner);
         crate::orchestrator_config::autoroute_config_digest(&resolved)
+    }
+    fn matcher_resolved_config_digest_for_args(&self, args: &mut ScanArgs) -> Result<[u8; 32]> {
+        let resolved = crate::orchestrator_config::resolve_scan_config(args)?;
+        Ok(crate::orchestrator_config::matcher_resolved_config_digest(
+            &resolved,
+        ))
     }
     fn profiling_config_digests_for_args(
         &self,
