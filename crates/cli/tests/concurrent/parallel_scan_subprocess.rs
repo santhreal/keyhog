@@ -31,7 +31,7 @@ fn parallel_scan_subprocesses_emit_valid_json() {
                     "--format",
                     "json",
                 ])
-                .env(format!("KEYHOG_CONCURRENT_{worker}"), "1")
+                .arg(dir.path())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()

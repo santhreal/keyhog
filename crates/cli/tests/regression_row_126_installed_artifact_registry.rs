@@ -16,9 +16,11 @@ use keyhog::testing::execution_pack_install::{
 };
 use std::collections::BTreeSet;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
 use std::process::Command;
+
+#[path = "support/installed_generation.rs"]
+mod installed_generation;
+use installed_generation::clone_prepared_installation;
 
 #[test]
 fn registry_bidirectional_set_equality_derived_at_runtime() {
@@ -189,51 +191,15 @@ fn registry_records_comprehensive_identity_inputs_per_class() {
 
 #[test]
 fn fresh_installation_yields_scan_with_zero_runtime_compilations() {
-    let base_tmp = PathBuf::from("/mnt/FlareTraining/santh-archive/tmp");
-    let temp_dir = if base_tmp.exists() {
-        tempfile::Builder::new()
-            .prefix("keyhog-row126-fresh-")
-            .tempdir_in(&base_tmp)
-            .expect("tempdir in base_tmp")
-    } else {
-        tempfile::tempdir().expect("tempdir")
-    };
-
+    let temp_dir = tempfile::tempdir().expect("tempdir");
     let cache_home = temp_dir.path().join("cache");
-    let pack_root = cache_home.join("keyhog/execution-packs");
-    fs::create_dir_all(&pack_root).expect("create pack root");
-    let key_path = pack_root.join("signing.key");
-    fs::write(&key_path, [0x5au8; 32]).expect("write signing key");
-    fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600)).expect("protect key");
-    let output_dir = pack_root.join("current");
+    clone_prepared_installation(&cache_home);
 
-    let isolated_exe = temp_dir.path().join("keyhog");
-    fs::copy(env!("CARGO_BIN_EXE_keyhog"), &isolated_exe).expect("copy keyhog binary");
-
-    // 1. Run installer compile-execution-packs
-    let compile_output = Command::new(&isolated_exe)
-        .arg("compile-execution-packs")
-        .arg("--output-dir")
-        .arg(&output_dir)
-        .arg("--signing-key")
-        .arg(&key_path)
-        .env("XDG_CACHE_HOME", &cache_home)
-        .env("HOME", temp_dir.path())
-        .output()
-        .expect("run compile-execution-packs");
-
-    assert!(
-        compile_output.status.success(),
-        "compile-execution-packs failed: stderr:\n{}",
-        String::from_utf8_lossy(&compile_output.stderr)
-    );
-
-    // 2. Run scan on a sample clean file with profile JSON export
     let scan_file = temp_dir.path().join("sample.txt");
     fs::write(&scan_file, "clean sample text for fresh install scan\n").expect("write sample");
     let profile_output_path = temp_dir.path().join("profile.json");
 
-    let scan_output = Command::new(&isolated_exe)
+    let scan_output = Command::new(env!("CARGO_BIN_EXE_keyhog"))
         .arg("scan")
         .arg("--daemon=off")
         .arg(&scan_file)

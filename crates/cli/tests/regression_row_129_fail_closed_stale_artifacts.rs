@@ -17,63 +17,11 @@
 use keyhog::exit_codes::{EXIT_SUCCESS, EXIT_USER_ERROR};
 use keyhog::testing::execution_pack_install::{ArtifactIdentityInput, InstalledArtifactClass};
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::LazyLock;
 
-static PREPARED_INSTALLATION: LazyLock<(tempfile::TempDir, PathBuf, PathBuf)> =
-    LazyLock::new(|| {
-        let directory = tempfile::tempdir().expect("temporary install root");
-        let cache_home = directory.path().join("cache");
-        let pack_root = cache_home.join("keyhog/execution-packs");
-        fs::create_dir_all(&pack_root).expect("execution-pack root");
-        let key_path = pack_root.join("signing.key");
-        let key_bytes = [0x5cu8; 32];
-        fs::write(&key_path, key_bytes).expect("write signing key");
-        fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
-            .expect("protect signing key");
-        let output = pack_root.join("current");
-
-        let result = Command::new(env!("CARGO_BIN_EXE_keyhog"))
-            .arg("compile-execution-packs")
-            .arg("--output-dir")
-            .arg(&output)
-            .arg("--signing-key")
-            .arg(&key_path)
-            .env("XDG_CACHE_HOME", &cache_home)
-            .env("HOME", directory.path())
-            .output()
-            .expect("run install pack compiler");
-        assert!(
-            result.status.success(),
-            "install pack compiler failed: {}",
-            String::from_utf8_lossy(&result.stderr)
-        );
-        (directory, pack_root, output)
-    });
-
-fn copy_dir_all(src: &Path, dst: &Path) {
-    fs::create_dir_all(dst).expect("create dst dir");
-    for entry in fs::read_dir(src).expect("read src dir") {
-        let entry = entry.expect("entry");
-        let path = entry.path();
-        let dest_path = dst.join(entry.file_name());
-        if path.is_dir() {
-            copy_dir_all(&path, &dest_path);
-        } else {
-            fs::copy(&path, &dest_path).expect("copy file");
-        }
-    }
-}
-
-fn clone_prepared_installation(cache_home: &Path) -> (PathBuf, PathBuf) {
-    let (_temp, source_pack_root, _output) = &*PREPARED_INSTALLATION;
-    let target_pack_root = cache_home.join("keyhog/execution-packs");
-    copy_dir_all(source_pack_root, &target_pack_root);
-    let target_current = target_pack_root.join("current");
-    (target_pack_root, target_current)
-}
+#[path = "support/installed_generation.rs"]
+mod installed_generation;
+use installed_generation::clone_prepared_installation;
 
 #[test]
 fn runtime_derived_identity_inputs_fail_closed_on_staleness_and_repair_restores_clean_scan() {

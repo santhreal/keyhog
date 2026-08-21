@@ -12,67 +12,14 @@
 //! Does not catch hardware GPU adapter hardware failures occurring during kernel execution.
 //! Does not catch external OS signal terminations (SIGKILL) mid-scan.
 
-use keyhog::exit_codes::{EXIT_SUCCESS, EXIT_USER_ERROR};
+use keyhog::exit_codes::{EXIT_FINDINGS, EXIT_SUCCESS, EXIT_USER_ERROR};
 use keyhog_scanner::{MatcherArtifactCacheDisableReason, MatcherArtifactCacheOutcome};
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::LazyLock;
 
-static PREPARED_INSTALLATION: LazyLock<(tempfile::TempDir, PathBuf, PathBuf)> =
-    LazyLock::new(|| {
-        let directory = tempfile::tempdir().expect("temporary install root");
-
-        let cache_home = directory.path().join("cache");
-        let pack_root = cache_home.join("keyhog/execution-packs");
-        fs::create_dir_all(&pack_root).expect("execution-pack root");
-        let key_path = pack_root.join("signing.key");
-        let key_bytes = [0x5cu8; 32];
-        fs::write(&key_path, key_bytes).expect("write signing key");
-        fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
-            .expect("protect signing key");
-        let output = pack_root.join("current");
-
-        let result = Command::new(env!("CARGO_BIN_EXE_keyhog"))
-            .arg("compile-execution-packs")
-            .arg("--output-dir")
-            .arg(&output)
-            .arg("--signing-key")
-            .arg(&key_path)
-            .env("XDG_CACHE_HOME", &cache_home)
-            .env("HOME", directory.path())
-            .output()
-            .expect("run install pack compiler");
-        assert!(
-            result.status.success(),
-            "install pack compiler failed: {}",
-            String::from_utf8_lossy(&result.stderr)
-        );
-        (directory, pack_root, output)
-    });
-
-fn copy_dir_all(src: &Path, dst: &Path) {
-    fs::create_dir_all(dst).expect("create dst dir");
-    for entry in fs::read_dir(src).expect("read src dir") {
-        let entry = entry.expect("entry");
-        let path = entry.path();
-        let dest_path = dst.join(entry.file_name());
-        if path.is_dir() {
-            copy_dir_all(&path, &dest_path);
-        } else {
-            fs::copy(&path, &dest_path).expect("copy file");
-        }
-    }
-}
-
-fn clone_prepared_installation(cache_home: &Path) -> (PathBuf, PathBuf) {
-    let (_temp, source_pack_root, _output) = &*PREPARED_INSTALLATION;
-    let pack_root = cache_home.join("keyhog/execution-packs");
-    copy_dir_all(source_pack_root, &pack_root);
-    let output = pack_root.join("current");
-    (pack_root, output)
-}
+#[path = "support/installed_generation.rs"]
+mod installed_generation;
+use installed_generation::clone_prepared_installation;
 
 #[test]
 fn warm_scan_performs_only_loads_and_zero_compiles() {
@@ -258,23 +205,54 @@ fn disabled_detector_and_its_dependent_produce_no_findings_under_prepared_pack()
     )
     .expect("write razorpay creds");
 
-    // 1. Scan with all detectors enabled: should find credentials
+    // Detector ids, not rendered display names: the text report prints
+    // "Razorpay Key Secret" and a `razorpay_key_secret=` companion line, so a
+    // substring check against the text output cannot fail on this defect.
+    let detector_ids = |stdout: &str| -> Vec<String> {
+        serde_json::from_str::<serde_json::Value>(stdout)
+            .expect("scan must emit a JSON document")
+            .as_array()
+            .expect("JSON report is an array")
+            .iter()
+            .filter_map(|finding| {
+                finding
+                    .get("detector_id")
+                    .and_then(|id| id.as_str())
+                    .map(str::to_string)
+            })
+            .collect()
+    };
+
     let output_enabled = Command::new(env!("CARGO_BIN_EXE_keyhog"))
         .arg("scan")
         .arg("--daemon=off")
+        .arg("--format")
+        .arg("json")
         .arg(&scan_file)
         .env("XDG_CACHE_HOME", &cache_home)
         .env("HOME", temp_dir.path())
         .output()
         .expect("run scan with detectors enabled");
 
+    assert_eq!(
+        output_enabled.status.code(),
+        Some(EXIT_FINDINGS as i32),
+        "a scan that finds the planted razorpay pair exits with the findings code; stderr:\n{}",
+        String::from_utf8_lossy(&output_enabled.stderr)
+    );
     let stdout_enabled = String::from_utf8_lossy(&output_enabled.stdout);
+    let enabled_ids = detector_ids(&stdout_enabled);
     assert!(
-        stdout_enabled.contains("razorpay") || stdout_enabled.contains("RAZORPAY"),
-        "normal scan must detect razorpay credentials; stdout:\n{stdout_enabled}"
+        enabled_ids.iter().any(|id| id == "razorpay-key-secret"),
+        "normal scan must detect the razorpay secret; ids={enabled_ids:?} stderr:\n{}",
+        String::from_utf8_lossy(&output_enabled.stderr)
+    );
+    assert!(
+        enabled_ids.iter().any(|id| id == "razorpay-key-id"),
+        "normal scan must detect the dependent razorpay key id; ids={enabled_ids:?}"
     );
 
-    // 2. Disable `razorpay-key-secret` via `.keyhog.toml`
+    // Disable `razorpay-key-secret`: its dependent must go silent with it.
     let config_path = temp_dir.path().join(".keyhog.toml");
     fs::write(
         &config_path,
@@ -285,6 +263,8 @@ fn disabled_detector_and_its_dependent_produce_no_findings_under_prepared_pack()
     let output_disabled = Command::new(env!("CARGO_BIN_EXE_keyhog"))
         .arg("scan")
         .arg("--daemon=off")
+        .arg("--format")
+        .arg("json")
         .arg("--config")
         .arg(&config_path)
         .arg(&scan_file)
@@ -293,11 +273,19 @@ fn disabled_detector_and_its_dependent_produce_no_findings_under_prepared_pack()
         .output()
         .expect("run scan with disabled detector config");
 
-    let stdout_disabled = String::from_utf8_lossy(&output_disabled.stdout);
+    assert_eq!(
+        output_disabled.status.code(),
+        Some(EXIT_SUCCESS as i32),
+        "silencing the only planted pair leaves a clean scan; stderr:\n{}",
+        String::from_utf8_lossy(&output_disabled.stderr)
+    );
+    let disabled_ids = detector_ids(&String::from_utf8_lossy(&output_disabled.stdout));
     assert!(
-        !stdout_disabled.contains("razorpay-key-id")
-            && !stdout_disabled.contains("razorpay-key-secret"),
-        "disabling required detector `razorpay-key-secret` must silence both it and its dependent `razorpay-key-id`; stdout:\n{stdout_disabled}"
+        !disabled_ids
+            .iter()
+            .any(|id| id == "razorpay-key-secret" || id == "razorpay-key-id"),
+        "disabling required detector `razorpay-key-secret` must silence both it and its \
+         dependent `razorpay-key-id`; ids={disabled_ids:?}"
     );
 }
 
@@ -308,9 +296,15 @@ fn scan_succeeds_when_local_detectors_folder_exists_by_loading_prepared_pack() {
     let cache_home = temp_dir.path().join("cache");
     let (_pack_root, _output_dir) = clone_prepared_installation(&cache_home);
 
-    // Create a local `detectors/` folder in cwd that would be discovered by auto_discover_detectors
+    // A `detectors/` directory in the working directory replaces the corpus, so
+    // the prepared pack only stays usable while that directory carries the same
+    // corpus the generation was built from. Copy the workspace corpus, which is
+    // exactly what the binary embedded.
     let detectors_dir = temp_dir.path().join("detectors");
-    fs::create_dir_all(&detectors_dir).expect("create detectors dir");
+    installed_generation::copy_dir_all(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors"),
+        &detectors_dir,
+    );
 
     let scan_file = temp_dir.path().join("sample.txt");
     fs::write(&scan_file, "sample payload for load only scan\n").expect("write scan file");

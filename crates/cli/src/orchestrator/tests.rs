@@ -352,3 +352,69 @@ fn persistent_runtime_uses_configured_autoroute_cache_path() {
         "invalid autoroute state must fail closed with repair context: {message}",
     );
 }
+
+/// WHY: an autoroute table is keyed by corpus identity, and both routes that can
+/// produce a scanner for one corpus must agree on that key.
+///
+/// Closes the class where a scan that compiled detector specs keyed the cache by the
+/// raw detector spec hash while a scan that hydrated an installed execution pack of
+/// the same corpus keyed it by the compiled plan digest. `keyhog install` calibrated
+/// under one key, so every later scan that resolved the corpus differently rejected
+/// the table as a foreign corpus and exited 2 without scanning.
+///
+/// Does not cover: per-invocation floors and disabled ids, which belong to the
+/// separate autoroute configuration identity and must stay out of this one.
+#[test]
+fn corpus_and_pack_rules_digests_are_one_autoroute_identity() {
+    let detector = |id: &str, regex: &str| keyhog_core::DetectorSpec {
+        id: id.into(),
+        name: id.into(),
+        patterns: vec![keyhog_core::PatternSpec {
+            regex: regex.into(),
+            description: None,
+            group: None,
+            required_literals: Vec::new(),
+            client_safe: false,
+            weak_anchor: false,
+            structural_password_slot: false,
+        }],
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
+    };
+    let detectors = vec![
+        detector("route-alpha", "AKIA[0-9A-Z]{16}"),
+        detector("route-beta", "ghp_[0-9A-Za-z]{36}"),
+    ];
+    let scanner = keyhog_scanner::CompiledScanner::compile(detectors.clone())
+        .expect("compile scanner from specs");
+
+    let corpus = super::corpus_rules_digest(&detectors).expect("corpus rules digest");
+    assert_eq!(
+        corpus,
+        super::pack_rules_digest(&scanner),
+        "a spec compile and a pack hydration of one corpus must key one autoroute table"
+    );
+
+    let reordered: Vec<_> = detectors.iter().cloned().rev().collect();
+    assert_eq!(
+        corpus,
+        super::corpus_rules_digest(&reordered).expect("reordered corpus rules digest"),
+        "detector declaration order is not corpus identity"
+    );
+
+    let mut changed = detectors;
+    changed[1].patterns[0].regex = "ghp_[0-9A-Za-z]{37}".into();
+    assert_ne!(
+        corpus,
+        super::corpus_rules_digest(&changed).expect("changed corpus rules digest"),
+        "a pattern change must invalidate persisted routing evidence"
+    );
+
+    let error =
+        super::corpus_rules_digest(&[]).expect_err("an empty corpus has no routing identity");
+    assert!(
+        error
+            .to_string()
+            .contains("computing detector corpus route identity"),
+        "an unroutable corpus must name what failed: {error}"
+    );
+}

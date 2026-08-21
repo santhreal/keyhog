@@ -11,61 +11,11 @@ use keyhog::testing::execution_pack_install::{
     InstalledArtifactClass, PERMITTED_DETECTOR_COMPILATION_ENTRY_POINTS,
 };
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::LazyLock;
 
-static PREPARED_INSTALLATION: LazyLock<(tempfile::TempDir, PathBuf, PathBuf)> =
-    LazyLock::new(|| {
-        let directory = tempfile::tempdir().expect("temporary install root");
-        let cache_home = directory.path().join("cache");
-        let pack_root = cache_home.join("keyhog/execution-packs");
-        fs::create_dir_all(&pack_root).expect("execution-pack root");
-        let key_path = pack_root.join("signing.key");
-        let key_bytes = [0x4d; 32];
-        fs::write(&key_path, key_bytes).expect("write signing key");
-        fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
-            .expect("protect signing key");
-        let output = pack_root.join("current");
-
-        let result = Command::new(env!("CARGO_BIN_EXE_keyhog"))
-            .arg("compile-execution-packs")
-            .arg("--output-dir")
-            .arg(&output)
-            .arg("--signing-key")
-            .arg(&key_path)
-            .output()
-            .expect("run install pack compiler");
-        assert!(
-            result.status.success(),
-            "install pack compiler failed: {}",
-            String::from_utf8_lossy(&result.stderr)
-        );
-        (directory, pack_root, output)
-    });
-
-fn copy_dir_all(src: &Path, dst: &Path) {
-    fs::create_dir_all(dst).expect("create dst dir");
-    for entry in fs::read_dir(src).expect("read src dir") {
-        let entry = entry.expect("entry");
-        let path = entry.path();
-        let dest_path = dst.join(entry.file_name());
-        if path.is_dir() {
-            copy_dir_all(&path, &dest_path);
-        } else {
-            fs::copy(&path, &dest_path).expect("copy file");
-        }
-    }
-}
-
-fn clone_prepared_installation(cache_home: &Path) -> (PathBuf, PathBuf) {
-    let (_temp, source_pack_root, _output) = &*PREPARED_INSTALLATION;
-    let pack_root = cache_home.join("keyhog/execution-packs");
-    copy_dir_all(source_pack_root, &pack_root);
-    let output = pack_root.join("current");
-    (pack_root, output)
-}
+#[path = "support/installed_generation.rs"]
+mod installed_generation;
+use installed_generation::clone_prepared_installation;
 
 #[test]
 fn permitted_compilation_entry_points_is_exact() {
@@ -263,9 +213,14 @@ fn developer_escape_hatch_is_hidden_from_help_and_marks_profile() {
     let empty_cache = temp_dir.path().join("empty_cache");
     fs::create_dir_all(&empty_cache).expect("empty cache dir");
 
+    // The hatch governs where detector artifacts come from, not routing: an
+    // empty cache has no autoroute decision and `auto` refuses to guess one, so
+    // this run carries an explicit diagnostic backend.
     let output = Command::new(env!("CARGO_BIN_EXE_keyhog"))
         .arg("scan")
         .arg("--daemon=off")
+        .arg("--backend")
+        .arg("cpu")
         .arg("--developer-compile-embedded-detectors")
         .arg("--profile-out")
         .arg(&profile_out)
