@@ -68,6 +68,29 @@ pub struct DecodedDetectorExecutionIr {
 
 impl CanonicalDetectorExecutionIr {
     pub fn compile(detectors: &[DetectorSpec]) -> Result<Self, ExecutionPackError> {
+        let normalized = Self::normalized_detectors(detectors)?;
+        let metadata = normalize_metadata(&normalized)?;
+        let envelope = DetectorExecutionIrEnvelope {
+            version: DETECTOR_EXECUTION_IR_VERSION,
+            metadata,
+            detectors: normalized,
+        };
+        Self::from_envelope(envelope)
+    }
+
+    /// The corpus spec hash every route agrees on. A pack carries a plan digest
+    /// derived from the normalized IR detectors, so a scanner compiled from raw
+    /// specs must hash the same normalized form or the same corpus would carry
+    /// two identities depending on how the scanner was materialized.
+    pub fn canonical_spec_hash(detectors: &[DetectorSpec]) -> Result<[u8; 32], ExecutionPackError> {
+        Ok(keyhog_core::compute_spec_hash(&Self::normalized_detectors(
+            detectors,
+        )?))
+    }
+
+    fn normalized_detectors(
+        detectors: &[DetectorSpec],
+    ) -> Result<Vec<DetectorSpec>, ExecutionPackError> {
         if detectors.is_empty() {
             return Err(ExecutionPackError::InvalidCompilerInput(
                 "detector execution IR has no detectors".to_owned(),
@@ -90,13 +113,7 @@ impl CanonicalDetectorExecutionIr {
             }
             detector.tests.clear();
         }
-        let metadata = normalize_metadata(&normalized)?;
-        let envelope = DetectorExecutionIrEnvelope {
-            version: DETECTOR_EXECUTION_IR_VERSION,
-            metadata,
-            detectors: normalized,
-        };
-        Self::from_envelope(envelope)
+        Ok(normalized)
     }
     /// Return the canonical execution IR compiled from the embedded detector corpus.
     ///

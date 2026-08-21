@@ -332,7 +332,7 @@ impl CompiledDetectorPlanSection {
             ExecutionPackError::InvalidCompilerInput("detector-plan count exceeds u32".to_owned())
         })?;
         let compiled_plan_digest = crate::compiled_scanner::detector_digest::from_execution_plan(
-            keyhog_core::compute_spec_hash(ir.detectors()),
+            CanonicalDetectorExecutionIr::canonical_spec_hash(ir.detectors())?,
             decoder_plan.identity(),
         );
         let order_digest =

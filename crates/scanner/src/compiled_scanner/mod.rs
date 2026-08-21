@@ -7,6 +7,7 @@
 mod compile;
 mod compile_helpers;
 pub(crate) mod detector_digest;
+pub use detector_digest::corpus_route_identity;
 mod runtime;
 mod types;
 mod validation;

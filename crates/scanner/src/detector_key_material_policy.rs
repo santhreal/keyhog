@@ -16,9 +16,6 @@ struct CompiledCanonicalHexRule {
 
 impl CompiledCanonicalHexRule {
     fn compile(spec: &CanonicalHexKeyMaterialSpec) -> Self {
-        keyhog_profile::record_compile_surface_invocation(
-            keyhog_profile::CompileSurfaceId::DetectorKeyMaterialPolicy,
-        );
         Self {
             lengths: sorted_lengths(&spec.lengths),
             keywords: compact_keywords(&spec.keywords),

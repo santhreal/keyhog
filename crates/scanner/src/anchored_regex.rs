@@ -36,9 +36,8 @@ impl AnchoredRegex {
     }
 
     fn compile(&self, prefix: &str, suffix: &str) -> Arc<Regex> {
-        keyhog_profile::record_compile_surface_invocation(
-            keyhog_profile::CompileSurfaceId::DetectorPlan,
-        );
+        // A lazily anchored copy of a pattern the plan already carries is not a
+        // plan compile; `record_lazy_regex_compile` is this work's only counter.
         crate::types::record_lazy_regex_compile();
         let anchored = format!("{prefix}{}{suffix}", self.src);
         match RegexBuilder::new(&anchored)

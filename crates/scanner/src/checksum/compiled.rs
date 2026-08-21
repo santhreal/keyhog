@@ -318,12 +318,12 @@ pub(crate) struct CompiledValidatorIndex {
 }
 
 impl CompiledValidatorIndex {
+    /// Derived first-byte index over validator sets that were already compiled
+    /// or hydrated. It carries no spec-derived work of its own, so it records
+    /// no compile invocation: its owners already recorded theirs.
     pub(crate) fn compile<'a>(
         validator_sets: impl IntoIterator<Item = &'a CompiledDetectorValidators>,
     ) -> Self {
-        keyhog_profile::record_compile_surface_invocation(
-            keyhog_profile::CompileSurfaceId::ValidatorCatalog,
-        );
         let mut refs: [Vec<ValidatorRef>; 256] = std::array::from_fn(|_| Vec::new());
         for (owner_index, set) in validator_sets.into_iter().enumerate() {
             for (validator_index, prefix) in set.indexed_prefixes() {

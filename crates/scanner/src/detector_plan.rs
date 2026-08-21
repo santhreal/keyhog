@@ -8,6 +8,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 trait DetectorPlanSource {
+    /// True when the rows came from a prepared execution pack. The generic
+    /// builders below are shared by the spec compile and the pack hydration, so
+    /// the compile-surface counter follows the source instead of the builder.
+    const FROM_PREPARED_ARTIFACT: bool;
     fn id(&self) -> &str;
     fn kind(&self) -> keyhog_core::DetectorKind;
     fn private_key_block(&self) -> bool;
@@ -16,7 +20,18 @@ trait DetectorPlanSource {
     fn detector_relations(&self) -> &[keyhog_core::DetectorRelationSpec];
 }
 
+fn record_detector_plan_surface<T: DetectorPlanSource>() {
+    if T::FROM_PREPARED_ARTIFACT {
+        keyhog_profile::record_compile_surface_load(keyhog_profile::CompileSurfaceId::DetectorPlan);
+    } else {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::DetectorPlan,
+        );
+    }
+}
+
 impl DetectorPlanSource for DetectorSpec {
+    const FROM_PREPARED_ARTIFACT: bool = false;
     fn id(&self) -> &str {
         &self.id
     }
@@ -38,6 +53,7 @@ impl DetectorPlanSource for DetectorSpec {
 }
 
 impl DetectorPlanSource for crate::execution_pack::detector_plan::DetectorPlanRecord {
+    const FROM_PREPARED_ARTIFACT: bool = true;
     fn id(&self) -> &str {
         &self.id
     }
@@ -111,6 +127,7 @@ impl StreamingDetectorPlanSummary {
 }
 
 impl DetectorPlanSource for StreamingDetectorPlanSummary {
+    const FROM_PREPARED_ARTIFACT: bool = true;
     fn id(&self) -> &str {
         &self.id
     }
@@ -179,9 +196,7 @@ impl DetectorResolutionIndex {
         detectors: &[T],
         interner: &crate::static_intern::StaticInterner,
     ) -> Result<Self, String> {
-        keyhog_profile::record_compile_surface_invocation(
-            keyhog_profile::CompileSurfaceId::DetectorPlan,
-        );
+        record_detector_plan_surface::<T>();
         let expected_rows = detectors.len()
             + detectors
                 .iter()
@@ -256,9 +271,7 @@ impl CompiledDetectorRelationIndex {
         detectors: &[T],
         interner: &crate::static_intern::StaticInterner,
     ) -> Result<Self, String> {
-        keyhog_profile::record_compile_surface_invocation(
-            keyhog_profile::CompileSurfaceId::DetectorPlan,
-        );
+        record_detector_plan_surface::<T>();
         let detector_ids = detectors
             .iter()
             .map(|detector| detector.id())

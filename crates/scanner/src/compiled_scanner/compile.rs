@@ -633,6 +633,12 @@ impl CompiledScanner {
             crate::entropy::policy::validate_feature_compatibility(&detectors)
                 .map_err(crate::error::ScanError::Config)?;
         }
+        // Every packed input is a prepared artifact, and a scanner materialized
+        // from one loads its matchers instead of compiling them. Only the plan
+        // prelude carries detector rows, so it alone cannot decide this.
+        let from_prepared_artifact = packed_state.is_some()
+            || packed_decoder_plan.is_some()
+            || packed_detector_plan.is_some();
         let packed_schema_digest = packed_decoder_plan.as_ref().map(|(_, digest)| *digest);
         let decoder_plan = match (
             packed_decoder_plan.map(|(plan, _)| plan),
@@ -759,13 +765,19 @@ impl CompiledScanner {
                 }
                 (prelude.compiled_plan_digest, plans, prelude.detector_count)
             } else {
-                // LAW10: unpacked development compilation computes the same canonical digest from exact detector and decoder inputs.
-                let digest = packed_schema_digest.unwrap_or_else(|| {
-                    super::detector_digest::from_execution_plan(
-                        keyhog_core::compute_spec_hash(&detectors),
+                // LAW10: an unpacked compile computes the same canonical digest
+                // a pack carries, so autoroute identity does not depend on how
+                // the scanner was materialized.
+                let digest = match packed_schema_digest {
+                    Some(digest) => digest,
+                    None => super::detector_digest::from_execution_plan(
+                        crate::execution_pack::CanonicalDetectorExecutionIr::canonical_spec_hash(
+                            &detectors,
+                        )
+                        .map_err(|error| crate::error::ScanError::Config(error.to_string()))?,
                         decoder_plan.identity(),
-                    )
-                });
+                    ),
+                };
                 let plans = crate::detector_plan::CompiledDetectorPlans::compile_with_decoder_plan(
                     &detectors,
                     static_intern.as_ref(),
@@ -1376,6 +1388,10 @@ impl CompiledScanner {
                 unreachable!("new packed GPU matcher cell was already initialized");
             }
         }
+        // The engine starts on the default scan config, so the prepared matcher
+        // must be built from the same keyword inputs `resolve` will pass, or the
+        // first scan line invalidates the hydrated matcher and compiles one.
+        let config = ScannerConfig::default();
         let scanner = Self {
             #[cfg(feature = "gpu")]
             gpu_resident_execution_pool:
@@ -1405,14 +1421,14 @@ impl CompiledScanner {
             gpu_degrade_count: std::sync::atomic::AtomicU64::new(0),
             autoroute_gpu_shared_cold_ns: std::sync::atomic::AtomicU64::new(0),
             static_intern,
-            assignment_keyword_matcher: std::sync::Mutex::new(if packed_detector_plan.is_some() {
+            assignment_keyword_matcher: std::sync::Mutex::new(if from_prepared_artifact {
                 crate::assignment_keyword_matcher::AssignmentKeywordMatcherCache::new_hydrated(
-                    &[],
+                    &config.secret_keywords,
                     detector_plans.generic_ownership().policy_keywords(),
                 )
             } else {
                 crate::assignment_keyword_matcher::AssignmentKeywordMatcherCache::new_compiled(
-                    &[],
+                    &config.secret_keywords,
                     detector_plans.generic_ownership().policy_keywords(),
                 )
             }),
@@ -1453,7 +1469,7 @@ impl CompiledScanner {
             simd_initialization_ns: std::sync::atomic::AtomicU64::new(0),
             #[cfg(feature = "simdsieve")]
             hot_pattern_slots,
-            config: ScannerConfig::default(),
+            config,
             route_classification: Arc::new(
                 crate::engine::phase1_admission::RouteClassificationPlan {
                     alphabet_screen,

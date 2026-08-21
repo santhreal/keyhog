@@ -1047,7 +1047,6 @@ impl CompileSurfaceId {
             ],
             Self::ValidatorCatalog => &[
                 "keyhog_scanner::checksum::compiled::CompiledValidatorCatalog::compile",
-                "keyhog_scanner::checksum::compiled::CompiledValidatorIndex::compile",
                 "keyhog_scanner::checksum::compiled::CompiledDetectorValidators::compile",
             ],
             Self::ConfidencePolicy => &[
