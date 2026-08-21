@@ -316,8 +316,13 @@ impl InstalledArtifactRegistry {
                 crate::orchestrator::AutorouteReadiness::Ready
                 | crate::orchestrator::AutorouteReadiness::Direct => {}
                 readiness => {
+                    let reason = inspection
+                        .identity_mismatch_reason
+                        .as_deref()
+                        .map(|reason| format!(" ({reason})"))
+                        .unwrap_or_default();
                     bail!(
-                        "autoroute calibration at {} is not ready (status: {}). Fix: run `keyhog install`",
+                        "autoroute calibration at {} is not ready (status: {}){reason}. Fix: run `keyhog install`",
                         autoroute_path.display(),
                         readiness.as_str()
                     );
