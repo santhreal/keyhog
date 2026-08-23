@@ -516,7 +516,7 @@ impl Phase1AdmissionPlan {
     fn direct_scan_absence_at_row(&self, row: usize) -> Option<bool> {
         Some(self.phase2_tail_absence_at_row(row)? && self.cpu_trigger_hints.get(row)?.is_some())
     }
-    #[cfg(feature = "simd")]
+
     #[inline]
     pub(crate) fn simd_phase2_tail_absence_for(
         &self,
