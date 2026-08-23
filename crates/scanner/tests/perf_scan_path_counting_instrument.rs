@@ -19,6 +19,7 @@ static ALLOC_COUNT: AtomicUsize = AtomicUsize::new(0);
 static TOTAL_BYTES: AtomicUsize = AtomicUsize::new(0);
 static CURRENT_BYTES: AtomicUsize = AtomicUsize::new(0);
 static PEAK_BYTES: AtomicUsize = AtomicUsize::new(0);
+static MEASUREMENT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 unsafe impl GlobalAlloc for ScanCountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
@@ -137,6 +138,7 @@ fn make_test_scanner() -> CompiledScanner {
 
 #[test]
 fn scan_path_counting_instrument_measures_allocations_and_finding_parity() {
+    let _measurement_guard = MEASUREMENT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let scanner = make_test_scanner();
 
     // Planted secrets corpus: AWS Access Key ID + Slack token
@@ -188,6 +190,7 @@ fn scan_path_counting_instrument_measures_allocations_and_finding_parity() {
 
 #[test]
 fn scan_scaling_ratio_is_bounded_with_chunk_size() {
+    let _measurement_guard = MEASUREMENT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let scanner = make_test_scanner();
 
     let text_small = "const MSG = 'hello world';\n".repeat(100);

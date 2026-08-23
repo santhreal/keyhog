@@ -87,8 +87,11 @@ async fn concurrent_daemon_scans_maintain_isolated_skip_and_telemetry_counts() {
     let file_c = fixture_root.path().join("file_c.txt");
     std::fs::write(&file_c, "const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\";\n").expect("write file_c");
 
-    // Launch concurrent client scan tasks against the running daemon
-    let concurrency = 24;
+    // Server admission is `(logical_cpu_count * 4).clamp(8, 256)`. Use the
+    // guaranteed floor so this telemetry-isolation contract remains valid on
+    // two- and four-core CI runners; overload refusal is a separate daemon
+    // contract, not cross-request telemetry contamination.
+    let concurrency = 8;
     let mut handles = Vec::new();
 
     for client_id in 0..concurrency {
