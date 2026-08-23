@@ -2,6 +2,7 @@
 
 ## 0.5.81 - 2026-08-20
 
+- fix(cli): `compile-execution-packs` completes on Windows. The staging directory fsync opened the directory in read mode, and `FlushFileBuffers` on a read-mode directory handle fails with "Access is denied" (os error 5).
 - fix(daemon): the detector rules identity is derived from the rule set, not from the route that loaded it. `detector_rules_digest` is the single owner for the client, the daemon handshake, the staleness check and the scan request, so a warm daemon and the CLI that started it no longer disagree about their own rules and re-route to an in-process scan.
 - fix(cli): an Action receipt certifies a fail-closed scan. `validate_semantics` accepted only `partial` on exit 11 and 13, so a total source failure, which reports `failed`, was rejected as contradictory semantics and the receipt bailed on the scan it exists to record.
 - fix(cli): `--autoroute` calibration state that is missing, stale, invalid, incomplete, or quarantined exits 2 on a normal automatic scan, with `[]` on stdout and the state plus its repair on stderr. `docs/src/reference/exit-codes.md` documents that, and the scan never benchmarks at scan time or substitutes scalar execution.
