@@ -427,9 +427,12 @@ fn explicit_auto_stale_daemon_socket_surfaces_in_process_route() {
         .expect("spawn keyhog scan");
 
     let combined = combined_output(&out);
+    // The daemon miss is visible, then the in-process route has no valid
+    // autoroute decision and fails closed with EXIT_USER_ERROR: nothing is
+    // scanned and the operator is told to calibrate.
     assert_eq!(
         out.status.code(),
-        Some(13),
+        Some(2),
         "explicit daemon auto should surface the daemon miss and leave the in-process batch unscanned; output={combined}"
     );
     assert!(
@@ -453,9 +456,20 @@ fn forced_daemon_scan_path_expands_har_base64_response() {
     let path = work.path().join("capture.har");
     std::fs::write(&path, har_with_base64_response_body()).expect("write har fixture");
 
+    // The expanded response body is `200 OK\n\nAWS_ACCESS_KEY_ID=...`: a decoded
+    // wire payload, not a config file, so its source role is unsupported and the
+    // finding lands at `review`. Paranoid is the policy that blocks on review, so
+    // it is what proves the expander ran and produced a blocking result.
     let out = Command::new(binary())
         .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
-        .args(["scan", "--daemon=on", "--format", "json"])
+        .args([
+            "scan",
+            "--daemon=on",
+            "--format",
+            "json",
+            "--evidence-policy",
+            "paranoid",
+        ])
         .arg(&path)
         .output()
         .expect("spawn keyhog scan");
@@ -469,6 +483,10 @@ fn forced_daemon_scan_path_expands_har_base64_response() {
     assert!(
         combined.contains("\"detector_id\":\"aws-access-key\""),
         "daemon HAR route must use the filesystem source expander, not raw text scan; output={combined}"
+    );
+    assert!(
+        combined.contains("capture.har#https://api.example.invalid/secret"),
+        "the finding must name the expanded response entry, not the raw file; output={combined}"
     );
 }
 

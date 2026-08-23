@@ -7,6 +7,7 @@
 //! the embedded weights are mid-retrain.
 
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
+use keyhog_scanner::capability_ledger::register_capability_test;
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use proptest::strategy::{Strategy, ValueTree};
 use proptest::test_runner::TestRunner;
@@ -66,8 +67,12 @@ fn unicode_regex_semantics_are_backend_invariant() {
     ];
     let scanner_cpu = CompiledScanner::compile_for_backend(specs.clone(), ScanBackend::CpuFallback)
         .expect("Unicode parity scalar scanner compiles");
-    if !scanner_cpu.simd_backend_available() {
-        eprintln!("SIMD backend not available in this build; skipping SIMD invariant test");
+    if !register_capability_test(
+        "unicode_regex_semantics_are_backend_invariant",
+        "cpu_simd",
+        scanner_cpu.simd_backend_available(),
+    ) {
+        eprintln!("SKIPPED: SIMD backend absent in this build");
         return;
     }
     let scanner_simd = CompiledScanner::compile_for_backend(specs, ScanBackend::SimdCpu)
@@ -105,8 +110,12 @@ fn cpu_and_simd_agree_on_every_detector_example() {
     let specs = keyhog_core::embedded_detector_specs().to_vec();
     let scanner_cpu = CompiledScanner::compile_for_backend(specs.clone(), ScanBackend::CpuFallback)
         .expect("scalar scanner compile");
-    if !scanner_cpu.simd_backend_available() {
-        eprintln!("SIMD backend not available in this build; skipping SIMD corpus parity test");
+    if !register_capability_test(
+        "cpu_and_simd_agree_on_every_detector_example",
+        "cpu_simd",
+        scanner_cpu.simd_backend_available(),
+    ) {
+        eprintln!("SKIPPED: SIMD backend absent in this build");
         return;
     }
     let scanner_simd = CompiledScanner::compile_for_backend(specs.clone(), ScanBackend::SimdCpu)

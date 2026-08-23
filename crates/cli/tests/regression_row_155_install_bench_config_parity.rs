@@ -1,4 +1,7 @@
-//! WHY THIS TEST EXISTS:
+//! WHY: closes the class of install/benchmark configuration drift, where a feature
+//! default moves in one place and the other surfaces keep describing the old one.
+//! What it does not catch: whether the documented commands work on a given host,
+//! and any drift in a file this suite does not read.
 //! Row 155 / Installation and benchmark harness configuration parity:
 //! Crate feature definitions (`crates/cli/Cargo.toml`, `crates/scanner/Cargo.toml`),
 //! benchmark harness defaults (`benchmarks/bench/scanners/keyhog.py`, `benchmarks/cross_device.sh`),

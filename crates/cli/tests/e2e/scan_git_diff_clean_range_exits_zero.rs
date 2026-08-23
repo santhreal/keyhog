@@ -22,6 +22,9 @@ fn init_git_repo(dir: &std::path::Path) {
         .expect("git config name");
 }
 
+/// A range whose changed content carries no credential exits 0. The range must
+/// contain a changed file: an empty range reads zero bytes, which is the
+/// coverage refusal (exit 13), not a clean verdict.
 #[test]
 fn scan_git_diff_clean_range_exits_zero() {
     let dir = TempDir::new().expect("tempdir");
@@ -38,6 +41,7 @@ fn scan_git_diff_clean_range_exits_zero() {
         .current_dir(repo)
         .status()
         .expect("git commit");
+    std::fs::write(repo.join("clean.txt"), "ok\nstill ok\n").unwrap();
     let output = Command::new(binary())
         .args([
             "scan",
@@ -52,5 +56,10 @@ fn scan_git_diff_clean_range_exits_zero() {
         .current_dir(repo)
         .output()
         .expect("spawn");
-    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

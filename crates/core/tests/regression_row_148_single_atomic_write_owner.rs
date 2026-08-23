@@ -1,3 +1,7 @@
+//! WHY: closes the class of a second, weaker durable-write implementation appearing
+//! beside `keyhog_core::state_file`, which is how a torn or unswept state file gets
+//! shipped. What it does not catch: filesystems that ignore fsync, and a caller that
+//! writes with `std::fs` directly instead of this owner.
 //! Regression: Row 148 — Single atomic durable-write implementation in `keyhog_core::state_file`.
 //!
 //! Verifies that `keyhog_core::state_file::write_atomically` and

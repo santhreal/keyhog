@@ -23,8 +23,6 @@ pub mod regression;
 pub mod decoded_generic_entropy_guard_proptest;
 #[path = "regression_ac_literal_prefilter.rs"]
 pub mod regression_ac_literal_prefilter;
-#[path = "regression_ac_overlap_shadow.rs"]
-pub mod regression_ac_overlap_shadow;
 #[path = "regression_active_detector_suppression_policy.rs"]
 pub mod regression_active_detector_suppression_policy;
 #[path = "regression_ai_provider_key_recall.rs"]
@@ -67,10 +65,6 @@ pub mod regression_caesar_shift_all;
 pub mod regression_capture_group_participation;
 #[path = "regression_catch_unwind_isolation_boundaries.rs"]
 pub mod regression_catch_unwind_isolation_boundaries;
-#[path = "regression_charclass_prefix_expansion_recall.rs"]
-pub mod regression_charclass_prefix_expansion_recall;
-#[path = "regression_checksum_boundary_no_downgrade.rs"]
-pub mod regression_checksum_boundary_no_downgrade;
 #[path = "regression_checksum_registry_crc.rs"]
 pub mod regression_checksum_registry_crc;
 #[path = "regression_cloud_credential_recall.rs"]
@@ -155,8 +149,6 @@ pub mod regression_detector_isolation;
 pub mod regression_detector_keyword_index;
 #[path = "regression_detector_min_len_runtime.rs"]
 pub mod regression_detector_min_len_runtime;
-#[path = "regression_detector_owned_keyword_separators.rs"]
-pub mod regression_detector_owned_keyword_separators;
 #[path = "regression_detector_registry_integrity.rs"]
 pub mod regression_detector_registry_integrity;
 #[path = "regression_detector_service_policy.rs"]
@@ -165,8 +157,6 @@ pub mod regression_detector_service_policy;
 pub mod regression_devplatform_monitoring_token_recall;
 #[path = "regression_devtool_vendor_token_recall.rs"]
 pub mod regression_devtool_vendor_token_recall;
-#[path = "regression_distinctive_infix_anchor_recall.rs"]
-pub mod regression_distinctive_infix_anchor_recall;
 #[path = "regression_dogfood_policy_prose_precision.rs"]
 pub mod regression_dogfood_policy_prose_precision;
 #[path = "regression_dot_concatenation.rs"]
@@ -255,8 +245,6 @@ pub mod regression_keyword_bridge_floor;
 pub mod regression_keyword_predicate_union;
 #[path = "regression_kubeconfig_k8s_recall.rs"]
 pub mod regression_kubeconfig_k8s_recall;
-#[path = "regression_leading_assertion_and_alternation_prefix_recall.rs"]
-pub mod regression_leading_assertion_and_alternation_prefix_recall;
 #[path = "regression_match_dedup_key.rs"]
 pub mod regression_match_dedup_key;
 #[path = "regression_messaging_vendor_token_recall.rs"]
@@ -285,10 +273,6 @@ pub mod regression_multiline_fragment;
 pub mod regression_multiline_join;
 #[path = "regression_multiline_structural.rs"]
 pub mod regression_multiline_structural;
-#[path = "regression_named_canonical_hex_key_recall.rs"]
-pub mod regression_named_canonical_hex_key_recall;
-#[path = "regression_named_detector_anchor_floor_recall.rs"]
-pub mod regression_named_detector_anchor_floor_recall;
 #[path = "regression_nested_base64.rs"]
 pub mod regression_nested_base64;
 #[path = "regression_observability_ci_token_recall.rs"]
@@ -309,8 +293,6 @@ pub mod regression_passthrough_line_attribution;
 pub mod regression_password_slot_mask_suppression;
 #[path = "regression_payment_vendor_token_recall.rs"]
 pub mod regression_payment_vendor_token_recall;
-#[path = "regression_per_pattern_weak_anchor_recall.rs"]
-pub mod regression_per_pattern_weak_anchor_recall;
 #[path = "regression_prefilter_alphabet_union.rs"]
 pub mod regression_prefilter_alphabet_union;
 #[path = "regression_prefilter_cache.rs"]
@@ -361,8 +343,6 @@ pub mod regression_row_115_proportional_scrub_cost;
 pub mod regression_row_116_backend_derived_dispatch_limit;
 #[path = "regression_row_117_scratch_retention_memory_budget.rs"]
 pub mod regression_row_117_scratch_retention_memory_budget;
-#[path = "regression_row_118_gpu_dispatch_concurrency_pool.rs"]
-pub mod regression_row_118_gpu_dispatch_concurrency_pool;
 #[path = "regression_row_119_scanner_rayon_manifest.rs"]
 pub mod regression_row_119_scanner_rayon_manifest;
 #[path = "regression_row_125_compile_surface_counters.rs"]

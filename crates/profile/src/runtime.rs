@@ -832,7 +832,7 @@ impl Runtime {
             self.inner.session_sample_observations[index].fetch_add(1, Ordering::Relaxed);
         let retained = policy.selects(observation)
             && self.inner.session_sample_retained[index]
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |retained| {
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |retained| {
                     (retained < policy.maximum_retained).then_some(retained + 1)
                 })
                 .is_ok();
@@ -1818,7 +1818,7 @@ impl Runtime {
             return;
         }
         let index = queue.index();
-        let _ = self.inner.queue_depth_current[index].fetch_update(
+        let _ = self.inner.queue_depth_current[index].try_update(
             Ordering::Relaxed,
             Ordering::Relaxed,
             |depth| Some(depth.saturating_sub(1)),

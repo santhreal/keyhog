@@ -591,6 +591,15 @@ struct SourceSemanticCacheEntry {
     /// by a different bounded source while this entry is live.
     _text_owner: SensitiveString,
     index: Option<crate::source_semantics::CandidateSourceIndex>,
+    /// Decoded chunks only. A decode splices the decoded run back into the
+    /// container text, so the container syntax classifies the candidate
+    /// whenever the splice leaves a parseable container (a base64 credential in
+    /// a JSON string value). A splice that breaks the container parse, or a
+    /// payload that is itself an assignment (`KEY=value` inside a k8s Secret
+    /// `data:` value), is classified from the payload bytes alone. The `usize`
+    /// is the payload's offset in `_text_owner`, so candidate spans rebase onto
+    /// the index this holds.
+    decoded_payload_index: Option<(usize, crate::source_semantics::CandidateSourceIndex)>,
 }
 
 /// Internal state for a single scan operation.
@@ -665,11 +674,8 @@ impl ScanState {
         if chunk.data.get(candidate_start..candidate_end) != Some(candidate) {
             return None;
         }
-        let path = if chunk.metadata.decoded_span.is_some() {
-            None
-        } else {
-            chunk.metadata.path.as_deref()
-        };
+        let decoded_span = chunk.metadata.decoded_span;
+        let path = chunk.metadata.path.as_deref();
         let key = SourceSemanticCacheKey {
             text_address: chunk.data.as_ptr() as usize,
             text_len: chunk.data.len(),
@@ -685,15 +691,33 @@ impl ScanState {
                 key,
                 _text_owner: chunk.data.clone(),
                 index: crate::source_semantics::build_candidate_source_index(&chunk.data, path),
+                decoded_payload_index: decoded_span.and_then(|(start, end)| {
+                    let payload = chunk.data.get(start..end)?;
+                    let index =
+                        crate::source_semantics::build_candidate_source_index(payload, None)?;
+                    Some((start, index))
+                }),
             });
         }
-        self.source_semantic_cache
-            .as_ref()?
+        let span = crate::source_semantics::SourceSpan {
+            start: candidate_start,
+            end: candidate_end,
+        };
+        let entry = self.source_semantic_cache.as_ref()?;
+        entry
             .index
-            .as_ref()?
-            .classify(crate::source_semantics::SourceSpan {
-                start: candidate_start,
-                end: candidate_end,
+            .as_ref()
+            .and_then(|index| index.classify(span))
+            .or_else(|| {
+                entry
+                    .decoded_payload_index
+                    .as_ref()
+                    .and_then(|(base, index)| {
+                        index.classify(crate::source_semantics::SourceSpan {
+                            start: candidate_start.checked_sub(*base)?,
+                            end: candidate_end.checked_sub(*base)?,
+                        })
+                    })
             })
     }
 

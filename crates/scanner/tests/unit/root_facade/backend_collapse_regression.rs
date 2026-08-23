@@ -276,15 +276,23 @@ fn selection_matrix_exact_cells() {
     });
 }
 
+/// A batch routes like a single file only when its large chunks carry the
+/// batch: the dominance guard exists so a swarm of tiny files never pays for a
+/// device dispatch, so both halves are pinned here.
 #[test]
 fn batch_selection_delegates_to_backend_routing() {
     with_policy(GpuRuntimePolicy::Auto, None, || {
         let gpu = caps_gpu(true, true);
         let total = thresholds::GPU_MIN_BYTES_HIGH_TIER;
         assert_eq!(
-            select_backend_for_batch(&gpu, total, 5_000, 1024),
+            select_backend_for_batch(&gpu, total, 5_000, total),
             select_backend(&gpu, total, 5_000),
-            "select_backend_for_batch must match select_backend"
+            "a batch whose large chunks carry it must route like the same file"
+        );
+        assert_eq!(
+            select_backend_for_batch(&gpu, total, 5_000, 1024),
+            ScanBackend::SimdCpu,
+            "a tiny-chunk swarm never engages the device, whatever its byte total"
         );
     });
 }

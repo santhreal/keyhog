@@ -25,9 +25,10 @@ fn racy_entry_dropped_safe_entry_kept_on_load() {
     let racy_after = 1000 * NS_PER_SEC + 400_000_000; // 1000.4s - same second, later
     let racy_boundary = 1000 * NS_PER_SEC; // exactly 1000.0s - the coarse-FS whole-second case
     let safe_mtime = 999 * NS_PER_SEC + 900_000_000; // 999.9s - strictly earlier second
+    let safe_ctime = safe_mtime + 5u64; // kernel-owned change time recorded with the entry
 
     let on_disk = serde_json::json!({
-        "version": 4,
+        "version": 5,
         "written_at_ns": written_at_ns,
         "entries": [
             {
@@ -48,6 +49,7 @@ fn racy_entry_dropped_safe_entry_kept_on_load() {
                 "path": "/safe",
                 "chunk_offset": 0,
                 "mtime_ns": safe_mtime,
+                "ctime_ns": safe_ctime,
                 "size": 20,
                 "hash": "cd".repeat(32)
             }
@@ -60,17 +62,22 @@ fn racy_entry_dropped_safe_entry_kept_on_load() {
 
     // Both racy entries are gone -> the next scan re-reads + re-hashes them.
     assert!(
-        !loaded.metadata_unchanged(Path::new("/racy-after"), racy_after, 10),
+        !loaded.metadata_unchanged(Path::new("/racy-after"), racy_after, racy_after + 100, 10),
         "entry modified later in the index-write second must be dropped"
     );
     assert!(
-        !loaded.metadata_unchanged(Path::new("/racy-boundary"), racy_boundary, 11),
+        !loaded.metadata_unchanged(
+            Path::new("/racy-boundary"),
+            racy_boundary,
+            racy_boundary + 100,
+            11
+        ),
         "entry whose whole-second mtime equals the index-write second must be dropped \
          (the canonical coarse-filesystem case)"
     );
     // The entry from a strictly earlier second survives -> the speedup is intact.
     assert!(
-        loaded.metadata_unchanged(Path::new("/safe"), safe_mtime, 20),
+        loaded.metadata_unchanged(Path::new("/safe"), safe_mtime, safe_ctime, 20),
         "entry from a strictly earlier second must be kept for the fast-path skip"
     );
     assert_eq!(
@@ -89,7 +96,7 @@ fn zero_written_at_marks_every_entry_racy() {
     let cache_path = dir.path().join("merkle.idx");
 
     let on_disk = serde_json::json!({
-        "version": 4,
+        "version": 5,
         "written_at_ns": 0,
         "entries": [
             {

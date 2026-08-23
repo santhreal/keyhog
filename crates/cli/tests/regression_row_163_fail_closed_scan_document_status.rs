@@ -1,6 +1,7 @@
 #![cfg(unix)]
 
-//! What it closes:
+//! WHY: closes the class where a scan that acquired nothing still reports a clean
+//! or merely partial document. What it closes:
 //! Enforces that structured envelope formats (`json-envelope`, `jsonl-envelope`,
 //! `sarif`, `csv`, `gitlab-sast`) unambiguously report `scan_status: "failed"` and
 //! document the source failure coverage gap on total source failure (e.g. oversized

@@ -68,10 +68,15 @@ static PREPARED_INSTALLATION: LazyLock<(tempfile::TempDir, PathBuf)> = LazyLock:
         installed.join("execution-packs/current").is_dir(),
         "keyhog install must publish an execution-pack generation"
     );
-    assert!(
-        installed.join("autoroute.json").is_file(),
-        "keyhog install must publish autoroute calibration"
-    );
+    // A single-backend build (portable default features) routes direct and
+    // publishes no calibration table, matching `calibrate-autoroute` and the
+    // fail-closed scan checks, which are all gated on the same predicate.
+    if keyhog_scanner::hw_probe::multiple_backends_compiled() {
+        assert!(
+            installed.join("autoroute.json").is_file(),
+            "keyhog install must publish autoroute calibration"
+        );
+    }
     (directory, installed)
 });
 
@@ -98,11 +103,11 @@ pub fn clone_prepared_installation(cache_home: &Path) -> (PathBuf, PathBuf) {
     fs::create_dir_all(&target).expect("create cloned cache root");
     let pack_root = target.join("execution-packs");
     copy_dir_all(&installed.join("execution-packs"), &pack_root);
-    fs::copy(
-        installed.join("autoroute.json"),
-        target.join("autoroute.json"),
-    )
-    .expect("clone autoroute calibration");
+    let autoroute_src = installed.join("autoroute.json");
+    if autoroute_src.is_file() {
+        fs::copy(&autoroute_src, target.join("autoroute.json"))
+            .expect("clone autoroute calibration");
+    }
     let current = pack_root.join("current");
     (pack_root, current)
 }

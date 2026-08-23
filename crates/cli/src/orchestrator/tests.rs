@@ -409,12 +409,12 @@ fn corpus_and_pack_rules_digests_are_one_autoroute_identity() {
         "a pattern change must invalidate persisted routing evidence"
     );
 
-    let error =
-        super::corpus_rules_digest(&[]).expect_err("an empty corpus has no routing identity");
-    assert!(
-        error
-            .to_string()
-            .contains("computing detector corpus route identity"),
-        "an unroutable corpus must name what failed: {error}"
+    // An empty corpus has a canonical identity: the digest is total, so a
+    // zero-detector scanner routes on the value that corpus carries, and the
+    // identity differs from every populated corpus.
+    let empty = super::corpus_rules_digest(&[]).expect("empty corpus has a canonical identity");
+    assert_ne!(
+        corpus, empty,
+        "the empty corpus identity must differ from a populated corpus"
     );
 }

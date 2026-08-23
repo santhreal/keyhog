@@ -22,6 +22,7 @@ fn save_cap_prefers_current_in_memory_entries() {
             &disk,
             PathBuf::from(format!("/disk/{idx}")),
             idx,
+            idx + 100,
             10,
             sample_hash(format!("disk-{idx}").as_bytes()),
         );
@@ -37,6 +38,7 @@ fn save_cap_prefers_current_in_memory_entries() {
         &current,
         PathBuf::from("/current"),
         99,
+        99 + 100,
         11,
         sample_hash(b"current"),
     );
@@ -52,7 +54,7 @@ fn save_cap_prefers_current_in_memory_entries() {
         2
     );
     assert!(
-        loaded.metadata_unchanged(Path::new("/current"), 99, 11),
+        loaded.metadata_unchanged(Path::new("/current"), 99, 99 + 100, 11),
         "fresh in-memory entry must survive persisted cap trimming"
     );
 }
@@ -72,6 +74,7 @@ fn save_cap_evicts_oldest_disk_entry_before_newer_disk_entry() {
         &disk,
         PathBuf::from("/disk/old"),
         1,
+        1 + 100,
         10,
         sample_hash(b"old"),
     );
@@ -80,6 +83,7 @@ fn save_cap_evicts_oldest_disk_entry_before_newer_disk_entry() {
         &disk,
         PathBuf::from("/disk/new"),
         2,
+        2 + 100,
         20,
         sample_hash(b"new"),
     );
@@ -94,6 +98,7 @@ fn save_cap_evicts_oldest_disk_entry_before_newer_disk_entry() {
         &current,
         PathBuf::from("/current"),
         3,
+        3 + 100,
         30,
         sample_hash(b"current"),
     );
@@ -109,15 +114,15 @@ fn save_cap_evicts_oldest_disk_entry_before_newer_disk_entry() {
         2
     );
     assert!(
-        loaded.metadata_unchanged(Path::new("/current"), 3, 30),
+        loaded.metadata_unchanged(Path::new("/current"), 3, 3 + 100, 30),
         "current in-memory entry must remain protected during first cap pass"
     );
     assert!(
-        loaded.metadata_unchanged(Path::new("/disk/new"), 2, 20),
+        loaded.metadata_unchanged(Path::new("/disk/new"), 2, 2 + 100, 20),
         "newer disk entry should survive over the older disk entry"
     );
     assert!(
-        !loaded.metadata_unchanged(Path::new("/disk/old"), 1, 10),
+        !loaded.metadata_unchanged(Path::new("/disk/old"), 1, 1 + 100, 10),
         "oldest unprotected disk entry should be evicted first"
     );
 }

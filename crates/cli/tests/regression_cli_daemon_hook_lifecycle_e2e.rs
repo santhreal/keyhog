@@ -593,7 +593,7 @@ fn daemon_start_status_stop_reports_exact_lines_and_codes() {
         .expect("ordered detector identity field");
     assert_eq!(
         detector_identity,
-        keyhog_core::detector_digest(),
+        keyhog::testing::embedded_detector_rules_digest(),
         "status must attest the exact embedded detector corpus loaded by the daemon"
     );
 

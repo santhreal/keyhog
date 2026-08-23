@@ -320,7 +320,7 @@ impl InstalledArtifactRegistry {
                         .identity_mismatch_reason
                         .as_deref()
                         .map(|reason| format!(" ({reason})"))
-                        .unwrap_or_default();
+                        .unwrap_or_default(); // LAW10: reporting-only suffix; a readiness with no identity mismatch has no reason to name, and the bail below still states the status and the repair.
                     bail!(
                         "autoroute calibration at {} is not ready (status: {}){reason}. Fix: run `keyhog install`",
                         autoroute_path.display(),

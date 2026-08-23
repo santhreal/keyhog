@@ -119,6 +119,15 @@ fn mass_daemon_directory_scan_reports_exact_finding_location() {
     );
 }
 
+/// The merkle racy-clean guard drops every cache entry whose file mtime shares a
+/// clock-second with the index write, because a same-size edit in that window is
+/// invisible to `(mtime, size)`. A fixture written immediately before the first
+/// scan is therefore always re-read on the second scan, so any test that asserts
+/// a warm skip must first leave that window.
+fn settle_racy_clean_window() {
+    std::thread::sleep(std::time::Duration::from_millis(1_100));
+}
+
 /// WHY: daemon-local incremental scans must retain the warm scanner while
 /// skipping unchanged clean files, but must rescan every file that produced a
 /// finding so secrets remain visible on every invocation.
@@ -133,6 +142,7 @@ fn mass_daemon_incremental_skips_clean_files_and_replays_secret_files() {
         .join("merkle.idx");
     std::fs::write(work.path().join("clean.txt"), "service=example\n").expect("clean fixture");
     std::fs::write(work.path().join(".env.secret"), aws_fixture()).expect("secret fixture");
+    settle_racy_clean_window();
     let root = work.path().to_str().expect("utf-8 work path");
     let cache_arg = relative_cache_path.to_str().expect("utf-8 cache path");
 
@@ -220,6 +230,7 @@ fn mass_daemon_all_unchanged_incremental_scan_is_complete_coverage() {
     let cache = TempDir::new().expect("cache dir");
     let cache_path = cache.path().join("merkle.idx");
     std::fs::write(work.path().join("clean.txt"), "service=example\n").expect("clean fixture");
+    settle_racy_clean_window();
     let root = work.path().to_str().expect("utf-8 work path");
     let cache_arg = cache_path.to_str().expect("utf-8 cache path");
     let args = [
@@ -532,7 +543,9 @@ fn mass_daemon_endpoint_success_uses_protected_chunk_transport() {
     assert_eq!(findings[0]["location"]["line"], 1);
 }
 
-/// A failed endpoint acquisition must produce exit 13 and an incomplete envelope, never clean status.
+/// A failed endpoint acquisition must produce exit 13 and a fail-closed envelope, never clean
+/// status. Row 163 pins `failed` (not `partial`) whenever a source failed outright; see
+/// `crates/cli/tests/regression_row_163_fail_closed_scan_document_status.rs`.
 #[test]
 fn mass_daemon_endpoint_failure_preserves_coverage_error() {
     let guard = DaemonGuard::start_mass();
@@ -557,8 +570,8 @@ fn mass_daemon_endpoint_failure_preserves_coverage_error() {
         "failed remote source must fail closed; stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let report: Value = serde_json::from_slice(&output.stdout).expect("valid partial envelope");
-    assert_eq!(report["scan_status"], "partial");
+    let report: Value = serde_json::from_slice(&output.stdout).expect("valid envelope");
+    assert_eq!(report["scan_status"], "failed");
     assert_eq!(report["findings"].as_array().map(Vec::len), Some(0));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(

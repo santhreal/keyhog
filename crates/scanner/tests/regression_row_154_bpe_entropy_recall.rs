@@ -7,6 +7,9 @@
 //! 4. BPE bytes-per-token gate discrimination: real high-entropy secrets survive while word-like structures suppress.
 //! 5. 16-char mixed alphanumeric tokens with digits clearing entropy threshold in credential context.
 //! 6. Zero false positives on canonical word-like / program identifier shapes (maintaining precision).
+//!
+//! What it does not catch: recall on token shapes outside these representatives, and
+//! precision on prose or identifiers this suite does not sample.
 
 mod support;
 use support::paths::detector_dir;

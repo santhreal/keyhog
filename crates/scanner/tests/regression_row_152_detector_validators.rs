@@ -9,6 +9,9 @@
 //!   5. Base62 CRC32 checksum validation (GitHub classic/fine-grained PATs, npm access tokens).
 //!   6. PatternShape compiled anchored validation.
 //!   7. Real scanner execution proving valid tokens emit findings while corrupted tokens fail closed.
+//!
+//! What it does not catch: a detector that declares no validator at all, and a
+//! validator whose shape check passes on a synthetic token no provider would issue.
 
 use keyhog_core::{
     load_embedded_detectors_or_fail, DetectorSpec, DetectorValidatorSpec, PatternSpec, Severity,

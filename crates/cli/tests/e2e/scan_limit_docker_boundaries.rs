@@ -173,15 +173,17 @@ fn docker_source_limit_boundaries_are_exact_and_surfaced() {
     ]);
     let per_entry_stderr = stderr_of(&per_entry_only);
     assert!(
-        per_entry_stderr.contains("cumulative size exceeds"),
+        per_entry_stderr.contains(&format!("{PAD_ENTRY_BYTES}-byte image-wide budget"))
+            && per_entry_stderr.contains("./etc/pad.txt"),
         "a budget large enough for the biggest entry but smaller than the \
-         layer sum must trip the cumulative guard, proving accounting does \
-         not reset per entry; stderr={per_entry_stderr}"
+         layer sum must trip the image-wide guard and name the entry it \
+         stopped at, proving accounting does not reset per tar; \
+         stderr={per_entry_stderr}"
     );
 
     let generous_total = scan(&["--limit-docker-tar-total-bytes", "64M"]);
     assert!(
-        !stderr_of(&generous_total).contains("cumulative size exceeds"),
+        !stderr_of(&generous_total).contains("image-wide budget"),
         "a budget that covers every tar must not report a bomb; stderr={}",
         stderr_of(&generous_total)
     );

@@ -67,7 +67,7 @@ async fn all_daemon_request_kinds_isolate_panics_under_shipped_profile() {
     let all_kinds = API.all_daemon_request_kinds();
     assert_eq!(
         all_kinds.len(),
-        18,
+        19,
         "Every daemon request kind must be enumerated and covered"
     );
 

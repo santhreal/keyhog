@@ -1110,11 +1110,8 @@ fn start_daemon() -> (
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let runtime = TempDir::new().expect("runtime dir");
-    // Use the embedded corpus (no `--detectors`) so daemon warm identity's
-    // detector-rules digest matches the client's `keyhog_core::detector_digest()`
-    // stamp. Passing workspace detectors made the daemon advertise
-    // `compute_spec_hash` while `keyhog scan --daemon` expected the embedded
-    // `<count>-<fnv>` stamp, failing every wire e2e with identity mismatch.
+    // Use the embedded corpus (no `--detectors`), the production default shape
+    // for a daemon-served scan.
     let mut daemon = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
         .args(["daemon", "start", "--backend", FUNCTIONAL_E2E_BACKEND])

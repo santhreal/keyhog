@@ -68,6 +68,15 @@ pub struct DecodedDetectorExecutionIr {
 
 impl CanonicalDetectorExecutionIr {
     pub fn compile(detectors: &[DetectorSpec]) -> Result<Self, ExecutionPackError> {
+        // A pack with no detectors is not installable, so the envelope refuses
+        // one here. Normalization itself has no opinion: an empty corpus has a
+        // canonical form, and `canonical_spec_hash` must give a scanner
+        // compiled from zero detectors the identity of that corpus.
+        if detectors.is_empty() {
+            return Err(ExecutionPackError::InvalidCompilerInput(
+                "detector execution IR has no detectors".to_owned(),
+            ));
+        }
         let normalized = Self::normalized_detectors(detectors)?;
         let metadata = normalize_metadata(&normalized)?;
         let envelope = DetectorExecutionIrEnvelope {
@@ -91,11 +100,6 @@ impl CanonicalDetectorExecutionIr {
     fn normalized_detectors(
         detectors: &[DetectorSpec],
     ) -> Result<Vec<DetectorSpec>, ExecutionPackError> {
-        if detectors.is_empty() {
-            return Err(ExecutionPackError::InvalidCompilerInput(
-                "detector execution IR has no detectors".to_owned(),
-            ));
-        }
         let mut normalized = detectors.to_vec();
         normalized.sort_unstable_by(|left, right| left.id.cmp(&right.id));
         let mut ids = BTreeSet::new();

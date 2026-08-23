@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -93,8 +94,16 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("release-integrity.json", RELEASE)
 
     def test_ci_verdict_required_job_contracts(self) -> None:
-        """Successful CI verdict enforces all 12 required test/verification jobs."""
-        self.assertIn("length == 12", CI)
+        """The verdict must require exactly the jobs it declares as needs.
+
+        Derived from ci.yml at run time: adding a blocking job without widening
+        the `length ==` check would let the verdict pass while ignoring it.
+        """
+        needs = re.search(r"\n  ci-verdict:.*?\n    needs:\n((?:      - \S+\n)+)", CI, re.DOTALL)
+        self.assertIsNotNone(needs, "ci-verdict must declare a needs list")
+        declared = [line.strip(" -\n") for line in needs.group(1).splitlines() if line.strip()]
+        self.assertIn(f"length == {len(declared)}", CI)
+
     def test_release_dogfood_build_includes_the_simd_backend_it_exercises(self) -> None:
         """The release dogfood matrix must not request SIMD from a portable-only binary."""
         self.assertIn(

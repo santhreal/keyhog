@@ -3,6 +3,8 @@
 
 ## 0.5.81 - 2026-08-20
 
+- fix(scanner): decode-union dedup keeps the stronger evidence. `union_unique_matches` dropped every later `(detector, credential)` twin, and the decoded twin is often the only one whose source role is parseable, so a base64 Kubernetes `Secret` value that decodes to `AWS_ACCESS_KEY_ID=...` reported at `review` with no assignment role. The survivor keeps the raw coordinate and unions the verdict.
+- fix(scanner): a decoded payload spliced into its container is classified against the payload, not the container offsets. `SourceSemanticCacheEntry` now carries the payload base beside its index and rebases the candidate span onto it.
 - perf(scanner): optimize startup memory floor and scanner structure layouts (Row 153). Pack LazyRegexState flags into a single atomic byte, shrink CsrU32 to exact boxed slices, flatten GenericKeywordStemSet byte buckets, dynamically scale LRU thread-local caches, scale DashMap absence cache shards dynamically with host parallelism, and box immutable compiled pattern slices.
 - feat(detectors): expand detector checksum and structured offline validators (Jwt, Uuid, HexHash, LuhnChecksum, PatternShape, Base62Crc32) to eliminate false positives and enforce checksum suppression (Row 152).
 - feat(scanner): instrument dynamic anchored regex compilation paths with `LAZY_REGEX_COMPILE_EVENTS` runtime counters to prevent invisible un-cached compilations (Row 150).

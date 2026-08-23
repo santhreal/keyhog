@@ -121,7 +121,7 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                         .path
                         .as_deref()
                         .unwrap_or_else(|| std::path::Path::new("."));
-                    let digest = keyhog_core::detector_digest().to_string();
+                    let digest = crate::daemon::embedded_detector_rules_digest().to_string();
                     let guard_start = std::time::Instant::now();
                     let result = crate::daemon::guard_commit::run_guard_commit(
                         &socket_path,
@@ -148,7 +148,7 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                         .path
                         .as_deref()
                         .unwrap_or_else(|| std::path::Path::new("."));
-                    let digest = keyhog_core::detector_digest().to_string();
+                    let digest = crate::daemon::embedded_detector_rules_digest().to_string();
                     let guard_start = std::time::Instant::now();
                     match crate::daemon::guard_commit::run_guard_commit(
                         &socket_path,
@@ -701,7 +701,7 @@ fn expected_daemon_detector_corpus(args: &ScanArgs) -> Result<ExpectedDaemonDete
         args.detectors_cli_explicit || args.detectors != PathBuf::from("detectors");
     if !custom_corpus_selected {
         return Ok(ExpectedDaemonDetectorCorpus {
-            rules_digest: Some(keyhog_core::detector_digest().to_owned()),
+            rules_digest: Some(crate::daemon::embedded_detector_rules_digest().to_owned()),
             corpus_digest: keyhog_core::detector_digest().to_owned(),
             provenance: crate::orchestrator_config::DetectorCorpusProvenance {
                 mode: "embedded",
@@ -734,7 +734,7 @@ fn expected_daemon_detector_corpus(args: &ScanArgs) -> Result<ExpectedDaemonDete
         )
     })?;
     let detector_count = loaded.detectors.len();
-    let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&loaded.detectors));
+    let rules_digest = crate::daemon::detector_rules_digest(&loaded.detectors);
     let corpus_digest = keyhog_core::hex_encode(
         &keyhog_core::compute_detector_corpus_digest_for_schema(
             &loaded.detectors,

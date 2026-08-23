@@ -2,6 +2,9 @@
 
 ## 0.5.81 - 2026-08-20
 
+- fix(daemon): the detector rules identity is derived from the rule set, not from the route that loaded it. `detector_rules_digest` is the single owner for the client, the daemon handshake, the staleness check and the scan request, so a warm daemon and the CLI that started it no longer disagree about their own rules and re-route to an in-process scan.
+- fix(cli): an Action receipt certifies a fail-closed scan. `validate_semantics` accepted only `partial` on exit 11 and 13, so a total source failure, which reports `failed`, was rejected as contradictory semantics and the receipt bailed on the scan it exists to record.
+- fix(cli): `--autoroute` calibration state that is missing, stale, invalid, incomplete, or quarantined exits 2 on a normal automatic scan, with `[]` on stdout and the state plus its repair on stderr. `docs/src/reference/exit-codes.md` documents that, and the scan never benchmarks at scan time or substitutes scalar execution.
 - feat(guard): derive effective root GuardPolicyIdentity digests across .keyhogignore, .keyhogignore.toml, .keyhog.toml, and suppression files, transitioning active roots to StalePolicy and invalidating attestations upon policy modifications (Row 142).
 - Benchmark corpus synthetic packs & representative test coverage (Row 162). Fixed AWS Access Key token shape in the built-in benchmark corpus template to match 20-character credential length (`AKIA` + 16 chars). Added integration tests verifying benchmark corpus structure, metadata, planted credential shapes, and synthetic execution pack finding parity invariants.
 - fix(guard): `guard list` exits with a system error when a registered root cannot be queried instead of reporting success for the roots it did reach.

@@ -103,10 +103,11 @@ fn every_structured_markdown_fence_uses_its_value_parser() {
                 format!(r#"api_token: "{NEEDLE}""#),
                 "structured-assignment-value",
             ),
-            "ini" | "cfg" => (
+            "ini" | "cfg" | "conf" => (
                 format!(r#"api_token = {NEEDLE}"#),
                 "structured-assignment-value",
             ),
+            "properties" => (format!("api_token={NEEDLE}"), "structured-assignment-value"),
             added => panic!("add a structured Markdown fence fixture for {added}"),
         };
         let markdown = format!("```{language}\n{body}\n```\n");

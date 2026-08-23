@@ -87,7 +87,7 @@ fn observed_detector_repairs_preserve_genuine_counterparts() {
         Case {
             label: "generic JWT with cryptographic signature floor",
             detector_id: "jwt-token",
-            text: "TOKEN=eyJabcdefgh.eyJabcdefghij.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+            text: "TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzdmMtNyIsImlhdCI6MTcwMDAwMDAwMH0.R3fkQ2ZsT8u1mXbYd0PqLwCvN5jHgAeSzKxWtRy7BdU",
             path: "application.env",
         },
         Case {

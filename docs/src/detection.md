@@ -589,6 +589,12 @@ syntactic structure rather than inheriting the outer file's extension. For
 example, a Base64-encoded JSON object inside a `.txt` file is parsed as
 structured JSON rather than plain text.
 
+A credential found in both the container bytes and the decoded payload is
+reported once, at the coordinate in the file you can open. Its evidence is the
+stronger of the two. A Kubernetes `Secret` whose base64 `data:` value decodes to
+`AWS_ACCESS_KEY_ID=...` therefore reports `likely` with the assignment role the
+decoded text proves, at the offset of the encoded value.
+
 ## Pattern provenance and secret-safe evidence
 
 Every finding emitted by KeyHog carries a structured `provenance` record inside

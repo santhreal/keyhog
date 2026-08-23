@@ -32,6 +32,7 @@ fn persisted_cache_load_enforces_configured_cap() {
             &disk,
             PathBuf::from(format!("/repo/{idx}.txt")),
             idx,
+            idx + 100,
             1,
             sample_hash(format!("content-{idx}").as_bytes()),
         );
@@ -60,6 +61,7 @@ fn persisted_cache_entries_are_sorted_by_cache_key() {
             PathBuf::from(path),
             offset,
             offset + 1,
+            offset + 1 + 100,
             1,
             format!("{path}:{offset}").as_bytes(),
         );

@@ -69,10 +69,18 @@ pub fn workspace_detectors() -> PathBuf {
         .expect("workspace detectors dir")
 }
 
-/// Write `content` to a temp file, scan with `--format json`, return output.
-pub fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option<i32>) {
+/// Write `content` to a temp file named `name`, scan with `--format json`,
+/// return output. The name is load-bearing: the evidence classifier reads the
+/// source role from the file syntax, so an assignment in an inert `.txt` is
+/// `review`/`unsupported-context` and exits 0, while the same assignment in a
+/// `.env` is `likely`/`vendor-pattern` and exits 1.
+pub fn scan_named_file(
+    name: &str,
+    content: &str,
+    extra_args: &[&str],
+) -> (String, String, Option<i32>) {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("planted.txt");
+    let path = dir.path().join(name);
     std::fs::write(&path, content).expect("write fixture");
 
     let mut cmd_args: Vec<String> = vec![
@@ -99,6 +107,11 @@ pub fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Op
         String::from_utf8_lossy(&output.stderr).into_owned(),
         output.status.code(),
     )
+}
+
+/// `scan_named_file` with the inert `planted.txt` fixture name.
+pub fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option<i32>) {
+    scan_named_file("planted.txt", content, extra_args)
 }
 
 pub fn write_temp_file(name: &str, content: &str) -> (TempDir, PathBuf) {

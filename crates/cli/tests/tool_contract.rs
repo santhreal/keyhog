@@ -18,10 +18,25 @@ fn detectors_dir() -> PathBuf {
 
 /// Run `keyhog <args>` and return (exit_code, stdout).
 fn run(args: &[&str]) -> (i32, String) {
-    let out = Command::new(bin())
-        .args(args)
-        .output()
-        .expect("keyhog binary runs");
+    let mut cmd = Command::new(bin());
+    // Scan invocations pin the diagnostic backend this build can dispatch:
+    // automatic routing with no calibrated decision fails closed with exit 2,
+    // and these tests assert tool exit-code contracts, not routing.
+    if args.first() == Some(&"scan") {
+        cmd.arg("scan");
+        if !args.iter().any(|arg| *arg == "--backend") {
+            let diagnostic = if cfg!(feature = "simd") {
+                "simd"
+            } else {
+                "cpu"
+            };
+            cmd.args(["--backend", diagnostic]);
+        }
+        cmd.args(&args[1..]);
+    } else {
+        cmd.args(args);
+    }
+    let out = cmd.output().expect("keyhog binary runs");
     (
         out.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&out.stdout).into_owned(),

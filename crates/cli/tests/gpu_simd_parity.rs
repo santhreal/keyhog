@@ -55,7 +55,6 @@ fn findings(
         "--developer-compile-embedded-detectors",
         "--backend",
         backend,
-        "--developer-compile-embedded-detectors",
     ]);
     if no_gpu {
         cmd.arg("--no-gpu");

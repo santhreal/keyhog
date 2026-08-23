@@ -77,12 +77,12 @@ async fn start(
                     detectors_dir.display()
                 )
             })?;
-        let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
+        let rules_digest = crate::daemon::detector_rules_digest(&detectors);
         (detectors, rules_digest)
     } else {
         (
             keyhog_core::embedded_detector_specs().to_vec(),
-            keyhog_core::detector_digest().to_owned(),
+            crate::daemon::embedded_detector_rules_digest().to_owned(),
         )
     };
     let (

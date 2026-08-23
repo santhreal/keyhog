@@ -20,6 +20,7 @@ fn save_drops_stale_spec_entries_on_disk() {
         &idx_old,
         PathBuf::from("/from-old-spec"),
         1,
+        1 + 100,
         1,
         sample_hash(b"x"),
     );
@@ -31,6 +32,7 @@ fn save_drops_stale_spec_entries_on_disk() {
         &idx_new,
         PathBuf::from("/from-new-spec"),
         2,
+        2 + 100,
         2,
         sample_hash(b"y"),
     );
@@ -47,5 +49,5 @@ fn save_drops_stale_spec_entries_on_disk() {
         keyhog_core::testing::CoreTestApi::merkle_len(&keyhog_core::testing::TestApi, &loaded),
         1
     );
-    assert!(loaded.metadata_unchanged(Path::new("/from-new-spec"), 2, 2));
+    assert!(loaded.metadata_unchanged(Path::new("/from-new-spec"), 2, 2 + 100, 2));
 }

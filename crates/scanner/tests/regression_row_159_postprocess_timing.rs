@@ -1,6 +1,9 @@
 //! Regression test for Row 159: Postprocess & confirmation timing metrics.
 //!
-//! # WHY
+//! WHY: closes the class of a postprocess or phase-2 stage whose cost is invisible to
+//! the profile runtime, so a regression there cannot be measured.
+//! What it does not catch: the absolute cost of a stage that is already attributed,
+//! and stages this suite does not exercise.
 //! Candidate confirmation in postprocess and phase-2 verification previously lacked
 //! unified, typed metric attribution in `keyhog_profile`. Overhead from suffix gating,
 //! companion gating, anchor candidate collection, fragment reassembly, and postprocess

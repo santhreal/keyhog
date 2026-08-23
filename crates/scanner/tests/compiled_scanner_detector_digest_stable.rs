@@ -250,9 +250,14 @@ fn corpus_route_identity_is_shared_by_spec_compile_and_pack_publication() {
         "a pattern change must invalidate the corpus route identity"
     );
 
-    assert!(
-        keyhog_scanner::compiled_scanner::corpus_route_identity(&[]).is_err(),
-        "an empty corpus has no route identity"
+    // An empty corpus has a canonical form: the identity is total, so a
+    // scanner compiled from zero detectors routes on the same value the pack
+    // publication of that empty corpus carries.
+    let empty_route = keyhog_scanner::compiled_scanner::corpus_route_identity(&[])
+        .expect("an empty corpus has a canonical route identity");
+    assert_ne!(
+        route, empty_route,
+        "the empty corpus identity must differ from a populated corpus"
     );
     assert!(
         keyhog_scanner::compiled_scanner::corpus_route_identity(&[

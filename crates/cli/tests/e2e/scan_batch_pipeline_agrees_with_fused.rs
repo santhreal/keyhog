@@ -80,6 +80,15 @@ fn scan(dir: &Path, pipeline: &str) -> String {
     scan_with_options(dir, pipeline, "cpu", &[])
 }
 
+/// The repeated-window fixtures are megabytes wide, above the 64 KiB bound
+/// `crates/scanner/src/source_semantics.rs` puts on structured source-role
+/// parsing, so their assignments carry no credential-bearing role and land in
+/// `review`. Pipeline parity is what these tests measure, so they block on
+/// review too and compare the identical report both pipelines produced.
+fn scan_window_fixture(dir: &Path, pipeline: &str) -> String {
+    scan_with_options(dir, pipeline, "cpu", &["--evidence-policy", "paranoid"])
+}
+
 /// Choosing the pipeline is a throughput decision, never a recall decision.
 ///
 /// If the parallel consumer ever drops a batch, scans one twice, or merges
@@ -144,8 +153,8 @@ fn repeated_window_reuse_matches_the_batch_pipeline() {
     body.extend_from_slice(&block[..OVERLAP]);
     std::fs::write(dir.path().join("periodic.txt"), body).expect("write periodic fixture");
 
-    let fused = scan(dir.path(), "--no-batch-pipeline");
-    let batched = scan(dir.path(), "--batch-pipeline");
+    let fused = scan_window_fixture(dir.path(), "--no-batch-pipeline");
+    let batched = scan_window_fixture(dir.path(), "--batch-pipeline");
     assert!(!fused.is_empty(), "periodic fixture must produce findings");
     assert_eq!(
         batched, fused,
@@ -200,8 +209,8 @@ fn repeated_window_reuse_rejects_collisions_and_preserves_metadata() {
     std::fs::write(dir.path().join("same-a.txt"), &shared).expect("write first shared fixture");
     std::fs::write(dir.path().join("same-b.txt"), shared).expect("write second shared fixture");
 
-    let fused = scan(dir.path(), "--no-batch-pipeline");
-    let batched = scan(dir.path(), "--batch-pipeline");
+    let fused = scan_window_fixture(dir.path(), "--no-batch-pipeline");
+    let batched = scan_window_fixture(dir.path(), "--batch-pipeline");
     assert_eq!(
         batched, fused,
         "fingerprint collisions and metadata changes must fall back to exact scanning"
@@ -241,8 +250,18 @@ fn repeated_window_reuse_matches_simd_batch_pipeline() {
     std::fs::write(dir.path().join("simd-periodic.txt"), body)
         .expect("write SIMD periodic fixture");
 
-    let fused = scan_with_options(dir.path(), "--no-batch-pipeline", "simd", &[]);
-    let batched = scan_with_options(dir.path(), "--batch-pipeline", "simd", &[]);
+    let fused = scan_with_options(
+        dir.path(),
+        "--no-batch-pipeline",
+        "simd",
+        &["--evidence-policy", "paranoid"],
+    );
+    let batched = scan_with_options(
+        dir.path(),
+        "--batch-pipeline",
+        "simd",
+        &["--evidence-policy", "paranoid"],
+    );
     assert_eq!(batched, fused, "SIMD replay must preserve exact output");
 }
 
@@ -272,8 +291,20 @@ fn repeated_windows_preserve_incremental_state_transitions() {
     let batched_cache = cache_dir.path().join("batched.idx");
     let fused_cache = fused_cache.to_str().expect("UTF-8 cache path");
     let batched_cache = batched_cache.to_str().expect("UTF-8 cache path");
-    let fused_args = ["--incremental", "--incremental-cache", fused_cache];
-    let batched_args = ["--incremental", "--incremental-cache", batched_cache];
+    let fused_args = [
+        "--incremental",
+        "--incremental-cache",
+        fused_cache,
+        "--evidence-policy",
+        "paranoid",
+    ];
+    let batched_args = [
+        "--incremental",
+        "--incremental-cache",
+        batched_cache,
+        "--evidence-policy",
+        "paranoid",
+    ];
 
     let fused_cold = scan_with_options(dir.path(), "--no-batch-pipeline", "cpu", &fused_args);
     let batched_cold = scan_with_options(dir.path(), "--batch-pipeline", "cpu", &batched_args);

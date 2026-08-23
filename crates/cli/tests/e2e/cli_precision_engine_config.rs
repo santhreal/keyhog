@@ -17,10 +17,12 @@ fn binary() -> PathBuf {
 /// Helper: run a scan with given args and return stdout, stderr, exit code.
 fn scan_with_args(fixture: &str, args: &[&str]) -> (String, String, Option<i32>) {
     let dir = TempDir::new().expect("tempdir");
-    // `config.txt`, NOT `fixture.txt`: a `fixture`/`test`/`mock`/`spec`
-    // filename trips the ML test-context down-weight and would mask the
-    // engine-config behavior these tests assert.
-    let path = dir.path().join("config.txt");
+    // `config.env`, NOT `fixture.txt`: an assignment in a `.env` is a
+    // credential-bearing source role, so the finding is `likely` and the exit
+    // code observes the floor under test, while an inert `.txt` would be
+    // `review` (exit 0). The name also avoids the `fixture`/`test`/`mock`/`spec`
+    // fragments the ML test-context down-weight keys on.
+    let path = dir.path().join("config.env");
     std::fs::write(&path, fixture).expect("write fixture");
 
     let output = Command::new(binary())
@@ -193,7 +195,7 @@ fn precision_mode_rejects_entropy_threshold_override_at_clap_level() {
 
 /// Precision clamps embedded detector floors as well as operator overrides.
 /// AbuseIPDB declares a 0.25 detector floor and this anchored credential reports
-/// at exactly 0.795, so default admits it and precision's 0.85 floor rejects it.
+/// at exactly 0.8, so default admits it and precision's 0.85 floor rejects it.
 #[test]
 fn precision_mode_clamps_embedded_detector_floor_to_0_85() {
     let fixture = concat!(
@@ -212,7 +214,7 @@ fn precision_mode_clamps_embedded_detector_floor_to_0_85() {
             && finding
                 .get("evidence_score")
                 .and_then(|value| value.as_f64())
-                == Some(0.795)
+                == Some(0.8)
     }));
 
     let (prec_out, _e, prec_code) = scan_with_args(fixture, &["--precision", "--format", "json"]);
@@ -224,7 +226,7 @@ fn precision_mode_clamps_embedded_detector_floor_to_0_85() {
     let findings: serde_json::Value = serde_json::from_str(&prec_out).expect("precision JSON");
     assert!(
         findings.as_array().expect("array").is_empty(),
-        "precision must reject the 0.795 AbuseIPDB finding; got {findings}"
+        "precision must reject the 0.8 AbuseIPDB finding; got {findings}"
     );
 }
 
@@ -237,7 +239,7 @@ fn precision_mode_uses_highest_floor_global_vs_per_detector() {
     // AWS secret: very high confidence (e.g., 0.95).
     let aws_secret =
         concat!("aws_secret_access_key = \"kP8xQ2mNvR7tZ4wL9bYsH3jD6fG1cA0eXuViK5oT\"\n");
-    std::fs::write(dir.path().join("planted.txt"), aws_secret).expect("write fixture");
+    std::fs::write(dir.path().join("planted.env"), aws_secret).expect("write fixture");
     // Set per-detector floor to 0.90 (above the precision global 0.85).
     let config = "[detector.aws-secret-access-key]\nmin_confidence = 0.90\n";
     std::fs::write(dir.path().join(".keyhog.toml"), config).expect("write config");

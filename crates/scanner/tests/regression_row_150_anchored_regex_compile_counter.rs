@@ -1,3 +1,7 @@
+//! WHY: closes the class of an uncounted lazy regex compile, where a warm scanner
+//! silently recompiles anchored patterns and the compile-surface counters still read
+//! zero. What it does not catch: compiles on a path this suite never scans, and the
+//! cost of a compile that is correctly counted.
 //! Row 150 regression test: instrument all anchored regex compilation paths
 //! to tick `LAZY_REGEX_COMPILE_EVENTS` runtime counters, and prove zero recompiles
 //! during steady-state warm scanner operations.

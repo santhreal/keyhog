@@ -97,7 +97,7 @@ pub(crate) fn current_warm_backend_identity(
 }
 
 pub(crate) fn current_warm_backend_mismatches(status: &WarmBackendStatus) -> Result<Vec<String>> {
-    let detector_rules_digest = embedded_detector_rules_digest()?;
+    let detector_rules_digest = crate::daemon::embedded_detector_rules_digest().to_owned();
     let expected = warm_identity::client_identity(detector_rules_digest)?;
     Ok(warm_identity::validate_for_client(status, &expected))
 }
@@ -176,7 +176,7 @@ async fn connect_inner(
             // never depends on whether a stale daemon happens to be running.
             let expected_rules_digest = match expected_detector_rules_digest {
                 Some(digest) => digest,
-                None => embedded_detector_rules_digest()?,
+                None => crate::daemon::embedded_detector_rules_digest().to_owned(),
             };
             let expected_warm_identity = if require_same_version {
                 warm_identity::client_identity(expected_rules_digest.clone())?
@@ -352,8 +352,4 @@ fn validate_backend_policy(policy: &str) -> Result<()> {
         return Ok(());
     }
     bail!("daemon reported invalid backend policy {policy:?}. Restart it with this KeyHog build")
-}
-
-fn embedded_detector_rules_digest() -> Result<String> {
-    Ok(keyhog_core::detector_digest().to_owned())
 }

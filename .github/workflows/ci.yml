@@ -256,6 +256,8 @@ jobs:
         run: >
           cargo test -p keyhog-scanner --features gpu --profile ci-test
           --test gpu_wiring_contract
+          --test regression_row_118_gpu_dispatch_concurrency_pool
+          --test regression_row_103_gpu_upload_readback_latency
       - name: Require-GPU fails closed on an adapter-free host
         run: >
           cargo test -p keyhog --features gpu --profile ci-test
@@ -441,6 +443,25 @@ jobs:
           --test regression_row_158_startup_footprint_pack_install
           --test regression_row_163_fail_closed_scan_document_status
           --test regression_window_overlap_validation
+
+  integration-e2e:
+    name: Integration (e2e binary suite)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    # The whole `e2e_all` target. `action-e2e.yml` runs it filtered to `action_`,
+    # so every other test in it was CI-invisible and a large group of them had
+    # drifted from the shipped evidence model before anyone ran the suite.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: ./.github/actions/setup-vectorscan
+      - name: cli e2e_all
+        run: >
+          cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test
+          --no-fail-fast --test e2e_all
 
   integration-detector-contracts:
     name: Integration (detector + recall contracts)
@@ -693,6 +714,7 @@ jobs:
       - focused-integration
       - integration-sources
       - integration-cli
+      - integration-e2e
       - integration-detector-contracts
       - security-fast
       - feature-matrix
@@ -714,7 +736,7 @@ jobs:
           jq -e \
             --argjson release_lane "$KEYHOG_RELEASE_LANE" \
             --argjson release_lane_jobs "$KEYHOG_RELEASE_LANE_JOBS" '
-            length == 12 and
+            length == 13 and
             all(to_entries[];
               if ($release_lane | not) and (.key | IN($release_lane_jobs[]))
               then .value.result == "skipped"

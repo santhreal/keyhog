@@ -282,7 +282,7 @@ pub(crate) fn note_device_free(bytes: u64) {
     }
     keyhog_profile::add_counter(CounterId::GpuFreeBytes, bytes);
     let current = DEVICE_RESIDENT_BYTES
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
             Some(value.saturating_sub(bytes))
         })
         .map_or(0, |previous| previous.saturating_sub(bytes));

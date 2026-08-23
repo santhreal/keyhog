@@ -47,7 +47,17 @@ cargo test -j "${CARGO_BUILD_JOBS}" -p keyhog-scanner --features gpu --profile r
   --test regression_gpu_region_presence_batch_parity \
   --test packed_gpu_vyre_artifact \
   --test gpu_literal_artifact_writer \
-  --test regression_row_103_gpu_upload_readback_latency
+  --test regression_row_103_gpu_upload_readback_latency \
+  --test regression_ac_overlap_shadow \
+  --test regression_charclass_prefix_expansion_recall \
+  --test regression_checksum_boundary_no_downgrade \
+  --test regression_detector_owned_keyword_separators \
+  --test regression_distinctive_infix_anchor_recall \
+  --test regression_leading_assertion_and_alternation_prefix_recall \
+  --test regression_named_canonical_hex_key_recall \
+  --test regression_named_detector_anchor_floor_recall \
+  --test regression_per_pattern_weak_anchor_recall \
+  --test regression_row_118_gpu_dispatch_concurrency_pool
 
 echo "=== [Local CI] 4. GPU CLI Integration & Error Handling ==="
 cargo test -j "${CARGO_BUILD_JOBS}" -p keyhog --features gpu,simd --profile ci-test \

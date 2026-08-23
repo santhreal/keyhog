@@ -13,6 +13,7 @@ fn load_with_mismatched_spec_invalidates_cache() {
         &idx,
         PathBuf::from("/tmp/x"),
         7,
+        7 + 100,
         1,
         sample_hash(b"x"),
     );

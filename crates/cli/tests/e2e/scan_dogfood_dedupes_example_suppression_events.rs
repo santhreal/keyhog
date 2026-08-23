@@ -13,6 +13,9 @@ fn scan_dogfood_dedupes_example_suppression_events() {
             "--backend",
             "simd",
             "--daemon=off",
+            // `--quiet` leaves the dogfood object as the only stderr content;
+            // status lines are printed unless quieted.
+            "--quiet",
             "--dogfood",
             "--format",
             "text",

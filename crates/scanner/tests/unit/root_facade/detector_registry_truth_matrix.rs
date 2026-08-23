@@ -163,9 +163,10 @@ fn every_detector_has_at_least_one_pattern() {
          corpus weight:\n  - {}",
         zero_pattern_named.join("\n  - ")
     );
-    // Guard the exemption itself (Law 6): generic-secret is the only shipped
-    // pattern-less detector. The API-key and keyword-secret owners now carry
-    // structured envelope patterns as well as their phase-2 bridges.
+    // Guard the exemption itself (Law 6): the pattern-less shipped detectors are
+    // exactly the two phase2-generic entropy owners. The API-key and
+    // keyword-secret owners now carry structured envelope patterns as well as
+    // their phase-2 bridges.
     let mut zero_pattern_all: Vec<&str> = detectors
         .iter()
         .filter(|d| d.patterns.is_empty())
@@ -174,7 +175,7 @@ fn every_detector_has_at_least_one_pattern() {
     zero_pattern_all.sort_unstable();
     assert_eq!(
         zero_pattern_all,
-        ["generic-secret"],
+        ["generic-high-entropy-string", "generic-secret"],
         "the ONLY pattern-less detectors may be the entropy-driven generic family; \
          a new entry here is either dead weight or a detector missing its pattern"
     );

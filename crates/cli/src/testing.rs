@@ -27,6 +27,12 @@ pub fn triage_create_after_parent_open_for_test(path: &Path, hook: impl FnOnce()
     Ok(())
 }
 
+/// Rules identity the daemon and its clients agree on for the embedded corpus.
+#[cfg(unix)]
+pub fn embedded_detector_rules_digest() -> &'static str {
+    crate::daemon::embedded_detector_rules_digest()
+}
+
 #[cfg(unix)]
 #[derive(Debug)]
 pub enum DaemonTerminalFixture {
@@ -816,7 +822,7 @@ impl CliTestApi for TestApi {
         detectors: Vec<keyhog_core::DetectorSpec>,
     ) -> tokio::task::JoinHandle<Result<()>> {
         tokio::spawn(async move {
-            let rules_digest = keyhog_core::detector_digest().to_owned();
+            let rules_digest = crate::daemon::detector_rules_digest(&detectors);
             let options = crate::daemon::server::ServerOptions {
                 request_read_timeout: std::time::Duration::from_secs(30),
                 mass_service: false,
