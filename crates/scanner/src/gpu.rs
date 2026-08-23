@@ -77,7 +77,11 @@ pub(crate) fn with_recovery_receipt_scope<T>(operation: impl FnOnce() -> T) -> (
 pub(crate) fn record_recovery_receipt() {
     RECOVERY_RECEIPT_COUNTER.with_borrow(|counter| {
         if let Some(counter) = counter {
-            match counter.try_update(std::sync::atomic::Ordering::Relaxed, std::sync::atomic::Ordering::Relaxed, |receipts| Some(receipts.saturating_add(1))) {
+            match counter.fetch_update(
+                std::sync::atomic::Ordering::Relaxed,
+                std::sync::atomic::Ordering::Relaxed,
+                |receipts| receipts.checked_add(1),
+            ) {
                 Ok(_) => {}
                 // LAW10: impossible unconditional update rejection is surfaced loudly to
                 // stderr and tracing; no recovery receipt is silently dropped.

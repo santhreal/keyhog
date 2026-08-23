@@ -830,12 +830,28 @@ impl Runtime {
         let index = event_id.index();
         let observation =
             self.inner.session_sample_observations[index].fetch_add(1, Ordering::Relaxed);
-        let retained = policy.selects(observation)
-            && self.inner.session_sample_retained[index]
-                .try_update(Ordering::Relaxed, Ordering::Relaxed, |retained| {
-                    (retained < policy.maximum_retained).then_some(retained + 1)
-                })
-                .is_ok();
+        let mut retained = false;
+        if policy.selects(observation) {
+            let counter = &self.inner.session_sample_retained[index];
+            let mut current = counter.load(Ordering::Relaxed);
+            loop {
+                if current >= policy.maximum_retained {
+                    break;
+                }
+                match counter.compare_exchange_weak(
+                    current,
+                    current + 1,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => {
+                        retained = true;
+                        break;
+                    }
+                    Err(observed) => current = observed,
+                }
+            }
+        }
         if retained {
             self.record_event(event_id, value)
         } else {
@@ -1818,11 +1834,22 @@ impl Runtime {
             return;
         }
         let index = queue.index();
-        let _ = self.inner.queue_depth_current[index].try_update(
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-            |depth| Some(depth.saturating_sub(1)),
-        );
+        let counter = &self.inner.queue_depth_current[index];
+        let mut current = counter.load(Ordering::Relaxed);
+        loop {
+            if current == 0 {
+                break;
+            }
+            match counter.compare_exchange_weak(
+                current,
+                current - 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(observed) => current = observed,
+            }
+        }
         self.inner.queue_depth_dequeues[index].fetch_add(1, Ordering::Relaxed);
     }
 

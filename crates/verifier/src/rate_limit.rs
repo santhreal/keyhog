@@ -131,11 +131,9 @@ impl RateLimiter {
     }
 
     pub fn record_success(&self) {
-        let _ = self // LAW10: unused-binding marker; no runtime effect, not a fallback
+        let _ = self // LAW10: floor-at-zero decrement; failure means the counter is already zero
             .global_error_count
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
-                Some(n.saturating_sub(1))
-            });
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1));
     }
 
     pub(crate) fn error_count_for_test(&self) -> usize {

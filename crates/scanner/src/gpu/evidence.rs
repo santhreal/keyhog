@@ -281,12 +281,20 @@ pub(crate) fn note_device_free(bytes: u64) {
         return;
     }
     keyhog_profile::add_counter(CounterId::GpuFreeBytes, bytes);
-    let current = DEVICE_RESIDENT_BYTES
-        .try_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
-            Some(value.saturating_sub(bytes))
-        })
-        .map_or(0, |previous| previous.saturating_sub(bytes));
-    keyhog_profile::set_gauge(GaugeId::GpuResidentBytes, current);
+    let mut current = DEVICE_RESIDENT_BYTES.load(Ordering::Relaxed);
+    let remaining = loop {
+        let next = current.saturating_sub(bytes);
+        match DEVICE_RESIDENT_BYTES.compare_exchange_weak(
+            current,
+            next,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => break next,
+            Err(observed) => current = observed,
+        }
+    };
+    keyhog_profile::set_gauge(GaugeId::GpuResidentBytes, remaining);
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
