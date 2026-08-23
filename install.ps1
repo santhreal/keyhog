@@ -873,6 +873,97 @@ function Test-AutorouteServesAScan {
     return $false
 }
 
+# Parity with install.sh's run_in_neutral_dir. `keyhog doctor`, execution-pack
+# compilation, and autoroute calibration all resolve the detector corpus and the
+# scan configuration from the working directory: a `detectors` directory there
+# replaces the embedded corpus and changes the detector digest every persisted
+# decision is keyed by, and a `.keyhog.toml` on the walk-up changes the resolved
+# config digest. install.ps1 runs from wherever the operator started it, so run
+# every corpus-sensitive phase from an empty directory instead.
+function Invoke-InNeutralDirectory {
+    param([Parameter(Mandatory = $true)][scriptblock]$Action)
+
+    $neutralDir = Join-Path ([System.IO.Path]::GetTempPath()) ("keyhog-install-neutral-{0}" -f ([System.Guid]::NewGuid()))
+    try {
+        New-Item -ItemType Directory -Force -Path $neutralDir -ErrorAction Stop | Out-Null
+    } catch {
+        Err "Could not create the neutral install-phase directory ${neutralDir}: $_"
+        return "Removed the binary that could not be verified in a clean directory; no working keyhog was overwritten."
+    }
+    Push-Location -LiteralPath $neutralDir
+    try {
+        return (& $Action)
+    } finally {
+        Pop-Location
+        Remove-Item -LiteralPath $neutralDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Health, packs, and calibration for a fresh install. Runs under
+# Invoke-InNeutralDirectory. Returns an empty string on success, or the rollback
+# note describing what failed.
+function Invoke-PostInstallHealthAndCalibration {
+    param([Parameter(Mandatory = $true)][string]$BinPath)
+
+    try {
+        # Out-Host: doctor prints to the console but its stdout must NOT land on
+        # this function's output stream, which carries the rollback note.
+        & $BinPath doctor | Out-Host
+        $doctorExit = $LASTEXITCODE
+        if ($doctorExit -eq 4) {
+            Err "keyhog doctor reports the freshly-installed binary is UNHEALTHY (exit 4): it failed its own end-to-end scan self-test above."
+            Err "Refusing to leave a scanner that cannot detect secrets on its default route; rolling back this install."
+            Err "  If only the GPU route is broken, the CPU/SIMD paths still work - reinstall, then scan with an explicit '--backend cpu' or '--backend simd' override."
+            return "Removed the unhealthy binary; no working keyhog was overwritten."
+        } elseif ($doctorExit -ne 0) {
+            Err "keyhog doctor did not complete (exit $doctorExit): the installed binary could not even run its own health self-test."
+            Err "Rolling back rather than leaving an install whose health is unknown."
+            return "Removed the binary that could not self-test; no working keyhog was overwritten."
+        }
+    } catch {
+        Err "Could not run 'keyhog doctor' for post-install verification: $_"
+        Err "Rolling back rather than reporting success with unknown scanner health."
+        return "Removed the binary whose health could not be verified; no working keyhog was overwritten."
+    }
+    if (-not (Publish-ExecutionPacks -BinPath $BinPath)) {
+        return "Removed the binary whose execution packs could not be published; no working keyhog was overwritten."
+    }
+    if ($NoCalibrate) {
+        Warn "Skipped autoroute calibration by explicit -NoCalibrate."
+        Warn "Run install.ps1 -Calibrate before relying on automatic routing; explicit --backend routes work immediately."
+        return ""
+    } else {
+        return (Invoke-CalibrateAndVerify -BinPath $BinPath)
+    }
+}
+
+# Packs, then calibration, then one ordinary scan: the standalone -Calibrate
+# path. Packs come first because calibration measures buckets against the
+# resolved detector and config digests, and an installed generation changes both.
+function Invoke-PublishAndCalibrate {
+    param([Parameter(Mandatory = $true)][string]$BinPath)
+
+    if (-not (Publish-ExecutionPacks -BinPath $BinPath)) {
+        return "Removed the binary whose execution packs could not be published; no working keyhog was overwritten."
+    }
+    return (Invoke-CalibrateAndVerify -BinPath $BinPath)
+}
+
+# Measure the routing ladder, then prove the primed cache serves a plain scan.
+# Returns an empty string on success, or the rollback note describing what failed.
+function Invoke-CalibrateAndVerify {
+    param([Parameter(Mandatory = $true)][string]$BinPath)
+
+    if (-not (Invoke-AutorouteCalibration -BinPath $BinPath)) {
+        Err "Autoroute calibration failed; refusing to leave an install whose default auto route is not usable."
+        return "Removed the uncalibrated binary; no working keyhog was overwritten."
+    }
+    if (-not (Test-AutorouteServesAScan -BinPath $BinPath)) {
+        return "Removed the binary whose calibrated cache could not serve a scan; no working keyhog was overwritten."
+    }
+    return ""
+}
+
 function Invoke-AutorouteCalibration {
     param($BinPath)
     $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("keyhog-autoroute-prime-{0}" -f ([System.Guid]::NewGuid()))
@@ -1693,43 +1784,9 @@ function Finalize-Install {
         # fail closed and roll back rather than report "installed" (Law 10 - no
         # silent fallback past a failed self-test).
         Say ""
-        try {
-            # Out-Host: doctor prints to the console but its stdout must NOT
-            # land on this function's output stream, or it would contaminate
-            # the boolean return value (Finalize-Install is used as a predicate).
-            & $BinPath doctor | Out-Host
-            $doctorExit = $LASTEXITCODE
-            if ($doctorExit -eq 4) {
-                Err "keyhog doctor reports the freshly-installed binary is UNHEALTHY (exit 4): it failed its own end-to-end scan self-test above."
-                Err "Refusing to leave a scanner that cannot detect secrets on its default route; rolling back this install."
-                Err "  If only the GPU route is broken, the CPU/SIMD paths still work - reinstall, then scan with an explicit '--backend cpu' or '--backend simd' override."
-                Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the unhealthy binary; no working keyhog was overwritten."
-                return $false
-            } elseif ($doctorExit -ne 0) {
-                Err "keyhog doctor did not complete (exit $doctorExit): the installed binary could not even run its own health self-test."
-                Err "Rolling back rather than leaving an install whose health is unknown."
-                Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the binary that could not self-test; no working keyhog was overwritten."
-                return $false
-            }
-        } catch {
-            Err "Could not run 'keyhog doctor' for post-install verification: $_"
-            Err "Rolling back rather than reporting success with unknown scanner health."
-            Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the binary whose health could not be verified; no working keyhog was overwritten."
-            return $false
-        }
-        if (-not (Publish-ExecutionPacks -BinPath $BinPath)) {
-            Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the binary whose execution packs could not be published; no working keyhog was overwritten."
-            return $false
-        }
-        if ($NoCalibrate) {
-            Warn "Skipped autoroute calibration by explicit -NoCalibrate."
-            Warn "Run install.ps1 -Calibrate before relying on automatic routing; explicit --backend routes work immediately."
-        } elseif (-not (Invoke-AutorouteCalibration -BinPath $BinPath)) {
-            Err "Autoroute calibration failed; refusing to leave an install whose default auto route is not usable."
-            Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the uncalibrated binary; no working keyhog was overwritten."
-            return $false
-        } elseif (-not (Test-AutorouteServesAScan -BinPath $BinPath)) {
-            Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the binary whose calibrated cache could not serve a scan; no working keyhog was overwritten."
+        $failureNote = Invoke-InNeutralDirectory -Action { Invoke-PostInstallHealthAndCalibration -BinPath $BinPath }
+        if ($failureNote) {
+            Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote $failureNote
             return $false
         }
         if ($Script:InstallBackup) { Remove-Item -Force $Script:InstallBackup -ErrorAction SilentlyContinue; $Script:InstallBackup = $null }
@@ -1971,12 +2028,7 @@ function Do-Calibrate {
         Err "No installed keyhog binary found to calibrate. Run install first."
         exit 1
     }
-    # Packs first: calibration measures buckets against the resolved detector
-    # and config digests, and an installed generation changes both.
-    if (-not (Publish-ExecutionPacks -BinPath $bin)) {
-        exit 1
-    }
-    if (-not (Invoke-AutorouteCalibration -BinPath $bin)) {
+    if (Invoke-InNeutralDirectory -Action { Invoke-PublishAndCalibrate -BinPath $bin }) {
         exit 1
     }
 }

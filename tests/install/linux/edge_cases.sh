@@ -158,6 +158,11 @@ write_mock_autoroute_cache() {
   mkdir -p "$(dirname "$cache")" || exit 1
   printf '{}\n' > "$cache"
 }
+# Every invocation records the subcommand and where the installer called it
+# from. doctor, execution-pack compilation, calibration, and scans resolve the
+# detector corpus and config from the working directory, so running any of them
+# in the operator's cwd primes state their scans elsewhere cannot use.
+printf '%s %s\n' "${1:-}" "$(pwd)" >> "$HOME/keyhog-cwd-log"
 case "$1" in
   --version) echo "KeyHog v9.9.9 (mock)" ;;
   --help) echo "Usage: keyhog <COMMAND>"; echo "  scan"; exit 0 ;;
@@ -864,7 +869,24 @@ expect_match  "8.7 unroutable post-calibration scan reported" "cannot serve an o
 expect_match  "8.7b unroutable scan surfaces the binary's reason" "autoroute calibration required" "$out"
 expect_status "8.7c unroutable install fails closed" 1 "$st"
 expect_nofile "8.7d unroutable leaves no binary on PATH" "$h/.local/bin/keyhog"
-rm -rf "$sb" "$h"
+rm -rf "$h"
+# 8.8 the install must calibrate from an empty directory, not the operator's.
+#     Both the resolved config (`.keyhog.toml` on the walk-up) and the detector
+#     corpus (a `detectors/` directory in the working directory) are read from
+#     the cwd and keyed into every persisted decision, so an install started in
+#     a repository that carries either primes a cache no scan elsewhere hits.
+h=$(newhome)
+w=$(mktemp -d -t kh-cwd-XXXXXX)
+printf '[scan]\nmin_secret_len = 12\n' > "$w/.keyhog.toml"
+mkdir -p "$w/detectors"
+out=$(cd "$w" && MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_status "8.8 install from a config-carrying directory succeeds" 0 "$st"
+expect_file   "8.8b the binary recorded where it was called from" "$h/keyhog-cwd-log"
+cwdlog=$(cat "$h/keyhog-cwd-log" 2>/dev/null)
+expect_nomatch "8.8c corpus-sensitive phases never run in the operator's directory" \
+    "^(doctor|scan|calibrate-autoroute|compile-execution-packs|backend) $w\$" "$cwdlog"
+expect_match   "8.8d calibration ran from an empty directory" "^scan .*keyhog-install-neutral|^calibrate-autoroute .*keyhog-install-neutral" "$cwdlog"
+rm -rf "$sb" "$h" "$w"
 
 # ======================================================================
 # 9. repair / diagnose / uninstall modes
