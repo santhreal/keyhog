@@ -8,6 +8,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 trait DetectorPlanSource {
+    /// True when the rows came from a prepared execution pack. The generic
+    /// builders below are shared by the spec compile and the pack hydration, so
+    /// the compile-surface counter follows the source instead of the builder.
+    const FROM_PREPARED_ARTIFACT: bool;
     fn id(&self) -> &str;
     fn kind(&self) -> keyhog_core::DetectorKind;
     fn private_key_block(&self) -> bool;
@@ -16,7 +20,18 @@ trait DetectorPlanSource {
     fn detector_relations(&self) -> &[keyhog_core::DetectorRelationSpec];
 }
 
+fn record_detector_plan_surface<T: DetectorPlanSource>() {
+    if T::FROM_PREPARED_ARTIFACT {
+        keyhog_profile::record_compile_surface_load(keyhog_profile::CompileSurfaceId::DetectorPlan);
+    } else {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::DetectorPlan,
+        );
+    }
+}
+
 impl DetectorPlanSource for DetectorSpec {
+    const FROM_PREPARED_ARTIFACT: bool = false;
     fn id(&self) -> &str {
         &self.id
     }
@@ -38,6 +53,7 @@ impl DetectorPlanSource for DetectorSpec {
 }
 
 impl DetectorPlanSource for crate::execution_pack::detector_plan::DetectorPlanRecord {
+    const FROM_PREPARED_ARTIFACT: bool = true;
     fn id(&self) -> &str {
         &self.id
     }
@@ -111,6 +127,7 @@ impl StreamingDetectorPlanSummary {
 }
 
 impl DetectorPlanSource for StreamingDetectorPlanSummary {
+    const FROM_PREPARED_ARTIFACT: bool = true;
     fn id(&self) -> &str {
         &self.id
     }
@@ -179,6 +196,7 @@ impl DetectorResolutionIndex {
         detectors: &[T],
         interner: &crate::static_intern::StaticInterner,
     ) -> Result<Self, String> {
+        record_detector_plan_surface::<T>();
         let expected_rows = detectors.len()
             + detectors
                 .iter()
@@ -253,6 +271,7 @@ impl CompiledDetectorRelationIndex {
         detectors: &[T],
         interner: &crate::static_intern::StaticInterner,
     ) -> Result<Self, String> {
+        record_detector_plan_surface::<T>();
         let detector_ids = detectors
             .iter()
             .map(|detector| detector.id())
@@ -632,6 +651,9 @@ impl CompiledDetectorPlans {
         companions: Vec<Vec<crate::types::CompiledCompanion>>,
         decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
     ) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::DetectorPlan,
+        );
         if companions.len() != detectors.len() {
             return Err(format!(
                 "compiled companion rows ({}) do not match detector count ({})",
@@ -1000,6 +1022,9 @@ fn compile_detector_plan(
     confidence_policies: &mut Vec<crate::confidence::policy::CompiledMatchConfidencePolicy>,
     sparse_policies: &mut Vec<CompiledSparseDetectorPolicies>,
 ) -> Result<CompiledDetectorPlan, String> {
+    keyhog_profile::record_compile_surface_invocation(
+        keyhog_profile::CompileSurfaceId::DetectorPlan,
+    );
     let execution =
         crate::detector_execution_policy::CompiledDetectorExecutionPolicy::compile(detector)?;
     let entropy =
@@ -1092,7 +1117,7 @@ fn hydrate_detector_plan(
         crate::suppression::WeakAnchorBase::Never
     };
     Ok(CompiledDetectorPlan {
-        metadata: compile_metadata(
+        metadata: hydrate_metadata(
             interner,
             &detector.id,
             "primary",
@@ -1104,7 +1129,7 @@ fn hydrate_detector_plan(
             .entropy_fallback
             .as_ref()
             .map(|metadata| {
-                compile_metadata(
+                hydrate_metadata(
                     interner,
                     &detector.id,
                     "entropy fallback",
@@ -1141,6 +1166,32 @@ fn hydrate_detector_plan(
 }
 
 fn compile_metadata(
+    interner: &crate::static_intern::StaticInterner,
+    detector_id: &str,
+    identity_kind: &str,
+    id: &str,
+    name: &str,
+    service: &str,
+) -> Result<CompiledDetectorMetadata, String> {
+    keyhog_profile::record_compile_surface_invocation(
+        keyhog_profile::CompileSurfaceId::DetectorPlan,
+    );
+    resolve_metadata(interner, detector_id, identity_kind, id, name, service)
+}
+
+fn hydrate_metadata(
+    interner: &crate::static_intern::StaticInterner,
+    detector_id: &str,
+    identity_kind: &str,
+    id: &str,
+    name: &str,
+    service: &str,
+) -> Result<CompiledDetectorMetadata, String> {
+    keyhog_profile::record_compile_surface_load(keyhog_profile::CompileSurfaceId::DetectorPlan);
+    resolve_metadata(interner, detector_id, identity_kind, id, name, service)
+}
+
+fn resolve_metadata(
     interner: &crate::static_intern::StaticInterner,
     detector_id: &str,
     identity_kind: &str,

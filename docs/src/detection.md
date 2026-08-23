@@ -51,8 +51,8 @@ ML participation is detector-owned through `[detector.ml]`. `lift` can raise a
 structural score but cannot veto a match, `blend` combines model and structural
 evidence, and `authoritative` lets the model decide an otherwise ambiguous
 channel. In the shipped corpus every regex-pattern channel is currently
-`lift`; 922 of 926 entropy channels disable ML. The four that do not are all
-generic owners: `generic-api-key`, `generic-keyword-secret`, and
+`lift`; 929 of 934 entropy channels disable ML. The five that do not are all
+generic owners: `generic-api-key`, `generic-high-entropy-string`, `generic-keyword-secret`, and
 `generic-secret` use `authoritative`, and `generic-password` uses `lift`. The
 model is therefore not a general regex
 false-positive veto. Its current feature record identifies detector and
@@ -315,7 +315,11 @@ separate:
   unchanged.
 - The autoroute **rules identity** also describes the active detector
   specifications. Operator confidence-floor overrides are composed later so
-  different scan presets can coexist in one calibration cache.
+  different scan presets can coexist in one calibration cache. It is the
+  canonical corpus identity an execution pack carries, so a scan that compiles
+  the corpus and a scan that hydrates an installed generation of that same
+  corpus read the same calibrated table. Self-test fixtures and declaration
+  order are excluded.
 - The autoroute **configuration identity** binds the resolved scanner and
   operator policy. It includes the selected fast, deep, or precision preset,
   scan-wide and per-detector floors, the configured disabled-ID set, detector
@@ -584,6 +588,12 @@ indexing. This ensures that the decoded payload is parsed based on its own
 syntactic structure rather than inheriting the outer file's extension. For
 example, a Base64-encoded JSON object inside a `.txt` file is parsed as
 structured JSON rather than plain text.
+
+A credential found in both the container bytes and the decoded payload is
+reported once, at the coordinate in the file you can open. Its evidence is the
+stronger of the two. A Kubernetes `Secret` whose base64 `data:` value decodes to
+`AWS_ACCESS_KEY_ID=...` therefore reports `likely` with the assignment role the
+decoded text proves, at the offset of the encoded value.
 
 ## Pattern provenance and secret-safe evidence
 

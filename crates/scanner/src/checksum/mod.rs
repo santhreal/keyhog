@@ -9,7 +9,8 @@ mod compiled;
 
 #[cfg(test)]
 pub(crate) use compiled::base64_scratch_capacity_after_payload_for_test;
-pub(crate) use compiled::{CompiledDetectorValidators, CompiledValidatorIndex};
+pub use compiled::CompiledDetectorValidators;
+pub(crate) use compiled::CompiledValidatorIndex;
 
 use std::sync::LazyLock;
 
@@ -44,11 +45,9 @@ pub fn validate_checksum(credential: &str) -> ChecksumResult {
     VALIDATOR_CATALOG.validate_any(credential).result()
 }
 
+/// Validate a credential against the offline validators configured for a specific detector.
 #[inline]
-pub(crate) fn validate_for_detector(
-    detector_id: &str,
-    credential: &str,
-) -> ChecksumConfidenceDecision {
+pub fn validate_for_detector(detector_id: &str, credential: &str) -> ChecksumConfidenceDecision {
     VALIDATOR_CATALOG.validate_for_detector(detector_id, credential)
 }
 
@@ -107,20 +106,27 @@ pub(crate) fn base62_encode_u32(mut value: u32, width: usize) -> String {
 /// TOML's explicit `confidence_floor` instead.
 pub const CHECKSUM_VALID_FLOOR: f64 = 0.9;
 
+/// Outcome of an offline checksum or structural validation check with associated confidence floor.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct ChecksumConfidenceDecision {
+pub struct ChecksumConfidenceDecision {
     result: ChecksumResult,
     valid_confidence_floor: Option<f64>,
     claimed_family: bool,
+    proves_body_provenance: bool,
 }
 
 impl ChecksumConfidenceDecision {
     #[inline]
-    pub(crate) const fn new(result: ChecksumResult, valid_confidence_floor: Option<f64>) -> Self {
+    pub(crate) const fn new(
+        result: ChecksumResult,
+        valid_confidence_floor: Option<f64>,
+        proves_body_provenance: bool,
+    ) -> Self {
         Self {
             result,
             valid_confidence_floor,
             claimed_family: true,
+            proves_body_provenance,
         }
     }
 
@@ -130,6 +136,7 @@ impl ChecksumConfidenceDecision {
             result: ChecksumResult::NotApplicable,
             valid_confidence_floor: None,
             claimed_family: false,
+            proves_body_provenance: false,
         }
     }
 
@@ -143,19 +150,29 @@ impl ChecksumConfidenceDecision {
         matches!(self.result, ChecksumResult::Invalid)
     }
 
+    /// Return the underlying checksum validation verdict.
     #[inline]
-    pub(crate) fn result(self) -> ChecksumResult {
+    pub fn result(self) -> ChecksumResult {
         self.result
     }
 
+    /// Return the optional confidence floor configured for valid verdicts on this detector.
     #[inline]
-    pub(crate) fn valid_confidence_floor(self) -> Option<f64> {
+    pub fn valid_confidence_floor(self) -> Option<f64> {
         self.valid_confidence_floor
     }
-
     #[inline]
     pub(crate) fn claims_family(self) -> bool {
         self.claimed_family
+    }
+
+    /// Whether a `Valid` verdict came from a digest computed over the body
+    /// (a CRC32 layout) rather than a shape test a documentation sample also
+    /// satisfies. Consumed by the confidence floor so a degenerate body keeps
+    /// its penalties unless the issuer's own digest proves the body.
+    #[inline]
+    pub(crate) fn proves_body_provenance(self) -> bool {
+        self.proves_body_provenance
     }
 
     #[inline]

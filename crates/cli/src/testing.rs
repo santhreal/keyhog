@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+pub use crate::config::{OperationalKnob, OperationalUnit};
 /// Zero-sized handle for integration tests that need crate-internal seams.
 pub struct TestApi;
 
@@ -26,12 +27,86 @@ pub fn triage_create_after_parent_open_for_test(path: &Path, hook: impl FnOnce()
     Ok(())
 }
 
+/// Rules identity the daemon and its clients agree on for the embedded corpus.
+#[cfg(unix)]
+pub fn embedded_detector_rules_digest() -> &'static str {
+    crate::daemon::embedded_detector_rules_digest()
+}
+
 #[cfg(unix)]
 #[derive(Debug)]
 pub enum DaemonTerminalFixture {
     CleanShutdown,
     AcceptLoopPanic,
     FatalAccept(std::io::Error),
+}
+
+#[cfg(unix)]
+static TEST_PANIC_INJECTION_KIND: parking_lot::RwLock<Option<String>> =
+    parking_lot::RwLock::new(None);
+#[cfg(unix)]
+static HAS_TEST_PANIC_INJECTION: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(unix)]
+pub(crate) fn set_test_panic_injection(kind: Option<&str>) {
+    HAS_TEST_PANIC_INJECTION.store(kind.is_some(), std::sync::atomic::Ordering::Relaxed);
+    *TEST_PANIC_INJECTION_KIND.write() = kind.map(str::to_string);
+}
+
+#[cfg(unix)]
+pub(crate) fn check_test_panic_injection(kind: &str) {
+    if HAS_TEST_PANIC_INJECTION.load(std::sync::atomic::Ordering::Relaxed) {
+        if let Some(target) = TEST_PANIC_INJECTION_KIND.read().as_deref() {
+            if target == kind {
+                panic!("simulated test panic on daemon request kind: {target}");
+            }
+        }
+    }
+}
+
+/// Enumeration of every door and entry point that parses human-readable byte sizes (Row 112).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ByteSizeParserDoor {
+    /// Canonical CLI value parser (`keyhog::value_parsers::parse_byte_size`).
+    CliValueParser,
+    /// Trait interface exposed on `CliTestApi::parse_byte_size`.
+    TestingApi,
+    /// System scanner space parser adapter (`keyhog::args::scan_system::parse_space_bytes`).
+    ScanSystemSpace,
+    /// Configuration loader parser (`keyhog::config::scan::parse_byte_size_field`).
+    ConfigField,
+}
+
+impl ByteSizeParserDoor {
+    /// All parser doors for exhaustive cross-entry-point property testing.
+    pub const ALL: [Self; 4] = [
+        Self::CliValueParser,
+        Self::TestingApi,
+        Self::ScanSystemSpace,
+        Self::ConfigField,
+    ];
+
+    /// Parse the input string through this specific door.
+    pub fn parse(self, input: &str) -> std::result::Result<usize, String> {
+        match self {
+            Self::CliValueParser => crate::value_parsers::parse_byte_size(input),
+            Self::TestingApi => API.parse_byte_size(input),
+            Self::ScanSystemSpace => {
+                crate::args::parse_space_bytes(input).map(|bytes| bytes as usize)
+            }
+            Self::ConfigField => {
+                let mut errors = Vec::new();
+                match crate::config::parse_config_byte_size(&mut errors, "test_field", input) {
+                    Some(val) => Ok(val),
+                    None => match errors.into_iter().next() {
+                        Some(err) => Err(err),
+                        None => Err("parse error".to_string()),
+                    },
+                }
+            }
+        }
+    }
 }
 
 static SCAN_RUNTIME_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -145,12 +220,16 @@ pub trait CliTestApi {
     fn parse_dedup_scope(&self, s: &str) -> Option<crate::args::CliDedupScope>;
 
     fn format_gpu_summary(&self) -> String;
+    fn build_benchmark_chunk(&self, index: usize) -> keyhog_core::Chunk;
+    fn build_benchmark_corpus(&self) -> Vec<keyhog_core::Chunk>;
     fn write_banner(&self, colors: bool, detector_count: usize) -> std::io::Result<Vec<u8>>;
     fn format_gpu_max_buffer(&self, max_buffer_mb: u64) -> String;
     fn format_backend_probe_count_metric(&self, value: Option<usize>) -> String;
     fn format_backend_probe_mb_metric(&self, value: Option<u64>) -> String;
     fn find_config_file(&self, start: Option<&Path>) -> Option<PathBuf>;
     fn apply_config_file_quiet(&self, args: &mut ScanArgs);
+    fn parse_config_file_from_str(&self, raw: &str) -> std::result::Result<(), String>;
+    fn parse_guard_section_from_str(&self, raw: &str) -> std::result::Result<(), String>;
     fn build_sources(
         &self,
         args: &ScanArgs,
@@ -206,6 +285,18 @@ pub trait CliTestApi {
         socket_path: PathBuf,
         fixture: DaemonTerminalFixture,
     ) -> Pin<Box<dyn Future<Output = Result<()>>>>;
+    #[cfg(unix)]
+    fn set_daemon_panic_injection(&self, kind: Option<&str>);
+    #[cfg(unix)]
+    fn all_daemon_request_kinds(&self) -> &'static [&'static str];
+    #[cfg(unix)]
+    fn sample_daemon_request_json_for_kind(&self, kind: &str) -> Option<String>;
+    #[cfg(unix)]
+    fn spawn_daemon_for_test(
+        &self,
+        socket_path: PathBuf,
+        detectors: Vec<keyhog_core::DetectorSpec>,
+    ) -> tokio::task::JoinHandle<Result<()>>;
     fn cli_error_exit_code(&self, error: &anyhow::Error) -> u8;
 
     fn baseline_version(&self) -> u32;
@@ -275,6 +366,7 @@ pub trait CliTestApi {
     fn watch_resolve_roots(&self, requested: &[PathBuf]) -> Result<Vec<PathBuf>>;
     fn watch_roots_hint(&self, roots: &[PathBuf]) -> String;
 
+    fn install_execution_generation(&self, candidate: &Path) -> Result<()>;
     fn max_resident_findings(&self) -> usize;
     fn parse_macos_mount_table_for_test(
         &self,
@@ -332,6 +424,7 @@ pub trait CliTestApi {
     fn render_effective_config_for_scanner(&self, scanner: ScannerConfig) -> String;
     fn autoroute_config_digest_for_args(&self, args: &mut ScanArgs) -> Result<u64>;
     fn autoroute_config_digest_for_scanner(&self, scanner: ScannerConfig) -> u64;
+    fn matcher_resolved_config_digest_for_args(&self, args: &mut ScanArgs) -> Result<[u8; 32]>;
     fn profiling_config_digests_for_args(
         &self,
         args: &mut ScanArgs,
@@ -425,6 +518,8 @@ pub trait CliTestApi {
     ) -> Vec<keyhog_core::ScanBackendRecoverySummary>;
     fn scanned_chunks(&self, _guard: &ScanRuntimeGuard) -> usize;
     fn scanner_panicked(&self, _guard: &ScanRuntimeGuard) -> bool;
+    fn set_scanner_thread_panic_injection(&self, inject: bool);
+    fn set_force_gpu_unavailable(&self, force: bool);
 
     // Completion-summary & progress-ticker renderers (pure formatting fns whose
     // unit tests were relocated out of `orchestrator::reporting` for the
@@ -461,6 +556,15 @@ pub trait CliTestApi {
         color: bool,
     ) -> String;
     fn fmt_secs(&self, secs: f64) -> String;
+    fn format_pass_gate_summary(
+        &self,
+        prefix: &str,
+        cache_hits: u64,
+        blobs_scanned: u64,
+        bytes_scanned: u64,
+        duration: Option<std::time::Duration>,
+        color: bool,
+    ) -> String;
     fn ticker_guard_spawns_and_joins(&self) -> bool;
     fn redact_url_target(&self, raw: &str) -> String;
 
@@ -558,6 +662,12 @@ impl CliTestApi for TestApi {
     fn format_gpu_summary(&self) -> String {
         crate::benchmark::format_gpu_summary()
     }
+    fn build_benchmark_chunk(&self, index: usize) -> keyhog_core::Chunk {
+        crate::benchmark::build_benchmark_chunk(index)
+    }
+    fn build_benchmark_corpus(&self) -> Vec<keyhog_core::Chunk> {
+        crate::benchmark::build_benchmark_corpus()
+    }
     fn write_banner(&self, colors: bool, detector_count: usize) -> std::io::Result<Vec<u8>> {
         let mut output = Vec::new();
         crate::write_banner(&mut output, colors, detector_count)?;
@@ -577,6 +687,16 @@ impl CliTestApi for TestApi {
     }
     fn apply_config_file_quiet(&self, args: &mut ScanArgs) {
         let _outcome = crate::config::apply_config_file_quiet(args);
+    }
+    fn parse_config_file_from_str(&self, raw: &str) -> std::result::Result<(), String> {
+        toml::from_str::<crate::config::schema::ConfigFile>(raw)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    fn parse_guard_section_from_str(&self, raw: &str) -> std::result::Result<(), String> {
+        toml::from_str::<crate::config::schema::GuardSection>(raw)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
     fn build_sources(
         &self,
@@ -680,6 +800,48 @@ impl CliTestApi for TestApi {
         Box::pin(
             crate::daemon::server::testing::finish_daemon_service_for_test(socket_path, fixture),
         )
+    }
+    #[cfg(unix)]
+    fn set_daemon_panic_injection(&self, kind: Option<&str>) {
+        set_test_panic_injection(kind);
+    }
+    #[cfg(unix)]
+    fn all_daemon_request_kinds(&self) -> &'static [&'static str] {
+        crate::daemon::protocol::ALL_REQUEST_KINDS
+    }
+    #[cfg(unix)]
+    fn sample_daemon_request_json_for_kind(&self, kind: &str) -> Option<String> {
+        crate::daemon::protocol::sample_request_for_kind(kind).map(|request| {
+            serde_json::to_string(&request).expect("serialize sample daemon request")
+        })
+    }
+    #[cfg(unix)]
+    fn spawn_daemon_for_test(
+        &self,
+        socket_path: PathBuf,
+        detectors: Vec<keyhog_core::DetectorSpec>,
+    ) -> tokio::task::JoinHandle<Result<()>> {
+        tokio::spawn(async move {
+            let rules_digest = crate::daemon::detector_rules_digest(&detectors);
+            let options = crate::daemon::server::ServerOptions {
+                request_read_timeout: std::time::Duration::from_secs(30),
+                mass_service: false,
+                mass_gpu_primary_required: false,
+            };
+            crate::daemon::server::run_with_backend_override(
+                socket_path,
+                detectors,
+                rules_digest,
+                options,
+                Some(keyhog_scanner::ScanBackend::CpuFallback),
+                None,
+                keyhog_sources::guard::GuardReconciliationConfig::default(),
+                None,
+                None,
+                None,
+            )
+            .await
+        })
     }
     fn cli_error_exit_code(&self, error: &anyhow::Error) -> u8 {
         crate::cli_error_exit_code(error)
@@ -969,6 +1131,12 @@ impl CliTestApi for TestApi {
         let resolved = crate::orchestrator_config::resolved_scan_config_for_scanner(scanner);
         crate::orchestrator_config::autoroute_config_digest(&resolved)
     }
+    fn matcher_resolved_config_digest_for_args(&self, args: &mut ScanArgs) -> Result<[u8; 32]> {
+        let resolved = crate::orchestrator_config::resolve_scan_config(args)?;
+        Ok(crate::orchestrator_config::matcher_resolved_config_digest(
+            &resolved,
+        ))
+    }
     fn profiling_config_digests_for_args(
         &self,
         args: &mut ScanArgs,
@@ -994,7 +1162,7 @@ impl CliTestApi for TestApi {
         backend: &str,
         body: &str,
     ) -> Result<Vec<String>> {
-        let detectors = keyhog_core::load_embedded_detectors_or_fail()?;
+        let detectors = keyhog_core::embedded_detector_specs().to_vec();
         let forced = crate::orchestrator::explicit_backend_override(Some(backend))?
             .ok_or_else(|| anyhow::anyhow!("'{backend}' is auto, not an explicit backend"))?;
         let runtime =
@@ -1016,6 +1184,10 @@ impl CliTestApi for TestApi {
             .map(|m| m.detector_id.as_ref().to_string())
             .collect())
     }
+    fn install_execution_generation(&self, candidate: &Path) -> Result<()> {
+        crate::installer::install_execution_generation(candidate)?.commit();
+        Ok(())
+    }
     fn disabled_gpu_dispatch_for_test(
         &self,
         body: &str,
@@ -1023,7 +1195,7 @@ impl CliTestApi for TestApi {
         _guard: &ScanRuntimeGuard,
     ) -> Result<Vec<String>> {
         crate::reset_scan_runtime_state();
-        let detectors = keyhog_core::load_embedded_detectors_or_fail()?;
+        let detectors = keyhog_core::embedded_detector_specs().to_vec();
         let scanner = keyhog_scanner::CompiledScanner::compile_with_gpu_policy(
             detectors,
             keyhog_scanner::GpuInitPolicy::ForceDisabled,
@@ -1260,6 +1432,12 @@ impl CliTestApi for TestApi {
     fn scanner_panicked(&self, _guard: &ScanRuntimeGuard) -> bool {
         crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed)
     }
+    fn set_scanner_thread_panic_injection(&self, inject: bool) {
+        crate::orchestrator::set_test_scanner_thread_panic_injection(inject);
+    }
+    fn set_force_gpu_unavailable(&self, force: bool) {
+        keyhog_scanner::gpu::set_force_gpu_unavailable_for_test(force);
+    }
 
     fn verification_tally(&self, findings: &[VerifiedFinding]) -> VerificationTally {
         let breakdown = crate::orchestrator::verification_breakdown(findings);
@@ -1316,6 +1494,25 @@ impl CliTestApi for TestApi {
     }
     fn fmt_secs(&self, secs: f64) -> String {
         crate::orchestrator::fmt_secs(secs)
+    }
+    fn format_pass_gate_summary(
+        &self,
+        prefix: &str,
+        cache_hits: u64,
+        blobs_scanned: u64,
+        bytes_scanned: u64,
+        duration: Option<std::time::Duration>,
+        color: bool,
+    ) -> String {
+        let palette = crate::style::terminal_palette(color, false);
+        crate::style::format_pass_gate_summary(
+            prefix,
+            cache_hits,
+            blobs_scanned,
+            bytes_scanned,
+            duration,
+            &palette,
+        )
     }
     fn ticker_guard_spawns_and_joins(&self) -> bool {
         use std::sync::atomic::Ordering;
@@ -1497,4 +1694,269 @@ impl StableHashProbe {
     pub fn finish(&self) -> u64 {
         self.inner.finish_u64()
     }
+}
+
+/// Seams for testing hook discovery and installation without widening production visibility.
+#[doc(hidden)]
+pub mod hook {
+    use anyhow::Result;
+    use std::path::{Path, PathBuf};
+
+    /// Canonical scan arguments injected into git hooks.
+    pub const CANONICAL_SCAN_ARGS: &str = crate::subcommands::hook::CANONICAL_SCAN_ARGS;
+
+    /// Status of a hook installation attempt.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum HookInstallStatus {
+        /// Freshly installed hook.
+        Installed,
+        /// Hook was already up to date.
+        AlreadyInstalled,
+        /// Existing hook was updated to current template.
+        Updated,
+    }
+
+    /// Install or update the git pre-commit hook in the given repository.
+    pub fn install_at_repo(repo_root: &Path, force: bool) -> Result<(PathBuf, HookInstallStatus)> {
+        let (path, status) = crate::subcommands::hook::install_at_repo(repo_root, force)?;
+        let test_status = match status {
+            crate::subcommands::hook::HookInstallStatus::Installed => HookInstallStatus::Installed,
+            crate::subcommands::hook::HookInstallStatus::AlreadyInstalled => {
+                HookInstallStatus::AlreadyInstalled
+            }
+            crate::subcommands::hook::HookInstallStatus::Updated => HookInstallStatus::Updated,
+        };
+        Ok((path, test_status))
+    }
+
+    /// Resolve the hooks directory for a given repository.
+    pub fn find_hooks_dir_for_repo(repo_root: &Path) -> Result<PathBuf> {
+        crate::subcommands::hook::find_hooks_dir_for_repo(repo_root)
+    }
+}
+
+#[cfg(unix)]
+/// Seams for testing daemon runtime and framing without widening internal message types.
+#[doc(hidden)]
+pub mod daemon {
+    pub mod fs_probe {
+        pub use crate::daemon::fs_probe::*;
+    }
+    pub mod guard_runtime {
+        pub use crate::daemon::guard_runtime::*;
+    }
+    pub mod guard_watcher {
+        pub use crate::daemon::guard_watcher::*;
+    }
+    pub mod protocol {
+        use serde::{Deserialize, Serialize};
+
+        /// Round-trip a `guard feed` request through the wire codec and return
+        /// the decoded root and limit.
+        pub fn guard_feed_request_round_trip(
+            root: Option<&str>,
+            limit: Option<usize>,
+        ) -> (Option<String>, Option<usize>) {
+            let request = crate::daemon::protocol::Request::GuardFeed {
+                root: root.map(str::to_string),
+                limit,
+            };
+            let serialized = serde_json::to_string(&request).expect("serialize guard feed request");
+            let decoded: crate::daemon::protocol::Request =
+                serde_json::from_str(&serialized).expect("deserialize guard feed request");
+            match decoded {
+                crate::daemon::protocol::Request::GuardFeed { root, limit } => (root, limit),
+                other => panic!(
+                    "expected GuardFeed, got {}",
+                    crate::daemon::protocol::request_kind(&other)
+                ),
+            }
+        }
+
+        /// Sample guard status request payload for framing benchmarks.
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+        pub struct GuardStatusRequestFrame {
+            /// Root directory path.
+            pub root: String,
+        }
+
+        /// Sample guard status result payload for framing benchmarks.
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+        pub struct GuardStatusResultFrame {
+            /// Root directory path.
+            pub root: String,
+            /// Operating mode: repo or filesystem.
+            pub mode: String,
+            /// Current guard state label.
+            pub state: String,
+            /// Terminal event sequence counter.
+            pub terminal_sequence: u64,
+            /// Accepted event sequence counter.
+            pub accepted_event_sequence: u64,
+            /// Completed event sequence counter.
+            pub completed_event_sequence: u64,
+            /// Pending events count.
+            pub pending_events: u64,
+            /// Total files scanned.
+            pub files_scanned: u64,
+            /// Total bytes scanned.
+            pub bytes_scanned: u64,
+            /// Cache hit count.
+            pub attestation_hits: u64,
+            /// Cache miss count.
+            pub attestation_misses: u64,
+            /// Total secret findings.
+            pub findings_count: u64,
+            /// Total coverage gaps.
+            pub coverage_gaps: u64,
+            /// Timestamp of initial reconciliation.
+            pub initial_reconciliation_time: Option<u64>,
+            /// Timestamp of last reconciliation.
+            pub last_reconciliation_time: Option<u64>,
+            /// Residency label.
+            pub scanner_residency: String,
+            /// Active backend route label.
+            pub backend_route_label: String,
+            /// Short build identity digest.
+            pub build_identity_short: String,
+            /// Short detector digest.
+            pub detector_digest_short: String,
+            /// Short suppression digest.
+            pub suppression_digest_short: String,
+            /// Short config digest.
+            pub config_digest_short: String,
+            /// Autoroute evidence status.
+            pub autoroute_evidence_status: String,
+            /// Store schema version.
+            pub store_schema_version: u32,
+            /// State store path.
+            pub store_path: String,
+            /// Operator repair command.
+            pub repair_command: String,
+        }
+
+        /// Serialize a guard status request frame to JSON bytes.
+        pub fn serialize_status_request(root: &str) -> Vec<u8> {
+            let req = crate::daemon::protocol::Request::GuardStatus {
+                root: root.to_string(),
+            };
+            serde_json::to_vec(&req).expect("serialize guard status request")
+        }
+
+        /// Deserialize a guard status request frame from JSON bytes.
+        pub fn deserialize_status_request(bytes: &[u8]) -> Result<String, serde_json::Error> {
+            let req: crate::daemon::protocol::Request = serde_json::from_slice(bytes)?;
+            match req {
+                crate::daemon::protocol::Request::GuardStatus { root } => Ok(root),
+                _ => panic!("unexpected request kind"),
+            }
+        }
+
+        /// Create a standard sample guard status result frame for benchmarks.
+        pub fn sample_guard_status_result_frame(root: &str) -> GuardStatusResultFrame {
+            GuardStatusResultFrame {
+                root: root.to_string(),
+                mode: "repo".to_string(),
+                state: "current".to_string(),
+                terminal_sequence: 42,
+                accepted_event_sequence: 42,
+                completed_event_sequence: 42,
+                pending_events: 0,
+                files_scanned: 1542,
+                bytes_scanned: 1048576,
+                attestation_hits: 1500,
+                attestation_misses: 42,
+                findings_count: 0,
+                coverage_gaps: 0,
+                initial_reconciliation_time: Some(1787140800),
+                last_reconciliation_time: Some(1787140800),
+                scanner_residency: "resident".to_string(),
+                backend_route_label: "cpu".to_string(),
+                build_identity_short: "abc123456789".to_string(),
+                detector_digest_short: "def123456789".to_string(),
+                suppression_digest_short: String::new(),
+                config_digest_short: "789123456789".to_string(),
+                autoroute_evidence_status: "valid".to_string(),
+                store_schema_version: 1,
+                store_path: "/var/repos/.keyhog-guard.db".to_string(),
+                repair_command: format!("keyhog guard reconcile {root}"),
+            }
+        }
+
+        /// Build the wire response for a sample frame. Wire fields the bench
+        /// frame does not model are fixed representative values.
+        fn status_response(frame: &GuardStatusResultFrame) -> crate::daemon::protocol::Response {
+            crate::daemon::protocol::Response::GuardStatusResult {
+                root: frame.root.clone(),
+                mode: frame.mode.clone(),
+                state: frame.state.clone(),
+                filesystem_type: "ext4".to_string(),
+                filesystem_authoritative: true,
+                filesystem_unauthoritative_reason: None,
+                scrub_interval_secs: 3600,
+                terminal_sequence: frame.terminal_sequence,
+                accepted_event_sequence: frame.accepted_event_sequence,
+                completed_event_sequence: frame.completed_event_sequence,
+                pending_events: frame.pending_events,
+                files_scanned: frame.files_scanned,
+                bytes_scanned: frame.bytes_scanned,
+                attestation_hits: frame.attestation_hits,
+                attestation_misses: frame.attestation_misses,
+                findings_count: frame.findings_count,
+                coverage_gaps: frame.coverage_gaps,
+                initial_reconciliation_time: frame.initial_reconciliation_time,
+                last_reconciliation_time: frame.last_reconciliation_time,
+                scanner_residency: frame.scanner_residency.clone(),
+                watcher_backend: "inotify".to_string(),
+                watcher_latency_tier: "native".to_string(),
+                watcher_poll_interval_ms: None,
+                backend_route_label: frame.backend_route_label.clone(),
+                build_identity_short: frame.build_identity_short.clone(),
+                detector_digest_short: frame.detector_digest_short.clone(),
+                suppression_digest_short: frame.suppression_digest_short.clone(),
+                config_digest_short: frame.config_digest_short.clone(),
+                autoroute_evidence_status: frame.autoroute_evidence_status.clone(),
+                store_schema_version: frame.store_schema_version,
+                store_path: frame.store_path.clone(),
+                repair_command: frame.repair_command.clone(),
+                recent_transitions: Vec::new(),
+            }
+        }
+
+        /// Serialize a guard status response frame to JSON bytes.
+        pub fn serialize_status_response(frame: &GuardStatusResultFrame) -> Vec<u8> {
+            serde_json::to_vec(&status_response(frame)).expect("serialize guard status response")
+        }
+
+        /// Deserialize a guard status response frame from JSON bytes.
+        pub fn deserialize_status_response(
+            bytes: &[u8],
+        ) -> Result<(String, String), serde_json::Error> {
+            let resp: crate::daemon::protocol::Response = serde_json::from_slice(bytes)?;
+            match resp {
+                crate::daemon::protocol::Response::GuardStatusResult { root, state, .. } => {
+                    Ok((root, state))
+                }
+                _ => panic!("unexpected response kind"),
+            }
+        }
+
+        /// Classify a response frame using the internal classifier.
+        pub fn response_kind_classification(frame: &GuardStatusResultFrame) -> &'static str {
+            crate::daemon::protocol::response_kind(&status_response(frame))
+        }
+    }
+    pub mod server {
+        pub use crate::daemon::server::*;
+    }
+}
+
+pub mod config {
+    pub use crate::config::*;
+}
+
+/// Installed execution-pack registry and freshness surface.
+#[doc(hidden)]
+pub mod execution_pack_install {
+    pub use crate::execution_pack_install::*;
 }

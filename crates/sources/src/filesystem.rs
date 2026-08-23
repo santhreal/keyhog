@@ -144,23 +144,30 @@ pub(crate) fn read_file_safe(path: &std::path::Path, cap: u64) -> std::io::Resul
     read::read_file_safe(path, cap)
 }
 
-pub(crate) fn default_exclude_dirs() -> &'static [String] {
+/// Default directory names excluded by the filesystem scanner (`.git`, `target`, `node_modules`, ...).
+pub fn default_exclude_dirs() -> &'static [String] {
     filter::default_exclude_dirs()
 }
 
-#[cfg(any(feature = "docker", feature = "git"))]
-pub(crate) fn is_default_excluded_path(path: &str) -> bool {
+/// Returns `true` if `path` matches any default exclusion rule (directory, file pattern, or suffix).
+pub fn is_default_excluded_path(path: &str) -> bool {
     filter::is_default_excluded(path)
 }
 
-#[cfg(feature = "git")]
-pub(crate) fn is_default_excluded_path_bytes(path: &[u8]) -> bool {
+/// Returns `true` if raw UTF-8 `path` matches any default exclusion rule.
+/// Returns `true` if path bytes match default exclude rules.
+pub fn is_default_excluded_path_bytes(path: &[u8]) -> bool {
     filter::is_default_excluded_bytes(path)
 }
 
-#[cfg(any(feature = "docker", feature = "azure", feature = "s3", feature = "gcs"))]
-pub(crate) fn is_default_skip_extension(ext: &str) -> bool {
+/// Returns `true` if file extension `ext` is in the default skip extensions list.
+pub fn is_default_skip_extension(ext: &str) -> bool {
     filter::is_skip_extension(ext)
+}
+
+/// Returns `true` if a single directory name `name` is a default excluded directory name.
+pub fn is_default_excluded_dir_name(name: &std::ffi::OsStr) -> bool {
+    filter::is_default_excluded_dir_name(name)
 }
 
 pub(crate) fn reader_pool_thread_count_for_test(scanner_threads: usize) -> usize {
@@ -821,11 +828,21 @@ impl FilesystemSource {
         self
     }
 
+    /// Override the streaming window overlap in bytes. The window size must
+    /// strictly exceed the overlap.
+    #[must_use]
+    pub fn with_window_overlap(mut self, overlap: usize) -> Self {
+        assert!(self.window_size > overlap, "window must exceed overlap");
+        self.window_overlap = overlap;
+        self
+    }
+
     /// Override the windowed-scan parameters. Production callers stick
     /// with the defaults (1 MiB / 128 KiB); tests use this to exercise
     /// the multi-window path on tiny fixtures. `window_size` must
     /// strictly exceed `overlap` (the underlying slicer asserts this).
-    pub(crate) fn with_window_config(mut self, window_size: usize, overlap: usize) -> Self {
+    #[must_use]
+    pub fn with_window_config(mut self, window_size: usize, overlap: usize) -> Self {
         assert!(window_size > overlap, "window must exceed overlap");
         self.window_size = window_size;
         self.window_overlap = overlap;

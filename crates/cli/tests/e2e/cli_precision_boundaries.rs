@@ -21,11 +21,12 @@ fn binary() -> PathBuf {
 
 fn scan_with_args(fixture: &str, args: &[&str]) -> (String, String, Option<i32>) {
     let dir = TempDir::new().expect("tempdir");
-    // `config.txt`, NOT `fixture.txt`: a `fixture`/`test`/`mock`/`spec`
-    // filename trips the ML test-context down-weight, which would drop
-    // high-confidence credentials below the 0.85 precision floor and confound
-    // these boundary assertions with the unrelated test-fixture heuristic.
-    let path = dir.path().join("config.txt");
+    // `config.env`, NOT `fixture.txt`: an assignment in a `.env` is a
+    // credential-bearing source role, so the finding is `likely` and the exit
+    // code observes the boundary under test, while an inert `.txt` would be
+    // `review` (exit 0). The name also avoids the `fixture`/`test`/`mock`/`spec`
+    // fragments the ML test-context down-weight keys on.
+    let path = dir.path().join("config.env");
     std::fs::write(&path, fixture).expect("write fixture");
 
     let output = Command::new(binary())
@@ -47,7 +48,7 @@ fn scan_with_args(fixture: &str, args: &[&str]) -> (String, String, Option<i32>)
 }
 
 /// Precision mode negative twin: the same file content scanned with and without
-/// `--precision` must show that precision is a strict subset. The 0.795
+/// `--precision` must show that precision is a strict subset. The 0.8
 /// AbuseIPDB finding is the negative twin to the high-confidence AWS finding.
 #[test]
 fn precision_mode_negative_twin_is_subset_of_default() {
@@ -221,6 +222,18 @@ fn precision_mode_composes_with_verify_flag() {
 
 /// Precision mode is compatible with `--scan-comments`: comments are scanned
 /// normally but the precision floor still applies.
+///
+/// WHY the paranoid policy: `// TODO: rotate aws_secret_access_key = "..."` is a
+/// COMMENTED ASSIGNMENT, so `context::inference` classifies it as `Assignment`
+/// (no comment haircut) while the source role of a `//` line in a `.env` stays
+/// unrecognized, which the evidence ladder reports as `review` and exits 0 by
+/// default. The contract under test is the confidence floor, not the ladder, so
+/// the ladder is opened with `--evidence-policy paranoid` and the finding must
+/// still clear 0.85.
+///
+/// What it does not catch: the default-policy exit code for a commented
+/// credential (owned by the evidence-tier tests), or comment handling in a
+/// source whose syntax actually recognizes `//`.
 #[test]
 fn precision_mode_composes_with_scan_comments() {
     // A high-confidence AWS *secret* access key in a comment. A weak generic
@@ -230,7 +243,15 @@ fn precision_mode_composes_with_scan_comments() {
     let fixture =
         "// TODO: rotate aws_secret_access_key = \"kP8xQ2mNvR7tZ4wL9bYsH3jD6fG1cA0eXuViK5oT\"\n";
 
-    let (out, err, code) = scan_with_args(fixture, &["--precision", "--scan-comments"]);
+    let (out, err, code) = scan_with_args(
+        fixture,
+        &[
+            "--precision",
+            "--scan-comments",
+            "--evidence-policy",
+            "paranoid",
+        ],
+    );
 
     // The secret clears the 0.85 floor even in a comment once `--scan-comments`
     // opts the comment context out of the suppression multiplier. Exit 1.
@@ -268,13 +289,13 @@ fn precision_mode_ignores_min_confidence_when_lower_than_0_85() {
             && finding
                 .get("evidence_score")
                 .and_then(|value| value.as_f64())
-                == Some(0.795)
+                == Some(0.8)
     }));
 
     // Try to set min_confidence to 0.3 (below the precision floor).
     let (out, _, code) = scan_with_args(fixture, &["--precision", "--min-confidence", "0.3"]);
 
-    // The 0.795 credential must still be dropped because precision enforces 0.85.
+    // The 0.8 credential must still be dropped because precision enforces 0.85.
     assert_eq!(
         code,
         Some(0),
@@ -284,7 +305,7 @@ fn precision_mode_ignores_min_confidence_when_lower_than_0_85() {
     let arr = findings.as_array().expect("array");
     assert!(
         arr.is_empty(),
-        "precision must drop the 0.795 credential; got {arr:?}"
+        "precision must drop the 0.8 credential; got {arr:?}"
     );
 }
 

@@ -32,7 +32,7 @@ pub use hook::HookCommand;
 pub use limits::SourceLimitArgs;
 pub use maintenance::{
     BackendArgs, CompileExecutionPacksArgs, CompileGpuLiteralsArgs, CompletionArgs, DoctorArgs,
-    UninstallArgs,
+    InstallArgs, UninstallArgs,
 };
 pub use scan::{
     CliDedupScope, DaemonMode, DetectorMode, EvidencePolicy, OutputFormat, ScanArgs, SeverityFilter,
@@ -152,6 +152,10 @@ pub enum Command {
     #[command(verbatim_doc_comment)]
     BloomDiagnostic(BloomDiagnosticArgs),
 
+    /// Compile, authenticate, calibrate, and install execution packs for the local host
+    #[command(verbatim_doc_comment)]
+    Install(InstallArgs),
+
     /// Uninstall keyhog: remove the binary (dry run unless --yes)
     #[command(verbatim_doc_comment)]
     Uninstall(UninstallArgs),
@@ -231,7 +235,105 @@ where
 fn cli_from_matches(matches: &clap::ArgMatches) -> Result<Cli, clap::Error> {
     let mut cli = Cli::from_arg_matches(matches)?;
     mark_cli_value_sources(&mut cli, matches);
+    validate_cli_args(&cli)?;
     Ok(cli)
+}
+
+fn is_gpu_backend_str(backend: &str) -> bool {
+    let b = backend.trim().to_ascii_lowercase();
+    b == "gpu" || b.starts_with("gpu-") || b.starts_with("gpu_")
+}
+
+pub(crate) fn validate_backend_and_gpu_flags(
+    backend: Option<&str>,
+    no_gpu: bool,
+    require_gpu: bool,
+) -> Result<(), clap::Error> {
+    if no_gpu && require_gpu {
+        return Err(clap::Error::raw(
+            clap::error::ErrorKind::ArgumentConflict,
+            "error: the argument '--no-gpu' cannot be used with '--require-gpu'\n",
+        ));
+    }
+    if let Some(b) = backend {
+        let is_gpu = is_gpu_backend_str(b);
+        if no_gpu && is_gpu {
+            return Err(clap::Error::raw(
+                clap::error::ErrorKind::ArgumentConflict,
+                format!("error: the argument '--no-gpu' cannot be used with '--backend {b}'\n"),
+            ));
+        }
+        let b_normalized = b.trim().to_ascii_lowercase();
+        if require_gpu && !is_gpu && b_normalized != "auto" {
+            return Err(clap::Error::raw(
+                clap::error::ErrorKind::ArgumentConflict,
+                format!(
+                    "error: the argument '--require-gpu' cannot be used with '--backend {b}'\n"
+                ),
+            ));
+        }
+        let b_lower = b.to_ascii_lowercase();
+        if b_lower.starts_with("gpu-metal") && !cfg!(target_os = "macos") {
+            return Err(clap::Error::raw(
+                clap::error::ErrorKind::InvalidValue,
+                format!(
+                    "error: backend '{b}' is only supported on macOS (running on {})\n",
+                    std::env::consts::OS
+                ),
+            ));
+        }
+        if b_lower.starts_with("gpu-cuda") && cfg!(target_os = "macos") {
+            return Err(clap::Error::raw(
+                clap::error::ErrorKind::InvalidValue,
+                format!("error: backend '{b}' is not supported on macOS\n"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_cli_args(cli: &Cli) -> Result<(), clap::Error> {
+    match &cli.command {
+        Some(Command::Scan(args)) => {
+            validate_backend_and_gpu_flags(args.backend.as_deref(), args.no_gpu, args.require_gpu)?;
+            if let Some(overlap) = args.window_overlap {
+                if !(1024..keyhog_core::DEFAULT_WINDOW_SIZE_BYTES).contains(&overlap) {
+                    return Err(clap::Error::raw(
+                        clap::error::ErrorKind::ValueValidation,
+                        format!("error: --window-overlap must be at least 1KB and strictly less than the 1MB window size (got {overlap} bytes)\n"),
+                    ));
+                }
+            }
+        }
+        Some(Command::Config(args)) => {
+            validate_backend_and_gpu_flags(
+                args.scan.backend.as_deref(),
+                args.scan.no_gpu,
+                args.scan.require_gpu,
+            )?;
+            if let Some(overlap) = args.scan.window_overlap {
+                if !(1024..keyhog_core::DEFAULT_WINDOW_SIZE_BYTES).contains(&overlap) {
+                    return Err(clap::Error::raw(
+                        clap::error::ErrorKind::ValueValidation,
+                        format!("error: --window-overlap must be at least 1KB and strictly less than the 1MB window size (got {overlap} bytes)\n"),
+                    ));
+                }
+            }
+        }
+        Some(Command::Hook {
+            command: HookCommand::Run(args),
+        }) => {
+            validate_backend_and_gpu_flags(args.backend.as_deref(), args.no_gpu, args.require_gpu)?;
+        }
+        Some(Command::Watch(args)) => {
+            validate_backend_and_gpu_flags(args.backend.as_deref(), false, false)?;
+        }
+        Some(Command::Backend(args)) => {
+            validate_backend_and_gpu_flags(None, args.no_gpu, args.require_gpu)?;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn mark_cli_value_sources(cli: &mut Cli, matches: &clap::ArgMatches) {
@@ -271,6 +373,16 @@ fn mark_cli_value_sources(cli: &mut Cli, matches: &clap::ArgMatches) {
             {
                 *detectors_cli_explicit =
                     start_matches.value_source("detectors") == Some(ValueSource::CommandLine);
+            }
+        }
+        (
+            Some(Command::Hook {
+                command: HookCommand::Run(args),
+            }),
+            Some(("hook", hook_matches)),
+        ) => {
+            if let Some(("run", run_matches)) = hook_matches.subcommand() {
+                args.mark_cli_value_sources(run_matches);
             }
         }
         _ => {}

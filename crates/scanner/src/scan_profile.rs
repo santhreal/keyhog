@@ -415,6 +415,23 @@ pub fn dump(label: &str) {
             crate::engine::phase2_generic::format_generic_profile(&generic)
         );
     }
+    let confirmed_postprocess =
+        crate::engine::scan_postprocess::confirmed_postprocess_profile_from_typed(&typed);
+    if confirmed_postprocess.any_recorded() {
+        eprintln!(
+            "{}",
+            crate::engine::scan_postprocess::format_confirmed_postprocess_profile(
+                &confirmed_postprocess
+            )
+        );
+    }
+    let phase2_verification = crate::engine::phase2::phase2_verification_profile_from_typed(&typed);
+    if phase2_verification.any_recorded() {
+        eprintln!(
+            "{}",
+            crate::engine::phase2::format_phase2_verification_profile(&phase2_verification)
+        );
+    }
     #[cfg(feature = "ml")]
     {
         let batch =
@@ -429,5 +446,9 @@ pub fn dump(label: &str) {
     let (feature_ns, score_ns) = crate::gpu::ml_split_from_typed(&typed);
     if feature_ns != 0 || score_ns != 0 {
         eprintln!("{}", crate::gpu::format_ml_split(feature_ns, score_ns));
+    }
+    let gpu_split = crate::gpu::gpu_dispatch_split_from_typed(&typed);
+    if gpu_split.any_recorded() {
+        eprintln!("{}", crate::gpu::format_gpu_dispatch_split(&gpu_split));
     }
 }

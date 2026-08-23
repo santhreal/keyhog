@@ -21,8 +21,8 @@ pub struct ConfiguredStdinSource {
     limits: crate::SourceLimits,
 }
 
-const STDIN_WINDOW_SIZE: usize = 1024 * 1024;
-const STDIN_WINDOW_OVERLAP: usize = 128 * 1024;
+const STDIN_WINDOW_SIZE: usize = keyhog_core::DEFAULT_WINDOW_SIZE_BYTES;
+const STDIN_WINDOW_OVERLAP: usize = keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES;
 
 struct SpooledStdinChunks {
     file: std::fs::File,
@@ -242,6 +242,7 @@ fn stdin_chunk(text: String, base_offset: usize, base_line: usize) -> Chunk {
             author: None,
             date: None,
             mtime_ns: None,
+            ctime_ns: None,
             size_bytes: None,
             decoded_span: None,
         },

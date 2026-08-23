@@ -52,6 +52,7 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         prof: bool,
     ) {
+        record_anchored_verify_candidates(cands.len());
         let mut i = 0usize;
         while i < cands.len() {
             if crate::deadline::expired(deadline) {
@@ -65,6 +66,7 @@ impl CompiledScanner {
             let group = &cands[i..j];
             let (entry, _) = &self.phase2_patterns[pat];
             let t0 = if prof { Some(Instant::now()) } else { None };
+            let m_before = scan_state.matches.len();
             match anchor_idx.anchored_regex(pat) {
                 Some(re) => self.extract_anchored(
                     entry,
@@ -86,6 +88,7 @@ impl CompiledScanner {
                     deadline,
                 ),
             }
+            record_anchored_verify_matches(m_before, scan_state.matches.len());
             if let Some(t0) = t0 {
                 phase2_pattern_prof_record(
                     self.phase2_patterns.len(),
@@ -151,6 +154,7 @@ impl CompiledScanner {
                     let cands = &mut candidate_scratch.candidates;
                     let mut candidates_are_full_text_offsets = false;
                     {
+                        let _coll_span = anchor_collect_span();
                         let _g = super::profile::span(keyhog_profile::Stage::Phase2SharedAc);
                         if localize_keyword_anchors {
                             anchor_idx.collect_candidates(
@@ -185,6 +189,7 @@ impl CompiledScanner {
                                 cands,
                             );
                         }
+                        record_anchor_candidates(cands.len());
                     }
                     // Candidate positions are relative to `scan_text`; lift them back
                     // into full-text coordinates so anchored verification indexes the
@@ -221,8 +226,10 @@ impl CompiledScanner {
                     // live member of this family, so it suppresses the second pass.
                     if localize_plain_anchors {
                         {
+                            let _coll_span = anchor_collect_span();
                             let _g = super::profile::span(keyhog_profile::Stage::Phase2SharedAc);
                             anchor_idx.collect_plain_candidates(scan_text, pattern_is_live, cands);
+                            record_anchor_candidates(cands.len());
                         }
                         if shift != 0 {
                             for c in cands.iter_mut() {
@@ -258,7 +265,9 @@ impl CompiledScanner {
                         if !pattern_is_live(pat) {
                             continue;
                         }
+                        record_whole_chunk_pattern();
                         let t0 = if prof { Some(Instant::now()) } else { None };
+                        let m_before = scan_state.matches.len();
                         this.extract_matches_inner(
                             entry,
                             preprocessed,
@@ -268,6 +277,7 @@ impl CompiledScanner {
                             cursor,
                             deadline,
                         );
+                        record_whole_chunk_matches(m_before, scan_state.matches.len());
                         if let Some(t0) = t0 {
                             phase2_pattern_prof_record(
                                 this.phase2_patterns.len(),
@@ -295,7 +305,9 @@ impl CompiledScanner {
                     if !pattern_is_live(index) {
                         continue;
                     }
+                    record_whole_chunk_pattern();
                     let t0 = if prof { Some(Instant::now()) } else { None };
+                    let m_before = scan_state.matches.len();
                     this.extract_matches_inner(
                         entry,
                         preprocessed,
@@ -305,6 +317,7 @@ impl CompiledScanner {
                         cursor,
                         deadline,
                     );
+                    record_whole_chunk_matches(m_before, scan_state.matches.len());
                     if let Some(t0) = t0 {
                         phase2_pattern_prof_record(
                             this.phase2_patterns.len(),

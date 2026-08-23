@@ -25,7 +25,8 @@
 use crate::metrics::{MacroStageId, MetricId};
 use crate::schema::{RunState, StateMeasurement};
 use crate::schema_v2::{
-    CacheEffectivenessV2, CausalProfileV2, Evidence, QueueDepthV2, RetryRecordV2,
+    CacheEffectivenessV2, CausalProfileV2, CompileSurfaceRecordV2, Evidence, QueueDepthV2,
+    RetryRecordV2,
 };
 use serde::{Deserialize, Serialize};
 
@@ -374,6 +375,8 @@ pub struct RunInsightV2 {
     pub backends: Vec<BackendAttributionV2>,
     pub caches: Vec<CacheEffectivenessV2>,
     pub retries: Vec<RetryRecordV2>,
+    #[serde(default)]
+    pub compile_surfaces: Vec<CompileSurfaceRecordV2>,
     pub coverage: InsightCoverageV2,
 }
 
@@ -410,11 +413,7 @@ impl RunInsightV2 {
             input_units,
             mib_per_second_milli: mib_per_second_milli(input_bytes, wall_ns),
             units_per_second_milli: per_second_milli(input_units, wall_ns),
-            ns_per_unit: if input_units == 0 {
-                0
-            } else {
-                wall_ns / input_units
-            },
+            ns_per_unit: wall_ns.checked_div(input_units).unwrap_or(0),
             ns_per_byte_milli: milli(wall_ns, input_bytes),
             cpu_ns_per_byte_milli: milli(process_cpu_ns, input_bytes),
             phases,
@@ -442,6 +441,7 @@ impl RunInsightV2 {
             backends,
             caches: profile.caches.clone(),
             retries: profile.retries.clone(),
+            compile_surfaces: profile.compile_surfaces.clone(),
             coverage,
         }
     }
@@ -628,6 +628,18 @@ impl RunInsightV2 {
                 cache.hits,
                 cache.misses,
                 format_percent_ppm(cache.hit_rate_ppm),
+            ));
+        }
+
+        for surface in &self.compile_surfaces {
+            out.push_str(&format!(
+                "compile {:<28} runtime_compiles={} loads={} install_compiles={} update_compiles={} developer_compiles={}\n",
+                surface.surface.as_str(),
+                surface.runtime_compiles,
+                surface.loads,
+                surface.install_compiles,
+                surface.update_compiles,
+                surface.developer_compiles,
             ));
         }
 
@@ -995,11 +1007,7 @@ fn derive_stages(
                 elapsed_ns: stage.elapsed_ns,
                 share_of_recorded_ppm: ppm(stage.elapsed_ns, recorded_ns),
                 ns_per_call: stage.elapsed_ns / stage.calls.max(1),
-                ns_per_input_unit: if input_units == 0 {
-                    0
-                } else {
-                    stage.elapsed_ns / input_units
-                },
+                ns_per_input_unit: stage.elapsed_ns.checked_div(input_units).unwrap_or(0),
                 ns_per_input_byte_milli: milli(stage.elapsed_ns, input_bytes),
                 bytes,
                 mib_per_second_milli: mib_per_second_milli(
@@ -1131,6 +1139,7 @@ fn finding(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rank_findings(
     wall_ns: u64,
     throughput: &ThroughputInsightV2,

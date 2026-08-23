@@ -230,3 +230,149 @@ pub(super) fn detect_io_uring() -> bool {
         false
     }
 }
+
+#[must_use]
+pub(crate) fn detect_physical_gpu_name() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        linux_physical_gpu_name()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        macos_physical_gpu_name()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        windows_gpu_name()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        None
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_physical_gpu_name() -> Option<String> {
+    if let Ok(entries) = std::fs::read_dir("/proc/driver/nvidia/gpus") {
+        // LAW10: host/OS hardware probe failure => None/conservative default; perf-only, recall-irrelevant
+        for entry in entries.flatten() {
+            let info_path = entry.path().join("information");
+            if let Ok(info) = std::fs::read_to_string(info_path) {
+                // LAW10: host/OS hardware probe failure => None/conservative default; perf-only, recall-irrelevant
+                for line in info.lines() {
+                    if let Some(model) = line.strip_prefix("Model:") {
+                        let trimmed = model.trim();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Ok(entries) = std::fs::read_dir("/sys/bus/pci/devices") {
+        // LAW10: host/OS hardware probe failure => None/conservative default; perf-only, recall-irrelevant
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let class_str = std::fs::read_to_string(path.join("class")).unwrap_or_default(); // LAW10: host/OS hardware probe failure => empty/conservative default; perf-only, recall-irrelevant
+            let class =
+                u32::from_str_radix(class_str.trim().trim_start_matches("0x"), 16).unwrap_or(0); // LAW10: host/OS hardware probe parse failure => 0/conservative default; perf-only, recall-irrelevant
+            if (class >> 16) == 0x03 {
+                let vendor_str = std::fs::read_to_string(path.join("vendor")).unwrap_or_default(); // LAW10: host/OS hardware probe failure => empty/conservative default; perf-only, recall-irrelevant
+                let vendor = u32::from_str_radix(vendor_str.trim().trim_start_matches("0x"), 16)
+                    .unwrap_or(0); // LAW10: host/OS hardware probe parse failure => 0/conservative default; perf-only, recall-irrelevant
+                let driver_name = std::fs::read_link(path.join("driver"))
+                    .ok() // LAW10: host/OS hardware probe failure => None/conservative default; perf-only, recall-irrelevant
+                    .and_then(|d| d.file_name().map(|n| n.to_string_lossy().into_owned()));
+                let name = match vendor {
+                    0x10de => {
+                        if let Some(drv) = driver_name {
+                            format!("NVIDIA GPU ({drv})")
+                        } else {
+                            "NVIDIA GPU".to_string()
+                        }
+                    }
+                    0x1002 | 0x1022 => {
+                        if let Some(drv) = driver_name {
+                            format!("AMD GPU ({drv})")
+                        } else {
+                            "AMD GPU".to_string()
+                        }
+                    }
+                    0x8086 => {
+                        if let Some(drv) = driver_name {
+                            format!("Intel GPU ({drv})")
+                        } else {
+                            "Intel GPU".to_string()
+                        }
+                    }
+                    _ => {
+                        if let Some(drv) = driver_name {
+                            format!("PCI GPU ({drv})")
+                        } else {
+                            "PCI GPU".to_string()
+                        }
+                    }
+                };
+                return Some(name);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn macos_physical_gpu_name() -> Option<String> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        Some("Apple Silicon GPU".to_string())
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        run_probe_command("system_profiler", &["SPDisplaysDataType"]).and_then(|out| {
+            for line in out.lines() {
+                let trimmed = line.trim();
+                if let Some(chipset) = trimmed.strip_prefix("Chipset Model:") {
+                    let name = chipset.trim();
+                    if !name.is_empty() {
+                        return Some(name.to_string());
+                    }
+                }
+            }
+            None
+        })
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_gpu_name() -> Option<String> {
+    let name = run_probe_command(
+        "powershell",
+        &[
+            "-NoProfile",
+            "-Command",
+            "(Get-CimInstance Win32_VideoController | Select-Object -First 1).Name",
+        ],
+    )
+    .and_then(|stdout| {
+        let trimmed = stdout.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
+    if name.is_some() {
+        return name;
+    }
+    run_probe_command("wmic", &["path", "win32_VideoController", "get", "name"]).and_then(
+        |stdout| {
+            stdout
+                .lines()
+                .map(str::trim)
+                .find(|line| !line.is_empty() && !line.eq_ignore_ascii_case("name"))
+                .map(|s| s.to_string())
+        },
+    )
+}

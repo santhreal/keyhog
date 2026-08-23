@@ -168,7 +168,7 @@ impl DaemonMode {
     }
 }
 
-#[derive(Parser, Clone)]
+#[derive(Parser, Clone, Debug)]
 pub struct ScanArgs {
     /// Detector TOML directory
     #[arg(short, long, default_value = "detectors")]
@@ -179,6 +179,9 @@ pub struct ScanArgs {
     /// corpus. Omitted preserves the established replace behavior.
     #[arg(long, value_name = "MODE")]
     pub detectors_mode: Option<DetectorMode>,
+    /// Developer-only escape hatch: allow in-process compilation of embedded or custom detectors.
+    #[arg(long = "developer-compile-embedded-detectors", hide = true)]
+    pub developer_compile_embedded_detectors: bool,
 
     /// Path(s) to scan. Pass several to scan multiple roots in one run
     /// (`keyhog scan a/ b/ c/`); nested or duplicate roots fold into their
@@ -924,6 +927,10 @@ pub struct ScanArgs {
     /// Fused filesystem pipeline channel depth.
     #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_usize)]
     pub fused_depth: Option<usize>,
+
+    /// Streaming window overlap size in bytes (default: 128KB).
+    #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_window_overlap)]
+    pub window_overlap: Option<usize>,
 
     /// Hard deadline per chunk scan in milliseconds. Default unset = no
     /// operator deadline; decode still has its internal bomb guard.

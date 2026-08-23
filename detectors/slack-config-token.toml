@@ -20,6 +20,8 @@ match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20,
 # below the global floor and be dropped. Prefix bounds FP risk; declare
 # the per-detector floor so the detector ships working out of the box.
 min_confidence = 0.5
+decode_transforms = { reverse_prefixes = ["xoxe-", "xoxe."], caesar_prefixes = ["xoxe-", "xoxe."] }
+validators = [{ type = "pattern-shape", prefixes = ["xoxe-", "xoxe."], allow_overlong = false }]
 keywords = ["xoxe-", "xoxe.xoxp-", "xoxe.xoxb-", "slack"]
 
 [[detector.patterns]]

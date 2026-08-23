@@ -175,28 +175,30 @@ pub fn load_detector_corpus(dir: &Path) -> Result<LoadedDetectorCorpus, SpecErro
     load_detector_corpus_with_gate(dir, true)
 }
 
-/// Load detectors with optional quality gate enforcement.
-/// When `enforce_gate` is `true`, detector read/parse/quality errors reject
-/// the entire corpus instead of returning a partial detector set.
-///
-/// # Examples
-///
-/// ```ignore
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// // Crate-internal hook for tests and CLI detector-cache owner code.
-/// use keyhog_core::spec::load::load_detectors_with_gate;
-/// use std::path::Path;
-///
-/// let _detectors = load_detectors_with_gate(Path::new("detectors"), true)?;
-/// # Ok(()) }
-/// ```
 #[derive(Clone, Copy)]
 struct CorpusCompatibility {
     schema_version: u32,
     permits_forward_unknown_fields: bool,
 }
 
-pub(crate) fn load_detectors_with_gate(
+/// Load detectors with optional quality gate enforcement.
+///
+/// With `enforce_gate` set, a read, parse, or quality-gate error rejects the
+/// whole corpus instead of returning a partial detector set. Clearing it
+/// returns whatever parsed, which is what `keyhog detectors --audit` needs to
+/// report the issues in a corpus the gate refuses.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// use keyhog_core::load_detectors_with_gate;
+/// use std::path::Path;
+///
+/// let _detectors = load_detectors_with_gate(Path::new("detectors"), false)?;
+/// # Ok(()) }
+/// ```
+pub fn load_detectors_with_gate(
     dir: &Path,
     enforce_gate: bool,
 ) -> Result<Vec<DetectorSpec>, SpecError> {

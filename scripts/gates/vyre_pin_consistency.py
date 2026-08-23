@@ -206,13 +206,18 @@ def check() -> list[str]:
                 f"vyre dep '{key}' pins revision {rev!r}, expected {REQUIRED_REV!r}."
             )
 
+    for dep_key in deps:
+        if dep_key.startswith("vyre") and dep_key not in VYRE_DEPS:
+            violations.append(
+                f"unbudgeted vyre dependency '{dep_key}' in root [workspace.dependencies]"
+            )
+
     distinct = set(versions.values())
     if len(distinct) > 1:
         violations.append(
             "vyre pins are not in lockstep: "
             + ", ".join(f"{k}={v}" for k, v in sorted(versions.items()))
         )
-
     for cargo in _cargo_manifests():
         rel = cargo.relative_to(REPO).as_posix()
         text = cargo.read_text(encoding="utf-8")
@@ -257,7 +262,12 @@ def check() -> list[str]:
     ]
     for relpath, needle, msg in stale_doc_claims:
         file = REPO / relpath
-        if file.is_file() and needle in file.read_text(encoding="utf-8"):
+        if not file.is_file():
+            violations.append(
+                f"required document for stale claim check does not exist: {relpath}"
+            )
+            continue
+        if needle in file.read_text(encoding="utf-8"):
             violations.append(f"{msg} [{relpath}]")
 
     return violations

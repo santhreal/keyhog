@@ -1,0 +1,3 @@
+category = "Added"
+summary = "Install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata."
+crates = ["cli"]

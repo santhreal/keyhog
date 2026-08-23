@@ -92,18 +92,41 @@ def generate_daemon_corpus(path: pathlib.Path, size: int = DAEMON_CORPUS_BYTES) 
     return digest.hexdigest()
 
 
-def _index_results(path: pathlib.Path) -> dict[str, Any]:
-    """Index KeyHog result rows by configuration ID."""
+def _index_results(path: pathlib.Path) -> tuple[dict[str, Any], list[Any]]:
+    """Index KeyHog result rows by configuration ID and collect accuracy rows."""
     rows = load_results(path)
     selected: dict[str, Any] = {}
+    accuracy_candidates: list[Any] = []
     for row in rows:
         if row.scanner.name != "keyhog":
             continue
+        cname = row.corpus.name or ""
         config_id = row.scanner.config_id
-        if config_id in selected:
-            raise MatrixError(f"{path}: duplicate KeyHog config {config_id!r}")
-        selected[config_id] = row
-    return selected
+        if config_id == "simd-nocache-nodaemon-full" and not cname.startswith("daemon"):
+            accuracy_candidates.append(row)
+        if cname == "mirror" or not cname or cname not in ("homefield",):
+            if config_id in selected:
+                if row.corpus.name == "mirror":
+                    selected[config_id] = row
+            else:
+                selected[config_id] = row
+        elif config_id not in selected:
+            selected[config_id] = row
+
+    def _acc_sort_key(r: Any) -> tuple[int, str]:
+        name = r.corpus.name or ""
+        return (0 if name == "mirror" else 1, name)
+
+    accuracy_candidates.sort(key=_acc_sort_key)
+    seen_corpora: set[str] = set()
+    deduped_accuracy: list[Any] = []
+    for r in accuracy_candidates:
+        name = r.corpus.name or ""
+        if name not in seen_corpora:
+            seen_corpora.add(name)
+            deduped_accuracy.append(r)
+
+    return selected, deduped_accuracy
 
 
 def _select(index: dict[str, Any], required: set[str], label: str) -> list[Any]:
@@ -180,8 +203,8 @@ def capture_snapshot(
     """Reduce raw matrix runs to the exact rows used by README panels."""
     if source_state not in {"clean", "developer-dirty"}:
         raise MatrixError("source state must be clean or developer-dirty")
-    config_index = _index_results(config_results)
-    daemon_index = _index_results(daemon_results)
+    config_index, accuracy_rows_results = _index_results(config_results)
+    daemon_index, _ = _index_results(daemon_results)
     config_rows = _select(config_index, REQUIRED_CONFIGS, "configuration")
     daemon_rows = _select(daemon_index, set(DAEMON_CONFIGS), "daemon")
     _assert_common_identity(config_rows, daemon_rows)
@@ -205,6 +228,8 @@ def capture_snapshot(
     selected_daemon_ids = sorted(DAEMON_CONFIGS)
     cat_file = BENCH_ROOT / "workload-catalog.toml"
     cat_digest = _sha256_file(cat_file) if cat_file.exists() else None
+    if not accuracy_rows_results and "simd-nocache-nodaemon-full" in config_index:
+        accuracy_rows_results = [config_index["simd-nocache-nodaemon-full"]]
     return {
         "schema_version": SNAPSHOT_SCHEMA,
         "source_state": source_state,
@@ -213,6 +238,9 @@ def capture_snapshot(
             "bytes": corpus_size,
             "sha256": corpus_sha256,
         },
+        "accuracy_rows": [
+            _snapshot_row(r) for r in accuracy_rows_results
+        ],
         "configuration_rows": [
             _snapshot_row(config_index[config]) for config in selected_config_ids
         ],
@@ -239,6 +267,8 @@ def load_snapshot(path: pathlib.Path) -> dict[str, Any]:
         value["daemon_rows"], list
     ):
         raise MatrixError(f"{path}: matrix rows must be arrays")
+    if "accuracy_rows" in value and not isinstance(value["accuracy_rows"], list):
+        raise MatrixError(f"{path}: accuracy_rows must be an array")
     return value
 
 
@@ -293,6 +323,38 @@ def render_accuracy(snapshot: dict[str, Any]) -> str:
     host, scanner = _context(snapshot)
     corpus = row["corpus"]
     detection = row["detection"]
+
+    table_rows = [
+        f"| **{corpus['name']}** | {corpus['fixture_count']:,} | {corpus['labeled_positives']:,} | {corpus['bytes'] / (1024 * 1024):.2f} MB | {detection['precision']:.4f} | {detection['recall']:.4f} | {detection['f1']:.4f} | {detection['tp']:,} | {detection['fp']:,} | {detection['fn']:,} |",
+    ]
+
+    homefield_row = next(
+        (
+            r
+            for r in snapshot.get("configuration_rows", [])
+            if r.get("corpus", {}).get("name", "").startswith("homefield")
+        ),
+        None,
+    )
+    if homefield_row is not None:
+        h_corpus = homefield_row["corpus"]
+        h_det = homefield_row["detection"]
+        size_str = (
+            f"{h_corpus['bytes'] / (1024 * 1024):.2f} MB"
+            if h_corpus["bytes"] >= 1024 * 1024
+            else f"{h_corpus['bytes'] // 1024:,} KB"
+        )
+        table_rows.append(
+            f"| **{h_corpus['name']}** | {h_corpus['fixture_count']:,} | {h_corpus['labeled_positives']:,} | {size_str} | {h_det['precision']:.4f} | {h_det['recall']:.4f} | {h_det['f1']:.4f} | {h_det['tp']:,} | {h_det['fp']:,} | {h_det['fn']:,} |"
+        )
+
+    has_homefield = homefield_row is not None
+    intro = (
+        f"KeyHog `{scanner['version'].splitlines()[0]}` evaluated on both the synthetic **mirror** corpus and competitor **homefield** rule ground-truth on **{host['cpu']}** with the explicit Hyperscan/SIMD default route. The answer-key manifest was excluded from the scan tree."
+        if has_homefield
+        else f"KeyHog `{scanner['version'].splitlines()[0]}` evaluated on the synthetic **mirror** corpus on **{host['cpu']}** with the explicit Hyperscan/SIMD default route. The answer-key manifest was excluded from the scan tree."
+    )
+
     return "\n".join(
         [
             f"KeyHog `{scanner['version'].splitlines()[0]}` scanned the **{corpus['name']}** "
@@ -304,14 +366,53 @@ def render_accuracy(snapshot: dict[str, Any]) -> str:
             "",
             "| Precision | Recall | F1 | True positives | False positives | False negatives |",
             "|---:|---:|---:|---:|---:|---:|",
-            f"| {detection['precision']:.4f} | {detection['recall']:.4f} | "
-            f"{detection['f1']:.4f} | {detection['tp']:,} | {detection['fp']:,} | "
-            f"{detection['fn']:,} |",
+            f"| {detection['precision']:.4f} | {detection['recall']:.4f} | {detection['f1']:.4f} | {detection['tp']:,} | {detection['fp']:,} | {detection['fn']:,} |",
             "",
             _qualification(snapshot, scanner),
         ]
     )
 
+    host, scanner = _context(snapshot)
+    corpora_names = [
+        f"**{r['corpus']['name']}**"
+        for r in accuracy_rows
+        if "corpus" in r and "name" in r["corpus"]
+    ]
+    if len(corpora_names) > 1:
+        corpus_intro = (
+            f"both the synthetic {corpora_names[0]} corpus and competitor {corpora_names[1]} rule ground-truth"
+        )
+    elif corpora_names:
+        corpus_intro = f"the {corpora_names[0]} corpus"
+    else:
+        corpus_intro = "the configured corpora"
+
+    lines = [
+        f"KeyHog `{scanner['version'].splitlines()[0]}` evaluated on {corpus_intro} on **{host['cpu']}** with the explicit Hyperscan/SIMD default route. The answer-key manifest was excluded from the scan tree.",
+        "",
+        "| Corpus | Fixtures | Positives | Input size | Precision | Recall | F1 | True positives | False positives | False negatives |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+
+    for row in accuracy_rows:
+        corpus = row.get("corpus")
+        detection = row.get("detection")
+        if corpus is None or detection is None:
+            raise MatrixError("snapshot accuracy row missing corpus or detection data")
+        size_bytes = corpus.get("bytes", 0)
+        size_str = (
+            f"{size_bytes / 1_000_000:.2f} MB"
+            if size_bytes >= 1_000_000
+            else f"{round(size_bytes / 1000):,} KB"
+        )
+        lines.append(
+            f"| **{corpus['name']}** | {corpus['fixture_count']:,} | {corpus['labeled_positives']:,} | "
+            f"{size_str} | {detection['precision']:.4f} | {detection['recall']:.4f} | "
+            f"{detection['f1']:.4f} | {detection['tp']:,} | {detection['fp']:,} | {detection['fn']:,} |"
+        )
+
+    lines.extend(["", _qualification(snapshot, scanner)])
+    return "\n".join(lines)
 
 def render_configuration(snapshot: dict[str, Any]) -> str:
     """Render backend, policy, and incremental comparisons."""

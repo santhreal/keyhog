@@ -185,7 +185,7 @@ carrying whatever findings there were and the gaps naming what was not covered:
 
 ```json
 {
-  "scan_status": "partial",
+  "scan_status": "failed",
   "coverage_gap_summary": [
     {"reason": "scan covered nothing (zero source bytes read; ...)", "count": 1},
     {"reason": "source emitted error rows (requested input was not fully scanned)", "count": 1},

@@ -149,6 +149,31 @@ impl HotAttestationIndex {
         removed
     }
 
+    /// Invalidate all attestations matching a specific policy short digest.
+    /// Returns the count removed.
+    pub fn invalidate_policy_digest(&self, stale_digest: &str) -> usize {
+        if stale_digest.is_empty() {
+            return 0;
+        }
+        let mut removed = 0;
+        let mut to_remove = Vec::new();
+        {
+            let cache = self.cache.lock();
+            for (key, _) in cache.iter() {
+                if key.policy_short_digest == stale_digest {
+                    to_remove.push(key.clone());
+                }
+            }
+        }
+        let mut cache = self.cache.lock();
+        for key in to_remove {
+            if cache.pop(&key).is_some() {
+                removed += 1;
+            }
+        }
+        removed
+    }
+
     /// Current number of entries in the hot index.
     pub fn len(&self) -> usize {
         self.cache.lock().len()
@@ -216,13 +241,13 @@ pub enum GuardStoreError {
         detail: String,
     },
     /// The store path has unsafe ownership or permissions.
-    #[error("guard store path is unsafe: {detail}")]
+    #[error("guard store path is unsafe: {detail}; run `keyhog guard repair <root>` or fix directory permissions")]
     UnsafePath {
         /// Human-readable safety violation detail.
         detail: String,
     },
     /// An I/O error occurred.
-    #[error("guard store I/O error: {0}")]
+    #[error("guard store I/O error: {0}; check disk space and permissions or run `keyhog guard repair <root>`")]
     Io(String),
     /// The store was not started cleanly (previous process may not have
     /// flushed).
@@ -265,11 +290,13 @@ impl RootRegistry {
         &mut self,
         canonical_path: Vec<u8>,
         filesystem_identity: crate::guard_state::FilesystemIdentity,
+        filesystem_authority: crate::guard_state::FilesystemAuthority,
         mode: crate::guard_state::GuardRootMode,
     ) -> GuardRootRecord {
         let record = GuardRootRecord {
             canonical_path: canonical_path.clone(),
             filesystem_identity,
+            filesystem_authority,
             mode,
             state: GuardRootState::Stopped,
             terminal_sequence: 0,
@@ -279,6 +306,7 @@ impl RootRegistry {
             last_reconciliation_time: None,
             backend_route_label: String::new(),
             last_receipt: None,
+            recent_transitions: Vec::new(),
         };
         self.roots.insert(canonical_path, record.clone());
         record
@@ -409,6 +437,63 @@ impl DurableGuardStore {
         store.ensure_schema()?;
         Ok(store)
     }
+    /// Open an existing durable store in read-only mode without mutating the file schema.
+    ///
+    /// Validates symlink safety and checks schema version compatibility.
+    ///
+    /// Note: `redb::Database::open` acquires an exclusive file lock, so this should only
+    /// be used in offline inspection paths when no live daemon process holds the database lock.
+    pub fn open_read_only(path: &std::path::Path) -> Result<Self, GuardStoreError> {
+        if !path.exists() {
+            return Err(GuardStoreError::Io(format!(
+                "guard store path '{}' does not exist",
+                path.display()
+            )));
+        }
+        let meta = std::fs::symlink_metadata(path)
+            .map_err(|e| GuardStoreError::Io(format!("stat guard store path: {e}")))?;
+        if meta.file_type().is_symlink() {
+            return Err(GuardStoreError::Io(
+                "guard store path is a symlink; refusing to open".to_string(),
+            ));
+        }
+        let db = redb::Database::open(path)
+            .map_err(|e| GuardStoreError::Io(format!("open guard store: {e}")))?;
+        let store = Self {
+            db,
+            path: path.to_path_buf(),
+        };
+        let txn = store
+            .db
+            .begin_read()
+            .map_err(|e| GuardStoreError::Io(format!("begin read: {e}")))?;
+        match txn.open_table(META_TABLE) {
+            Ok(meta_table) => {
+                let found_version: Option<u32> = meta_table
+                    .get("schema_version")
+                    .map_err(|e| GuardStoreError::Io(format!("read schema_version: {e}")))?
+                    .map(|guard| {
+                        let bytes: &[u8] = guard.value();
+                        u32::from_le_bytes(bytes.try_into().unwrap_or([0, 0, 0, 0]))
+                    });
+                match found_version {
+                    Some(version) => check_schema_version(version)?,
+                    None => {
+                        return Err(GuardStoreError::Corrupt {
+                            detail: "missing schema_version in meta table".to_string(),
+                        });
+                    }
+                }
+            }
+            Err(redb::TableError::TableDoesNotExist(_)) => {
+                return Err(GuardStoreError::Corrupt {
+                    detail: "meta table does not exist".to_string(),
+                });
+            }
+            Err(e) => return Err(GuardStoreError::Io(format!("open meta table: {e}"))),
+        }
+        Ok(store)
+    }
 
     /// Return the store path.
     pub fn path(&self) -> &std::path::Path {
@@ -470,9 +555,11 @@ impl DurableGuardStore {
             .db
             .begin_read()
             .map_err(|e| GuardStoreError::Io(format!("begin read: {e}")))?;
-        let table = txn
-            .open_table(ROOTS_TABLE)
-            .map_err(|e| GuardStoreError::Io(format!("open roots table: {e}")))?;
+        let table = match txn.open_table(ROOTS_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(RootRegistry::new()),
+            Err(e) => return Err(GuardStoreError::Io(format!("open roots table: {e}"))),
+        };
         let mut registry = RootRegistry::new();
         for entry in table
             .range::<&[u8]>(..)
@@ -487,6 +574,36 @@ impl DurableGuardStore {
             registry.roots.insert(key.value().to_vec(), record);
         }
         Ok(registry)
+    }
+    /// Load a single root record by canonical path from the durable store.
+    pub fn get_root(
+        &self,
+        canonical_path: &[u8],
+    ) -> Result<Option<GuardRootRecord>, GuardStoreError> {
+        let txn = self
+            .db
+            .begin_read()
+            .map_err(|e| GuardStoreError::Io(format!("begin read: {e}")))?;
+        let table = match txn.open_table(ROOTS_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(None),
+            Err(e) => return Err(GuardStoreError::Io(format!("open roots table: {e}"))),
+        };
+        let entry = table
+            .get(canonical_path)
+            .map_err(|e| GuardStoreError::Io(format!("read root entry: {e}")))?;
+        match entry {
+            Some(value) => {
+                let record: GuardRootRecord =
+                    serde_json::from_slice(value.value()).map_err(|e| {
+                        GuardStoreError::Corrupt {
+                            detail: format!("deserialize root record: {e}"),
+                        }
+                    })?;
+                Ok(Some(record))
+            }
+            None => Ok(None),
+        }
     }
 
     /// Save a single root record to the durable store.
@@ -535,9 +652,11 @@ impl DurableGuardStore {
             .db
             .begin_read()
             .map_err(|e| GuardStoreError::Io(format!("begin read: {e}")))?;
-        let table = txn
-            .open_table(ATTESTATIONS_TABLE)
-            .map_err(|e| GuardStoreError::Io(format!("open attestations table: {e}")))?;
+        let table = match txn.open_table(ATTESTATIONS_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(GuardStoreError::Io(format!("open attestations table: {e}"))),
+        };
         let mut attestations = Vec::new();
         for entry in table
             .range::<&[u8]>(..)
@@ -677,9 +796,11 @@ impl DurableGuardStore {
             .db
             .begin_read()
             .map_err(|e| GuardStoreError::Io(format!("begin read: {e}")))?;
-        let table = txn
-            .open_table(ROOT_GAPS_TABLE)
-            .map_err(|e| GuardStoreError::Io(format!("open root_gaps table: {e}")))?;
+        let table = match txn.open_table(ROOT_GAPS_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(GuardStoreError::Io(format!("open root_gaps table: {e}"))),
+        };
         let prefix = canonical_path;
         let mut gaps = Vec::new();
         for entry in table
@@ -793,9 +914,15 @@ impl DurableGuardStore {
             .db
             .begin_read()
             .map_err(|e| GuardStoreError::Io(format!("begin read: {e}")))?;
-        let table = txn
-            .open_table(SERVICE_STATE_TABLE)
-            .map_err(|e| GuardStoreError::Io(format!("open service_state table: {e}")))?;
+        let table = match txn.open_table(SERVICE_STATE_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(false),
+            Err(e) => {
+                return Err(GuardStoreError::Io(format!(
+                    "open service_state table: {e}"
+                )))
+            }
+        };
         let value = table
             .get("clean_shutdown")
             .map_err(|e| GuardStoreError::Io(format!("read clean_shutdown: {e}")))?;

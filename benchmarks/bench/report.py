@@ -222,7 +222,17 @@ def render_provenance(rows: list[RunResult]) -> str:
         "| Scanner | Scanner version / executable digest | Corpus identity | Host identity | Run date |",
         "|---|---|---|---|---|",
     ]
+    seen = set()
     for row in rows:
+        key = (
+            row.scanner.name,
+            row.corpus.name,
+            row.scanner.executable_sha256,
+            row.generated_at,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
         generated_at = (
             _cell(row.generated_at)
             if _run_date_error(row.generated_at) is None
@@ -611,21 +621,44 @@ def _name(scanner: str) -> str:
     return _DISPLAY.get(scanner, scanner)
 
 
+def _is_daemon_corpus(name: str) -> bool:
+    """Return True if the corpus is a daemon performance workload."""
+    return not name or name.startswith("daemon")
+
+
+def _corpus_heading(name: str) -> str:
+    """Return the Markdown heading for a benchmark corpus section."""
+    if name == "mirror":
+        return "#### Synthetic SecretBench-shape mirror corpus"
+    if name == "homefield":
+        return "#### Competitor homefield / home-turf rule corpus"
+    return f"#### Competitor {name} rule corpus"
+
+
 def render_leaderboard(results: list[RunResult], corpus: str) -> str:
-    """Render Markdown leaderboard table for corpus."""
-    rows = canonical_leaderboard(results, corpus)
+    """Render Markdown leaderboard table for corpus and companion corpora."""
+    primary_corpus = "mirror" if corpus == "multi-corpus" else corpus
+    rows = canonical_leaderboard(results, primary_corpus)
     if not rows:
         return f"_No results for corpus `{corpus}` yet - run `make leaderboard`._"
     fixtures = next((r.corpus.fixture_count for r in rows if r.corpus.fixture_count), 0)
     positives = next((r.corpus.labeled_positives for r in rows if r.corpus.labeled_positives), 0)
-    lines = [
-        f"Corpus: **{corpus}** - {fixtures} fixtures, {positives} labeled positives. "
+    primary_bytes = next((r.corpus.bytes for r in rows if r.corpus.bytes), 0)
+    other_corpora = sorted(
+        {r.corpus.name for r in results if r.corpus.name and r.corpus.name != primary_corpus and not _is_daemon_corpus(r.corpus.name)}
+    )
+    lines = []
+    if other_corpora or corpus == "multi-corpus":
+        lines.append(_corpus_heading(primary_corpus))
+    bytes_str = f", {primary_bytes:,} bytes" if primary_bytes else ""
+    lines.extend([
+        f"Corpus: **{primary_corpus}** - {fixtures} fixtures, {positives} labeled positives{bytes_str}. "
         f"Every scanner scored identically (SecretBench overlap rule); the answer-key "
         f"manifest is excluded from the scan tree.",
         "",
         "| Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |",
         "|---|---|---|---|---|---|---|---|",
-    ]
+    ])
     for i, r in enumerate(rows, 1):
         o = r.detection.overall
         if not r.available:
@@ -639,21 +672,98 @@ def render_leaderboard(results: list[RunResult], corpus: str) -> str:
             f"{r.finding_count} | {_fmt_secs(r.speed.wall_ms)} | "
             f"{r.speed.peak_rss_kb // 1024} MB |"
         )
-    lines.extend(["", render_provenance(rows)])
+    provenance_rows = list(rows)
+    for other in other_corpora:
+        other_rows = canonical_leaderboard(results, other)
+        if not other_rows:
+            continue
+        o_fixtures = next((r.corpus.fixture_count for r in other_rows if r.corpus.fixture_count), 0)
+        o_positives = next((r.corpus.labeled_positives for r in other_rows if r.corpus.labeled_positives), 0)
+        o_bytes = next((r.corpus.bytes for r in other_rows if r.corpus.bytes), 0)
+        heading = _corpus_heading(other)
+        if other == "homefield":
+            corpus_desc = (
+                f"Corpus: **homefield** - {o_fixtures} fixtures harvested from competitor ground-truth "
+                f"rule suites (Betterleaks and Kingfisher rules; {o_positives:,} labeled positives, "
+                f"{o_fixtures - o_positives:,} negatives, {o_bytes:,} bytes). "
+                "Cross-tool evaluation on competitor ground truth."
+            )
+        else:
+            bytes_part = f", {o_bytes:,} bytes" if o_bytes else ""
+            corpus_desc = (
+                f"Corpus: **{other}** - {o_fixtures} fixtures, {o_positives} labeled positives{bytes_part}. "
+                "Cross-tool evaluation on competitor ground truth."
+            )
+        lines.extend([
+            "",
+            heading,
+            corpus_desc,
+            "",
+            "| Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |",
+            "|---|---|---|---|---|---|---|---|",
+        ])
+        for i, r in enumerate(other_rows, 1):
+            o = r.detection.overall
+            if not r.available:
+                lines.append(f"| {i} | {_name(r.scanner.name)} | - | - | - | - | _n/a_ | - |")
+                continue
+            bold = "**" if r.scanner.name == "keyhog" else ""
+            lines.append(
+                f"| {i} | {bold}{_name(r.scanner.name)}{bold} | "
+                f"{bold}{o.f1():.4f}{bold} | {o.precision():.4f} | {o.recall():.4f} | "
+                f"{r.finding_count} | {_fmt_secs(r.speed.wall_ms)} | "
+                f"{r.speed.peak_rss_kb // 1024} MB |"
+            )
+        provenance_rows.extend(other_rows)
+    lines.extend(["", render_provenance(provenance_rows)])
     return "\n".join(lines)
 
 
 def render_perf(results: list[RunResult], corpus: str | None = None) -> str:
     """Render Markdown throughput and latency performance table."""
-    rows = [r for r in results if r.available and (corpus is None or r.corpus.name == corpus)]
-    rows.sort(key=lambda r: r.speed.wall_ms)
-    if not rows:
+    available_rows = [r for r in results if r.available]
+    if not available_rows:
         return "_No timed runs yet._"
+    if corpus is None or corpus == "multi-corpus":
+        corpora_in_rows = sorted(
+            {r.corpus.name for r in available_rows if r.corpus.name and not _is_daemon_corpus(r.corpus.name)}
+        )
+        if len(corpora_in_rows) > 1:
+            lines = []
+            for c in corpora_in_rows:
+                c_rows = [r for r in available_rows if r.corpus.name == c]
+                if not c_rows:
+                    continue
+                c_rows.sort(key=lambda r: r.speed.wall_ms)
+                heading = _corpus_heading(c)
+                lines.extend([
+                    heading,
+                    "",
+                    "| Scanner | Config | Corpus | Wall | Throughput | Peak RSS |",
+                    "|---|---|---|---|---|---|",
+                ])
+                for r in c_rows:
+                    tp = f"{r.speed.throughput_mb_s:.1f} MB/s" if r.speed.throughput_mb_s else "-"
+                    lines.append(
+                        f"| {_name(r.scanner.name)} | `{r.scanner.config_id}` | {r.corpus.name} | "
+                        f"{_fmt_secs(r.speed.wall_ms)} | {tp} | {r.speed.peak_rss_kb // 1024} MB |"
+                    )
+                lines.append("")
+            return "\n".join(lines).rstrip()
+        elif len(corpora_in_rows) == 1:
+            corpus = corpora_in_rows[0]
+        else:
+            return "_No timed runs yet._"
+
+    selected_rows = [r for r in available_rows if r.corpus.name == corpus]
+    if not selected_rows:
+        return "_No timed runs yet._"
+    selected_rows.sort(key=lambda r: r.speed.wall_ms)
     lines = [
         "| Scanner | Config | Corpus | Wall | Throughput | Peak RSS |",
         "|---|---|---|---|---|---|",
     ]
-    for r in rows:
+    for r in selected_rows:
         tp = f"{r.speed.throughput_mb_s:.1f} MB/s" if r.speed.throughput_mb_s else "-"
         lines.append(
             f"| {_name(r.scanner.name)} | `{r.scanner.config_id}` | {r.corpus.name} | "
@@ -1139,12 +1249,13 @@ def render_bloom_evidence(results: list[RunResult], corpus: str) -> str:
 
 def build_sections(results: list[RunResult], corpus: str) -> dict[str, str]:
     """Build all Markdown sections for README markers."""
+    primary_corpus = "mirror" if corpus == "multi-corpus" else corpus
     return {
         "leaderboard": render_leaderboard(results, corpus),
         "perf": render_perf(results, corpus),
-        "gaps": render_gaps(results, corpus),
-        "recovery": render_static_recovery(results, corpus),
-        "bloom": render_bloom_evidence(results, corpus),
+        "gaps": render_gaps(results, primary_corpus),
+        "recovery": render_static_recovery(results, primary_corpus),
+        "bloom": render_bloom_evidence(results, primary_corpus),
     }
 
 
@@ -1155,9 +1266,10 @@ def report_files(results: list[RunResult], corpus: str) -> dict[str, str]:
     consume THIS, so the on-disk rollups and the staleness check can never
     diverge.
     """
-    sections = build_sections(results, corpus)
+    is_multi = any(r.corpus.name and r.corpus.name != corpus and not r.corpus.name.startswith("daemon") for r in results)
+    sections = build_sections(results, "multi-corpus" if is_multi else corpus)
     return {
-        "leaderboard.md": f"# Leaderboard - {corpus}\n\n{sections['leaderboard']}\n",
+        "leaderboard.md": f"# Leaderboard - {'multi-corpus' if is_multi else corpus}\n\n{sections['leaderboard']}\n",
         "perf.md": f"# Performance\n\n{sections['perf']}\n",
         "recall-gap.md": f"# Per-category recall comparison - {corpus}\n\n{sections['gaps']}\n",
         "category-recall.md": f"# Category recall dashboard - {corpus}\n\n"
@@ -1166,8 +1278,6 @@ def report_files(results: list[RunResult], corpus: str) -> dict[str, str]:
         f"{sections['recovery']}\n",
         "bloom.md": f"# Bigram Bloom evidence\n\n{sections['bloom']}\n",
     }
-
-
 def write_reports(results: list[RunResult], corpus: str,
                   reports_dir: pathlib.Path) -> None:
     """Write the canonical report set for ``corpus`` under ``reports_dir``.

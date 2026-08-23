@@ -79,6 +79,7 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
             .fused_depth
             .map_or_else(|| "auto".to_string(), |n| n.to_string())
     ));
+    out.push_str(&format!("window_overlap = {}\n", resolved.window_overlap));
     out.push_str(&format!("gpu = {}\n", resolved.gpu_runtime_policy));
     out.push_str(&format!("autoroute_gpu = {}\n", resolved.autoroute_gpu));
     out.push_str(&format!(
@@ -562,19 +563,13 @@ fn autoroute_config_hasher(resolved: &ResolvedScanConfig) -> StableHasher {
     );
     h.field_f64_bits("resolved.min_confidence", resolved.min_confidence);
     h.field_bool("resolved.ml_enabled", resolved.ml_enabled);
-    let mut floors: Vec<_> = resolved.detector_min_confidence.iter().collect();
-    floors.sort_by(|a, b| a.0.cmp(b.0));
-    h.field_usize("detector_min_confidence.len", floors.len());
-    for (id, floor) in floors {
-        h.field_str("detector_min_confidence.id", id);
-        h.field_f64_bits("detector_min_confidence.floor", *floor);
-    }
-    let mut disabled: Vec<_> = resolved.disabled_detectors.iter().collect();
-    disabled.sort();
-    h.field_usize("disabled_detectors.len", disabled.len());
-    for id in disabled {
-        h.field_str("disabled_detectors.id", id);
-    }
+    // Per-detector floors and `[detector.<id>] enabled = false` are deliberately
+    // NOT part of this identity. They are per-invocation corpus and postprocess
+    // filters with unbounded cardinality: folding them in made one disabled
+    // detector reject every calibrated config an install published, so the scan
+    // failed closed with nothing scanned. Their only routing-relevant effect is
+    // the size of the compiled pattern set, which the workload key already
+    // carries in its pattern bucket.
     h.field_bool("require_lockdown", resolved.require_lockdown);
     h.field_str(
         "backend_override",
@@ -585,6 +580,7 @@ fn autoroute_config_hasher(resolved: &ResolvedScanConfig) -> StableHasher {
     h.field_option_usize("reader_threads", resolved.reader_threads);
     h.field_usize("fused_batch", resolved.fused_batch);
     h.field_option_usize("fused_depth", resolved.fused_depth);
+    h.field_usize("window_overlap", resolved.window_overlap);
     // Compiled-in companion to `fused_batch`: batches are cut on bytes as well
     // as chunk count, and that changes the (byte-total, chunk-count) workload
     // key autoroute measures against. Hashing the constant means changing it

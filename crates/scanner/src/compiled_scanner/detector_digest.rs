@@ -1,3 +1,20 @@
+/// The canonical route identity of a detector corpus: exactly the compiled plan
+/// digest an execution pack built from that corpus carries. A caller that routes
+/// on corpus identity (autoroute) needs one value whether the scanner compiled
+/// the specs or hydrated a pack, and only this normalized form is shared by
+/// both. Self-test fixtures and declaration order are excluded, as they are from
+/// the pack's own IR.
+pub fn corpus_route_identity(
+    detectors: &[keyhog_core::DetectorSpec],
+) -> Result<[u8; 32], crate::execution_pack::ExecutionPackError> {
+    let spec_hash =
+        crate::execution_pack::CanonicalDetectorExecutionIr::canonical_spec_hash(detectors)?;
+    let decoder_plan = crate::decode::CompiledDecoderPlan::snapshot().map_err(|error| {
+        crate::execution_pack::ExecutionPackError::InvalidCompilerInput(error.to_string())
+    })?;
+    Ok(from_execution_plan(spec_hash, decoder_plan.identity()))
+}
+
 pub(crate) fn from_execution_plan(spec_hash: [u8; 32], decoder_plan_identity: u64) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
     update(&mut hasher, b"domain", b"keyhog-scanner-detector-digest-v3");

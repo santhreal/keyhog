@@ -90,7 +90,7 @@ fn min_confidence_above_one_rejected_exact_error() {
     cfg.min_confidence = 1.5;
     assert_eq!(
         TestApi.scan_config_validate(&cfg),
-        Err("min_confidence must be between 0.0 and 1.0, found 1.5".to_string())
+        Err("min_confidence must be between 0.0 and 1.0, found 1.5. Fix: pass a confidence threshold between 0.0 and 1.0 (e.g. 0.8)".to_string())
     );
 }
 
@@ -102,7 +102,7 @@ fn min_confidence_negative_rejected_exact_error() {
     cfg.min_confidence = -0.25;
     assert_eq!(
         TestApi.scan_config_validate(&cfg),
-        Err("min_confidence must be between 0.0 and 1.0, found -0.25".to_string())
+        Err("min_confidence must be between 0.0 and 1.0, found -0.25. Fix: pass a confidence threshold between 0.0 and 1.0 (e.g. 0.8)".to_string())
     );
 }
 
@@ -114,7 +114,7 @@ fn min_confidence_nan_rejected_exact_error() {
     cfg.min_confidence = f64::NAN;
     assert_eq!(
         TestApi.scan_config_validate(&cfg),
-        Err("min_confidence must be between 0.0 and 1.0, found NaN".to_string())
+        Err("min_confidence must be between 0.0 and 1.0, found NaN. Fix: pass a confidence threshold between 0.0 and 1.0 (e.g. 0.8)".to_string())
     );
 }
 
@@ -125,7 +125,7 @@ fn min_confidence_positive_infinity_rejected_exact_error() {
     cfg.min_confidence = f64::INFINITY;
     assert_eq!(
         TestApi.scan_config_validate(&cfg),
-        Err("min_confidence must be between 0.0 and 1.0, found inf".to_string())
+        Err("min_confidence must be between 0.0 and 1.0, found inf. Fix: pass a confidence threshold between 0.0 and 1.0 (e.g. 0.8)".to_string())
     );
 }
 
@@ -136,7 +136,7 @@ fn min_confidence_negative_infinity_rejected_exact_error() {
     cfg.min_confidence = f64::NEG_INFINITY;
     assert_eq!(
         TestApi.scan_config_validate(&cfg),
-        Err("min_confidence must be between 0.0 and 1.0, found -inf".to_string())
+        Err("min_confidence must be between 0.0 and 1.0, found -inf. Fix: pass a confidence threshold between 0.0 and 1.0 (e.g. 0.8)".to_string())
     );
 }
 
@@ -160,7 +160,10 @@ fn max_decode_depth_above_limit_rejected_exact_error() {
     cfg.max_decode_depth = 20;
     assert_eq!(
         TestApi.scan_config_validate(&cfg),
-        Err("max_decode_depth exceeds limit of 10, found 20".to_string())
+        Err(
+            "max_decode_depth exceeds limit of 10, found 20. Fix: reduce max_decode_depth to <= 10"
+                .to_string()
+        )
     );
 }
 
@@ -172,7 +175,7 @@ fn max_decode_depth_usize_max_rejected_exact_error() {
     cfg.max_decode_depth = usize::MAX;
     assert_eq!(
         TestApi.scan_config_validate(&cfg),
-        Err("max_decode_depth exceeds limit of 10, found 18446744073709551615".to_string())
+        Err("max_decode_depth exceeds limit of 10, found 18446744073709551615. Fix: reduce max_decode_depth to <= 10".to_string())
     );
 }
 
@@ -186,7 +189,7 @@ fn validate_reports_confidence_error_before_depth_error() {
     cfg.max_decode_depth = 99; // also invalid
     assert_eq!(
         TestApi.scan_config_validate(&cfg),
-        Err("min_confidence must be between 0.0 and 1.0, found 1.5".to_string())
+        Err("min_confidence must be between 0.0 and 1.0, found 1.5. Fix: pass a confidence threshold between 0.0 and 1.0 (e.g. 0.8)".to_string())
     );
 }
 
@@ -200,7 +203,7 @@ fn toml_out_of_range_confidence_parses_then_validate_rejects() {
     assert!((cfg.min_confidence - 1.5).abs() < F64_EPS);
     assert_eq!(
         TestApi.scan_config_validate(&cfg),
-        Err("min_confidence must be between 0.0 and 1.0, found 1.5".to_string())
+        Err("min_confidence must be between 0.0 and 1.0, found 1.5. Fix: pass a confidence threshold between 0.0 and 1.0 (e.g. 0.8)".to_string())
     );
 }
 
@@ -213,7 +216,10 @@ fn toml_out_of_range_depth_parses_then_validate_rejects() {
     assert_eq!(cfg.max_decode_depth, 25); // deserialization accepted it
     assert_eq!(
         TestApi.scan_config_validate(&cfg),
-        Err("max_decode_depth exceeds limit of 10, found 25".to_string())
+        Err(
+            "max_decode_depth exceeds limit of 10, found 25. Fix: reduce max_decode_depth to <= 10"
+                .to_string()
+        )
     );
 }
 

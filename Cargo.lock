@@ -2752,7 +2752,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog"
-version = "0.5.80"
+version = "0.5.81"
 dependencies = [
  "anyhow",
  "blake3",
@@ -2760,11 +2760,14 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
+ "criterion",
  "dirs",
  "flate2",
  "futures-util",
+ "goblin",
  "hex",
  "httpmock",
+ "ignore",
  "keyhog-core",
  "keyhog-profile",
  "keyhog-scanner",
@@ -2796,12 +2799,13 @@ dependencies = [
 
 [[package]]
 name = "keyhog-core"
-version = "0.5.80"
+version = "0.5.81"
 dependencies = [
  "ahash",
  "anyhow",
  "async-trait",
  "blake3",
+ "criterion",
  "dirs",
  "fs2",
  "hex",
@@ -2833,12 +2837,13 @@ dependencies = [
 
 [[package]]
 name = "keyhog-profile"
-version = "0.5.80"
+version = "0.5.81"
 dependencies = [
  "clap",
  "criterion",
  "hex",
  "libc",
+ "parking_lot",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -2848,7 +2853,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog-scanner"
-version = "0.5.80"
+version = "0.5.81"
 dependencies = [
  "aes 0.8.4",
  "ahash",
@@ -2864,6 +2869,7 @@ dependencies = [
  "dirs",
  "fancy-regex",
  "flate2",
+ "fs2",
  "goblin",
  "hex",
  "hex-simd",
@@ -2907,7 +2913,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog-sources"
-version = "0.5.80"
+version = "0.5.81"
 dependencies = [
  "base64",
  "blake3",
@@ -2964,12 +2970,13 @@ dependencies = [
 
 [[package]]
 name = "keyhog-verifier"
-version = "0.5.80"
+version = "0.5.81"
 dependencies = [
  "aes 0.8.4",
  "base64",
  "cfb-mode",
  "codewalk",
+ "criterion",
  "dashmap",
  "fs2",
  "futures-util",

@@ -36,6 +36,9 @@ impl AnchoredRegex {
     }
 
     fn compile(&self, prefix: &str, suffix: &str) -> Arc<Regex> {
+        // A lazily anchored copy of a pattern the plan already carries is not a
+        // plan compile; `record_lazy_regex_compile` is this work's only counter.
+        crate::types::record_lazy_regex_compile();
         let anchored = format!("{prefix}{}{suffix}", self.src);
         match RegexBuilder::new(&anchored)
             .case_insensitive(self.case_insensitive)

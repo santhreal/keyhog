@@ -620,19 +620,19 @@ keyhog detectors --mechanisms
 ```
 
 ```text
-Mechanism manifest: 926 detectors from detectors
+Mechanism manifest: 934 detectors from detectors
 
-  regex                    925  phase-1 pattern anchors
-  keywords                 926  phase-2 keyword triggers for shapeless candidates
-  structure                 25  offline structural proof: checksum, payload decode, or declared shape
-  entropy                   56  detector-owned Shannon entropy floors
-  bpe                        4  BPE token-efficiency precision gate
+  regex                    932  phase-1 pattern anchors
+  keywords                 934  phase-2 keyword triggers for shapeless candidates
+  structure                 47  offline structural proof: checksum, payload decode, or declared shape
+  entropy                   58  detector-owned Shannon entropy floors
+  bpe                        5  BPE token-efficiency precision gate
   byte_pair_likelihood     n/a  fixed-point byte-pair log-likelihood scoring [UNAVAILABLE: see --format json for the reason]
-  decode                    69  detector-declared evasion and transport decode recovery
+  decode                    80  detector-declared evasion and transport decode recovery
   companions               174  secondary patterns that confirm a match
   detector_relations         5  relations to findings from other detectors
-  verification             342  live verification against the provider
-  suppression                8  detector-owned allowlists, stopwords, and public-identifier markers
+  verification             347  live verification against the provider
+  suppression               10  detector-owned allowlists, stopwords, and public-identifier markers
   source_admission           1  positive source selectors gating where this detector fires
 
 Every detector declares at least one mechanism.
@@ -808,7 +808,7 @@ Then select exactly one composition mode:
 
 | Effective mode | Command | Active detectors |
 |---|---|---|
-| `embedded` | `keyhog scan .` | The embedded corpus, but only when default discovery finds no detector directory. Any discovered directory is a complete replacement. |
+| `embedded` | `keyhog scan .` | The installed execution pack prepared from the embedded corpus (via `keyhog install`). |
 | `replace` | `keyhog scan . --detectors "$PWD/.keyhog/detectors" --detectors-mode replace` | Only the named directory. This is also the default when a directory is selected and no mode is configured. |
 | `overlay` | `keyhog scan . --detectors "$PWD/.keyhog/detectors" --detectors-mode overlay` | The embedded corpus plus the named directory. A custom ID may not equal an embedded ID. |
 

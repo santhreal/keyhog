@@ -229,7 +229,7 @@ fn schema_version_mismatch_cold_starts() {
         } => {
             assert_eq!(path, cache, "status must name the offending cache path");
             assert_eq!(version, 99, "reported on-disk version");
-            assert_eq!(expected, 4, "current binary requires schema v4");
+            assert_eq!(expected, 5, "current binary requires schema v5");
         }
         other => panic!("expected SchemaMismatch cold start, got {other:?}"),
     }
@@ -283,6 +283,7 @@ fn detector_spec_change_cold_starts_and_matching_spec_reloads() {
         &TestApi,
         &idx,
         std::path::PathBuf::from("src/lib.rs"),
+        100,
         100,
         16,
         content_hash,
@@ -361,7 +362,7 @@ fn invalid_entry_hash_cold_starts_even_with_matching_spec() {
     let spec = compute_spec_hash(&[detector("d", Severity::High, "[A-Z]{16}", &["k"])]);
     let spec_hex = hex32(&spec);
     let json = format!(
-        r#"{{"version":4,"spec_hash":"{spec_hex}","written_at_ns":0,"entries":[{{"path":"src/a.rs","chunk_offset":0,"mtime_ns":1,"size":2,"last_seen_order":0,"hash":"not-a-valid-hex-digest"}}]}}"#
+        r#"{{"version":5,"spec_hash":"{spec_hex}","written_at_ns":0,"entries":[{{"path":"src/a.rs","chunk_offset":0,"mtime_ns":1,"ctime_ns":2,"size":2,"last_seen_order":0,"hash":"not-a-valid-hex-digest"}}]}}"#
     );
     std::fs::write(&cache, json).unwrap();
 

@@ -47,7 +47,6 @@ pub mod scan_dogfood_dedupes_example_suppression_events;
 pub mod scan_dogfood_static_recovery_rejections;
 pub mod scan_dogfood_suppressed_example;
 pub mod scan_effective_config;
-pub mod scan_empty_dir_exit_zero;
 pub mod scan_exclude_paths_with_git_staged;
 pub mod scan_fast_flag_git_staged_clean;
 pub mod scan_fast_mode_clean_exit_zero;

@@ -219,7 +219,7 @@ that does it.
 | In-process scan hardening | Linux and macOS in-process scans attempt core-dump and debugger-attachment protections before reading input | [Hardening and data handling](./hardening.md) |
 | Linux lockdown mode | `--lockdown` fails closed unless memory locking and dump protections apply, and it refuses network verification and plaintext output | [Hardening and data handling](./hardening.md) |
 | Credential buffer zeroization | the report credential buffer is zeroized on drop; reports redact unless `--show-secrets` is explicit | [Hardening and data handling](./hardening.md) |
-| Authenticated releases | the normal install, update, and repair paths verify release checksums and signatures before replacement | [Install](./install.md) |
+| Authenticated execution packs | `keyhog install` compiles, signs, and verifies the execution-pack generation it publishes, and a scan refuses artifacts whose identity or verification key does not match | [Install](./install.md) |
 
 ## Every subcommand
 
@@ -239,8 +239,14 @@ that does it.
 | `backend` | inspect hardware, routing heuristics, and autoroute evidence |
 | `bloom-diagnostic` | measure the production Bloom rejection gate and prove enabled-versus-bypassed finding parity |
 | `doctor` | health-check the install: host, PATH, corpus, scan and GPU self-test |
+| `install` | compile, authenticate, calibrate, and install execution packs for this host |
+| `triage` | import redacted findings into scoped suppression and pattern feedback |
+| `guard` | manage the perpetual repository and filesystem guard |
 | `uninstall` | remove the binary (dry run unless `--yes`) |
 | `completion` | emit shell completions (bash, zsh, fish, powershell, elvish) |
 
 The full flag surface for every command is in the
 [CLI reference](./reference/cli.md).
+
+Update or repair with `cargo install --locked --force keyhog`, then run
+`keyhog doctor` to verify the replacement.

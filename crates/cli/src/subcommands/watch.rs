@@ -791,6 +791,7 @@ fn scan_file(
             base_offset: 0,
             base_line: 0,
             source_type: "filesystem".into(),
+            ctime_ns: None,
             path: Some(path.display().to_string().into()),
             commit: None,
             author: None,
@@ -1053,6 +1054,7 @@ pub(crate) mod testing {
             data: body.to_string().into(),
             metadata: ChunkMetadata {
                 source_type: "filesystem".into(),
+                ctime_ns: None,
                 path: Some(file_path.display().to_string().into()),
                 ..Default::default()
             },

@@ -20,6 +20,7 @@ impl BinaryAnalyzer for SuccessfulAnalyzer {
                 author: None,
                 date: None,
                 mtime_ns: None,
+                ctime_ns: None,
                 size_bytes: None,
                 decoded_span: None,
             },

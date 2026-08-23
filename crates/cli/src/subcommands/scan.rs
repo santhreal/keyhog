@@ -36,7 +36,7 @@ use anyhow::{bail, Result};
 #[cfg(unix)]
 use anyhow::Context;
 #[cfg(unix)]
-use keyhog_core::{Chunk, RawMatch, RuleSuppressor, ScanCompletionStatus, VerifiedFinding};
+use keyhog_core::{Chunk, RawMatch, RuleSuppressor, VerifiedFinding};
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -121,7 +121,8 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                         .path
                         .as_deref()
                         .unwrap_or_else(|| std::path::Path::new("."));
-                    let digest = keyhog_core::detector_digest().to_string();
+                    let digest = crate::daemon::embedded_detector_rules_digest().to_string();
+                    let guard_start = std::time::Instant::now();
                     let result = crate::daemon::guard_commit::run_guard_commit(
                         &socket_path,
                         repo_path,
@@ -129,7 +130,11 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                     )
                     .await
                     .context("--daemon=on guard commit transaction failed")?;
-                    return finish_guard_commit_scan(result, &policy.effective_args);
+                    return finish_guard_commit_scan(
+                        result,
+                        &policy.effective_args,
+                        Some(guard_start),
+                    );
                 }
                 run_via_daemon(&mut policy.effective_args).await
             }
@@ -143,7 +148,8 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                         .path
                         .as_deref()
                         .unwrap_or_else(|| std::path::Path::new("."));
-                    let digest = keyhog_core::detector_digest().to_string();
+                    let digest = crate::daemon::embedded_detector_rules_digest().to_string();
+                    let guard_start = std::time::Instant::now();
                     match crate::daemon::guard_commit::run_guard_commit(
                         &socket_path,
                         repo_path,
@@ -152,7 +158,11 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                     .await
                     {
                         Ok(result) => {
-                            return finish_guard_commit_scan(result, &policy.effective_args);
+                            return finish_guard_commit_scan(
+                                result,
+                                &policy.effective_args,
+                                Some(guard_start),
+                            );
                         }
                         Err(e) => {
                             if policy.effective_args.daemon_mode() == DaemonMode::Auto {
@@ -691,7 +701,7 @@ fn expected_daemon_detector_corpus(args: &ScanArgs) -> Result<ExpectedDaemonDete
         args.detectors_cli_explicit || args.detectors != PathBuf::from("detectors");
     if !custom_corpus_selected {
         return Ok(ExpectedDaemonDetectorCorpus {
-            rules_digest: Some(keyhog_core::detector_digest().to_owned()),
+            rules_digest: Some(crate::daemon::embedded_detector_rules_digest().to_owned()),
             corpus_digest: keyhog_core::detector_digest().to_owned(),
             provenance: crate::orchestrator_config::DetectorCorpusProvenance {
                 mode: "embedded",
@@ -724,7 +734,7 @@ fn expected_daemon_detector_corpus(args: &ScanArgs) -> Result<ExpectedDaemonDete
         )
     })?;
     let detector_count = loaded.detectors.len();
-    let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&loaded.detectors));
+    let rules_digest = crate::daemon::detector_rules_digest(&loaded.detectors);
     let corpus_digest = keyhog_core::hex_encode(
         &keyhog_core::compute_detector_corpus_digest_for_schema(
             &loaded.detectors,
@@ -1511,9 +1521,10 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
     }
     // Partial status when any gap (WARN or FAIL) was observed; exit 13 only
     // for FAIL-class gaps so daemon matches local scan (KH-1368).
-    if !source_coverage_gaps.is_empty() {
-        report_metadata.scan_status = ScanCompletionStatus::Partial;
-    }
+    report_metadata.scan_status = keyhog_core::ScanCompletionStatus::resolve(
+        Some(report_metadata.scan_status),
+        !source_coverage_gaps.is_empty(),
+    );
     crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
     if let Some(profile) = &profile {
         crate::orchestrator::render_daemon_request_profile(profile);
@@ -1580,19 +1591,11 @@ fn guard_commit_exit_code(finding_exit: u8, fingerprint_changed: bool, coverage_
 fn finish_guard_commit_scan(
     result: crate::daemon::guard_commit::GuardCommitResult,
     args: &ScanArgs,
+    guard_start: Option<std::time::Instant>,
 ) -> Result<ExitCode> {
     use crate::exit_codes::EXIT_CREDENTIALS_FOUND;
 
-    // Report cache hit statistics to stderr.
     let palette = crate::style::for_stderr();
-    eprintln!(
-        "{} guard: {} cache hit(s), {} blob(s) scanned, {} byte(s) scanned",
-        crate::style::pass("OK", &palette),
-        result.cache_hits,
-        result.blobs_scanned,
-        result.bytes_scanned
-    );
-
     let findings = finalize_staged_for_report(result.findings, args)?;
     let report_time = chrono::Utc::now();
     let source_chunks_scanned = usize::try_from(result.blobs_scanned)
@@ -1607,9 +1610,10 @@ fn finish_guard_commit_scan(
         keyhog_core::embedded_detector_count(),
         None,
     );
-    if result.coverage_gaps > 0 || result.fingerprint_changed {
-        report_metadata.scan_status = keyhog_core::ScanCompletionStatus::Partial;
-    }
+    report_metadata.scan_status = keyhog_core::ScanCompletionStatus::resolve(
+        Some(report_metadata.scan_status),
+        result.coverage_gaps > 0 || result.fingerprint_changed,
+    );
     crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
 
     let finding_exit = crate::orchestrator::scan_exit_code(
@@ -1629,6 +1633,22 @@ fn finish_guard_commit_scan(
         finding_exit,
         result.fingerprint_changed,
         result.coverage_gaps,
+    );
+    let total_elapsed = if exit == 0 {
+        guard_start.map(|start| start.elapsed())
+    } else {
+        None
+    };
+    eprintln!(
+        "{}",
+        crate::style::format_pass_gate_summary(
+            "guard",
+            result.cache_hits,
+            result.blobs_scanned,
+            result.bytes_scanned,
+            total_elapsed,
+            &palette,
+        )
     );
     if exit == EXIT_SOURCE_FAILED {
         if result.fingerprint_changed {

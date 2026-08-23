@@ -19,9 +19,11 @@ pub use crate::aws::{
     finding_metadata, key_id_canary_status, parse_canary_account_ids, set_extra_canary_accounts,
     validate_canary_accounts,
 };
+pub use crate::cache_layout::{CacheEvictionPolicy, CacheKind};
 pub use crate::calibration::{
     calibration_default_cache_path, BetaCounters, Calibration, CalibrationLoadError,
 };
+pub use crate::compiled_artifact::{CompiledArtifactClass, CompiledArtifactIdentity};
 pub use crate::config::*;
 pub use crate::correlation::{
     correlate_findings, correlation_composite_part_ids, validate_correlation_policy,
@@ -35,6 +37,8 @@ pub use crate::evidence::{
     EvidenceReasonCode, EvidenceTier, EvidenceVerdict, FindingCandidateChannel, FindingProvenance,
 };
 pub use crate::finding::*;
+pub use crate::guard_state::{GuardRootState, GuardTransition, ReceiptError, TransitionError};
+pub use crate::guard_store::GuardStoreError;
 pub use crate::hardening::{
     apply_protections, apply_protections_with_persistence_paths, HardeningReport,
 };

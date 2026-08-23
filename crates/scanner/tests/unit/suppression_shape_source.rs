@@ -48,6 +48,55 @@ fn dotted_source_identifier_receiver_first_segment() {
     )));
 }
 
+/// A dotted lowercase snake_case path is a config key or a field access, not a
+/// credential: the self-scan surfaced `plausibility.reject_repeated_blocks`
+/// from a documentation table and `entropy_match.value` from scanner source as
+/// entropy findings, because the gate demanded a camelCase segment that
+/// snake_case code and TOML keys never carry. Every member of the shape is
+/// covered, not the one that was reported: a two-segment key, a long
+/// multi-word key, a key whose last segment carries a credential word, and a
+/// field access behind a reference sigil.
+#[test]
+fn dotted_snake_case_config_key_is_a_source_identifier() {
+    for value in [
+        "plausibility.mixed_alnum_floor",
+        "plausibility.reject_repeated_blocks",
+        "plausibility.second_half_entropy_floor",
+        "plausibility.allow_alphabetic_credential",
+        "entropy_match.value",
+        "&entropy_match.value",
+        "*self.detector_id",
+        "plausibility.leading_slash_base64_min_len",
+        "checksum.sha256_floor",
+        "config.detector.min_confidence",
+    ] {
+        assert!(
+            looks_like_dotted_source_identifier(value),
+            "{value} is a snake_case identifier path, not a credential",
+        );
+    }
+}
+
+/// The snake_case widening must not swallow dotted values that carry real
+/// credential entropy: bare lowercase word paths stay visible (the
+/// `db.passwd.field` contract above), and so does anything with digits, case
+/// variation, or a non-identifier byte in a segment.
+#[test]
+fn dotted_snake_case_widening_keeps_credential_shapes_visible() {
+    for value in [
+        "db.passwd.field",
+        "sk_live.AbC9dEf",
+        "api_key.7f3d9b2c1a",
+        "prod_secret.aGVsbG8=",
+        "&db.passwd",
+    ] {
+        assert!(
+            !looks_like_dotted_source_identifier(value),
+            "{value} must stay visible to the entropy path",
+        );
+    }
+}
+
 #[test]
 fn generated_template_interpolation_prefix_is_source_syntax() {
     let randomness = TokenRandomness::for_candidate("__vlist$");

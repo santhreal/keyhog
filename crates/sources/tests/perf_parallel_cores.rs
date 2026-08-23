@@ -70,7 +70,7 @@
 //! clock, disk speed, and absolute timing. Each leg is best-of-4 (keep the MIN
 //! wall) so scheduler noise can only shrink a measured time, never inflate the
 //! ratio spuriously. The cap only manifests with real cores, so the hard
-//! assertion is gated on `available_parallelism() >= 8`; on smaller hosts the
+//! assertion is gated on `logical_cpu_count() >= 8`; on smaller hosts the
 //! oversubscription is indistinguishable from the physical limit and the test
 //! degrades to a recall/sanity check only.
 //!
@@ -236,9 +236,7 @@ fn via_source(root: &std::path::Path, threads: usize, k: usize) -> (f64, usize) 
 #[ignore = "multicore scaling floor: run isolated (`--ignored`); flaky under the parallel all-targets load"]
 #[test]
 fn filesystem_source_multicore_scaling_floor() {
-    let cores = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1);
+    let cores = keyhog_profile::logical_cpu_count();
     let high = cores.min(16).max(2);
 
     let dir = make_tree();

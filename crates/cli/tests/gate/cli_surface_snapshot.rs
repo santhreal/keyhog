@@ -43,6 +43,7 @@ const BASE_SUBCOMMANDS: &[&str] = &[
     "explain",
     "guard",
     "hook",
+    "install",
     "scan",
     "scan-system",
     "triage",
@@ -90,6 +91,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "deep",
     "detectors",
     "detectors-mode",
+    "developer-compile-embedded-detectors",
     "dogfood",
     "entropy-bpe-max-bytes-per-token",
     "entropy-source-files",
@@ -150,6 +152,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "threads",
     "timeout",
     "update-baseline",
+    "window-overlap",
 ];
 
 /// Build the expected `scan` long-flag set for the CURRENTLY-COMPILED feature

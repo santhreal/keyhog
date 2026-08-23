@@ -76,7 +76,6 @@ impl HsSubEngine {
             // the fast path; findings parity holds (`..._findings_parity`).
             utf8: false,
             ucp: false,
-            parallel_prepare: false,
         };
         let (scanner, unsupported) = match HsScanner::compile_with_opts(&refs, opts) {
             Ok(v) => v,
@@ -460,7 +459,6 @@ pub(crate) fn compile_phase2_database_program(
         shard_target: Some(usize::MAX),
         utf8: false,
         ucp: false,
-        parallel_prepare: false,
     };
     let (scanner, unsupported) = HsScanner::compile_with_opts(&refs, options)?;
     let unsupported_set = unsupported

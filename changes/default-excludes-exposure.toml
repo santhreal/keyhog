@@ -1,0 +1,3 @@
+category = "Added"
+summary = "Expose default exclude and directory classification helpers unconditionally for watcher and scanner integration."
+crates = ["sources"]

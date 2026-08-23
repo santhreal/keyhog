@@ -176,7 +176,7 @@ pub fn shannon_entropy(data: &[u8]) -> f64 {
     use std::collections::HashMap;
 
     thread_local! {
-        static CACHE: RefCell<HashMap<u64, f64>> = RefCell::new(HashMap::with_capacity(256));
+        static CACHE: RefCell<HashMap<u64, f64>> = RefCell::new(HashMap::new());
     }
 
     // FNV-1a content key, shared seed with every other per-scan cache.

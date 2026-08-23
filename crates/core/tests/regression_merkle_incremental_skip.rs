@@ -39,6 +39,7 @@ fn unchanged_content_is_skipped_and_changed_byte_forces_rescan() {
             path.clone(),
             0,
             1_000,
+            1_000 + 100,
             v1.len() as u64,
             v1
         ),
@@ -51,6 +52,7 @@ fn unchanged_content_is_skipped_and_changed_byte_forces_rescan() {
             path.clone(),
             0,
             1_000,
+            1_000 + 100,
             v1.len() as u64,
             v1
         ),
@@ -64,6 +66,7 @@ fn unchanged_content_is_skipped_and_changed_byte_forces_rescan() {
             path.clone(),
             0,
             1_000,
+            1_000 + 100,
             v2.len() as u64,
             v2
         ),
@@ -76,6 +79,7 @@ fn unchanged_content_is_skipped_and_changed_byte_forces_rescan() {
             path.clone(),
             0,
             1_000,
+            1_000 + 100,
             v2.len() as u64,
             v2
         ),
@@ -101,26 +105,66 @@ fn distinct_files_never_alias_a_skip() {
     let cb = b"TOKEN=bravo-bravo-bravo";
 
     assert!(
-        !api.merkle_record_chunk_at_offset_and_check_unchanged(&idx, a.clone(), 0, 1, 23, ca),
+        !api.merkle_record_chunk_at_offset_and_check_unchanged(
+            &idx,
+            a.clone(),
+            0,
+            1,
+            1 + 100,
+            23,
+            ca
+        ),
         "a.env first sighting is new"
     );
     assert!(
-        !api.merkle_record_chunk_at_offset_and_check_unchanged(&idx, b.clone(), 0, 1, 23, cb),
+        !api.merkle_record_chunk_at_offset_and_check_unchanged(
+            &idx,
+            b.clone(),
+            0,
+            1,
+            1 + 100,
+            23,
+            cb
+        ),
         "b.env first sighting is new (A being cached does not alias B)"
     );
     assert_eq!(api.merkle_len(&idx), 2, "two independent paths => two rows");
     // Each re-observes as unchanged only against its OWN content.
     assert!(
-        api.merkle_record_chunk_at_offset_and_check_unchanged(&idx, a.clone(), 0, 1, 23, ca),
+        api.merkle_record_chunk_at_offset_and_check_unchanged(
+            &idx,
+            a.clone(),
+            0,
+            1,
+            1 + 100,
+            23,
+            ca
+        ),
         "a.env unchanged against its own bytes"
     );
     assert!(
-        api.merkle_record_chunk_at_offset_and_check_unchanged(&idx, b.clone(), 0, 1, 23, cb),
+        api.merkle_record_chunk_at_offset_and_check_unchanged(
+            &idx,
+            b.clone(),
+            0,
+            1,
+            1 + 100,
+            23,
+            cb
+        ),
         "b.env unchanged against its own bytes"
     );
     // Feeding B's bytes under A's path is a CHANGE for A.
     assert!(
-        !api.merkle_record_chunk_at_offset_and_check_unchanged(&idx, a.clone(), 0, 1, 23, cb),
+        !api.merkle_record_chunk_at_offset_and_check_unchanged(
+            &idx,
+            a.clone(),
+            0,
+            1,
+            1 + 100,
+            23,
+            cb
+        ),
         "swapping in b.env's content under a.env's path is a rescan"
     );
 }
@@ -131,11 +175,11 @@ fn stored_hash_is_the_skip_authority_not_metadata() {
     let idx = api.merkle_empty();
     let path = std::path::PathBuf::from("racy/config.toml");
     let stored = api.merkle_hash_content(b"key = \"AAAA\"");
-    api.merkle_record_with_metadata(&idx, path.clone(), 5, 12, stored);
+    api.merkle_record_with_metadata(&idx, path.clone(), 5, 5 + 100, 12, stored);
 
     // (mtime,size) fast-path says "unchanged"...
     assert!(
-        api.merkle_metadata_unchanged(&idx, &path, 5, 12),
+        api.merkle_metadata_unchanged(&idx, &path, 5, 5 + 100, 12),
         "exact (mtime,size) match => metadata fast-path true"
     );
     // ...yet the authoritative content hash for different bytes is NOT a skip.
@@ -160,22 +204,28 @@ fn metadata_fast_path_is_exact_at_u64_boundaries() {
     let idx = api.merkle_empty();
     let path = std::path::PathBuf::from("big/blob.bin");
     let h = api.merkle_hash_content(b"payload");
-    api.merkle_record_with_metadata(&idx, path.clone(), 0, u64::MAX, h);
+    api.merkle_record_with_metadata(&idx, path.clone(), 0, 0 + 100, u64::MAX, h);
 
     assert!(
-        api.merkle_metadata_unchanged(&idx, &path, 0, u64::MAX),
+        api.merkle_metadata_unchanged(&idx, &path, 0, 0 + 100, u64::MAX),
         "exact match at (mtime=0, size=u64::MAX) => true"
     );
     assert!(
-        !api.merkle_metadata_unchanged(&idx, &path, 1, u64::MAX),
+        !api.merkle_metadata_unchanged(&idx, &path, 1, 1 + 100, u64::MAX),
         "mtime off by one => false"
     );
     assert!(
-        !api.merkle_metadata_unchanged(&idx, &path, 0, u64::MAX - 1),
+        !api.merkle_metadata_unchanged(&idx, &path, 0, 0 + 100, u64::MAX - 1),
         "size off by one => false"
     );
     assert!(
-        !api.merkle_metadata_unchanged(&idx, std::path::Path::new("nope.bin"), 0, u64::MAX),
+        !api.merkle_metadata_unchanged(
+            &idx,
+            std::path::Path::new("nope.bin"),
+            0,
+            0 + 100,
+            u64::MAX
+        ),
         "unknown path => false"
     );
 }
@@ -202,6 +252,7 @@ fn cache_roundtrips_the_exact_blake3_hash() {
         &idx,
         std::path::PathBuf::from("conf/app.ini"),
         7_777,
+        7_777 + 100,
         content.len() as u64,
         hash,
     );
@@ -242,7 +293,14 @@ fn roundtrip_preserves_every_entry_exactly() {
     let mut expected = Vec::new();
     for (p, mtime, size, bytes) in rows {
         let h = api.merkle_hash_content(bytes);
-        api.merkle_record_with_metadata(&idx, std::path::PathBuf::from(p), mtime, size, h);
+        api.merkle_record_with_metadata(
+            &idx,
+            std::path::PathBuf::from(p),
+            mtime,
+            mtime + 100,
+            size,
+            h,
+        );
         expected.push((p, (mtime, size, h)));
     }
     assert_eq!(api.merkle_len(&idx), 5, "five entries before save");
@@ -281,11 +339,19 @@ fn racy_clean_guard_drops_future_mtime_entries_on_load() {
     let fresh = api.merkle_hash_content(b"racy-just-written");
     // mtime 1ns: far below now => trusted. mtime u64::MAX: after the write =>
     // racy => dropped on load.
-    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("old.rs"), 1, 15, old);
+    api.merkle_record_with_metadata(
+        &idx,
+        std::path::PathBuf::from("old.rs"),
+        1,
+        1 + 100,
+        15,
+        old,
+    );
     api.merkle_record_with_metadata(
         &idx,
         std::path::PathBuf::from("fresh.rs"),
         u64::MAX,
+        42,
         17,
         fresh,
     );
@@ -371,7 +437,7 @@ fn wrong_schema_version_reports_schema_mismatch() {
             version, expected, ..
         } => {
             assert_eq!(*version, 99, "the found version is reported verbatim");
-            assert_eq!(*expected, 4, "the current binary requires schema v4");
+            assert_eq!(*expected, 5, "the current binary requires schema v5");
         }
         other => panic!("expected SchemaMismatch, got {other:?}"),
     }
@@ -390,7 +456,7 @@ fn invalid_entry_hash_reports_invalid_entry_hash() {
     // Correct schema, but one entry has a non-hex digest.
     std::fs::write(
         &cache,
-        br#"{"version":4,"written_at_ns":0,"entries":[{"path":"bad/x.rs","mtime_ns":1,"size":10,"hash":"nothex"}]}"#,
+        br#"{"version":5,"written_at_ns":0,"entries":[{"path":"bad/x.rs","mtime_ns":1,"ctime_ns":2,"size":10,"hash":"nothex"}]}"#,
     )
     .unwrap();
 
@@ -485,7 +551,14 @@ fn spec_gate_trusts_matching_hash_and_invalidates_on_change() {
 
     let idx = api.merkle_empty();
     let h = api.merkle_hash_content(b"gated-content");
-    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("g.rs"), 100, 13, h);
+    api.merkle_record_with_metadata(
+        &idx,
+        std::path::PathBuf::from("g.rs"),
+        100,
+        100 + 100,
+        13,
+        h,
+    );
     idx.save_with_spec(&cache, &spec_before)
         .expect("spec-tagged save must succeed");
 
@@ -533,6 +606,7 @@ fn load_with_max_entries_caps_loaded_rows() {
             &idx,
             std::path::PathBuf::from(format!("p{i}.rs")),
             i + 1,
+            i + 1 + 100,
             4,
             h,
         );

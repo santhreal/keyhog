@@ -32,8 +32,16 @@ fn bin() -> &'static str {
 
 /// Scan `path` with an explicit backend and return the set of
 /// `(detector_id, credential_hash)` findings (order-independent identity).
-fn findings(path: &str, backend: &str, no_gpu: bool) -> BTreeSet<(String, String)> {
+fn findings(
+    path: &str,
+    backend: &str,
+    no_gpu: bool,
+    cache_home: &std::path::Path,
+) -> BTreeSet<(String, String)> {
     let mut cmd = Command::new(bin());
+    cmd.env("HOME", cache_home)
+        .env("XDG_CACHE_HOME", cache_home)
+        .env("NO_COLOR", "1");
     cmd.args([
         "scan",
         path,
@@ -44,6 +52,7 @@ fn findings(path: &str, backend: &str, no_gpu: bool) -> BTreeSet<(String, String
         "--evidence-policy",
         "paranoid",
         "--daemon=off",
+        "--developer-compile-embedded-detectors",
         "--backend",
         backend,
     ]);
@@ -83,8 +92,11 @@ fn findings(path: &str, backend: &str, no_gpu: bool) -> BTreeSet<(String, String
     findings
 }
 
-fn available_gpu_routes() -> Vec<String> {
+fn available_gpu_routes(cache_home: &std::path::Path) -> Vec<String> {
     let output = Command::new(bin())
+        .env("HOME", cache_home)
+        .env("XDG_CACHE_HOME", cache_home)
+        .env("NO_COLOR", "1")
         .args(["backend", "--self-test", "--json"])
         .output()
         .expect("backend self-test runs");
@@ -138,15 +150,13 @@ fn parity_fixture() -> String {
 
 #[test]
 fn gpu_and_simd_return_identical_findings() {
-    let dir = std::env::temp_dir().join(format!("kh-parity-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("mk tmp dir");
-    let file = dir.join("parity_fixture.txt");
+    let dir = tempfile::tempdir().expect("mk tmp dir");
+    let file = dir.path().join("parity_fixture.txt");
     std::fs::write(&file, parity_fixture()).expect("write fixture");
     let path = file.to_str().unwrap();
 
-    let simd = findings(path, "simd", true);
-    let routes = available_gpu_routes();
-
+    let simd = findings(path, "simd", true, dir.path());
+    let routes = available_gpu_routes(dir.path());
     assert!(
         !simd.is_empty(),
         "fixture should yield at least one SIMD finding (sanity)"
@@ -155,7 +165,7 @@ fn gpu_and_simd_return_identical_findings() {
         eprintln!("no physical GPU peer acquired; exact GPU parity was not executed");
     }
     for route in routes {
-        let gpu = findings(path, &route, false);
+        let gpu = findings(path, &route, false, dir.path());
         assert_eq!(
             gpu, simd,
             "{route} and SIMD finding sets diverge (gpu_parity).\n  in SIMD not GPU: {:?}\n  in GPU not SIMD: {:?}",
@@ -163,14 +173,13 @@ fn gpu_and_simd_return_identical_findings() {
             gpu.difference(&simd).collect::<Vec<_>>(),
         );
     }
-    let _ = std::fs::remove_dir_all(&dir);
+    // tempdir cleaned up on drop
 }
 
 #[test]
 fn gpu_does_not_add_decoded_license_key_false_positive() {
-    let dir = std::env::temp_dir().join(format!("kh-gpu-fp-parity-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("mk tmp dir");
-    let file = dir.join("mirror-neg-0009383.yaml");
+    let dir = tempfile::tempdir().expect("mk tmp dir");
+    let file = dir.path().join("mirror-neg-0009383.yaml");
     std::fs::write(
         &file,
         concat!(
@@ -186,9 +195,8 @@ fn gpu_does_not_add_decoded_license_key_false_positive() {
     .expect("write fixture");
     let path = file.to_str().unwrap();
 
-    let simd = findings(path, "simd", true);
-    let routes = available_gpu_routes();
-
+    let simd = findings(path, "simd", true, dir.path());
+    let routes = available_gpu_routes(dir.path());
     assert!(
         simd.is_empty(),
         "fixture should remain clean on the SIMD coalesced path, got {simd:?}"
@@ -197,7 +205,7 @@ fn gpu_does_not_add_decoded_license_key_false_positive() {
         eprintln!("no physical GPU peer acquired; decoded-negative parity was not executed");
     }
     for route in routes {
-        let gpu = findings(path, &route, false);
+        let gpu = findings(path, &route, false, dir.path());
         assert_eq!(
             gpu,
             simd,
@@ -205,5 +213,5 @@ fn gpu_does_not_add_decoded_license_key_false_positive() {
             gpu.difference(&simd).collect::<Vec<_>>(),
         );
     }
-    let _ = std::fs::remove_dir_all(&dir);
+    // tempdir cleaned up on drop
 }

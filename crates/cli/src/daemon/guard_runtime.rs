@@ -13,13 +13,14 @@
 //! dispatch function talks to when a guard request arrives.
 
 use keyhog_core::guard_state::{
-    FilesystemIdentity, GitCleanAttestation, GitHashAlgorithm, GuardPolicyIdentity, GuardRootMode,
-    GuardRootRecord, GuardRootState, GuardTransition,
+    FilesystemAuthority, FilesystemIdentity, GitCleanAttestation, GitHashAlgorithm,
+    GuardPolicyIdentity, GuardRootMode, GuardRootRecord, GuardRootState, GuardTransition,
+    GuardTransitionRecord,
 };
 use keyhog_core::guard_store::{HotAttestationIndex, RootRegistry};
 use keyhog_core::RawMatch;
 use parking_lot::{Mutex, RwLock};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
 
 /// One in-flight guard commit transaction.
@@ -88,7 +89,7 @@ pub struct GuardRuntime {
     /// Current policy identity (updated when the daemon's scanner/config
     /// identity changes).
     current_identity: RwLock<Option<GuardPolicyIdentity>>,
-    /// Transaction ID counter for guard commit transactions.
+    root_identities: RwLock<HashMap<Vec<u8>, GuardPolicyIdentity>>,
     next_transaction_id: Mutex<u64>,
     /// In-flight transactions: transaction_id -> transaction state.
     transactions: Mutex<HashMap<u64, GuardTransaction>>,
@@ -105,6 +106,14 @@ pub struct GuardRuntime {
     /// Roots that observed watcher overflow (lost events) while Indexing.
     /// Baseline completion must end Degraded rather than Current/Dirty.
     coverage_lost_during_indexing: parking_lot::Mutex<std::collections::HashSet<Vec<u8>>>,
+    /// Named reason if the watcher backend disconnected.
+    watcher_disconnection_reason: parking_lot::RwLock<Option<String>>,
+    /// Explicit watcher status description ("watching", "unmonitored", "disconnected: ...", etc.).
+    watcher_status: parking_lot::RwLock<Option<String>>,
+    /// Continuous transition feed across all registered roots (bounded ring buffer).
+    transition_feed: Mutex<VecDeque<GuardTransitionRecord>>,
+    /// Monotonically increasing global transition sequence.
+    global_transition_sequence: Mutex<u64>,
 }
 
 /// Default scanner idle timeout in seconds (5 minutes).
@@ -122,12 +131,17 @@ impl GuardRuntime {
             roots: RwLock::new(RootRegistry::new()),
             attestations: HotAttestationIndex::new(),
             current_identity: RwLock::new(None),
+            root_identities: RwLock::new(HashMap::new()),
             next_transaction_id: Mutex::new(1),
             transactions: Mutex::new(HashMap::new()),
             last_activity: Mutex::new(Instant::now()),
             scanner_idle_timeout_secs: Mutex::new(DEFAULT_SCANNER_IDLE_TIMEOUT_SECS),
             dirty_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
             coverage_lost_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
+            watcher_disconnection_reason: parking_lot::RwLock::new(None),
+            watcher_status: parking_lot::RwLock::new(None),
+            transition_feed: Mutex::new(VecDeque::new()),
+            global_transition_sequence: Mutex::new(1),
         }
     }
 
@@ -137,12 +151,17 @@ impl GuardRuntime {
             roots: RwLock::new(RootRegistry::new()),
             attestations: HotAttestationIndex::with_budget(budget),
             current_identity: RwLock::new(None),
+            root_identities: RwLock::new(HashMap::new()),
             next_transaction_id: Mutex::new(1),
             transactions: Mutex::new(HashMap::new()),
             last_activity: Mutex::new(Instant::now()),
             scanner_idle_timeout_secs: Mutex::new(DEFAULT_SCANNER_IDLE_TIMEOUT_SECS),
             dirty_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
             coverage_lost_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
+            watcher_disconnection_reason: parking_lot::RwLock::new(None),
+            watcher_status: parking_lot::RwLock::new(None),
+            transition_feed: Mutex::new(VecDeque::new()),
+            global_transition_sequence: Mutex::new(1),
         }
     }
 
@@ -152,17 +171,64 @@ impl GuardRuntime {
         *self.scanner_idle_timeout_secs.lock() = secs;
     }
 
-    /// Set the current policy identity. When it changes, all existing
-    /// attestations are invalidated and roots transition to stale-policy.
+    /// Set the policy identity for a specific root.
+    pub fn set_root_policy_identity(&self, root_path: &[u8], identity: GuardPolicyIdentity) {
+        let mut root_map = self.root_identities.write();
+        let existing = root_map.get(root_path);
+        if let Some(existing) = existing {
+            if !existing.is_compatible_with(&identity) {
+                match existing.short_digest() {
+                    Ok(old_short) => self.attestations.invalidate_policy_digest(&old_short),
+                    Err(error) => {
+                        eprintln!(
+                            "keyhog: guard could not compute the previous policy digest ({error}); dropping every cached attestation"
+                        );
+                        self.attestations.clear();
+                        0
+                    }
+                };
+                let mut roots = self.roots.write();
+                if let Some(r) = roots.get_mut(root_path) {
+                    if r.state != GuardRootState::Stopped {
+                        let from_state = r.state;
+                        if let Ok(new_state) = r.state.transition(&GuardTransition::PolicyChanged) {
+                            // LAW10: invalid state transition on inactive root has no runtime effect
+                            r.state = new_state;
+                            r.terminal_sequence = r.terminal_sequence.saturating_add(1);
+                            self.record_transition_internal(
+                                r,
+                                GuardTransition::PolicyChanged,
+                                from_state,
+                                new_state,
+                                "policy identity changed: detector/suppression/schema digest mismatch",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        root_map.insert(root_path.to_vec(), identity);
+    }
+
+    /// Retrieve the policy identity for a specific root, falling back to the daemon default.
+    pub fn root_policy_identity(&self, root_path: &[u8]) -> Option<GuardPolicyIdentity> {
+        self.root_identities
+            .read()
+            .get(root_path)
+            .cloned()
+            .or_else(|| self.current_identity.read().clone())
+    }
+    /// Get the policy identity for a specific root.
+    pub fn get_root_policy_identity(&self, root_path: &[u8]) -> Option<GuardPolicyIdentity> {
+        self.root_identities.read().get(root_path).cloned()
+    }
+
+    /// Set the default policy identity. When it changes, invalidates attestations and transitions active roots.
     pub fn set_policy_identity(&self, identity: GuardPolicyIdentity) {
         let mut current = self.current_identity.write();
-        if let Some(ref existing) = *current {
+        if let Some(existing) = current.as_ref() {
             if !existing.is_compatible_with(&identity) {
-                // Invalidate all stale attestations.
                 self.attestations.invalidate_for_policy(&identity);
-                // Transition active roots to stale-policy through the
-                // state machine. Degraded roots stay degraded: their
-                // coverage loss must not be masked by a lesser label.
                 let mut roots = self.roots.write();
                 let paths: Vec<Vec<u8>> = roots
                     .list()
@@ -172,11 +238,20 @@ impl GuardRuntime {
                     .collect();
                 for path in paths {
                     if let Some(r) = roots.get_mut(&path) {
+                        let from_state = r.state;
                         match r.state.transition(&GuardTransition::PolicyChanged) {
                             Ok(new_state) => {
                                 r.state = new_state;
                                 r.terminal_sequence = r.terminal_sequence.saturating_add(1);
+                                self.record_transition_internal(
+                                    r,
+                                    GuardTransition::PolicyChanged,
+                                    from_state,
+                                    new_state,
+                                    "policy identity changed: detector/suppression/schema digest mismatch",
+                                );
                             }
+                            // LAW10: an illegal transition leaves the root state unchanged; no runtime effect
                             Err(_) => {
                                 // Transition is illegal (e.g. Degraded).
                                 // Leave the root in its current state.
@@ -188,12 +263,12 @@ impl GuardRuntime {
         }
         *current = Some(identity);
     }
-
     /// Register a new root. Returns the initial record in Stopped state.
     pub fn add_root(
         &self,
         canonical_path: Vec<u8>,
         filesystem_identity: FilesystemIdentity,
+        filesystem_authority: FilesystemAuthority,
         mode: GuardRootMode,
     ) -> Result<GuardRootRecord, String> {
         let mut roots = self.roots.write();
@@ -203,7 +278,12 @@ impl GuardRuntime {
                 String::from_utf8_lossy(&canonical_path)
             ));
         }
-        let record = roots.register(canonical_path, filesystem_identity, mode);
+        let record = roots.register(
+            canonical_path,
+            filesystem_identity,
+            filesystem_authority,
+            mode,
+        );
         self.touch_activity();
         Ok(record)
     }
@@ -233,6 +313,7 @@ impl GuardRuntime {
             self.coverage_lost_during_indexing
                 .lock()
                 .remove(canonical_path);
+            self.root_identities.write().remove(canonical_path);
             self.touch_activity();
         }
         removed
@@ -277,11 +358,57 @@ impl GuardRuntime {
             .remove(canonical_path)
     }
 
-    /// Apply a transition to a root. Returns the new state or an error.
-    pub fn transition_root(
+    /// Internal helper to record a transition in both root-local history and global feed.
+    fn record_transition_internal(
+        &self,
+        record: &mut GuardRootRecord,
+        event: GuardTransition,
+        from_state: GuardRootState,
+        to_state: GuardRootState,
+        cause: impl Into<String>,
+    ) -> GuardTransitionRecord {
+        let mut seq_guard = self.global_transition_sequence.lock();
+        let seq = *seq_guard;
+        *seq_guard = seq.saturating_add(1);
+        drop(seq_guard);
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let transition = GuardTransitionRecord {
+            canonical_path: record.canonical_path.clone(),
+            sequence: seq,
+            timestamp: now,
+            from_state,
+            to_state,
+            event,
+            cause: cause.into(),
+        };
+
+        // Bounded per-root history (keep last 50 transitions).
+        record.recent_transitions.push(transition.clone());
+        if record.recent_transitions.len() > 50 {
+            record.recent_transitions.remove(0);
+        }
+
+        // Bounded global feed ring buffer (keep last 1000 transitions).
+        let mut feed = self.transition_feed.lock();
+        feed.push_back(transition.clone());
+        if feed.len() > 1000 {
+            feed.pop_front();
+        }
+
+        transition
+    }
+
+    /// Apply a transition with causal attribution to a root. Returns the new state or an error.
+    pub fn transition_root_with_cause(
         &self,
         canonical_path: &[u8],
         event: &GuardTransition,
+        cause: impl Into<String>,
     ) -> Result<GuardRootState, keyhog_core::guard_state::TransitionError> {
         let mut roots = self.roots.write();
         let record = roots.get_mut(canonical_path).ok_or_else(|| {
@@ -290,6 +417,7 @@ impl GuardRuntime {
                 from: GuardRootState::Stopped,
             }
         })?;
+        let from_state = record.state;
         let new_state = record.state.transition(event)?;
         record.state = new_state;
         if let GuardTransition::ReconciliationClean
@@ -301,8 +429,40 @@ impl GuardRuntime {
         {
             record.terminal_sequence = record.terminal_sequence.saturating_add(1);
         }
+        self.record_transition_internal(record, *event, from_state, new_state, cause);
         self.touch_activity();
         Ok(new_state)
+    }
+
+    /// Apply a transition to a root. Returns the new state or an error.
+    pub fn transition_root(
+        &self,
+        canonical_path: &[u8],
+        event: &GuardTransition,
+    ) -> Result<GuardRootState, keyhog_core::guard_state::TransitionError> {
+        self.transition_root_with_cause(canonical_path, event, event.label())
+    }
+
+    /// Return the transition feed across roots, optionally filtered by root and limited.
+    pub fn transition_feed(
+        &self,
+        root: Option<&[u8]>,
+        limit: Option<usize>,
+    ) -> Vec<GuardTransitionRecord> {
+        let feed = self.transition_feed.lock();
+        let limit = limit.unwrap_or(50); // LAW10: display default for the feed listing; reporting-only
+        let mut entries: Vec<GuardTransitionRecord> = if let Some(target_root) = root {
+            feed.iter()
+                .filter(|t| t.canonical_path == target_root)
+                .cloned()
+                .collect()
+        } else {
+            feed.iter().cloned().collect()
+        };
+        if entries.len() > limit {
+            entries = entries.split_off(entries.len() - limit);
+        }
+        entries
     }
 
     /// Look up a clean attestation. A hit does not read blob payload.
@@ -544,10 +704,11 @@ impl GuardRuntime {
         // terminal_state is the proven state, so set it directly
         // rather than going through the transition table (which
         // would reject EventsClean from Current, for example).
+        let from_state = record.state;
         record.state = receipt.terminal_state;
         record.terminal_sequence = record.terminal_sequence.saturating_add(1);
-        let mut receipt = receipt;
-        receipt.terminal_sequence = record.terminal_sequence;
+        let mut receipt_clone = receipt.clone();
+        receipt_clone.terminal_sequence = record.terminal_sequence;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -556,7 +717,43 @@ impl GuardRuntime {
             record.initial_reconciliation_time = Some(now);
         }
         record.last_reconciliation_time = Some(now);
-        record.last_receipt = Some(receipt);
+        record.last_receipt = Some(receipt_clone);
+
+        let (commit_event, cause) = match receipt.terminal_state {
+            GuardRootState::Current => (
+                GuardTransition::EventsClean,
+                format!(
+                    "commit transaction clean: {} objects ({} hits, {} scanned), 0 findings",
+                    receipt.objects_requested, receipt.objects_hit, receipt.objects_scanned
+                ),
+            ),
+            GuardRootState::Blocked => (
+                GuardTransition::EventsFindings,
+                format!(
+                    "commit transaction blocked: {} unsuppressed findings across {} objects",
+                    receipt.findings_count, receipt.objects_scanned
+                ),
+            ),
+            GuardRootState::Degraded => (
+                GuardTransition::EventsDegraded,
+                format!(
+                    "commit transaction degraded: {} coverage gaps across {} objects",
+                    receipt.coverage_gaps, receipt.objects_requested
+                ),
+            ),
+            other => (
+                GuardTransition::EventsClean,
+                format!("commit transaction terminal state: {other}"),
+            ),
+        };
+        self.record_transition_internal(
+            record,
+            commit_event,
+            from_state,
+            receipt.terminal_state,
+            cause,
+        );
+        self.touch_activity();
         Ok(())
     }
 
@@ -606,6 +803,33 @@ impl GuardRuntime {
         } else {
             "idle-unload"
         }
+    }
+
+    /// Record that the watcher backend disconnected with a named reason.
+    pub fn record_watcher_disconnection(&self, reason: impl Into<String>) {
+        let reason_str = reason.into();
+        *self.watcher_disconnection_reason.write() = Some(reason_str.clone());
+        *self.watcher_status.write() = Some(format!("disconnected: {}", reason_str));
+    }
+
+    /// Reason why the watcher backend disconnected, if any.
+    pub fn watcher_disconnection_reason(&self) -> Option<String> {
+        self.watcher_disconnection_reason.read().clone()
+    }
+
+    /// Whether the watcher backend is disconnected.
+    pub fn is_watcher_disconnected(&self) -> bool {
+        self.watcher_disconnection_reason.read().is_some()
+    }
+
+    /// Set the explicit watcher status label/description.
+    pub fn set_watcher_status(&self, status: impl Into<String>) {
+        *self.watcher_status.write() = Some(status.into());
+    }
+
+    /// Get the watcher status label/description.
+    pub fn watcher_status(&self) -> Option<String> {
+        self.watcher_status.read().clone()
     }
 }
 

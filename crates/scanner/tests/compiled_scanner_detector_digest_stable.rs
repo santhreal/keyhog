@@ -1,4 +1,5 @@
 use keyhog_core::{DetectorSpec, DetectorTestSpec, DetectorValidatorSpec, PatternSpec, Severity};
+use keyhog_scanner::execution_pack::{CanonicalDetectorExecutionIr, CompiledDetectorPlanSection};
 use keyhog_scanner::CompiledScanner;
 
 fn expected_digest(detectors: &[DetectorSpec], decoder_plan_identity: u64) -> [u8; 32] {
@@ -11,10 +12,18 @@ fn expected_digest(detectors: &[DetectorSpec], decoder_plan_identity: u64) -> [u
 
     let mut hasher = blake3::Hasher::new();
     update(&mut hasher, b"domain", b"keyhog-scanner-detector-digest-v3");
+    // The canonical corpus, not the declared one: a pack normalizes its IR before
+    // it hashes, so the same corpus in another order or carrying self-test
+    // fixtures is the same identity.
+    let mut canonical = detectors.to_vec();
+    canonical.sort_by(|left, right| left.id.cmp(&right.id));
+    for detector in &mut canonical {
+        detector.tests.clear();
+    }
     update(
         &mut hasher,
         b"spec_hash",
-        &keyhog_core::compute_spec_hash(detectors),
+        &keyhog_core::compute_spec_hash(&canonical),
     );
     update(
         &mut hasher,
@@ -166,5 +175,96 @@ fn compiled_scanner_detector_digest_covers_routing_validation_and_policy() {
     assert_eq!(
         base_digest, fixtures_digest,
         "non-runtime detector fixtures must not invalidate performance evidence"
+    );
+}
+
+/// WHY: the autoroute rules identity must be one value per corpus, whichever route materialized the scanner.
+///
+/// Closes the class where a scan that compiled detector specs keyed the calibrated
+/// routing table by one identity while a scan that hydrated an installed execution
+/// pack of the same corpus keyed it by another, so an install published a table
+/// that every later scan from a different working directory rejected as a foreign
+/// corpus. Self-test fixtures and declaration order are not corpus identity;
+/// pattern content is.
+///
+/// Does not cover: the execution-pack generation binding, or the separate autoroute
+/// configuration identity that carries operator floors and disabled ids.
+#[test]
+fn corpus_route_identity_is_shared_by_spec_compile_and_pack_publication() {
+    let detectors = vec![
+        detector("alpha", "AKIA[0-9A-Z]{16}", "AKIA"),
+        detector("beta", "ghp_[0-9A-Za-z]{36}", "ghp_"),
+    ];
+    let route = keyhog_scanner::compiled_scanner::corpus_route_identity(&detectors)
+        .expect("corpus route identity");
+
+    assert_eq!(
+        route,
+        CompiledScanner::compile(detectors.clone())
+            .expect("compile scanner from specs")
+            .runtime_status()
+            .compiled_plan_digest,
+        "a spec compile must route on the canonical corpus identity"
+    );
+
+    let ir = CanonicalDetectorExecutionIr::compile(&detectors).expect("compile detector IR");
+    let section = CompiledDetectorPlanSection::compile(&ir).expect("compile detector plan section");
+    // Detector-plan header: magic(8) version(2) reserved(2) ir_digest(32) plan_digest(32).
+    assert_eq!(
+        &route[..],
+        &section.as_bytes()[44..76],
+        "a published detector plan must carry the same corpus identity a hydration routes on"
+    );
+
+    let mut noisy: Vec<_> = detectors.iter().cloned().rev().collect();
+    noisy[0].tests.push(DetectorTestSpec {
+        test_positive: Some("token = ghp_abcdefghijklmnopqrstuvwxyz0123456789".into()),
+        test_negative: None,
+        pattern_index: None,
+        negative_class: None,
+        test_path: None,
+    });
+    assert_eq!(
+        route,
+        keyhog_scanner::compiled_scanner::corpus_route_identity(&noisy)
+            .expect("reordered corpus route identity"),
+        "declaration order and self-test fixtures must not change corpus identity"
+    );
+    assert_eq!(
+        route,
+        CompiledScanner::compile(noisy)
+            .expect("compile reordered scanner")
+            .runtime_status()
+            .compiled_plan_digest,
+        "a compile of the same corpus in another order must route on one identity"
+    );
+
+    let changed = vec![
+        detector("alpha", "AKIA[0-9A-Z]{16}", "AKIA"),
+        detector("beta", "ghp_[0-9A-Za-z]{37}", "ghp_"),
+    ];
+    assert_ne!(
+        route,
+        keyhog_scanner::compiled_scanner::corpus_route_identity(&changed)
+            .expect("changed corpus route identity"),
+        "a pattern change must invalidate the corpus route identity"
+    );
+
+    // An empty corpus has a canonical form: the identity is total, so a
+    // scanner compiled from zero detectors routes on the same value the pack
+    // publication of that empty corpus carries.
+    let empty_route = keyhog_scanner::compiled_scanner::corpus_route_identity(&[])
+        .expect("an empty corpus has a canonical route identity");
+    assert_ne!(
+        route, empty_route,
+        "the empty corpus identity must differ from a populated corpus"
+    );
+    assert!(
+        keyhog_scanner::compiled_scanner::corpus_route_identity(&[
+            detector("alpha", "AKIA[0-9A-Z]{16}", "AKIA"),
+            detector("alpha", "AKIA[0-9A-Z]{16}", "AKIA"),
+        ])
+        .is_err(),
+        "a duplicated detector id has no single route identity"
     );
 }

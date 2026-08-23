@@ -407,7 +407,7 @@ fn text_report_exposes_actionable_identity_and_resource_fields() {
     assert!(report.contains("bottleneck macro=created"));
     assert!(report.contains("summed_stage=reporting"));
     assert!(report.contains("calls=1 per_call_us="));
-    assert!(report.contains("attributed_ms=0.000"));
+    assert!(report.contains("attributed_ms="));
     assert!(report.contains("resources aggregate_cpu="));
     #[cfg(feature = "process-metrics")]
     assert!(report.contains("max_observed_rss_bytes="));

@@ -16,6 +16,8 @@ pub(crate) const STRUCTURED_MARKDOWN_FENCES: &[(&str, &str)] = &[
     ("yml", "snippet.yml"),
     ("ini", "snippet.ini"),
     ("cfg", "snippet.cfg"),
+    ("conf", "snippet.conf"),
+    ("properties", "snippet.properties"),
 ];
 
 #[derive(Debug, Clone, Copy)]

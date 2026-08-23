@@ -11,7 +11,7 @@ use crate::daemon::trust;
 use crate::daemon::warm_identity::WarmBackendReadiness;
 use crate::style;
 use anyhow::{Context, Result};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{FutureExt, SinkExt, StreamExt};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch, Source};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::num::NonZeroUsize;
@@ -23,9 +23,7 @@ use std::time::{Duration, Instant};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{mpsc, Mutex, Notify, OwnedMutexGuard, Semaphore};
 
-const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
-static DAEMON_SOURCE_COVERAGE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
+pub const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEFAULT_REQUEST_READ_TIMEOUT_SECS: u64 = 300;
 /// Ceiling on one response write. Without it a client that sends a request and
 /// never reads the reply parks its handler inside `Sink::flush` forever once the
@@ -285,10 +283,25 @@ impl ServerState {
         guard_store: Option<Arc<keyhog_core::guard_store::DurableGuardStore>>,
         guard_scrub_interval: Option<std::time::Duration>,
     ) -> Self {
-        let cores = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
+        let cores = keyhog_profile::logical_cpu_count();
         let max_conns = (cores * 4).clamp(8, 256);
+        let guard = Arc::new(match guard_hot_index_budget {
+            Some(budget) => {
+                crate::daemon::guard_runtime::GuardRuntime::with_hot_index_budget(budget)
+            }
+            None => crate::daemon::guard_runtime::GuardRuntime::new(),
+        });
+        let watcher_instance = crate::daemon::guard_watcher::GuardWatcher::new(guard_recon_config)
+            .unwrap_or_else(|e| {
+                // LAW10: explicit warn logged on failed watcher initialization before falling back to disabled mode
+                tracing::warn!(
+                    "daemon: guard watcher disabled: unmonitored (not watching): {}",
+                    e
+                );
+                crate::daemon::guard_watcher::GuardWatcher::new_disabled()
+            });
+        guard.set_watcher_status(watcher_instance.watcher_status());
+        let guard_watcher = Arc::new(parking_lot::Mutex::new(watcher_instance));
         Self {
             scanner,
             router: Arc::new(router),
@@ -313,21 +326,9 @@ impl ServerState {
             draining: AtomicBool::new(false),
             scans_drained: Notify::new(),
             active_requests: AtomicU32::new(0),
-            guard: Arc::new(match guard_hot_index_budget {
-                Some(budget) => {
-                    crate::daemon::guard_runtime::GuardRuntime::with_hot_index_budget(budget)
-                }
-                None => crate::daemon::guard_runtime::GuardRuntime::new(),
-            }),
+            guard,
             guard_filter: Arc::new(guard_filter),
-            guard_watcher: Arc::new(parking_lot::Mutex::new(
-                crate::daemon::guard_watcher::GuardWatcher::new(guard_recon_config).unwrap_or_else(
-                    |e| {
-                        tracing::warn!("daemon: guard watcher disabled: {}", e);
-                        crate::daemon::guard_watcher::GuardWatcher::new_disabled()
-                    },
-                ),
-            )),
+            guard_watcher,
             guard_store,
             guard_scrub_interval,
         }
@@ -442,9 +443,7 @@ pub(crate) fn warm_route_error(status: &WarmBackendStatus) -> Option<Response> {
             )
         }
         (None, Some(repair)) => {
-            format!(
-                "daemon warm route is not ready. Repair with `{repair}`."
-            )
+            format!("daemon warm route is not ready. Repair with `{repair}`.")
         }
         (None, None) => format!(
             "daemon warm route is not ready and its exact status is internally inconsistent. Repair with `{}`.",
@@ -557,23 +556,13 @@ pub(crate) async fn run_with_backend_override(
         guard_scrub_interval.map(std::time::Duration::from_secs),
     ));
 
-    // Set the guard policy identity from the daemon's scanner and build
-    // identity. This binds clean attestations to the exact detector corpus,
-    // suppression, and configuration the daemon was started with.
-    state
-        .guard
-        .set_policy_identity(keyhog_core::guard_state::GuardPolicyIdentity {
-            build_identity: KEYHOG_VERSION.to_string(),
-            detector_digest: detector_rules_digest.clone(),
-            suppression_digest: String::new(),
-            keyhogignore_digest: String::new(),
-            config_digest: String::new(),
-            decode_policy_version: 1,
-            source_policy_digest: String::new(),
-            guard_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
-            report_semantics_version: keyhog_core::guard_state::GUARD_REPORT_SEMANTICS_VERSION,
-        });
-
+    // Set the initial default guard policy identity from the daemon's build and detector digest.
+    state.guard.set_policy_identity(
+        keyhog_core::guard_state::GuardPolicyIdentity::from_build_and_detectors(
+            KEYHOG_VERSION,
+            detector_rules_digest.clone(),
+        ),
+    );
     // Apply configured scanner idle timeout to the guard runtime.
     if let Some(secs) = guard_scanner_idle_timeout {
         state.guard.set_scanner_idle_timeout(secs);
@@ -598,6 +587,8 @@ pub(crate) async fn run_with_backend_override(
                         // path, filesystem identity, mode, and sequences.
                         let mut restored = record.clone();
                         restored.state = keyhog_core::guard_state::GuardRootState::Stopped;
+                        restored.filesystem_authority =
+                            crate::daemon::fs_probe::probe_filesystem_authority(&path);
                         if let Err(e) = state.guard.restore_root(restored) {
                             tracing::warn!("daemon: failed to restore root {}: {}", path_str, e);
                         } else {
@@ -790,31 +781,37 @@ fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<
     tokio::spawn(async move {
         let coalesce_window =
             std::time::Duration::from_millis(state.guard_watcher.lock().coalesce_window_ms());
-        // Periodic scrub: re-scan all Current roots on a configured
-        // interval to catch changes that filesystem events missed.
-        // None disables scrubbing.
-        let scrub_interval = state.guard_scrub_interval;
-        let mut last_scrub = std::time::Instant::now();
+        // Periodic scrub (Row 132): tracks per-root scrub timing.
+        // Unauthoritative roots default to 60s periodic scrub when no operator
+        // scrub interval is configured.
+        let mut last_scrub_times: std::collections::HashMap<Vec<u8>, std::time::Instant> =
+            std::collections::HashMap::new();
+        let mut last_scrub_tick = std::time::Instant::now();
         loop {
             tokio::select! {
                 _ = state.shutdown.notified() => return,
                 _ = tokio::time::sleep(coalesce_window) => {
                     let events = state.guard_watcher.lock().poll_events();
+                    if let Some(reason) = state.guard_watcher.lock().disconnection_reason() {
+                        if !state.guard.is_watcher_disconnected() {
+                            state.guard.record_watcher_disconnection(&reason);
+                            tracing::warn!(
+                                "daemon: guard watcher backend disconnected ({}); failing closed and transitioning roots out of Current",
+                                reason
+                            );
+                        }
+                    }
                     for (root, evts) in events {
                         process_guard_events(&state, &root, evts);
                     }
                     // Sweep abandoned transactions each cycle.
                     state.guard.sweep_stale_transactions();
 
-                    // Periodic scrub: if the interval has elapsed,
-                    // trigger reconciliation for all Current roots.
-                    // This catches changes that filesystem events
-                    // missed (NFS, bind mounts, external edits).
-                    if let Some(interval) = scrub_interval {
-                        if last_scrub.elapsed() >= interval {
-                            scrub_guard_roots(&state);
-                            last_scrub = std::time::Instant::now();
-                        }
+                    // Periodic scrub: check all Current roots against their
+                    // configured or default unauthoritative scrub interval.
+                    if last_scrub_tick.elapsed() >= std::time::Duration::from_secs(1) {
+                        last_scrub_tick = std::time::Instant::now();
+                        scrub_guard_roots(&state, &mut last_scrub_times);
                     }
                 }
             }
@@ -822,33 +819,77 @@ fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<
     })
 }
 
-/// Trigger reconciliation for all Current roots. Called periodically
-/// by the watcher loop when a scrub interval is configured. This
-/// catches changes that filesystem events missed (NFS, bind mounts,
-/// external edits that bypass inotify).
-fn scrub_guard_roots(state: &ServerState) {
+/// Mark Current roots dirty for re-reconciliation when their scrub interval has elapsed (Row 132).
+///
+/// If an operator scrub interval is configured, roots are scrubbed on that schedule.
+/// If no operator scrub interval is configured, unauthoritative roots (NFS, SMB/CIFS, FUSE, 9P)
+/// are automatically scrubbed on a default 60-second schedule to detect changes that kernel
+/// filesystem events missed.
+fn scrub_guard_roots(
+    state: &ServerState,
+    last_scrub_times: &mut std::collections::HashMap<Vec<u8>, std::time::Instant>,
+) {
     use keyhog_core::guard_state::{GuardRootState, GuardTransition};
     let roots = state.guard.list_roots();
+    let current_root_paths: std::collections::HashSet<_> =
+        roots.iter().map(|r| r.canonical_path.clone()).collect();
+    last_scrub_times.retain(|k, _| current_root_paths.contains(k));
+
     let mut scrubbed = 0;
+    let now = std::time::Instant::now();
+    let current_root_paths: std::collections::HashSet<_> =
+        roots.iter().map(|r| r.canonical_path.clone()).collect();
+    last_scrub_times.retain(|k, _| current_root_paths.contains(k));
     for record in roots {
         if record.state == GuardRootState::Current {
-            let path_str = String::from_utf8_lossy(&record.canonical_path);
-            match state.guard.transition_root(
-                &record.canonical_path,
-                &GuardTransition::ReconciliationStarted,
-            ) {
-                Ok(_) => {
-                    tracing::info!("daemon: scrub: re-reconciling root {}", path_str);
-                    scrubbed += 1;
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "daemon: scrub: failed to start reconciliation for {}: {}",
-                        path_str,
-                        e
-                    );
+            let interval = if let Some(configured) = state.guard_scrub_interval {
+                Some(configured)
+            } else if !record.filesystem_authority.authoritative {
+                Some(std::time::Duration::from_secs(
+                    crate::daemon::fs_probe::DEFAULT_UNAUTHORITATIVE_SCRUB_INTERVAL_SECS,
+                ))
+            } else {
+                None
+            };
+
+            if let Some(interval) = interval {
+                let last_time = last_scrub_times.get(&record.canonical_path).copied();
+                let should_scrub = match last_time {
+                    Some(t) => now.duration_since(t) >= interval,
+                    None => {
+                        // Record baseline time on first observation in Current
+                        last_scrub_times.insert(record.canonical_path.clone(), now);
+                        false
+                    }
+                };
+
+                if should_scrub {
+                    let path_str = String::from_utf8_lossy(&record.canonical_path);
+                    match state.guard.transition_root_with_cause(
+                        &record.canonical_path,
+                        &GuardTransition::EventAccepted,
+                        "filesystem scrub: periodic change event on unauthoritative root",
+                    ) {
+                        Ok(_) => {
+                            tracing::info!(
+                                "daemon: scrub: mark root dirty for re-reconciliation: {}",
+                                path_str
+                            );
+                            scrubbed += 1;
+                            last_scrub_times.remove(&record.canonical_path);
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "daemon: scrub: failed to transition root {} to dirty: {}",
+                                path_str,
+                                e
+                            );
+                        }
+                    }
                 }
             }
+        } else {
+            last_scrub_times.remove(&record.canonical_path);
         }
     }
     if scrubbed > 0 {
@@ -870,20 +911,174 @@ fn scrub_guard_roots(state: &ServerState) {
 /// Reconciliation* transition illegal. Events on Dirty, Degraded,
 /// StalePolicy, and Stopped roots are no-ops: those states already
 /// account for unscanned changes.
+/// Check if a given file path is a guard policy file (.keyhogignore, .keyhog.toml, suppressions).
+pub fn is_policy_path(path: &Path) -> bool {
+    let file_name = match path.file_name().and_then(|n| n.to_str()) {
+        Some(name) => name,
+        None => return false,
+    };
+    if file_name == ".keyhogignore"
+        || file_name == ".keyhogignore.toml"
+        || file_name == ".keyhog.toml"
+        || file_name == "test-fixtures.toml"
+        || file_name.ends_with(".suppressions.toml")
+        || file_name.ends_with("_suppressions.toml")
+        || file_name == "suppressions.toml"
+    {
+        return true;
+    }
+    for component in path.components() {
+        if let std::path::Component::Normal(c) = component {
+            let s = c.to_string_lossy();
+            if s == "suppressions" || s == ".keyhog" {
+                if let Some(ext) = path.extension() {
+                    if ext == "toml" || ext == "json" {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Compute `.keyhogignore` / `.keyhogignore.toml` digest for a guard root.
+pub fn compute_keyhogignore_digest(root: &Path) -> String {
+    let legacy = root.join(".keyhogignore");
+    let toml = root.join(".keyhogignore.toml");
+    let legacy_bytes = std::fs::read(&legacy).ok(); // LAW10: absent legacy ignore file yields empty/absent digest; intended default
+    let toml_bytes = std::fs::read(&toml).ok(); // LAW10: absent toml ignore file yields empty/absent digest; intended default
+    if legacy_bytes.is_none() && toml_bytes.is_none() {
+        return keyhog_core::guard_state::GuardPolicyIdentity::default_keyhogignore_digest();
+    }
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"keyhog-ignore-v1:");
+    if let Some(bytes) = legacy_bytes {
+        hasher.update(b"legacy:");
+        hasher.update(&(bytes.len() as u64).to_le_bytes());
+        hasher.update(&bytes);
+    }
+    if let Some(bytes) = toml_bytes {
+        hasher.update(b"toml:");
+        hasher.update(&(bytes.len() as u64).to_le_bytes());
+        hasher.update(&bytes);
+    }
+    hex::encode(hasher.finalize().as_bytes())
+}
+
+/// Compute `.keyhog.toml` scan configuration digest for a guard root.
+pub fn compute_config_digest(root: &Path) -> String {
+    let root_config = root.join(".keyhog.toml");
+    match std::fs::read(&root_config) {
+        Ok(bytes) => {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(b"keyhog-config-v1:");
+            hasher.update(&bytes);
+            hex::encode(hasher.finalize().as_bytes())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            crate::orchestrator::autoroute_default_config_identity()
+        }
+        // A present but unreadable config yields a distinct identity, so the root
+        // transitions to StalePolicy instead of passing as unchanged.
+        Err(error) => {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(b"keyhog-config-unreadable-v1:");
+            hasher.update(format!("{:?}", error.kind()).as_bytes());
+            hex::encode(hasher.finalize().as_bytes())
+        }
+    }
+}
+
+/// Compute suppression digest for a guard root, combining bundled test fixtures and root-local suppression files.
+pub fn compute_suppression_digest(root: &Path) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"keyhog-suppressions-v1:bundled:");
+    hasher.update(
+        crate::test_fixture_suppressions::TestFixtureSuppressions::bundled_raw().as_bytes(),
+    );
+    for candidate in [
+        ".keyhog/suppressions.toml",
+        "suppressions.toml",
+        "test-fixtures.toml",
+    ] {
+        let p = root.join(candidate);
+        if let Ok(bytes) = std::fs::read(&p) {
+            // LAW10: absent local suppression file has no runtime effect
+            hasher.update(b":local:");
+            hasher.update(candidate.as_bytes());
+            hasher.update(&(bytes.len() as u64).to_le_bytes());
+            hasher.update(&bytes);
+        }
+    }
+    hex::encode(hasher.finalize().as_bytes())
+}
+
+/// Compute source policy digest for a guard root.
+pub fn compute_source_policy_digest(_root: &Path) -> String {
+    keyhog_core::guard_state::GuardPolicyIdentity::default_source_policy_digest()
+}
+
+/// Compute the complete effective `GuardPolicyIdentity` for a guard root.
+pub fn compute_root_policy_identity(
+    root: &Path,
+    build_identity: &str,
+    detector_digest: &str,
+) -> keyhog_core::guard_state::GuardPolicyIdentity {
+    keyhog_core::guard_state::GuardPolicyIdentity {
+        build_identity: build_identity.to_string(),
+        detector_digest: detector_digest.to_string(),
+        suppression_digest: compute_suppression_digest(root),
+        keyhogignore_digest: compute_keyhogignore_digest(root),
+        config_digest: compute_config_digest(root),
+        decode_policy_version: keyhog_core::guard_state::GUARD_DECODE_POLICY_VERSION,
+        source_policy_digest: compute_source_policy_digest(root),
+        guard_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
+        report_semantics_version: keyhog_core::guard_state::GUARD_REPORT_SEMANTICS_VERSION,
+    }
+}
+
 fn process_guard_events(
     state: &ServerState,
     root: &Path,
     events: Vec<keyhog_sources::guard::GuardEvent>,
 ) {
+    if events.is_empty() {
+        return;
+    }
     use keyhog_sources::guard::GuardEvent;
 
     let root_bytes = std::os::unix::ffi::OsStrExt::as_bytes(root.as_os_str());
     let has_overflow = events
         .iter()
         .any(|e| matches!(e, GuardEvent::ReconcileSubtree(_)));
+    let is_potential_policy_change = events.iter().any(|e| match e {
+        GuardEvent::Create(p)
+        | GuardEvent::Modify(p)
+        | GuardEvent::Remove(p)
+        | GuardEvent::ReconcileSubtree(p) => is_policy_path(p),
+        GuardEvent::Rename { from, to } => is_policy_path(from) || is_policy_path(to),
+        GuardEvent::Barrier(_) => false,
+    });
     let current_state = state.guard.root_state(root_bytes);
 
-    match guard_event_action(current_state, has_overflow) {
+    let has_policy_change = if is_potential_policy_change {
+        let new_identity =
+            compute_root_policy_identity(root, KEYHOG_VERSION, &state.detector_rules_digest);
+        let existing = state.guard.get_root_policy_identity(root_bytes);
+        let changed = match &existing {
+            Some(existing) => !existing.is_compatible_with(&new_identity),
+            None => true,
+        };
+        state
+            .guard
+            .set_root_policy_identity(root_bytes, new_identity);
+        changed
+    } else {
+        false
+    };
+
+    match guard_event_action_with_policy(current_state, has_overflow, has_policy_change) {
         GuardEventAction::Ignore => {}
         GuardEventAction::MarkDuringIndexing { coverage_lost } => {
             state.guard.mark_dirty_during_indexing(root_bytes);
@@ -892,7 +1087,20 @@ fn process_guard_events(
             }
         }
         GuardEventAction::Transition(transition) => {
-            match state.guard.transition_root(root_bytes, &transition) {
+            let cause = if has_overflow {
+                "watcher overflow: event buffer overflowed or channel disconnected".to_string()
+            } else if has_policy_change {
+                "policy change: configuration or suppression rules modified".to_string()
+            } else {
+                format!(
+                    "filesystem watcher: {} change events accepted",
+                    events.len()
+                )
+            };
+            match state
+                .guard
+                .transition_root_with_cause(root_bytes, &transition, cause)
+            {
                 Ok(_) => {}
                 Err(e) => {
                     tracing::warn!(
@@ -906,16 +1114,22 @@ fn process_guard_events(
     }
 }
 
+/// Action to take on a guard event depending on root state, overflow, and policy change condition.
 #[derive(Debug, PartialEq, Eq)]
-enum GuardEventAction {
+pub enum GuardEventAction {
+    /// Ignore event for stopped or unmonitored root.
     Ignore,
+    /// Mark coverage or dirtiness during active baseline indexing.
     MarkDuringIndexing { coverage_lost: bool },
+    /// Apply a state transition immediately to the root.
     Transition(keyhog_core::guard_state::GuardTransition),
 }
 
-fn guard_event_action(
+/// Determine the appropriate action for a guard event given the current root state, overflow, and policy change conditions.
+pub fn guard_event_action_with_policy(
     current_state: Option<keyhog_core::guard_state::GuardRootState>,
     has_overflow: bool,
+    has_policy_change: bool,
 ) -> GuardEventAction {
     use keyhog_core::guard_state::{GuardRootState, GuardTransition};
     if has_overflow {
@@ -924,7 +1138,22 @@ fn guard_event_action(
             Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
                 coverage_lost: true,
             },
+            // A stale-policy root is already in the repair state reconciliation
+            // clears, so an overflow adds nothing. A degraded root is not: the
+            // state machine keeps `(Degraded, CoverageLost)` legal precisely so
+            // repeat coverage loss stays counted and operator-visible.
+            Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
             _ => GuardEventAction::Transition(GuardTransition::CoverageLost),
+        }
+    } else if has_policy_change {
+        match current_state {
+            Some(GuardRootState::Stopped) | None => GuardEventAction::Ignore,
+            Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
+                coverage_lost: false,
+            },
+            Some(GuardRootState::Degraded) => GuardEventAction::Ignore,
+            Some(GuardRootState::StalePolicy) => GuardEventAction::Ignore,
+            _ => GuardEventAction::Transition(GuardTransition::PolicyChanged),
         }
     } else {
         match current_state {
@@ -939,6 +1168,13 @@ fn guard_event_action(
     }
 }
 
+/// Determine the appropriate action for a guard event given the current root state.
+pub fn guard_event_action(
+    current_state: Option<keyhog_core::guard_state::GuardRootState>,
+    has_overflow: bool,
+) -> GuardEventAction {
+    guard_event_action_with_policy(current_state, has_overflow, false)
+}
 fn guard_attestation_identity(
     base: &keyhog_core::guard_state::GuardPolicyIdentity,
     source_paths: &[String],
@@ -1184,7 +1420,6 @@ enum MassFilesystemMessage {
         source_coverage_gaps: SourceCoverageGaps,
         skipped_unchanged: usize,
     },
-    Error(String),
 }
 
 fn spawn_mass_filesystem_source(
@@ -1197,104 +1432,98 @@ fn spawn_mass_filesystem_source(
 ) -> mpsc::Receiver<MassFilesystemMessage> {
     let (sender, receiver) = mpsc::channel(2);
     tokio::task::spawn_blocking(move || {
-        let _coverage_guard = match DAEMON_SOURCE_COVERAGE_LOCK.lock() {
-            Ok(guard) => guard,
-            Err(_) => {
-                // LAW10: poisoned coverage lock => fail closed with an explicit daemon error response.
-                let _ = sender.blocking_send(MassFilesystemMessage::Error(
-                    // LAW10: unused-binding marker; a dropped receiver leaves no consumer, so send status has no runtime effect and is not a fallback.
-                    "daemon: source coverage lock poisoned".to_string(),
-                ));
+        let source_telemetry = Arc::new(keyhog_sources::SourceSkipTelemetry::new());
+        keyhog_sources::with_source_telemetry(&source_telemetry, || {
+            let mut source = keyhog_sources::FilesystemSource::new(root.clone())
+                .with_max_file_size(max_file_size)
+                .with_ignore_paths(ignore_paths)
+                .with_default_excludes(respect_default_excludes);
+            if let Some(threads) = reader_threads {
+                source = source.with_reader_threads(threads);
+            }
+            if let Some(index) = merkle.as_ref() {
+                source = source.with_merkle_skip(index.clone());
+            }
+            let mut batch = Vec::with_capacity(MASS_BATCH_CHUNKS);
+            let mut batch_bytes = 0usize;
+            let mut source_failed = 0usize;
+            let mut content_skipped_unchanged = 0usize;
+            for chunk_result in source.chunks() {
+                let chunk = match chunk_result {
+                    Ok(chunk) => chunk,
+                    Err(error) => {
+                        source_failed = source_failed.saturating_add(1);
+                        tracing::warn!(
+                            "mass daemon local filesystem source {}: {error}",
+                            root.display()
+                        );
+                        continue;
+                    }
+                };
+                if let (Some(index), Some(path)) = (merkle.as_ref(), chunk.metadata.path.as_deref())
+                {
+                    let _profile_span =
+                        keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
+                    if index.record_chunk_path_at_offset_and_check_unchanged(
+                        std::path::Path::new(path),
+                        chunk.metadata.base_offset as u64,
+                        chunk.metadata.mtime_ns.unwrap_or(0),
+                        chunk.metadata.ctime_ns.unwrap_or(0), // LAW10: absent change time records an untrusted row; the next read-free skip refuses it and the file is re-read
+                        chunk.metadata.size_bytes.unwrap_or(0),
+                        chunk.data.as_bytes(),
+                    ) {
+                        content_skipped_unchanged = content_skipped_unchanged.saturating_add(1);
+                        continue;
+                    }
+                }
+                let chunks = match crate::subcommands::scan::split_chunk_for_mass(chunk) {
+                    Ok(chunks) => chunks,
+                    Err(error) => {
+                        source_failed = source_failed.saturating_add(1);
+                        tracing::warn!(
+                            "mass daemon local filesystem chunk {}: {error:#}",
+                            root.display()
+                        );
+                        continue;
+                    }
+                };
+                for chunk in chunks {
+                    let chunk_bytes = chunk.data.len();
+                    if !batch.is_empty()
+                        && (batch.len() >= MASS_BATCH_CHUNKS
+                            || batch_bytes.saturating_add(chunk_bytes) > MASS_BATCH_BYTES)
+                    {
+                        if sender
+                            .blocking_send(MassFilesystemMessage::Batch(std::mem::take(&mut batch)))
+                            .is_err()
+                        {
+                            return;
+                        }
+                        batch = Vec::with_capacity(MASS_BATCH_CHUNKS);
+                        batch_bytes = 0;
+                    }
+                    batch_bytes = batch_bytes.saturating_add(chunk_bytes);
+                    batch.push(chunk);
+                }
+            }
+            let skipped_unchanged = source
+                .skipped_unchanged_count()
+                .saturating_add(content_skipped_unchanged);
+            if !batch.is_empty()
+                && sender
+                    .blocking_send(MassFilesystemMessage::Batch(batch))
+                    .is_err()
+            {
                 return;
             }
-        };
-        let before = keyhog_sources::skip_counts();
-        let mut source = keyhog_sources::FilesystemSource::new(root.clone())
-            .with_max_file_size(max_file_size)
-            .with_ignore_paths(ignore_paths)
-            .with_default_excludes(respect_default_excludes);
-        if let Some(threads) = reader_threads {
-            source = source.with_reader_threads(threads);
-        }
-        if let Some(index) = merkle.as_ref() {
-            source = source.with_merkle_skip(index.clone());
-        }
-
-        let mut batch = Vec::with_capacity(MASS_BATCH_CHUNKS);
-        let mut batch_bytes = 0usize;
-        let mut source_failed = 0usize;
-        let mut content_skipped_unchanged = 0usize;
-        for chunk_result in source.chunks() {
-            let chunk = match chunk_result {
-                Ok(chunk) => chunk,
-                Err(error) => {
-                    source_failed = source_failed.saturating_add(1);
-                    tracing::warn!(
-                        "mass daemon local filesystem source {}: {error}",
-                        root.display()
-                    );
-                    continue;
-                }
-            };
-            if let (Some(index), Some(path)) = (merkle.as_ref(), chunk.metadata.path.as_deref()) {
-                let _profile_span = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
-                if index.record_chunk_path_at_offset_and_check_unchanged(
-                    std::path::Path::new(path),
-                    chunk.metadata.base_offset as u64,
-                    chunk.metadata.mtime_ns.unwrap_or(0),
-                    chunk.metadata.size_bytes.unwrap_or(0),
-                    chunk.data.as_bytes(),
-                ) {
-                    content_skipped_unchanged = content_skipped_unchanged.saturating_add(1);
-                    continue;
-                }
-            }
-            let chunks = match crate::subcommands::scan::split_chunk_for_mass(chunk) {
-                Ok(chunks) => chunks,
-                Err(error) => {
-                    source_failed = source_failed.saturating_add(1);
-                    tracing::warn!(
-                        "mass daemon local filesystem chunk {}: {error:#}",
-                        root.display()
-                    );
-                    continue;
-                }
-            };
-            for chunk in chunks {
-                let chunk_bytes = chunk.data.len();
-                if !batch.is_empty()
-                    && (batch.len() >= MASS_BATCH_CHUNKS
-                        || batch_bytes.saturating_add(chunk_bytes) > MASS_BATCH_BYTES)
-                {
-                    if sender
-                        .blocking_send(MassFilesystemMessage::Batch(std::mem::take(&mut batch)))
-                        .is_err()
-                    {
-                        return;
-                    }
-                    batch = Vec::with_capacity(MASS_BATCH_CHUNKS);
-                    batch_bytes = 0;
-                }
-                batch_bytes = batch_bytes.saturating_add(chunk_bytes);
-                batch.push(chunk);
-            }
-        }
-        let skipped_unchanged = source
-            .skipped_unchanged_count()
-            .saturating_add(content_skipped_unchanged);
-        if !batch.is_empty()
-            && sender
-                .blocking_send(MassFilesystemMessage::Batch(batch))
-                .is_err()
-        {
-            return;
-        }
-        let mut gaps = source_coverage_gaps_since(before);
-        gaps.source_failed = gaps.source_failed.saturating_add(source_failed);
-        let _ = sender.blocking_send(MassFilesystemMessage::Complete {
-            source_coverage_gaps: gaps,
-            skipped_unchanged,
-        }); // LAW10: a dropped receiver leaves no consumer, so send status cannot change recall.
+            let counts = source_telemetry.snapshot();
+            let mut gaps = source_coverage_gaps_from_counts(&counts);
+            gaps.source_failed = gaps.source_failed.saturating_add(source_failed);
+            let _ = sender.blocking_send(MassFilesystemMessage::Complete {
+                source_coverage_gaps: gaps,
+                skipped_unchanged,
+            }); // LAW10: a dropped receiver leaves no consumer, so send status cannot change recall.
+        });
     });
     receiver
 }
@@ -1497,11 +1726,6 @@ async fn stream_mass_filesystem(
                     },
                 }
             }
-            Some(MassFilesystemMessage::Error(message)) => {
-                session.incremental_unpublishable = true;
-                session.filesystem_batches = None;
-                Response::Error { message }
-            }
             None => {
                 session.incremental_unpublishable = true;
                 session.filesystem_batches = None;
@@ -1580,158 +1804,236 @@ async fn handle_connection(
 
         if matches!(request, Request::MassFilesystemDrain) {
             let work_slot = RequestSlot::claim(&state);
-            let streamed =
-                stream_mass_filesystem(&state, mass_session.as_mut(), &mut transport).await;
+            let state_cloned = state.clone();
+            let mass_session_ref = &mut mass_session;
+            let streamed_result = std::panic::AssertUnwindSafe(async {
+                crate::testing::check_test_panic_injection("MassFilesystemDrain");
+                stream_mass_filesystem(&state_cloned, mass_session_ref.as_mut(), &mut transport)
+                    .await
+            })
+            .catch_unwind()
+            .await;
             drop(work_slot);
-            streamed?;
+            match streamed_result {
+                Ok(streamed) => {
+                    streamed?;
+                }
+                Err(panic_payload) => {
+                    *mass_session_ref = None;
+                    let detail = if let Some(s) = panic_payload.downcast_ref::<&'static str>() {
+                        (*s).to_string()
+                    } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "unknown panic payload".to_string()
+                    };
+                    tracing::error!(target: "keyhog::daemon", error = %detail, "daemon caught internal panic during filesystem drain");
+                    let recovery = BackendRecoveryStatus {
+                        failed_backend: "daemon-request-dispatch".to_string(),
+                        recovery_backend: "error-response".to_string(),
+                        recovered_ranges: Vec::new(),
+                        recovered_chunks: 0,
+                        recovered_bytes: 0,
+                        reason: "daemon: internal panic during filesystem drain (isolated by catch_unwind)".to_string(),
+                    };
+                    let _ = state.record_backend_recovery(recovery); // LAW10: fault recording during panic recovery; no effect on scan findings
+                    let _ = send_response(
+                        // LAW10: reporting-only error frame delivery during panic unwind; caller transport closed; no effect on scan findings
+                        &mut transport,
+                        Response::Error {
+                            message: "daemon: internal panic during filesystem drain (isolated by catch_unwind)".to_string(),
+                        },
+                    )
+                    .await;
+                    break;
+                }
+            }
             continue;
         }
 
         // Claim the slot before dispatch and hold it until the response is
         // written, so a shutdown drain flushes results rather than racing them.
         let work_slot = is_work_request(&request).then(|| RequestSlot::claim(&state));
-        let response = match request {
-            Request::MassBegin { dogfood, profile } => {
-                if !state.mass_service {
-                    Response::Error {
-                        message: "daemon: mass transaction refused because this service was not \
-                                  started with `keyhog daemon start --mass`"
-                            .to_string(),
-                    }
-                } else if mass_session.is_some() {
-                    Response::Error {
-                        message: "daemon: this connection already owns an active mass transaction"
-                            .to_string(),
-                    }
-                } else if let Some(denial) = warm_route_denial.as_ref() {
-                    denial.clone()
-                } else {
-                    let guard = state.fragment_scan_lock.clone().lock_owned().await;
-                    state.scanner.clear_fragment_cache();
-                    state.begin_scan();
-                    mass_session = Some(MassSession {
-                        state: state.clone(),
-                        dogfood,
-                        profile,
-                        stats: MassScanStats::default(),
-                        started_at: Instant::now(),
-                        filesystem_batches: None,
-                        incremental: None,
-                        incremental_requested: None,
-                        finding_paths: std::collections::HashSet::new(),
-                        pathless_findings: 0,
-                        incremental_unpublishable: false,
-                        _fragment_guard: guard,
-                    });
-                    Response::MassReady
-                }
-            }
-            Request::MassBatch { chunks } => match mass_session.as_mut() {
-                Some(session) if session.filesystem_batches.is_some() => Response::Error {
-                    message: "daemon: MassBatch cannot interleave with active daemon-local filesystem acquisition"
-                        .to_string(),
-                },
-                Some(session) => {
-                    let batch =
-                        scan_mass_batch(&state, chunks, session.dogfood, session.profile).await;
-                    session.record(&batch);
-                    batch.response
-                }
-                None => Response::Error {
-                    message: "daemon: MassBatch requires an active MassBegin transaction"
-                        .to_string(),
-                },
-            },
-            Request::MassFilesystemBegin {
-                root,
-                max_file_size,
-                ignore_paths,
-                respect_default_excludes,
-                reader_threads,
-                incremental_cache,
-            } => match mass_session.as_mut() {
-                Some(session) if session.filesystem_batches.is_some() => Response::Error {
-                    message: "daemon: finish the active daemon-local filesystem source before starting another"
-                        .to_string(),
-                },
-                Some(session) => {
-                    let resolved = resolve_scan_target(&root, None);
-                    let reader_threads = match reader_threads {
-                        Some(0) => Err(
-                            "daemon: MassFilesystemBegin reader_threads must be positive"
+        let state_dispatch = state.clone();
+        let warm_route_denial_dispatch = warm_route_denial.clone();
+        let mass_session_ref = &mut mass_session;
+
+        let dispatch_result = std::panic::AssertUnwindSafe(async {
+            crate::testing::check_test_panic_injection(crate::daemon::protocol::request_kind(&request));
+            match request {
+                Request::MassBegin { dogfood, profile } => {
+                    if !state_dispatch.mass_service {
+                        Response::Error {
+                            message: "daemon: mass transaction refused because this service was not \
+                                      started with `keyhog daemon start --mass`"
                                 .to_string(),
-                        ),
-                        Some(value) => Ok(NonZeroUsize::new(value)),
-                        None => Ok(None),
-                    };
-                    let merkle = session.incremental_index(incremental_cache);
-                    match (resolved, reader_threads, merkle) {
-                        (Ok(root), Ok(reader_threads), Ok(merkle)) => {
-                            session.filesystem_batches = Some(spawn_mass_filesystem_source(
-                                root,
-                                max_file_size,
-                                ignore_paths,
-                                respect_default_excludes,
-                                reader_threads,
-                                merkle,
-                            ));
-                            Response::MassFilesystemReady
                         }
-                        (Err(message), _, _)
-                        | (_, Err(message), _)
-                        | (_, _, Err(message)) => Response::Error { message },
+                    } else if mass_session_ref.is_some() {
+                        Response::Error {
+                            message: "daemon: this connection already owns an active mass transaction"
+                                .to_string(),
+                        }
+                    } else if let Some(denial) = warm_route_denial_dispatch.as_ref() {
+                        denial.clone()
+                    } else {
+                        let guard = state_dispatch.fragment_scan_lock.clone().lock_owned().await;
+                        state_dispatch.scanner.clear_fragment_cache();
+                        state_dispatch.begin_scan();
+                        *mass_session_ref = Some(MassSession {
+                            state: state_dispatch.clone(),
+                            dogfood,
+                            profile,
+                            stats: MassScanStats::default(),
+                            started_at: Instant::now(),
+                            filesystem_batches: None,
+                            incremental: None,
+                            incremental_requested: None,
+                            finding_paths: std::collections::HashSet::new(),
+                            pathless_findings: 0,
+                            incremental_unpublishable: false,
+                            _fragment_guard: guard,
+                        });
+                        Response::MassReady
                     }
                 }
-                None => Response::Error {
-                    message:
-                        "daemon: MassFilesystemBegin requires an active MassBegin transaction"
+                Request::MassBatch { chunks } => match mass_session_ref.as_mut() {
+                    Some(session) if session.filesystem_batches.is_some() => Response::Error {
+                        message: "daemon: MassBatch cannot interleave with active daemon-local filesystem acquisition"
                             .to_string(),
+                    },
+                    Some(session) => {
+                        let batch =
+                            scan_mass_batch(&state_dispatch, chunks, session.dogfood, session.profile).await;
+                        session.record(&batch);
+                        batch.response
+                    }
+                    None => Response::Error {
+                        message: "daemon: MassBatch requires an active MassBegin transaction"
+                            .to_string(),
+                    },
                 },
-            },
-            Request::MassFilesystemDrain => Response::Error {
-                message: "daemon: MassFilesystemDrain reached the non-streaming dispatch path"
-                    .to_string(),
-            },
-            Request::MassEnd
-                if mass_session
-                    .as_ref()
-                    .is_some_and(|session| session.filesystem_batches.is_some()) =>
-            {
+                Request::MassFilesystemBegin {
+                    root,
+                    max_file_size,
+                    ignore_paths,
+                    respect_default_excludes,
+                    reader_threads,
+                    incremental_cache,
+                } => match mass_session_ref.as_mut() {
+                    Some(session) if session.filesystem_batches.is_some() => Response::Error {
+                        message: "daemon: finish the active daemon-local filesystem source before starting another"
+                            .to_string(),
+                    },
+                    Some(session) => {
+                        let resolved = resolve_scan_target(&root, None);
+                        let reader_threads = match reader_threads {
+                            Some(0) => Err(
+                                "daemon: MassFilesystemBegin reader_threads must be positive"
+                                    .to_string(),
+                            ),
+                            Some(value) => Ok(NonZeroUsize::new(value)),
+                            None => Ok(None),
+                        };
+                        let merkle = session.incremental_index(incremental_cache);
+                        match (resolved, reader_threads, merkle) {
+                            (Ok(root), Ok(reader_threads), Ok(merkle)) => {
+                                session.filesystem_batches = Some(spawn_mass_filesystem_source(
+                                    root,
+                                    max_file_size,
+                                    ignore_paths,
+                                    respect_default_excludes,
+                                    reader_threads,
+                                    merkle,
+                                ));
+                                Response::MassFilesystemReady
+                            }
+                            (Err(message), _, _)
+                            | (_, Err(message), _)
+                            | (_, _, Err(message)) => Response::Error { message },
+                        }
+                    }
+                    None => Response::Error {
+                        message:
+                            "daemon: MassFilesystemBegin requires an active MassBegin transaction"
+                                .to_string(),
+                    },
+                },
+                Request::MassFilesystemDrain => Response::Error {
+                    message: "daemon: MassFilesystemDrain reached the non-streaming dispatch path"
+                        .to_string(),
+                },
+                Request::MassEnd
+                    if mass_session_ref
+                        .as_ref()
+                        .is_some_and(|session| session.filesystem_batches.is_some()) =>
+                {
+                    Response::Error {
+                        message: "daemon: MassEnd refused while daemon-local filesystem acquisition is active"
+                            .to_string(),
+                    }
+                }
+                Request::MassEnd => match mass_session_ref.take() {
+                    Some(session) => {
+                        let stats = session.finish_stats();
+                        state_dispatch.scans_served.fetch_add(1, Ordering::Relaxed);
+                        drop(session);
+                        Response::MassComplete { stats }
+                    }
+                    None => Response::Error {
+                        message: "daemon: MassEnd requires an active MassBegin transaction".to_string(),
+                    },
+                },
+                other if mass_session_ref.is_some() => Response::Error {
+                    message: format!(
+                        "daemon: active mass transaction accepts only mass batch, filesystem, or end requests; got {}",
+                        crate::daemon::protocol::request_kind(&other)
+                    ),
+                },
+                other @ (Request::ScanText { .. }
+                    | Request::ScanPath { .. }
+                    | Request::GuardCommitBegin { .. }
+                    | Request::GuardCommitBlob { .. }
+                    | Request::GuardCommitFinish { .. }
+                    | Request::GuardAdd { .. }
+                    | Request::GuardReconcile { .. }) => {
+                    match warm_route_denial_dispatch.as_ref() {
+                        Some(denial) => denial.clone(),
+                        None => dispatch(&state_dispatch, other).await,
+                    }
+                }
+                other => dispatch(&state_dispatch, other).await,
+            }
+        })
+        .catch_unwind()
+        .await;
+
+        let response = match dispatch_result {
+            Ok(resp) => resp,
+            Err(panic_payload) => {
+                let detail = if let Some(s) = panic_payload.downcast_ref::<&'static str>() {
+                    (*s).to_string()
+                } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "unknown panic payload".to_string()
+                };
+                tracing::error!(target: "keyhog::daemon", error = %detail, "daemon caught internal panic during request");
+                let recovery = BackendRecoveryStatus {
+                    failed_backend: "daemon-request-dispatch".to_string(),
+                    recovery_backend: "error-response".to_string(),
+                    recovered_ranges: Vec::new(),
+                    recovered_chunks: 0,
+                    recovered_bytes: 0,
+                    reason: "daemon: internal panic during request (isolated by catch_unwind)"
+                        .to_string(),
+                };
+                let _ = state.record_backend_recovery(recovery); // LAW10: fault recording during panic recovery; no effect on scan findings
+                mass_session = None;
                 Response::Error {
-                    message: "daemon: MassEnd refused while daemon-local filesystem acquisition is active"
+                    message: "daemon: internal panic during request (isolated by catch_unwind)"
                         .to_string(),
                 }
             }
-            Request::MassEnd => match mass_session.take() {
-                Some(session) => {
-                    let stats = session.finish_stats();
-                    state.scans_served.fetch_add(1, Ordering::Relaxed);
-                    drop(session);
-                    Response::MassComplete { stats }
-                }
-                None => Response::Error {
-                    message: "daemon: MassEnd requires an active MassBegin transaction".to_string(),
-                },
-            },
-            other if mass_session.is_some() => Response::Error {
-                message: format!(
-                    "daemon: active mass transaction accepts only mass batch, filesystem, or end requests; got {}",
-                    crate::daemon::protocol::request_kind(&other)
-                ),
-            },
-            other @ (Request::ScanText { .. }
-                | Request::ScanPath { .. }
-                | Request::GuardCommitBegin { .. }
-                | Request::GuardCommitBlob { .. }
-                | Request::GuardCommitFinish { .. }
-                | Request::GuardAdd { .. }
-                | Request::GuardReconcile { .. }) => {
-                match warm_route_denial.as_ref() {
-                    Some(denial) => denial.clone(),
-                    None => dispatch(&state, other).await,
-                }
-            }
-            other => dispatch(&state, other).await,
         };
         if let Response::Hello { warm_backend, .. } = &response {
             warm_route_denial = warm_route_error(warm_backend);
@@ -1769,6 +2071,7 @@ fn is_work_request(request: &Request) -> bool {
         | Request::Health
         | Request::Shutdown
         | Request::GuardList
+        | Request::GuardFeed { .. }
         | Request::GuardRemove { .. }
         | Request::GuardStatus { .. } => false,
     }
@@ -1961,16 +2264,21 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     };
                 }
             };
-            // Get the policy identity for attestation lookup.
-            let identity = match state.guard.policy_identity() {
-                Some(id) => id,
-                None => {
-                    return Response::Error {
-                        message: "daemon: guard commit: policy identity not yet established"
-                            .to_string(),
-                    };
-                }
+            let canonical_repo = match std::fs::canonicalize(&repo_path) {
+                Ok(p) => p,
+                Err(_) => std::path::PathBuf::from(&repo_path), // LAW10: uncanonicalized repo path is the intended path default
             };
+            let identity = state
+                .guard
+                .get_root_policy_identity(canonical_repo.as_os_str().as_encoded_bytes())
+                .unwrap_or_else(|| {
+                    // LAW10: unregistered root computes fresh identity; canonical default
+                    compute_root_policy_identity(
+                        &canonical_repo,
+                        KEYHOG_VERSION,
+                        &state.detector_rules_digest,
+                    )
+                });
             // Group identical Git objects while retaining every staged path.
             // Evidence is path-conditioned, so the daemon scans one shared
             // payload under each path and binds clean attestations to that
@@ -2434,7 +2742,21 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             let bytes_hit = txn.bytes_hit;
             let terminal_state =
                 guard_commit_terminal_state(txn.blocking_findings_count, txn.coverage_gaps);
-            let identity = state.guard.policy_identity();
+            let commit_root = match std::fs::canonicalize(&txn.repo_path) {
+                Ok(p) => p,
+                Err(_) => std::path::PathBuf::from(&txn.repo_path),
+            };
+            let policy_identity = state
+                .guard
+                .get_root_policy_identity(commit_root.as_os_str().as_encoded_bytes())
+                .unwrap_or_else(|| {
+                    // LAW10: unregistered root computes fresh identity; canonical default
+                    compute_root_policy_identity(
+                        &commit_root,
+                        KEYHOG_VERSION,
+                        &state.detector_rules_digest,
+                    )
+                });
             let receipt = keyhog_core::guard_state::GuardReceipt {
                 objects_requested: total_objects,
                 objects_hit,
@@ -2446,29 +2768,9 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 findings_count: txn.findings_count,
                 coverage_gaps: txn.coverage_gaps,
                 terminal_state,
-                policy_identity: identity.clone().unwrap_or_else(|| {
-                    keyhog_core::guard_state::GuardPolicyIdentity {
-                        build_identity: String::new(),
-                        detector_digest: String::new(),
-                        suppression_digest: String::new(),
-                        keyhogignore_digest: String::new(),
-                        config_digest: String::new(),
-                        decode_policy_version: 0,
-                        source_policy_digest: String::new(),
-                        guard_schema_version: 0,
-                        report_semantics_version: 0,
-                    }
-                }),
+                policy_identity,
                 // Placeholder; replaced with the root's post-update sequence.
                 terminal_sequence: 0,
-            };
-            // Update the root record with the receipt. The root was
-            // registered under the daemon-canonicalized path, so
-            // canonicalize the transaction's repo_path to match.
-            // Log errors so a failed update is visible to the operator.
-            let commit_root = match std::fs::canonicalize(&txn.repo_path) {
-                Ok(p) => p,
-                Err(_) => std::path::PathBuf::from(&txn.repo_path),
             };
             let commit_root_bytes = std::os::unix::ffi::OsStrExt::as_bytes(commit_root.as_os_str());
             if let Err(e) = state
@@ -2524,7 +2826,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                             "daemon: invalid guard mode '{}': expected 'repo' or 'filesystem'",
                             other
                         ),
-                    }
+                    };
                 }
             };
             // Canonicalize the path server-side. The client sends
@@ -2572,11 +2874,22 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 };
             }
             let fs_identity = filesystem_identity(&canonical_path);
-            match state
-                .guard
-                .add_root(canonical.as_bytes().to_vec(), fs_identity, guard_mode)
-            {
+            let fs_authority = crate::daemon::fs_probe::probe_filesystem_authority(&canonical_path);
+            match state.guard.add_root(
+                canonical.as_bytes().to_vec(),
+                fs_identity,
+                fs_authority,
+                guard_mode,
+            ) {
                 Ok(record) => {
+                    let root_policy = compute_root_policy_identity(
+                        &canonical_path,
+                        KEYHOG_VERSION,
+                        &state.detector_rules_digest,
+                    );
+                    state
+                        .guard
+                        .set_root_policy_identity(canonical.as_bytes(), root_policy);
                     // Register the root with the filesystem watcher.
                     // Subscribe-first: the watcher starts before any
                     // baseline walk so events during the walk are
@@ -2591,7 +2904,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                             canonical,
                             e
                         );
-                        let _ = state.guard.remove_root(canonical.as_bytes());
+                        let _ = state.guard.remove_root(canonical.as_bytes()); // LAW10: cleanup root state on registration failure; fail-closed
                         return Response::Error {
                             message: format!(
                                 "daemon: guard add: watcher cannot observe {}: {}",
@@ -2670,18 +2983,46 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 } else {
                     (0, 0, 0, 0, 0, 0)
                 };
+                let (
+                    pending_events,
+                    watcher_backend,
+                    watcher_latency_tier,
+                    watcher_poll_interval_ms,
+                ) = {
+                    let watcher = state.guard_watcher.lock();
+                    (
+                        watcher.pending_event_count(std::path::Path::new(&root)) as u64,
+                        watcher.backend_label().to_string(),
+                        watcher.latency_tier().to_string(),
+                        watcher.poll_interval_ms(),
+                    )
+                };
+                let scrub_interval_secs = if let Some(interval) = state.guard_scrub_interval {
+                    interval.as_secs()
+                } else if !record.filesystem_authority.authoritative {
+                    crate::daemon::fs_probe::DEFAULT_UNAUTHORITATIVE_SCRUB_INTERVAL_SECS
+                } else {
+                    0
+                };
+                let root_policy = state.guard.root_policy_identity(root.as_bytes());
                 Response::GuardStatusResult {
                     root: root.clone(),
                     mode: record.mode.label().to_string(),
                     state: record.state.label().to_string(),
+                    filesystem_type: record.filesystem_authority.filesystem_type.clone(),
+                    filesystem_authoritative: record.filesystem_authority.authoritative,
+                    filesystem_unauthoritative_reason: record
+                        .filesystem_authority
+                        .unauthoritative_reason
+                        .clone(),
+                    scrub_interval_secs,
                     terminal_sequence: record.terminal_sequence,
                     accepted_event_sequence: record.accepted_event_sequence,
                     completed_event_sequence: record.completed_event_sequence,
-                    pending_events: state
-                        .guard_watcher
-                        .lock()
-                        .pending_event_count(std::path::Path::new(&root))
-                        as u64,
+                    pending_events,
+                    watcher_backend,
+                    watcher_latency_tier,
+                    watcher_poll_interval_ms,
                     files_scanned,
                     bytes_scanned,
                     attestation_hits,
@@ -2692,15 +3033,11 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     last_reconciliation_time: record.last_reconciliation_time,
                     scanner_residency: state.guard.scanner_residency().to_string(),
                     backend_route_label: record.backend_route_label.clone(),
-                    build_identity_short: state
-                        .guard
-                        .policy_identity()
+                    build_identity_short: root_policy
                         .as_ref()
                         .and_then(|id| id.short_digest().ok())
                         .unwrap_or_default(),
-                    detector_digest_short: state
-                        .guard
-                        .policy_identity()
+                    detector_digest_short: root_policy
                         .as_ref()
                         .map(|id| {
                             id.detector_digest
@@ -2709,9 +3046,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                                 .to_string()
                         })
                         .unwrap_or_default(),
-                    suppression_digest_short: state
-                        .guard
-                        .policy_identity()
+                    suppression_digest_short: root_policy
                         .as_ref()
                         .map(|id| {
                             id.suppression_digest
@@ -2720,9 +3055,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                                 .to_string()
                         })
                         .unwrap_or_default(),
-                    config_digest_short: state
-                        .guard
-                        .policy_identity()
+                    config_digest_short: root_policy
                         .as_ref()
                         .map(|id| {
                             id.config_digest
@@ -2735,6 +3068,23 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     store_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
                     store_path: String::new(),
                     repair_command: format!("keyhog guard reconcile {}", root),
+                    recent_transitions: record
+                        .recent_transitions
+                        .iter()
+                        .map(|r| {
+                            let root_str = String::from_utf8(r.canonical_path.clone())
+                                .unwrap_or_else(|_| format!("<non-utf8 {:?}>", r.canonical_path)); // LAW10: display placeholder for a non-UTF-8 root path; reporting-only
+                            crate::daemon::protocol::GuardTransitionWireEntry {
+                                root: root_str,
+                                sequence: r.sequence,
+                                timestamp: r.timestamp,
+                                from_state: r.from_state.label().to_string(),
+                                to_state: r.to_state.label().to_string(),
+                                event: r.event.label().to_string(),
+                                cause: r.cause.clone(),
+                            }
+                        })
+                        .collect(),
                 }
             }
             None => Response::Error {
@@ -2750,6 +3100,15 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     };
                 }
             };
+            let root_path_obj = std::path::PathBuf::from(&root);
+            let root_policy = compute_root_policy_identity(
+                &root_path_obj,
+                KEYHOG_VERSION,
+                &state.detector_rules_digest,
+            );
+            state
+                .guard
+                .set_root_policy_identity(root.as_bytes(), root_policy);
             // Choose the correct transition based on current state.
             // Stopped -> ReconciliationStarted -> Indexing.
             // Degraded/StalePolicy -> RepairStarted -> Indexing.
@@ -2767,9 +3126,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 | keyhog_core::guard_state::GuardRootState::Blocked => {
                     // Stop first, then start reconciliation. The stop
                     // transition is always legal from active states.
-                    match state.guard.transition_root(
+                    match state.guard.transition_root_with_cause(
                         root.as_bytes(),
                         &keyhog_core::guard_state::GuardTransition::Stopped,
+                        "reconciliation initiated: root stopped before scan",
                     ) {
                         Ok(_) => {}
                         Err(e) => {
@@ -2785,7 +3145,16 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     return Response::GuardReconcileStarted { root: root.clone() };
                 }
             };
-            match state.guard.transition_root(root.as_bytes(), &transition) {
+            let start_cause = match transition {
+                keyhog_core::guard_state::GuardTransition::RepairStarted => {
+                    "manual repair started: full baseline reconciliation requested"
+                }
+                _ => "manual reconciliation started",
+            };
+            match state
+                .guard
+                .transition_root_with_cause(root.as_bytes(), &transition, start_cause)
+            {
                 Ok(_) => {}
                 Err(e) => {
                     return Response::Error {
@@ -2801,17 +3170,36 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 .guard
                 .take_coverage_lost_during_indexing(root.as_bytes());
             let dirty = state.guard.take_dirty_during_indexing(root.as_bytes());
-            let terminal = baseline_terminal_transition(scan_result, coverage_lost);
-            match state.guard.transition_root(root.as_bytes(), &terminal) {
+            let force_degraded = coverage_lost
+                || state.guard.is_watcher_disconnected()
+                || !state.guard_watcher.lock().is_watching();
+            let terminal = baseline_terminal_transition(scan_result, force_degraded);
+            let terminal_cause = match terminal {
+                keyhog_core::guard_state::GuardTransition::ReconciliationClean => {
+                    "baseline reconciliation clean: 0 findings"
+                }
+                keyhog_core::guard_state::GuardTransition::ReconciliationFindings => {
+                    "baseline reconciliation findings: unsuppressed findings detected"
+                }
+                keyhog_core::guard_state::GuardTransition::ReconciliationDegraded => {
+                    "baseline reconciliation degraded: coverage lost or watcher disconnected"
+                }
+                other => other.label(),
+            };
+            match state
+                .guard
+                .transition_root_with_cause(root.as_bytes(), &terminal, terminal_cause)
+            {
                 Ok(_) => {
                     // Ordinary (non-overflow) events during indexing mean the
                     // tree changed mid-walk. Move Current/Blocked to Dirty so
                     // status stays fail-closed until a later reconcile.
-                    // Overflow already forced Degraded via coverage_lost.
-                    if dirty && !coverage_lost {
-                        if let Err(e) = state.guard.transition_root(
+                    // Overflow or watcher disconnection already forced Degraded.
+                    if dirty && !force_degraded {
+                        if let Err(e) = state.guard.transition_root_with_cause(
                             root.as_bytes(),
                             &keyhog_core::guard_state::GuardTransition::EventAccepted,
+                            "filesystem events received during baseline reconciliation walk",
                         ) {
                             tracing::warn!(
                                 "daemon: guard reconcile: dirty-during-indexing transition failed for {}: {}",
@@ -2840,6 +3228,28 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 })
                 .collect();
             Response::GuardListResult { roots }
+        }
+        Request::GuardFeed { root, limit } => {
+            let root_bytes = root.as_deref().map(str::as_bytes);
+            let limit_val = limit.unwrap_or(50).min(1000); // LAW10: display default for the feed listing; reporting-only
+            let feed_records = state.guard.transition_feed(root_bytes, Some(limit_val));
+            let transitions: Vec<crate::daemon::protocol::GuardTransitionWireEntry> = feed_records
+                .into_iter()
+                .map(|r| {
+                    let root_str = String::from_utf8(r.canonical_path.clone())
+                        .unwrap_or_else(|_| format!("<non-utf8 {:?}>", r.canonical_path)); // LAW10: display placeholder for a non-UTF-8 root path; reporting-only
+                    crate::daemon::protocol::GuardTransitionWireEntry {
+                        root: root_str,
+                        sequence: r.sequence,
+                        timestamp: r.timestamp,
+                        from_state: r.from_state.label().to_string(),
+                        to_state: r.to_state.label().to_string(),
+                        event: r.event.label().to_string(),
+                        cause: r.cause,
+                    }
+                })
+                .collect();
+            Response::GuardFeedResult { transitions }
         }
         // The wire contract says Shutdown flushes in-flight scans. Refuse new
         // work, wait for the running scans, and only then acknowledge, so a
@@ -3068,6 +3478,7 @@ async fn scan_path(
     let fragment_scan_lock = state.fragment_scan_lock.clone();
     let resolved_owned = resolved.clone();
     let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+    let source_telemetry = Arc::new(keyhog_sources::SourceSkipTelemetry::new());
     if dogfood {
         telemetry.enable_dogfood();
     }
@@ -3093,7 +3504,8 @@ async fn scan_path(
                 Option<BackendRecoveryStatus>,
             ),
         > {
-            let (chunks, source_coverage_gaps) = daemon_scan_path_chunks(&resolved_owned)?;
+            let (chunks, source_coverage_gaps) =
+                daemon_scan_path_chunks(&resolved_owned, &source_telemetry)?;
             pinned.verify_unreplaced(&resolved_owned)?;
             if chunks.iter().all(|chunk| chunk.data.is_empty()) {
                 return Ok((Vec::new(), telemetry.drain(), source_coverage_gaps, None));
@@ -3623,74 +4035,78 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
     let guard_filter = state.guard_filter.clone();
     let _fragment_guard = fragment_scan_lock.lock_owned().await;
     scanner.clear_fragment_cache();
-    let skip_before = keyhog_sources::skip_counts();
+    let source_telemetry = Arc::new(keyhog_sources::SourceSkipTelemetry::new());
+    let source_telemetry_bg = Arc::clone(&source_telemetry);
     let result = tokio::task::spawn_blocking(move || -> Result<(usize, usize)> {
-        let source = keyhog_sources::FilesystemSource::new(root_path.clone());
-        let mut total_blockers = 0usize;
-        let mut total_gaps = 0usize;
-        for chunk_result in source.chunks() {
-            let chunk = match chunk_result {
-                Ok(c) => c,
-                Err(_) => {
-                    total_gaps += 1;
+        keyhog_sources::with_source_telemetry(&source_telemetry_bg, || -> Result<(usize, usize)> {
+            let source = keyhog_sources::FilesystemSource::new(root_path.clone());
+            let mut total_blockers = 0usize;
+            let mut total_gaps = 0usize;
+            for chunk_result in source.chunks() {
+                let chunk = match chunk_result {
+                    Ok(c) => c,
+                    Err(_) => {
+                        total_gaps += 1;
+                        continue;
+                    }
+                };
+                if chunk.data.is_empty() {
                     continue;
                 }
-            };
-            if chunk.data.is_empty() {
-                continue;
-            }
-            let telemetry = std::sync::Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
-            let scan_out = keyhog_scanner::telemetry::with_scan_telemetry(
-                &telemetry,
-                || -> Result<Vec<RawMatch>> {
-                    let batch = vec![chunk];
-                    let total_bytes: usize = batch.iter().map(|c| c.data.len()).sum();
-                    keyhog_profile::add_input_units(1);
-                    keyhog_profile::add_input_bytes(total_bytes as u64);
-                    let selection =
-                        router.choose_with_plan(scanner.as_ref(), backend_override, &batch)?;
-                    let outcome = crate::orchestrator::scan_selected_batch(
-                        scanner.as_ref(),
-                        &batch,
-                        selection.backend,
-                        #[cfg(feature = "gpu")]
-                        selection.ordered_gpu.as_deref(),
-                        selection.phase1_plan.as_ref(),
-                        selection.execution_route,
-                        selection
-                            .recovery_plan
-                            .filter(|_| recover_automatic_backend_faults),
-                    )
-                    .with_context(|| {
-                        format!(
-                            "daemon: guard baseline scan failed for {}",
-                            root_path.display()
+                let telemetry =
+                    std::sync::Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+                let scan_out = keyhog_scanner::telemetry::with_scan_telemetry(
+                    &telemetry,
+                    || -> Result<Vec<RawMatch>> {
+                        let batch = vec![chunk];
+                        let total_bytes: usize = batch.iter().map(|c| c.data.len()).sum();
+                        keyhog_profile::add_input_units(1);
+                        keyhog_profile::add_input_bytes(total_bytes as u64);
+                        let selection =
+                            router.choose_with_plan(scanner.as_ref(), backend_override, &batch)?;
+                        let outcome = crate::orchestrator::scan_selected_batch(
+                            scanner.as_ref(),
+                            &batch,
+                            selection.backend,
+                            #[cfg(feature = "gpu")]
+                            selection.ordered_gpu.as_deref(),
+                            selection.phase1_plan.as_ref(),
+                            selection.execution_route,
+                            selection
+                                .recovery_plan
+                                .filter(|_| recover_automatic_backend_faults),
                         )
-                    })?;
-                    let raw: Vec<RawMatch> = outcome.per_chunk.into_iter().flatten().collect();
-                    Ok(raw)
-                },
-            );
-            match scan_out {
-                Ok(raw_matches) => match guard_filter
-                    .finalize_default_policy_blocker_count(&scanner, raw_matches)
-                {
-                    Some(count) => total_blockers += count,
-                    None => total_gaps += 1,
-                },
-                Err(_) => {
-                    total_gaps += 1;
+                        .with_context(|| {
+                            format!(
+                                "daemon: guard baseline scan failed for {}",
+                                root_path.display()
+                            )
+                        })?;
+                        let raw: Vec<RawMatch> = outcome.per_chunk.into_iter().flatten().collect();
+                        Ok(raw)
+                    },
+                );
+                match scan_out {
+                    Ok(raw_matches) => match guard_filter
+                        .finalize_default_policy_blocker_count(&scanner, raw_matches)
+                    {
+                        Some(count) => total_blockers += count,
+                        None => total_gaps += 1,
+                    },
+                    Err(_) => {
+                        total_gaps += 1;
+                    }
                 }
             }
-        }
-        Ok((total_blockers, total_gaps))
+            Ok((total_blockers, total_gaps))
+        })
     })
     .await;
     // Count files the source quietly skipped (oversized, binary,
     // unreadable, truncated) as coverage gaps. The source records
     // these in process-global counters rather than as Err items.
-    let skip_after = keyhog_sources::skip_counts();
-    let skip_delta = skip_after.total().saturating_sub(skip_before.total());
+    let skip_after = source_telemetry.snapshot();
+    let skip_delta = skip_after.total();
     match result {
         Ok(Ok((blockers, gaps))) => {
             let total_gaps = gaps + skip_delta;
@@ -3706,58 +4122,47 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
     }
 }
 
-fn daemon_scan_path_chunks(path: &Path) -> Result<(Vec<Chunk>, SourceCoverageGaps)> {
-    let _coverage_guard = DAEMON_SOURCE_COVERAGE_LOCK
-        .lock()
-        .map_err(|_| anyhow::anyhow!("daemon: source coverage lock poisoned"))?;
-    let before = keyhog_sources::skip_counts();
-    let source = keyhog_sources::FilesystemSource::new(path.to_path_buf());
-    let mut chunks = Vec::new();
-    for chunk in source.chunks() {
-        let chunk = chunk.with_context(|| {
-            format!("daemon: expanding filesystem source for {}", path.display())
-        })?;
-        if chunk.data.len() > crate::orchestrator::COALESCED_CHUNK_SCAN_CEILING_BYTES {
-            let chunk_path = match chunk.metadata.path.as_deref() {
-                Some(path) => path.to_owned(),
-                None => path.display().to_string(),
-            };
-            anyhow::bail!(
-                "daemon: refusing chunk over {} MiB from {}. Pass --daemon=off to use the full in-process scanner.",
-                crate::orchestrator::COALESCED_CHUNK_SCAN_CEILING_MB,
-                chunk_path
-            );
+fn daemon_scan_path_chunks(
+    path: &Path,
+    source_telemetry: &Arc<keyhog_sources::SourceSkipTelemetry>,
+) -> Result<(Vec<Chunk>, SourceCoverageGaps)> {
+    keyhog_sources::with_source_telemetry(source_telemetry, || -> Result<_> {
+        let source = keyhog_sources::FilesystemSource::new(path.to_path_buf());
+        let mut chunks = Vec::new();
+        for chunk in source.chunks() {
+            let chunk = chunk.with_context(|| {
+                format!("daemon: expanding filesystem source for {}", path.display())
+            })?;
+            if chunk.data.len() > crate::orchestrator::COALESCED_CHUNK_SCAN_CEILING_BYTES {
+                let chunk_path = match chunk.metadata.path.as_deref() {
+                    Some(path) => path.to_owned(),
+                    None => path.display().to_string(),
+                };
+                anyhow::bail!(
+                    "daemon: refusing chunk over {} MiB from {}. Pass --daemon=off to use the full in-process scanner.",
+                    crate::orchestrator::COALESCED_CHUNK_SCAN_CEILING_MB,
+                    chunk_path
+                );
+            }
+            chunks.push(chunk);
         }
-        chunks.push(chunk);
-    }
-    Ok((chunks, source_coverage_gaps_since(before)))
+        let counts = source_telemetry.snapshot();
+        Ok((chunks, source_coverage_gaps_from_counts(&counts)))
+    })
 }
 
-fn source_coverage_gaps_since(before: keyhog_sources::SkipCounts) -> SourceCoverageGaps {
-    let after = keyhog_sources::skip_counts();
+fn source_coverage_gaps_from_counts(counts: &keyhog_sources::SkipCounts) -> SourceCoverageGaps {
     SourceCoverageGaps {
-        over_max_size: after.over_max_size.saturating_sub(before.over_max_size),
-        binary: after.binary.saturating_sub(before.binary),
-        unreadable: after.unreadable.saturating_sub(before.unreadable),
-        git_object_unreadable: after
-            .git_object_unreadable
-            .saturating_sub(before.git_object_unreadable),
-        archive_truncated: after
-            .archive_truncated
-            .saturating_sub(before.archive_truncated),
-        binary_section_name_unresolved: after
-            .binary_section_name_unresolved
-            .saturating_sub(before.binary_section_name_unresolved),
-        source_truncated: after
-            .source_truncated
-            .saturating_sub(before.source_truncated),
-        structured_source_parse_failures: after
-            .structured_source_parse_failures
-            .saturating_sub(before.structured_source_parse_failures),
-        archive_duplicate_scan_unavailable: after
-            .archive_duplicate_scan_unavailable
-            .saturating_sub(before.archive_duplicate_scan_unavailable),
-        git_lfs_pointer: after.git_lfs_pointer.saturating_sub(before.git_lfs_pointer),
+        over_max_size: counts.over_max_size,
+        binary: counts.binary,
+        unreadable: counts.unreadable,
+        git_object_unreadable: counts.git_object_unreadable,
+        archive_truncated: counts.archive_truncated,
+        binary_section_name_unresolved: counts.binary_section_name_unresolved,
+        source_truncated: counts.source_truncated,
+        structured_source_parse_failures: counts.structured_source_parse_failures,
+        archive_duplicate_scan_unavailable: counts.archive_duplicate_scan_unavailable,
+        git_lfs_pointer: counts.git_lfs_pointer,
         source_failed: 0,
     }
 }

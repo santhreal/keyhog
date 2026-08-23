@@ -1,11 +1,12 @@
 # Per-detector contract: aws-bedrock-api-key
 #
-# Long-term AWS Bedrock API key: literal `ABSK` + the deterministic base64
-# anchor `QmVkcm9ja0FQSUtleS` + a 110-char base64 body (132 chars total).
-# The anchor is effectively unique (it encodes "BedrockAPIKey"), so positives
-# are synthetic-but-format-valid and negatives prove the anchor + length
-# bounds are load-bearing. Not checksum-gated, so format-valid fixtures are
-# not silently dropped.
+# Long-term AWS Bedrock API key. Two shapes, one detector: literal `ABSK` plus
+# the deterministic base64 anchor `QmVkcm9ja0FQSUtleS` plus a 110-char base64
+# body (132 chars total), and the unanchored `ABSK` + 109-269 char base64 body
+# form. The anchor is effectively unique (it encodes "BedrockAPIKey"), so
+# positives are synthetic-but-format-valid and negatives prove the anchor +
+# length bounds are load-bearing. Not checksum-gated, so format-valid fixtures
+# are not silently dropped.
 
 schema_version = 1
 detector_id = "aws-bedrock-api-key"
@@ -23,6 +24,11 @@ reason = "Bare canonical 132-char long-term Bedrock key (ABSK + BedrockAPIKey an
 text = 'AWS_BEARER_TOKEN_BEDROCK="ABSKQmVkcm9ja0FQSUtleSy2J0fajDUXD1efoRCtqKODGGBi8UWr7UJsq2tkhFhx8ZEDEd9hnKHivse0YHShMdeCAbPEOXOxyhkg5cqNGHA1grwAyKC3Y8HDD62wLdl37iKN"'
 credential = "ABSKQmVkcm9ja0FQSUtleSy2J0fajDUXD1efoRCtqKODGGBi8UWr7UJsq2tkhFhx8ZEDEd9hnKHivse0YHShMdeCAbPEOXOxyhkg5cqNGHA1grwAyKC3Y8HDD62wLdl37iKN"
 reason = "Env-var assignment (AWS_BEARER_TOKEN_BEDROCK), double-quoted."
+
+[[positive]]
+text = "ABSKh7ZsBnijAk9geoCGCQwuW0fF3cSLpXjdsv3plhdpxN9h8BvwE49uyiah+iO+Mkyi0zZDD6Msw7UqIiburZMMV71mI+vrHrwB6Bg6nYuBt8LvlxpdqsF/eg=="
+credential = "ABSKh7ZsBnijAk9geoCGCQwuW0fF3cSLpXjdsv3plhdpxN9h8BvwE49uyiah+iO+Mkyi0zZDD6Msw7UqIiburZMMV71mI+vrHrwB6Bg6nYuBt8LvlxpdqsF/eg=="
+reason = "Unanchored ABSK form: base64 body with + / and = padding."
 
 # ---- NEGATIVES (precision) ------------------------------------------
 

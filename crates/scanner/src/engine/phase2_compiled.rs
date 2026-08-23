@@ -591,7 +591,9 @@ impl CompiledScanner {
                 break;
             }
             let (entry, _) = &self.phase2_patterns[index];
+            record_whole_chunk_pattern();
             let t0 = if prof { Some(Instant::now()) } else { None };
+            let m_before = scan_state.matches.len();
             self.extract_matches_inner(
                 entry,
                 preprocessed,
@@ -601,6 +603,7 @@ impl CompiledScanner {
                 None,
                 deadline,
             );
+            record_whole_chunk_matches(m_before, scan_state.matches.len());
             if let Some(t0) = t0 {
                 phase2_pattern_prof_record(
                     self.phase2_patterns.len(),

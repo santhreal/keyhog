@@ -415,6 +415,118 @@ pub(crate) fn report_autoroute_cache_summary(ansi: bool, backend_forced: bool) {
     }
 }
 
+/// Report scanner materialization (mapped from execution pack vs compiled in process).
+pub(crate) fn report_scanner_materialization_summary(
+    ansi: bool,
+    materialization: Option<&crate::orchestrator::ScannerMaterialization>,
+) {
+    let Some(materialization) = materialization else {
+        return;
+    };
+    let palette = terminal_palette(ansi, false);
+    match materialization {
+        crate::orchestrator::ScannerMaterialization::MappedPack { generation } => {
+            eprintln!(
+                "{}INFO{} scanner: mapped from execution pack {generation}",
+                palette.cyan, palette.reset
+            );
+        }
+        crate::orchestrator::ScannerMaterialization::Compiled { matcher_outcome } => {
+            eprintln!(
+                "{}WARN{} scanner: compiled in process (developer escape hatch active; matcher-artifact: {})",
+                palette.yellow,
+                palette.reset,
+                matcher_outcome.as_str()
+            );
+        }
+    }
+}
+
+/// Report cache status and entry counts for every registered cache kind.
+pub(crate) fn report_compiled_cache_summary(
+    ansi: bool,
+    orchestrator: &crate::orchestrator::ScanOrchestrator,
+) {
+    let palette = terminal_palette(ansi, false);
+    let cache_base = dirs::cache_dir();
+    for kind in keyhog_core::CacheKind::ALL {
+        let (state, entry_count) = match kind {
+            keyhog_core::CacheKind::HyperscanShards => {
+                let dir = orchestrator
+                    .effective_config
+                    .hyperscan_cache_dir
+                    .clone()
+                    .or_else(|| cache_base.as_ref().map(|b| b.join("keyhog")));
+                let count = dir.as_deref().map_or(0, |d| {
+                    keyhog_scanner::cache_eviction::count_matching_entries(d, *kind)
+                });
+                let state = if orchestrator.effective_config.hyperscan_cache_dir.is_none()
+                    && cache_base.is_none()
+                {
+                    "unusable"
+                } else if count > 0 {
+                    "hit"
+                } else {
+                    "miss"
+                };
+                (state, count)
+            }
+            keyhog_core::CacheKind::MatcherArtifacts => {
+                let dir = keyhog_scanner::configured_matcher_artifact_cache_dir().or_else(|| {
+                    cache_base
+                        .as_ref()
+                        .map(|b| b.join(keyhog_core::KEYHOG_MATCHER_ARTIFACTS_SUBDIR))
+                });
+                let count = dir.as_deref().map_or(0, |d| {
+                    keyhog_scanner::cache_eviction::count_matching_entries(d, *kind)
+                });
+                let state = match &orchestrator.scanner_materialization {
+                    Some(crate::orchestrator::ScannerMaterialization::Compiled {
+                        matcher_outcome,
+                    }) => matcher_outcome.as_str(),
+                    Some(crate::orchestrator::ScannerMaterialization::MappedPack { .. }) => {
+                        "disabled"
+                    }
+                    None => "disabled",
+                };
+                (state, count)
+            }
+            keyhog_core::CacheKind::GpuPrograms => {
+                let dir = cache_base
+                    .as_ref()
+                    .map(|b| b.join("keyhog").join("programs"));
+                let count = dir.as_deref().map_or(0, |d| {
+                    keyhog_scanner::cache_eviction::count_matching_entries(d, *kind)
+                });
+                let state = if count > 0 { "hit" } else { "compiled" };
+                (state, count)
+            }
+            keyhog_core::CacheKind::DetectorPlans => match &orchestrator.scanner_materialization {
+                Some(crate::orchestrator::ScannerMaterialization::MappedPack { .. }) => ("hit", 0),
+                Some(crate::orchestrator::ScannerMaterialization::Compiled { .. }) => {
+                    ("compiled", 0)
+                }
+                None => ("unknown", 0),
+            },
+            keyhog_core::CacheKind::LockFiles => {
+                let dir = cache_base.as_ref().map(|b| b.join("keyhog"));
+                let count = dir.as_deref().map_or(0, |d| {
+                    keyhog_scanner::cache_eviction::count_matching_entries(d, *kind)
+                });
+                ("active", count)
+            }
+        };
+        eprintln!(
+            "{}INFO{} cache {}: {} ({} entries)",
+            palette.cyan,
+            palette.reset,
+            kind.label(),
+            state,
+            entry_count
+        );
+    }
+}
+
 pub(crate) fn report_skip_summary(ansi: bool) {
     // Snapshot every coverage-gap counter once, then render each non-zero
     // category from the ONE canonical set this human summary and the structured

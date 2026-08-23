@@ -229,10 +229,12 @@ fn openat_component(parent: &File, name: &[u8], flags: libc::c_int) -> std::io::
             "filesystem path component contains a NUL byte",
         )
     })?;
+    // SAFETY: parent is a valid directory file descriptor, and name is a null-terminated C string.
     let fd = unsafe { libc::openat(parent.as_raw_fd(), name.as_ptr(), flags) };
     if fd < 0 {
         return Err(std::io::Error::last_os_error());
     }
+    // SAFETY: fd is non-negative and newly opened by openat.
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 

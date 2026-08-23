@@ -21,6 +21,7 @@ fn save_merges_with_existing_disk_entries() {
         &idx_a,
         PathBuf::from("/a/file"),
         100,
+        100 + 100,
         10,
         sample_hash(b"a contents"),
     );
@@ -35,6 +36,7 @@ fn save_merges_with_existing_disk_entries() {
         &idx_b,
         PathBuf::from("/b/file"),
         200,
+        200 + 100,
         20,
         sample_hash(b"b contents"),
     );
@@ -51,6 +53,6 @@ fn save_merges_with_existing_disk_entries() {
         keyhog_core::testing::CoreTestApi::merkle_len(&keyhog_core::testing::TestApi, &loaded),
         2
     );
-    assert!(loaded.metadata_unchanged(Path::new("/a/file"), 100, 10));
-    assert!(loaded.metadata_unchanged(Path::new("/b/file"), 200, 20));
+    assert!(loaded.metadata_unchanged(Path::new("/a/file"), 100, 100 + 100, 10));
+    assert!(loaded.metadata_unchanged(Path::new("/b/file"), 200, 200 + 100, 20));
 }

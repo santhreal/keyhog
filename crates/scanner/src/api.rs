@@ -27,19 +27,21 @@ pub use crate::gpu_literal_artifacts::{
 pub use crate::hw_probe::{probe_hardware, select_backend, HardwareCaps, ScanBackend};
 pub use crate::matcher_artifact_cache::{
     compile_shared_with_matcher_artifact_cache, configured_matcher_artifact_cache_dir,
-    default_matcher_artifact_cache_dir, default_matcher_artifact_cache_dir_from_base,
-    execution_pack_backend_for_scan_backend, load_matcher_artifact, load_matcher_artifact_with_ir,
-    matcher_backend_for_gpu_policy, store_matcher_artifact, LoadedMatcherArtifact,
+    configured_matcher_artifact_cache_disable_reason, default_matcher_artifact_cache_dir,
+    default_matcher_artifact_cache_dir_from_base, execution_pack_backend_for_scan_backend,
+    load_matcher_artifact, load_matcher_artifact_with_ir, matcher_backend_for_gpu_policy,
+    store_matcher_artifact, LoadedMatcherArtifact, MatcherArtifactCacheDisableReason,
     MatcherArtifactCacheOutcome, MatcherArtifactIdentity, MATCHER_ARTIFACT_FILE_BYTES,
     MATCHER_ARTIFACT_MAGIC, MATCHER_ARTIFACT_SUFFIX, MATCHER_ARTIFACT_VERSION,
 };
+pub use keyhog_core::{CompiledArtifactClass, CompiledArtifactIdentity};
 // The measurement switch is the profiler's, re-exported so a `keyhog-scanner`
 // consumer never has to reach past the scanner for it, and never gets a second
 // scanner-owned switch that can disagree with it.
 pub use crate::scan_profile::{dump as profile_dump, reset as profile_reset};
 pub use crate::types::{
     regex_dfa_limit_default, set_regex_dfa_limit, ScanExecutionRoute, ScannerConfig,
-    ScannerTuningConfig,
+    ScannerTuningConfig, MAX_SCAN_CHUNK_BYTES, WINDOW_OVERLAP_BYTES,
 };
 pub use crate::util_hash::{FNV_OFFSET_BASIS, FNV_PRIME};
 pub use keyhog_profile::{detail as profile_detail, set_detail as set_profile_detail, Detail};

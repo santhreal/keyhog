@@ -7,9 +7,9 @@ use std::sync::LazyLock;
 /// reduced detector corpora from being filtered by the embedded corpus.
 #[derive(Debug)]
 pub(crate) struct GenericKeywordStemSet {
-    stems: Vec<Box<str>>,
-    by_first: [Vec<usize>; 256],
-    has_first: [bool; 256],
+    stems: Box<[Box<str>]>,
+    by_first_offsets: [u16; 257],
+    by_first_data: Box<[u16]>,
 }
 
 impl GenericKeywordStemSet {
@@ -21,25 +21,65 @@ impl GenericKeywordStemSet {
                 stems.push(stem.into());
             }
         }
-        let mut by_first: [Vec<usize>; 256] = std::array::from_fn(|_| Vec::new());
-        let mut has_first = [false; 256];
-        for (idx, stem) in stems.iter().enumerate() {
+        assert!(
+            stems.len() <= u16::MAX as usize,
+            "generic keyword stem count exceeds u16::MAX"
+        );
+        let mut counts = [0usize; 256];
+        for stem in &stems {
             if let Some(&first) = stem.as_bytes().first() {
                 let lower = first.to_ascii_lowercase();
                 let upper = first.to_ascii_uppercase();
-                by_first[lower as usize].push(idx);
-                has_first[lower as usize] = true;
+                counts[lower as usize] += 1;
                 if upper != lower {
-                    by_first[upper as usize].push(idx);
-                    has_first[upper as usize] = true;
+                    counts[upper as usize] += 1;
+                }
+            }
+        }
+        let mut by_first_offsets = [0u16; 257];
+        let mut total = 0usize;
+        for i in 0..256 {
+            by_first_offsets[i] =
+                u16::try_from(total).expect("generic keyword stem entry offset exceeds u16::MAX");
+            total += counts[i];
+        }
+        by_first_offsets[256] =
+            u16::try_from(total).expect("generic keyword stem entry total exceeds u16::MAX");
+
+        let mut by_first_data = vec![0u16; total];
+        let mut cursors = by_first_offsets;
+        for (idx, stem) in stems.iter().enumerate() {
+            let stem_idx = u16::try_from(idx).expect("generic keyword stem index exceeds u16::MAX");
+            if let Some(&first) = stem.as_bytes().first() {
+                let lower = first.to_ascii_lowercase();
+                let upper = first.to_ascii_uppercase();
+                let pos = cursors[lower as usize] as usize;
+                by_first_data[pos] = stem_idx;
+                cursors[lower as usize] += 1;
+                if upper != lower {
+                    let pos = cursors[upper as usize] as usize;
+                    by_first_data[pos] = stem_idx;
+                    cursors[upper as usize] += 1;
                 }
             }
         }
         Self {
-            stems,
-            by_first,
-            has_first,
+            stems: stems.into_boxed_slice(),
+            by_first_offsets,
+            by_first_data: by_first_data.into_boxed_slice(),
         }
+    }
+
+    #[inline]
+    pub(crate) fn stems_for_byte(&self, byte: u8) -> &[u16] {
+        let start = self.by_first_offsets[byte as usize] as usize;
+        let end = self.by_first_offsets[byte as usize + 1] as usize;
+        &self.by_first_data[start..end]
+    }
+
+    #[inline]
+    pub(crate) fn has_first_byte(&self, byte: u8) -> bool {
+        self.by_first_offsets[byte as usize] != self.by_first_offsets[byte as usize + 1]
     }
 
     pub(crate) fn literals(&self) -> impl ExactSizeIterator<Item = &str> {
@@ -49,7 +89,7 @@ impl GenericKeywordStemSet {
     #[inline]
     pub(crate) fn is_match(&self, bytes: &[u8]) -> bool {
         for (index, &byte) in bytes.iter().enumerate() {
-            if self.has_first[byte as usize] && generic_stem_matches_at(bytes, index, self) {
+            if self.has_first_byte(byte) && generic_stem_matches_at(bytes, index, self) {
                 return true;
             }
         }
@@ -73,6 +113,9 @@ pub(crate) struct GenericAssignmentKeywordPlan {
 
 impl GenericAssignmentKeywordPlan {
     pub(crate) fn compile(detectors: &[keyhog_core::DetectorSpec]) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::AssignmentKeywordMatcher,
+        );
         let keywords = crate::assignment_keywords::derive_assignment_keywords(detectors)?;
         let vendor_suffixes =
             crate::assignment_keywords::derive_generic_vendor_suffixes(detectors)?;
@@ -117,6 +160,9 @@ impl GenericAssignmentKeywordPlan {
     pub(crate) fn hydrate_from<T: crate::assignment_keywords::DetectorPlanAssignmentSource>(
         detectors: &[T],
     ) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_load(
+            keyhog_profile::CompileSurfaceId::AssignmentKeywordMatcher,
+        );
         let keywords = crate::assignment_keywords::derive_assignment_keywords_from_plan(detectors)?;
         let vendor_suffixes =
             crate::assignment_keywords::derive_generic_suffixes_from_plan(detectors, false)?;
@@ -246,7 +292,7 @@ fn assignment_stem_before_delimiter(
 ) -> Option<usize> {
     let last_delimiter = memchr::memrchr2(b'=', b':', line)?;
     for (index, &byte) in line[..=last_delimiter].iter().enumerate() {
-        if stem_set.has_first[byte as usize] && generic_stem_matches_at(line, index, stem_set) {
+        if stem_set.has_first_byte(byte) && generic_stem_matches_at(line, index, stem_set) {
             return Some(index);
         }
     }
@@ -255,8 +301,8 @@ fn assignment_stem_before_delimiter(
 
 #[inline]
 fn generic_stem_matches_at(bytes: &[u8], start: usize, stem_set: &GenericKeywordStemSet) -> bool {
-    for &stem_idx in &stem_set.by_first[bytes[start] as usize] {
-        let stem = stem_set.stems[stem_idx].as_bytes();
+    for &stem_idx in stem_set.stems_for_byte(bytes[start]) {
+        let stem = stem_set.stems[stem_idx as usize].as_bytes();
         let end = start + stem.len();
         if end <= bytes.len() && bytes[start..end].eq_ignore_ascii_case(stem) {
             return true;
@@ -447,3 +493,38 @@ mod position_line_mapping_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/phase2_generic_keyword_tables.rs"]
 mod strong_anchor_tests;
+const MAX_IDLE_KEYWORD_LINE_BUFFERS: usize = 4;
+static KEYWORD_LINES_POOL: parking_lot::Mutex<Vec<Vec<u32>>> = parking_lot::Mutex::new(Vec::new());
+
+fn normalize_keyword_lines_scratch(lines: &mut Vec<u32>) {
+    lines.clear();
+    if lines.capacity().saturating_mul(std::mem::size_of::<u32>())
+        > crate::engine::MAX_RETAINED_WORKER_SCRATCH_BYTES
+    {
+        *lines = Vec::new();
+    }
+}
+
+pub(crate) fn take_keyword_lines_scratch() -> Vec<u32> {
+    // LAW10: no idle buffer means a fresh empty scratch vector with identical matching behavior.
+    KEYWORD_LINES_POOL.lock().pop().unwrap_or_default()
+}
+
+pub(crate) fn release_keyword_lines_scratch(mut lines: Vec<u32>) {
+    normalize_keyword_lines_scratch(&mut lines);
+    if lines.capacity() == 0 {
+        return;
+    }
+    let mut pool = KEYWORD_LINES_POOL.lock();
+    if pool.len() < MAX_IDLE_KEYWORD_LINE_BUFFERS {
+        pool.push(lines);
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn retained_keyword_line_bytes_after_for_test(requested_bytes: usize) -> usize {
+    let elements = requested_bytes.div_ceil(std::mem::size_of::<u32>());
+    let mut lines = Vec::with_capacity(elements);
+    normalize_keyword_lines_scratch(&mut lines);
+    lines.capacity().saturating_mul(std::mem::size_of::<u32>())
+}

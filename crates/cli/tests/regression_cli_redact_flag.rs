@@ -1,28 +1,11 @@
-//! Regression: the `keyhog scan` credential-redaction contract, driven end to
-//! end over the SHIPPED binary (`--daemon=off`, `--backend cpu` so the assertions
-//! are host-independent (no accelerator is ever assumed)).
+//! WHY: Zero-leak credential redaction invariant across all formats, verbosities, log targets, and file outputs (Rows 34, 96):
+//! Formats are dynamically derived from `OutputFormat::value_variants()`. A planted credential's
+//! plaintext bytes and middle run must appear nowhere in emitted stdout/stderr, logs, or written
+//! report files across all formats and all verbosity levels (-v, -vv, --quiet) unless `--show-secrets`
+//! is explicitly supplied.
 //!
-//! A single checksum-valid GitHub classic PAT is planted in a temp file. It
-//! fires `github-classic-pat` on its own bytes with a passing CRC tail, so it
-//! survives the confidence floor on the plain CPU path deterministically.
-//!
-//! The contract pinned here, on EXACT bytes (never a shape / `!is_empty`):
-//!
-//!   * DEFAULT REDACTS, every structured format (json, jsonl, csv, sarif) and
-//!     the human text report emit the masked `first4…last4` form `ghp_...DSiF`
-//!     and NEVER the 40-byte plaintext token nor its unique middle run.
-//!   * `--show-secrets` REVEALS, the same run with `--show-secrets` puts the
-//!     full plaintext token back into `credential_redacted` / the CSV cell /
-//!     the text line, while the detector id and the sha256 credential hash are
-//!     byte-for-byte identical to the redacted run (only the credential text
-//!     differs (masking is display-only, it does not change identity)).
-//!   * FAIL CLOSED: `--lockdown --show-secrets` is refused (exit 2) with an
-//!     actionable message, so plaintext can never reach stdout under lockdown.
-//!
-//! There is NO `--no-redact` flag in the shipped CLI; the reveal flag is
-//! `--show-secrets` (default: redacted). Confirmed by reading
-//! `crates/cli/src/args/scan.rs` (`pub show_secrets: bool`, `#[arg(long)]`).
-
+//! WHAT IT DOES NOT CATCH:
+//! External terminal screen capture tools operating outside KeyHog process boundaries.
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
@@ -421,17 +404,47 @@ fn show_secrets_sarif_reveals_plaintext_same_result() {
 /// caught here even if the other formats are clean.
 #[test]
 fn no_default_format_leaks_the_plaintext_token() {
+    use clap::ValueEnum;
     let (_dir, path) = planted_fixture();
-    for fmt in ["json", "jsonl", "csv", "sarif", "text"] {
-        let (_code, out, err) = scan(&path, &["--format", fmt]);
-        let combined = format!("{out}\n{err}");
+    let formats = keyhog::args::OutputFormat::value_variants();
+
+    for fmt_enum in formats {
+        let fmt = fmt_enum
+            .to_possible_value()
+            .expect("possible value")
+            .get_name()
+            .to_string();
+        for verbosity in [&[][..], &["-v"], &["-vv"], &["--quiet"]] {
+            let mut args = vec!["--format", fmt.as_str()];
+            args.extend_from_slice(verbosity);
+            let (_code, out, err) = scan(&path, &args);
+            let combined = format!("{out}\n{err}");
+            assert!(
+                !combined.contains(PLANTED),
+                "default `{fmt}` report with verbosity {:?} leaked the plaintext token; got:\n{combined}",
+                verbosity
+            );
+            assert!(
+                !combined.contains(SECRET_MIDDLE),
+                "default `{fmt}` report with verbosity {:?} leaked the masked middle run; got:\n{combined}",
+                verbosity
+            );
+        }
+
+        // Also verify --output file write contains zero leaked plaintext
+        let out_dir = tempfile::tempdir().expect("tempdir");
+        let out_file = out_dir.path().join("report.out");
+        let out_file_str = out_file.to_str().expect("out file str");
+        let (_code, out, err) = scan(&path, &["--format", fmt.as_str(), "--output", out_file_str]);
+        let file_contents = std::fs::read_to_string(&out_file).unwrap_or_default();
+        let all_output = format!("{out}\n{err}\n{file_contents}");
         assert!(
-            !combined.contains(PLANTED),
-            "default `{fmt}` report leaked the plaintext token; got:\n{combined}"
+            !all_output.contains(PLANTED),
+            "default `{fmt}` file report leaked plaintext token into {out_file_str}"
         );
         assert!(
-            !combined.contains(SECRET_MIDDLE),
-            "default `{fmt}` report leaked the masked middle run; got:\n{combined}"
+            !all_output.contains(SECRET_MIDDLE),
+            "default `{fmt}` file report leaked middle run into {out_file_str}"
         );
     }
 }

@@ -32,27 +32,16 @@ WORKFLOWS = REPO / ".github/workflows"
 # declarations that conflict with the aggregator's `mod support`. Each entry is
 # a promise the file runs in CI by some other means (bespoke --test step, nightly,
 # or a future GPU-CI lane). Keep this tiny and justified.
-ALLOWED: set[str] = {
-    "adversarial_suite",  # CI --test step (security-fast lane)
-    "backend_and_detector_class_api",  # needs all backends
-    "decode_budget_streaming",  # process-global decoder registration
-    "detector_corpus_backend_parity",  # needs all backends
-    "detector_primary_regex_dedup_ratchet",  # has `mod support;` conflict
-    "gpu_ac_recall_bug_56",  # GPU host
-    "gpu_ac_smoke",  # GPU host
-    "gpu_entropy_recall_parity",  # GPU host
-    "gpu_peer_backend_parity",  # GPU host
-    "gpu_parity",  # GPU host
-    "gpu_proptest_invariants",  # GPU host
-    "gpu_region_overfire_validation",  # GPU host
-    "gpu_resident_output_ownership",  # GPU host
-    "massive_adversarial_runner",  # multi-module #[path] conflict
-    "metal_backend_contract",  # metal backend
-    "packed_gpu_vyre_artifact",  # GPU host
-    "packed_simd_native_shards",  # SIMD host
-    "packed_simd_phase2_shards",  # SIMD host
-    "perf_alloc_evidence_relations",  # release-timing
-    "scan_backend_parity_proptest",  # needs all backends
+ALLOWED: dict[str, str] = {
+    "gpu_ac_recall_bug_56": "GPU host required",
+    "gpu_ac_smoke": "GPU host required",
+    "gpu_entropy_recall_parity": "GPU host required",
+    "gpu_peer_backend_parity": "GPU host required",
+    "gpu_parity": "GPU host required",
+    "gpu_proptest_invariants": "GPU host required",
+    "gpu_region_overfire_validation": "GPU host required",
+    "gpu_resident_output_ownership": "GPU host required",
+    "packed_gpu_vyre_artifact": "GPU host required",
 }
 
 PATH_INCLUDE = re.compile(r'#\[path\s*=\s*"([A-Za-z0-9_]+)\.rs"\]')
@@ -97,8 +86,25 @@ def toplevel_test_files() -> list[str]:
         and r.endswith(".rs")
         and r.rsplit("/", 1)[-1] not in ("all_tests.rs", "testing.rs")
     )
-def find_orphans(test_stems: list[str], wired: set[str], allowed: set[str]) -> list[str]:
-    return [s for s in test_stems if s not in wired and s not in allowed]
+def validate_allowlists(test_stems: list[str], wired: set[str]) -> list[str]:
+    """Validate that allowlist stems exist on disk and are not redundantly wired."""
+    errors: list[str] = []
+    file_set = set(test_stems)
+    for stem, reason in ALLOWED.items():
+        if stem not in file_set:
+            errors.append(f"ALLOWED stem does not exist as test file: {TESTS_REL}/{stem}.rs (reason: {reason})")
+        if not reason.strip():
+            errors.append(f"ALLOWED entry missing written reason: {stem}")
+        if stem in wired:
+            errors.append(f"ALLOWED entry is stale (already wired in CI): {stem}")
+    return errors
+
+
+def find_orphans(
+    test_stems: list[str], wired: set[str], allowed: set[str] | dict[str, str] = ALLOWED
+) -> list[str]:
+    allowed_stems = set(allowed.keys()) if isinstance(allowed, dict) else set(allowed)
+    return [s for s in test_stems if s not in wired and s not in allowed_stems]
 
 
 def self_test() -> int:
@@ -132,7 +138,17 @@ def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return self_test()
     files = toplevel_test_files()
-    orphans = find_orphans(files, wired_stems(), ALLOWED)
+    wired = wired_stems()
+    allowlist_errors = validate_allowlists(files, wired)
+    if allowlist_errors:
+        print(
+            f"FAIL - {len(allowlist_errors)} invalid or stale allowlist entry/entries:",
+            file=sys.stderr,
+        )
+        for err in allowlist_errors:
+            print(f"  {err}", file=sys.stderr)
+        return 1
+    orphans = find_orphans(files, wired, ALLOWED)
     if orphans:
         print(
             f"FAIL - {len(orphans)} CI-orphan scanner test(s) that never run in CI:",

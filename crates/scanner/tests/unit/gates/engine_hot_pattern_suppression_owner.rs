@@ -37,7 +37,7 @@ fn hot_pattern_suppression_routes_through_suppression_owner() {
         "HotPatternSuppressionCtx",
         "suppress_known_example_credential",
         "looks_like_regex_literal_tail",
-        "looks_like_vendored_minified_path",
+        "vendored_minified_path_policy_applies",
         "looks_like_secret_scanner_source",
         "binary-strings",
         "archive-binary",

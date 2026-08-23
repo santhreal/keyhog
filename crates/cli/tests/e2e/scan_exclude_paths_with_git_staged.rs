@@ -48,8 +48,12 @@ fn scan_exclude_paths_with_git_staged() {
         "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
     )
     .unwrap();
+    // A second staged file with no credential keeps the scan reading bytes, so
+    // the verdict is a real clean result and not the zero-byte coverage refusal
+    // (exit 13) that a fully excluded staged set produces.
+    std::fs::write(repo.join("notes.env"), "LOG_LEVEL=info\n").unwrap();
     std::process::Command::new("git")
-        .args(["add", ".env.secret"])
+        .args(["add", ".env.secret", "notes.env"])
         .current_dir(repo)
         .status()
         .expect("git add");
@@ -96,8 +100,11 @@ fn scan_keyhogignore_path_with_git_staged() {
     )
     .unwrap();
     std::fs::write(repo.join(".keyhogignore"), "path:.env.secret\n").unwrap();
+    // Second staged file with no credential: the scan must read bytes, or the
+    // zero-byte coverage refusal (exit 13) would stand in for a clean verdict.
+    std::fs::write(repo.join("notes.env"), "LOG_LEVEL=info\n").unwrap();
     std::process::Command::new("git")
-        .args(["add", ".env.secret"])
+        .args(["add", ".env.secret", "notes.env"])
         .current_dir(repo)
         .status()
         .expect("git add");

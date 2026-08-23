@@ -27,10 +27,10 @@
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CsrU32 {
     /// All rows concatenated, in row order.
-    data: Vec<u32>,
+    data: Box<[u32]>,
     /// `offsets[i]..offsets[i + 1]` is the slice of `data` for row `i`.
     /// Always non-empty once built: a table of `n` rows has `n + 1` offsets.
-    offsets: Vec<u32>,
+    offsets: Box<[u32]>,
 }
 
 impl CsrU32 {
@@ -69,7 +69,10 @@ impl CsrU32 {
             offsets.push(data.len() as u32);
         }
         debug_assert_eq!(cursor, pairs.len());
-        Self { data, offsets }
+        Self {
+            data: data.into_boxed_slice(),
+            offsets: offsets.into_boxed_slice(),
+        }
     }
 
     /// Row `i` as a contiguous slice, or `None` when `i` is out of range.

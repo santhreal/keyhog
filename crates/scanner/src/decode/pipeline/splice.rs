@@ -269,6 +269,7 @@ pub(in crate::decode) fn push_decoded_text_chunk_spliced_at(
             author: chunk.metadata.author.clone(),
             date: chunk.metadata.date.clone(),
             mtime_ns: chunk.metadata.mtime_ns,
+            ctime_ns: chunk.metadata.ctime_ns,
             size_bytes: chunk.metadata.size_bytes,
             decoded_span,
         },

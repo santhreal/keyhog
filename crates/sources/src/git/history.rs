@@ -484,6 +484,7 @@ fn make_git_history_chunk(
             author: Some(author.into()),
             date: Some(date.into()),
             mtime_ns: None,
+            ctime_ns: None,
             size_bytes: None,
             decoded_span: None,
         },

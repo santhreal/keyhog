@@ -113,6 +113,11 @@ fn effective_config_with_toml(
 /// Write `content` to `name` inside a fresh tempdir and scan it as JSON
 /// in-process (`--daemon=off`). Returns (stdout, stderr, code) plus the dir
 /// guard (kept alive by the caller).
+///
+/// Fixture names carry a `.env` suffix: the evidence classifier reads assignment
+/// context from the file syntax, and a `.txt` fixture is `unsupported-context`,
+/// which lands in the `review` tier and exits 0 under the default policy. These
+/// tests assert filter and formatting behavior, not context classification.
 fn scan_file(name: &str, content: &str, extra: &[&str]) -> (TempDir, String, String, Option<i32>) {
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join(name);
@@ -166,7 +171,7 @@ const SENTRY_DSN: &str =
 /// min_severity` is false and the finding survives. Exit 1 (findings present).
 #[test]
 fn severity_critical_keeps_critical_aws_finding() {
-    let (_d, out, err, code) = scan_file("config.txt", AWS_KEY, &["--severity", "critical"]);
+    let (_d, out, err, code) = scan_file("config.env", AWS_KEY, &["--severity", "critical"]);
     assert_eq!(
         code,
         Some(1),
@@ -188,7 +193,7 @@ fn severity_critical_keeps_critical_aws_finding() {
 /// `Critical >= High`. This proves the comparison is `>=`, not `==`.
 #[test]
 fn severity_high_keeps_critical_finding_boundary() {
-    let (_d, out, err, code) = scan_file("config.txt", AWS_KEY, &["--severity", "high"]);
+    let (_d, out, err, code) = scan_file("config.env", AWS_KEY, &["--severity", "high"]);
     assert_eq!(
         code,
         Some(1),
@@ -207,7 +212,7 @@ fn severity_high_keeps_critical_finding_boundary() {
 #[test]
 fn severity_info_floor_keeps_client_safe_finding() {
     // First confirm the Sentry DSN is detected at all (without a filter).
-    let (_d0, base_out, _e0, base_code) = scan_file("app.txt", SENTRY_DSN, &[]);
+    let (_d0, base_out, _e0, base_code) = scan_file("app.env", SENTRY_DSN, &[]);
     assert_eq!(base_code, Some(1), "baseline Sentry DSN must be detected");
     let base = parse_findings(&base_out);
     assert!(
@@ -215,7 +220,7 @@ fn severity_info_floor_keeps_client_safe_finding() {
         "baseline Sentry DSN must be tiered client-safe; got {base_out}"
     );
 
-    let (_d, out, err, code) = scan_file("app.txt", SENTRY_DSN, &["--severity", "info"]);
+    let (_d, out, err, code) = scan_file("app.env", SENTRY_DSN, &["--severity", "info"]);
     assert_eq!(
         code,
         Some(1),
@@ -231,7 +236,7 @@ fn severity_info_floor_keeps_client_safe_finding() {
 /// Boundary: a `client-safe` floor preserves a finding at exactly that tier.
 #[test]
 fn severity_client_safe_keeps_client_safe_finding() {
-    let (_d, out, err, code) = scan_file("app.txt", SENTRY_DSN, &["--severity", "client-safe"]);
+    let (_d, out, err, code) = scan_file("app.env", SENTRY_DSN, &["--severity", "client-safe"]);
     assert_eq!(
         code,
         Some(1),
@@ -251,7 +256,7 @@ fn severity_client_safe_keeps_client_safe_finding() {
 /// client-safe, so the result set is empty and the exit code is 0.
 #[test]
 fn severity_low_drops_client_safe_finding() {
-    let (_d0, base_out, _e0, base_code) = scan_file("app.txt", SENTRY_DSN, &[]);
+    let (_d0, base_out, _e0, base_code) = scan_file("app.env", SENTRY_DSN, &[]);
     if base_code != Some(1)
         || !parse_findings(&base_out)
             .iter()
@@ -260,7 +265,7 @@ fn severity_low_drops_client_safe_finding() {
         return; // corpus did not produce the client-safe baseline; nothing to filter
     }
 
-    let (_d, out, err, code) = scan_file("app.txt", SENTRY_DSN, &["--severity", "low"]);
+    let (_d, out, err, code) = scan_file("app.env", SENTRY_DSN, &["--severity", "low"]);
     assert_eq!(
         code,
         Some(0),
@@ -277,7 +282,7 @@ fn severity_low_drops_client_safe_finding() {
 #[test]
 fn severity_accepts_every_report_level() {
     for level in ["info", "client-safe", "low", "medium", "high", "critical"] {
-        let (_d, _o, err, code) = scan_file("config.txt", "plain text\n", &["--severity", level]);
+        let (_d, _o, err, code) = scan_file("config.env", "plain text\n", &["--severity", level]);
         assert_eq!(
             code,
             Some(0),
@@ -1013,7 +1018,7 @@ fn ml_threshold_rejects_above_one() {
 #[test]
 fn dedup_accepts_all_three_scopes() {
     for scope in ["credential", "file", "none"] {
-        let (_d, _o, err, code) = scan_file("config.txt", "nothing here\n", &["--dedup", scope]);
+        let (_d, _o, err, code) = scan_file("config.env", "nothing here\n", &["--dedup", scope]);
         assert_eq!(code, Some(0), "--dedup {scope} must parse; stderr={err}");
     }
 }
@@ -1047,7 +1052,7 @@ fn dedup_rejects_unknown_scope() {
 fn dedup_credential_collapses_duplicate_credential() {
     // Same AWS key on two distinct lines/files-worth of context.
     let body = "first = \"AKIAQYLPMN5HFIQR7XYA\"\nsecond = \"AKIAQYLPMN5HFIQR7XYA\"\n";
-    let (_d, out, err, code) = scan_file("config.txt", body, &["--dedup", "credential"]);
+    let (_d, out, err, code) = scan_file("config.env", body, &["--dedup", "credential"]);
     assert_eq!(
         code,
         Some(1),
@@ -1079,7 +1084,7 @@ fn dedup_credential_collapses_duplicate_credential() {
 #[test]
 fn dedup_none_keeps_both_occurrences() {
     let body = "first = \"AKIAQYLPMN5HFIQR7XYA\"\nsecond = \"AKIAQYLPMN5HFIQR7XYA\"\n";
-    let (_d, out, err, code) = scan_file("config.txt", body, &["--dedup", "none"]);
+    let (_d, out, err, code) = scan_file("config.env", body, &["--dedup", "none"]);
     assert_eq!(code, Some(1), "stderr={err}");
     let findings = parse_findings(&out);
     let aws = findings
@@ -1102,7 +1107,7 @@ fn dedup_none_keeps_both_occurrences() {
 /// finding (default behavior: client-safe findings still appear).
 #[test]
 fn client_safe_finding_present_by_default() {
-    let (_d, out, err, code) = scan_file("app.txt", SENTRY_DSN, &[]);
+    let (_d, out, err, code) = scan_file("app.env", SENTRY_DSN, &[]);
     if code != Some(1) {
         return; // corpus did not detect this DSN; nothing to assert
     }
@@ -1118,7 +1123,7 @@ fn client_safe_finding_present_by_default() {
 /// the result set is empty and the exit code drops from 1 to 0.
 #[test]
 fn hide_client_safe_drops_client_safe_findings() {
-    let (_d0, base_out, _e0, base_code) = scan_file("app.txt", SENTRY_DSN, &[]);
+    let (_d0, base_out, _e0, base_code) = scan_file("app.env", SENTRY_DSN, &[]);
     if base_code != Some(1)
         || !parse_findings(&base_out)
             .iter()
@@ -1127,7 +1132,7 @@ fn hide_client_safe_drops_client_safe_findings() {
         return; // no client-safe baseline -> the differential is meaningless here
     }
 
-    let (_d, out, err, code) = scan_file("app.txt", SENTRY_DSN, &["--hide-client-safe"]);
+    let (_d, out, err, code) = scan_file("app.env", SENTRY_DSN, &["--hide-client-safe"]);
     assert_eq!(
         code,
         Some(0),
@@ -1144,7 +1149,7 @@ fn hide_client_safe_drops_client_safe_findings() {
 /// AWS key survives the flag (its severity is `critical`, not `client-safe`).
 #[test]
 fn hide_client_safe_keeps_non_client_safe_findings() {
-    let (_d, out, err, code) = scan_file("config.txt", AWS_KEY, &["--hide-client-safe"]);
+    let (_d, out, err, code) = scan_file("config.env", AWS_KEY, &["--hide-client-safe"]);
     assert_eq!(
         code,
         Some(1),
@@ -1168,7 +1173,7 @@ fn hide_client_safe_keeps_non_client_safe_findings() {
 /// For `AKIAQYLPMN5HFIQR7XYA` (20 ASCII chars) redact -> `AK...YA`.
 #[test]
 fn show_secrets_off_redacts_credential() {
-    let (_d, out, err, code) = scan_file("config.txt", AWS_KEY, &[]);
+    let (_d, out, err, code) = scan_file("config.env", AWS_KEY, &[]);
     assert_eq!(code, Some(1), "stderr={err}");
     let findings = parse_findings(&out);
     let aws = findings
@@ -1190,7 +1195,7 @@ fn show_secrets_off_redacts_credential() {
 /// plaintext (`postprocess.rs` sets it to `m.credential` under the flag).
 #[test]
 fn show_secrets_on_prints_plaintext() {
-    let (_d, out, err, code) = scan_file("config.txt", AWS_KEY, &["--show-secrets"]);
+    let (_d, out, err, code) = scan_file("config.env", AWS_KEY, &["--show-secrets"]);
     assert_eq!(code, Some(1), "stderr={err}");
     let findings = parse_findings(&out);
     let aws = findings
@@ -1210,7 +1215,7 @@ fn show_secrets_on_prints_plaintext() {
 /// scan must actually run (use a fixture with a finding so `finalize` runs).
 #[test]
 fn lockdown_forbids_show_secrets() {
-    let (_d, _out, err, code) = scan_file("config.txt", AWS_KEY, &["--lockdown", "--show-secrets"]);
+    let (_d, _out, err, code) = scan_file("config.env", AWS_KEY, &["--lockdown", "--show-secrets"]);
     assert_eq!(
         code,
         Some(2),
@@ -1256,7 +1261,7 @@ fn daemon_off_rejects_daemon_socket() {
 #[test]
 fn severity_forces_in_process_path_and_still_finds() {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("config.txt");
+    let path = dir.path().join("config.env");
     std::fs::write(&path, AWS_KEY).expect("write");
     let out = Command::new(binary())
         .args([

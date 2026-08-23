@@ -37,6 +37,10 @@ pub mod ascii_ci;
 /// of truth shared by the scanner's finding metadata and the verifier's
 /// suppress-live-verification-for-canaries gate).
 mod aws;
+/// Unified cache layout classification and eviction policy contracts.
+pub mod cache_layout;
+/// Compiled-artifact class model and canonical identity contracts.
+pub mod compiled_artifact;
 /// Configuration system for KeyHog scanning options.
 mod config;
 /// Cross-file credential correlation over an already-reported finding set.
@@ -73,7 +77,8 @@ pub mod retry;
 mod safe_bin;
 mod source;
 mod spec;
-mod state_file;
+/// Bounded reads and atomic durable writes for on-disk KeyHog state artifacts.
+pub mod state_file;
 /// Shared paired performance statistics used by release gates and routing evidence.
 pub mod timing;
 /// Versioned redacted triage contracts and derived feedback artifacts.
@@ -158,6 +163,22 @@ pub fn keyhog_matcher_artifacts_root() -> Option<std::path::PathBuf> {
     dirs::cache_dir().map(|dir| dir.join(KEYHOG_MATCHER_ARTIFACTS_SUBDIR))
 }
 
+/// Global atomic counter tracking the number of times the embedded detector TOML corpus has been parsed.
+static DETECTOR_CORPUS_LOAD_COUNT: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+/// Return the number of times the embedded detector TOML corpus has been parsed.
+#[inline]
+pub fn detector_corpus_load_count() -> usize {
+    DETECTOR_CORPUS_LOAD_COUNT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Reset the detector corpus load count for testing assertions.
+#[doc(hidden)]
+pub fn reset_detector_corpus_load_count_for_test() {
+    DETECTOR_CORPUS_LOAD_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Parse the embedded detector corpus, FAILING CLOSED on any malformed TOML.
 ///
 /// This is the SINGLE loader every entrypoint shares (the `scan` orchestrator
@@ -176,6 +197,7 @@ pub fn keyhog_matcher_artifacts_root() -> Option<std::path::PathBuf> {
 /// hard error rather than a buried log line. Each embedded TOML holds exactly one
 /// detector, so on success `result.len() == embedded_detector_count()`.
 pub fn load_embedded_detectors_or_fail() -> Result<Vec<DetectorSpec>, SpecError> {
+    DETECTOR_CORPUS_LOAD_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let embedded = embedded_detector_tomls();
     let mut detectors = Vec::with_capacity(embedded.len());
     let mut failed = Vec::new();
@@ -263,12 +285,17 @@ pub const REASSEMBLED_DETECTOR_SUFFIX: &str = ":reassembled";
 /// corpus, matching every prior consumer's contract.
 pub fn detector_spec_by_id(id: &str) -> Option<&'static DetectorSpec> {
     static BY_ID: std::sync::LazyLock<
-        std::collections::HashMap<&'static str, &'static DetectorSpec>,
+        std::collections::HashMap<&'static str, &'static DetectorSpec, ahash::RandomState>,
     > = std::sync::LazyLock::new(|| {
-        embedded_detector_specs()
-            .iter()
-            .map(|spec| (spec.id.as_str(), spec))
-            .collect()
+        let specs = embedded_detector_specs();
+        let mut map = std::collections::HashMap::with_capacity_and_hasher(
+            specs.len(),
+            ahash::RandomState::new(),
+        );
+        for spec in specs {
+            map.insert(spec.id.as_str(), spec);
+        }
+        map
     });
     BY_ID.get(id).copied()
 }
@@ -285,6 +312,11 @@ pub fn git_hash() -> &'static str {
     env!("GIT_HASH")
 }
 
+/// Path of the currently running executable.
+pub fn current_executable_path() -> Result<std::path::PathBuf, String> {
+    std::env::current_exe().map_err(|error| format!("locate running executable: {error}"))
+}
+
 /// SHA-256 hex digest of the currently running executable, memoized once per process.
 ///
 /// Shared by MatcherArtifact identity and autoroute calibration so a scan does
@@ -292,35 +324,32 @@ pub fn git_hash() -> &'static str {
 pub fn current_executable_sha256() -> Result<String, String> {
     use sha2::{Digest, Sha256};
     use std::io::Read;
-    use std::sync::OnceLock;
-    static DIGEST: OnceLock<Result<String, String>> = OnceLock::new();
-    DIGEST
-        .get_or_init(|| {
-            let path = std::env::current_exe()
-                .map_err(|error| format!("locate running executable: {error}"))?;
-            let mut file = std::fs::File::open(&path).map_err(|error| {
+    use std::sync::LazyLock;
+    static DIGEST: LazyLock<Result<String, String>> = LazyLock::new(|| {
+        let path = current_executable_path()?;
+        let mut file = std::fs::File::open(&path).map_err(|error| {
+            format!(
+                "open running executable {} for identity: {error}",
+                path.display()
+            )
+        })?;
+        let mut hasher = Sha256::new();
+        let mut buffer = [0u8; 128 * 1024];
+        loop {
+            let read = file.read(&mut buffer).map_err(|error| {
                 format!(
-                    "open running executable {} for identity: {error}",
+                    "read running executable {} for identity: {error}",
                     path.display()
                 )
             })?;
-            let mut hasher = Sha256::new();
-            let mut buffer = [0u8; 128 * 1024];
-            loop {
-                let read = file.read(&mut buffer).map_err(|error| {
-                    format!(
-                        "read running executable {} for identity: {error}",
-                        path.display()
-                    )
-                })?;
-                if read == 0 {
-                    break;
-                }
-                hasher.update(&buffer[..read]);
+            if read == 0 {
+                break;
             }
-            Ok(format!("{:x}", hasher.finalize()))
-        })
-        .clone()
+            hasher.update(&buffer[..read]);
+        }
+        Ok(format!("{:x}", hasher.finalize()))
+    });
+    DIGEST.clone()
 }
 
 /// Effective digest identifying the EXACT embedded detector set and the

@@ -29,12 +29,18 @@ fn scan_autoroute_missing_calibration_fails_closed() {
         .expect("spawn keyhog scan");
 
     let stderr = String::from_utf8_lossy(&output.stderr);
+    // An unroutable scan is operator-correctable: calibrate, then rerun. It
+    // shares EXIT_USER_ERROR with the other invalid autoroute states (see
+    // `scan_autoroute_relative_cache_path_exits_two`) and never reports a
+    // finding set for input it did not scan.
     assert_eq!(
         output.status.code(),
-        Some(13),
-        "an unroutable scan must report incomplete coverage; stderr={stderr}"
+        Some(2),
+        "an unroutable scan must fail closed with the repair instruction; stderr={stderr}"
     );
-    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "[]");
+    // No findings document at all, not an empty one: `[]` on stdout reads as a
+    // clean tree to every machine consumer, and nothing was scanned.
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "");
     assert!(
         stderr.contains("autoroute calibration required")
             && stderr.contains("No autoroute cache file exists")

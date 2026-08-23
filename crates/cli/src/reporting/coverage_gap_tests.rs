@@ -470,6 +470,7 @@ fn all_ones() -> CoverageCounts {
         scanner_decode_oversize_skips: 1,
         scanner_invalid_pattern_index_skips: 1,
         scanner_boundary_cardinality_mismatches: 1,
+        scanner_boundary_seam_truncations: 1,
         scanner_line_offset_mismatches: 1,
         scanner_chunk_deadline_aborts: 1,
         scanner_binary_strings_named_exclusions: 1,
@@ -487,12 +488,12 @@ fn all_ones() -> CoverageCounts {
 #[test]
 fn every_category_surfaces_when_all_counters_are_nonzero() {
     let s = coverage_gap_summary(&all_ones());
-    // 11 skip fields + source_errors + batches_not_routed + 9 scanner
-    // telemetry + 2 binary + vendored-path suppression + 2 nothing-scanned = 27.
+    // 11 skip fields + source_errors + batches_not_routed + 10 scanner
+    // telemetry + 2 binary + vendored-path suppression + 2 nothing-scanned = 28.
     assert_eq!(
         s.len(),
-        27,
-        "every one of the 27 coverage-gap categories must surface, got {} ({s:?})",
+        28,
+        "every one of the 28 coverage-gap categories must surface, got {} ({s:?})",
         s.len()
     );
 }
@@ -547,11 +548,11 @@ fn surfaced_count_equals_input_count() {
 // gap on one surface but not the other is a Law-10 false-clean.
 
 #[test]
-fn all_has_twenty_seven_kinds() {
+fn all_has_twenty_eight_kinds() {
     assert_eq!(
         CoverageGapKind::ALL.len(),
-        27,
-        "the canonical coverage-gap set must have exactly 27 categories"
+        28,
+        "the canonical coverage-gap set must have exactly 28 categories"
     );
 }
 
@@ -629,6 +630,7 @@ fn warn_severity_set_is_exact() {
         ScannerDecodeOversizeSkip,
         ScannerInvalidPatternIndexSkip,
         ScannerBoundaryCardinalityMismatch,
+        ScannerBoundarySeamTruncation,
         ScannerBinaryStringsNamedExclusion,
     ] {
         assert_eq!(
@@ -640,10 +642,10 @@ fn warn_severity_set_is_exact() {
 }
 
 /// Locks out leaving a coverage-gap kind unclassified after adding a new
-/// fail-closed category to the canonical 27-kind partition.
+/// fail-closed category to the canonical 28-kind partition.
 #[test]
 fn severity_partition_totals_all_kinds() {
-    // 17 FAIL + 10 WARN = 27. ScannerLineOffsetMismatch is fail-closed because
+    // 17 FAIL + 11 WARN = 28. ScannerLineOffsetMismatch is fail-closed because
     // wrong source coordinates make the reported finding incomplete, and
     // ScannerChunkDeadlineAbort because the chunk's tail was never matched.
     // Both NothingScanned kinds are fail-closed because a scan that read no
@@ -661,7 +663,7 @@ fn severity_partition_totals_all_kinds() {
         .filter(|k| k.severity() == CoverageSeverity::Warn)
         .count();
     assert_eq!(fail, 17, "expected 17 FAIL categories, got {fail}");
-    assert_eq!(warn, 10, "expected 10 WARN categories, got {warn}");
+    assert_eq!(warn, 11, "expected 11 WARN categories, got {warn}");
     assert_eq!(fail + warn, CoverageGapKind::ALL.len());
     assert_eq!(
         CoverageGapKind::fail_class_kinds().count(),
@@ -847,5 +849,5 @@ fn both_surfaces_cover_the_identical_kind_set() {
         summary.len(),
         "the human and SARIF surfaces must cover the identical set of kinds"
     );
-    assert_eq!(rendered, 27, "all 27 kinds render on the all_ones snapshot");
+    assert_eq!(rendered, 28, "all 28 kinds render on the all_ones snapshot");
 }

@@ -1,0 +1,36 @@
+# Docs: https://dev.bitly.com/docs/getting-started/authentication/
+# Format: 40-character hexadecimal access token
+# Verify: GET /v4/user with Bearer token
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "bitly-access-token"
+name = "Bitly Access Token"
+service = "bitly"
+severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.2999999999999998, named_anchor_floor = 0.55, assignment_context_multiplier = 1.0, string_literal_context_multiplier = 0.9, unknown_context_multiplier = 0.8, documentation_context_multiplier = 0.3, comment_context_multiplier = 0.4, test_context_multiplier = 0.3, encrypted_context_multiplier = 0.05, soft_context_suppression_threshold = 0.5, encrypted_context_suppression_threshold = 0.8, post_match = { placeholder_multiplier = 0.05, minimum_byte_diversity = 0.1, low_diversity_multiplier = 0.1, maximum_repeat_ratio = 0.8, degenerate_run_min_length = 10, degenerate_repeat_multiplier = 0.1, fixture_path_multiplier = 0.5, ml_context_reapply_below = 0.95 } }
+min_confidence = 0.3
+keywords = ["bitly", "BITLY_ACCESS_TOKEN", "bitly_token", "BITLY_TOKEN"]
+
+[[detector.patterns]]
+regex = '''(?i)(?:bitly[a-z0-9_.\-]*)[=:\s"' \t]+([a-f0-9]{40})(?:[^a-f0-9]|$)'''
+description = "Bitly access token with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api-ssl.bitly.com/v4/user"
+allowed_domains = ["api-ssl.bitly.com"]
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200
+policy = "status_with_error_backstop"
+
+[[detector.tests]]
+test_positive = "bitly_token = 20e9817b9c5ddde1b0cec7622bfc557dbc823791"
+test_negative = "bitly_token = short"

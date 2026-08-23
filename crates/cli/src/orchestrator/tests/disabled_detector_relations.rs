@@ -40,9 +40,11 @@ fn disabling_required_target_removes_its_dependent() {
         detector("unrelated", vec![]),
     ];
 
-    let dropped = filter_disabled_detectors(&mut detectors, &disabled(&["target"]));
+    let mut disabled_set = disabled(&["target"]);
+    let dropped = filter_disabled_detectors(&mut detectors, &mut disabled_set);
+    assert!(disabled_set.contains("dependent"));
 
-    assert_eq!(dropped, 2);
+    assert_eq!(dropped.len(), 2);
     assert_eq!(
         detectors
             .iter()
@@ -50,6 +52,8 @@ fn disabling_required_target_removes_its_dependent() {
             .collect::<Vec<_>>(),
         vec!["unrelated"]
     );
+    assert!(disabled_set.contains("target"));
+    assert!(disabled_set.contains("dependent"));
 }
 
 /// Required relations form a dependency graph, so disabling a leaf must remove
@@ -68,10 +72,16 @@ fn disabling_required_target_cascades_transitively() {
         ),
     ];
 
-    let dropped = filter_disabled_detectors(&mut detectors, &disabled(&["leaf"]));
+    let mut disabled_set = disabled(&["leaf"]);
+    let dropped = filter_disabled_detectors(&mut detectors, &mut disabled_set);
+    assert!(disabled_set.contains("middle"));
+    assert!(disabled_set.contains("root"));
 
-    assert_eq!(dropped, 3);
+    assert_eq!(dropped.len(), 3);
     assert!(detectors.is_empty());
+    assert!(disabled_set.contains("leaf"));
+    assert!(disabled_set.contains("middle"));
+    assert!(disabled_set.contains("root"));
 }
 
 /// Conflict and subsumption owners remain useful without a disabled target;
@@ -90,9 +100,10 @@ fn surviving_relations_to_disabled_targets_are_pruned() {
         ),
     ];
 
-    let dropped = filter_disabled_detectors(&mut detectors, &disabled(&["target"]));
+    let mut disabled_set = disabled(&["target"]);
+    let dropped = filter_disabled_detectors(&mut detectors, &mut disabled_set);
 
-    assert_eq!(dropped, 1);
+    assert_eq!(dropped.len(), 1);
     assert_eq!(detectors.len(), 2);
     assert!(detectors
         .iter()
@@ -111,9 +122,38 @@ fn unknown_relation_targets_are_not_silently_pruned() {
         ),
     ];
 
-    let dropped = filter_disabled_detectors(&mut detectors, &disabled(&["disabled"]));
+    let mut disabled_set = disabled(&["disabled"]);
+    let dropped = filter_disabled_detectors(&mut detectors, &mut disabled_set);
 
-    assert_eq!(dropped, 1);
+    assert_eq!(dropped.len(), 1);
     assert_eq!(detectors.len(), 1);
     assert_eq!(detectors[0].detector_relations[0].detector_id, "missing");
+}
+
+/// WHY: the removed-detector set must include transitive required dependents,
+/// so post-scan match filters suppress findings from every removed detector.
+#[test]
+fn filter_disabled_detectors_returns_transitive_dependents() {
+    let mut detectors = vec![
+        detector("leaf", vec![]),
+        detector(
+            "middle",
+            vec![relation("leaf", DetectorRelationKind::Requires)],
+        ),
+        detector(
+            "root",
+            vec![relation("middle", DetectorRelationKind::Requires)],
+        ),
+        detector("unrelated", vec![]),
+    ];
+
+    let mut disabled_set = disabled(&["leaf"]);
+    let removed = filter_disabled_detectors(&mut detectors, &mut disabled_set);
+
+    assert_eq!(removed.len(), 3);
+    assert_eq!(detectors.len(), 1);
+    assert_eq!(detectors[0].id, "unrelated");
+    assert!(removed.contains("leaf"));
+    assert!(removed.contains("middle"));
+    assert!(removed.contains("root"));
 }

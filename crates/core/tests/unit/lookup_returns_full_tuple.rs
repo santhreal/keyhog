@@ -13,6 +13,7 @@ fn lookup_returns_full_tuple() {
         &idx,
         p.clone(),
         42,
+        42 + 100,
         99,
         h,
     );

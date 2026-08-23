@@ -33,7 +33,7 @@ use crate::types::CompiledPattern;
 /// side is already visible whole inside that chunk's own in-chunk scan. Sized
 /// at the FilesystemSource window overlap so the seam covers exactly the
 /// straddle range the overlap design already assumes catchable.
-pub(crate) const MAX_BOUNDARY_SEAM_BYTES: usize = crate::types::WINDOW_OVERLAP_BYTES;
+pub const MAX_BOUNDARY_SEAM_BYTES: usize = crate::types::WINDOW_OVERLAP_BYTES;
 
 /// Scanner-derived cross-seam context requirement for compiled detector regexes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -57,7 +57,7 @@ pub(crate) fn derive_pattern_boundary_context<'a>(
     BoundaryContextBytes::Bounded(max_bound)
 }
 
-pub(crate) fn regex_match_byte_upper_bound(source: &str) -> Option<usize> {
+pub fn regex_match_byte_upper_bound(source: &str) -> Option<usize> {
     let ast = match regex_syntax::ast::parse::Parser::new().parse(source) {
         Ok(ast) => ast,
         Err(_) => return None, // LAW10: regex bound parse failure => full adjacent-pair seam scan, recall-preserving
@@ -223,9 +223,9 @@ fn scan_one_pair(
     // boundaries since `Chunk.data` is `&str`-shaped (we splice bytes back into
     // a String below). For unbounded active generators, use the whole adjacent
     // pair and scan the synthetic buffer as one unit below.
-    let context_bytes = match context {
-        BoundaryContextBytes::Bounded(bytes) => bytes,
-        BoundaryContextBytes::FullAdjacentChunks => MAX_BOUNDARY_SEAM_BYTES,
+    let (context_bytes, is_unbounded_context) = match context {
+        BoundaryContextBytes::Bounded(bytes) => (bytes, false),
+        BoundaryContextBytes::FullAdjacentChunks => (MAX_BOUNDARY_SEAM_BYTES, true),
     };
     let tail_start = a_bytes.len().saturating_sub(context_bytes);
     let tail_start = floor_char_boundary(a.data.as_ref(), tail_start);
@@ -234,6 +234,19 @@ fn scan_one_pair(
     let head_end = b_bytes.len().min(context_bytes);
     let head_end = floor_char_boundary(b.data.as_ref(), head_end);
     let head = &b.data.as_ref()[..head_end];
+    if is_unbounded_context {
+        let trimmed_a = tail_start > 0;
+        let trimmed_b = head_end < b_bytes.len();
+        if trimmed_a || trimmed_b {
+            let a_has_unbounded_candidate =
+                trimmed_a && memchr::memmem::find(&a_bytes[..tail_start], b"-----BEGIN").is_some();
+            let b_has_unbounded_candidate =
+                trimmed_b && memchr::memmem::find(&b_bytes[head_end..], b"-----END").is_some();
+            if a_has_unbounded_candidate || b_has_unbounded_candidate {
+                crate::telemetry::record_boundary_seam_truncation();
+            }
+        }
+    }
 
     if tail.is_empty() || head.is_empty() {
         return Ok(());

@@ -966,7 +966,7 @@ docker_daemon_ready() {
 # Resolve the same per-user cache root the binary resolves with `dirs::cache_dir()`.
 # A mismatch here publishes packs the scanner will never look at.
 keyhog_cache_root() {
-    if [ "$OS" = "macos" ]; then
+    if [ "$OS" = "darwin" ] || [ "$OS" = "macos" ]; then
         printf '%s\n' "$HOME/Library/Caches"
         return 0
     fi

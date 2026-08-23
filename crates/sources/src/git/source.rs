@@ -43,6 +43,10 @@ pub(crate) fn max_buffered_git_blob_chunks() -> usize {
 #[cfg(debug_assertions)]
 fn record_buffered_git_blob_chunks(chunks: usize) {
     MAX_BUFFERED_GIT_BLOB_CHUNKS.fetch_max(chunks, Ordering::Relaxed);
+    keyhog_profile::set_gauge(
+        keyhog_profile::GaugeId::GitBufferedBlobChunks,
+        chunks as u64,
+    );
 }
 
 #[cfg(not(debug_assertions))]
@@ -938,6 +942,7 @@ impl GitBlobChunkDecoder<'_> {
                 author: author.map(Into::into),
                 date: None,
                 mtime_ns: None,
+                ctime_ns: None,
                 size_bytes: Some(decoded_blob.size_bytes),
                 decoded_span: None,
             },

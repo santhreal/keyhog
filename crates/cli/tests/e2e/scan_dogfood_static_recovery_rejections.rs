@@ -17,6 +17,9 @@ fn dogfood_reports_typed_static_recovery_rejections_without_source_bytes() {
             "--backend",
             "simd",
             "--daemon=off",
+            // `--quiet` is what makes stderr machine-readable: materialization,
+            // cache, and autoroute status lines otherwise precede the trace.
+            "--quiet",
             "--deep",
             "--dogfood",
             "--format",

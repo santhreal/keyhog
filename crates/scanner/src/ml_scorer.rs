@@ -123,7 +123,7 @@ pub(crate) fn score_with_config(
         // FNV-1a keyed cache - ~100x faster than SHA-256 for cache lookups.
         // 256-entry bounded cache covers batch scoring of one file's matches.
         static SCORE_CACHE: RefCell<std::collections::HashMap<u64, f64>> =
-            RefCell::new(std::collections::HashMap::with_capacity(64));
+            RefCell::new(std::collections::HashMap::new());
     }
 
     // The score depends on the four configured feature vocabularies as well as
@@ -363,8 +363,6 @@ pub(crate) fn score_precomputed_batch_on_cpu<T: MlScoreInput>(
     inputs: &[T],
     features: &[[f32; NUM_FEATURES]],
 ) -> Vec<f64> {
-    use rayon::prelude::*;
-
     assert_eq!(
         inputs.len(),
         features.len(),
@@ -372,8 +370,8 @@ pub(crate) fn score_precomputed_batch_on_cpu<T: MlScoreInput>(
     );
     let model = ml_weights::model();
     inputs
-        .par_iter()
-        .zip(features.par_iter())
+        .iter()
+        .zip(features.iter())
         .map(|(input, features)| {
             crate::confidence::policy::ml_score_for_candidate_text(input.ml_text(), || {
                 forward_pass_impl(model, features) as f64
@@ -440,23 +438,13 @@ pub(crate) fn score_input_batch<T: MlScoreInput>(
         return scores;
     }
 
-    use rayon::prelude::*;
     if !profile {
-        let model = ml_weights::model();
-        return inputs
-            .par_iter()
-            .map(|input| {
-                let features = input.ml_features(config);
-                crate::confidence::policy::ml_score_for_candidate_text(input.ml_text(), || {
-                    forward_pass_impl(model, &features) as f64
-                })
-            })
-            .collect();
+        return score_input_batch_serial(inputs, config);
     }
 
     let feature_started = std::time::Instant::now();
     let features: Vec<[f32; NUM_FEATURES]> = inputs
-        .par_iter()
+        .iter()
         .map(|input| input.ml_features(config))
         .collect();
     keyhog_profile::add_counter(

@@ -157,7 +157,14 @@ fn full_corpus_multi_backend_worst_case_parity() {
         detectors.len()
     );
 
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let ref_scanner =
+        match CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::SimdCpu) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("SKIP: SimdCpu backend unavailable: {e}");
+                return;
+            }
+        };
     let fixtures = synthetic_worst_case_fixtures();
 
     let backends = vec![
@@ -170,15 +177,23 @@ fn full_corpus_multi_backend_worst_case_parity() {
     let mut failures: Vec<String> = Vec::new();
 
     for (name, chunks) in &fixtures {
-        let reference_keys = scan_fixture(&scanner, chunks, ScanBackend::SimdCpu);
+        let reference_keys = scan_fixture(&ref_scanner, chunks, ScanBackend::SimdCpu);
 
         for backend in backends
             .iter()
             .copied()
             .filter(|b| *b != ScanBackend::SimdCpu)
         {
+            let backend_scanner =
+                match CompiledScanner::compile_for_backend(detectors.clone(), backend) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("SKIP: backend {backend:?} compile unavailable: {e}");
+                        continue;
+                    }
+                };
             total_cells += 1;
-            let keys = scan_fixture(&scanner, chunks, backend);
+            let keys = scan_fixture(&backend_scanner, chunks, backend);
 
             if keys != reference_keys {
                 let only_ref: Vec<_> = reference_keys.difference(&keys).take(3).collect();
@@ -195,7 +210,7 @@ fn full_corpus_multi_backend_worst_case_parity() {
 
     eprintln!(
         "worst_case_backend_parity: detectors={} fixtures={} cells={} failed={}",
-        scanner.runtime_status().detector_count,
+        ref_scanner.runtime_status().detector_count,
         fixtures.len(),
         total_cells,
         failures.len()

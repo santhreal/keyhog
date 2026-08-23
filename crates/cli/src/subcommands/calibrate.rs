@@ -56,6 +56,19 @@ pub(crate) fn run(args: CalibrateArgs) -> Result<()> {
         .save(&cache_path)
         .with_context(|| format!("saving calibration cache to {}", cache_path.display()))?;
 
+    if !args.tp.is_empty() || !args.fp.is_empty() {
+        if let Err(error) = crate::execution_pack_install::invalidate_installed_artifacts(
+            "Bayesian calibration counters updated by keyhog calibrate",
+        ) {
+            tracing::warn!(
+                error = %error,
+                "failed to invalidate stale artifacts after calibration update"
+            );
+        } else {
+            eprintln!("info: invalidated installed execution packs; run `keyhog install` to regenerate packs with updated calibration");
+        }
+    }
+
     if args.show {
         print_show(&calibration, &cache_path);
     } else {
@@ -127,10 +140,9 @@ fn print_show(calibration: &Calibration, cache_path: &std::path::Path) {
 /// of, but a typo'd `--tp strpe-secret-key` would otherwise silently seed a
 /// counter no detector ever reads.
 fn validate_detector_ids<'a>(ids: impl Iterator<Item = &'a String>) -> Result<()> {
-    let known: std::collections::HashSet<String> = keyhog_core::load_embedded_detectors_or_fail()
-        .context("loading the embedded detector corpus to validate detector ids")?
-        .into_iter()
-        .map(|d| d.id)
+    let known: std::collections::HashSet<&str> = keyhog_core::embedded_detector_specs()
+        .iter()
+        .map(|d| d.id.as_str())
         .collect();
     for id in ids {
         if id.trim().is_empty() {

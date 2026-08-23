@@ -41,6 +41,7 @@ fn sample_root_record(path: &str) -> GuardRootRecord {
             device: 1,
             inode: 2,
         },
+        filesystem_authority: keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         mode: GuardRootMode::Repo,
         state: GuardRootState::Current,
         terminal_sequence: 0,
@@ -50,6 +51,7 @@ fn sample_root_record(path: &str) -> GuardRootRecord {
         last_reconciliation_time: None,
         backend_route_label: "scalar-cpu".to_string(),
         last_receipt: None,
+        recent_transitions: Vec::new(),
     }
 }
 
@@ -238,6 +240,7 @@ fn root_registry_register_creates_stopped_record() {
             device: 1,
             inode: 2,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Repo,
     );
 
@@ -257,6 +260,7 @@ fn root_registry_get_by_path() {
             device: 1,
             inode: 2,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Repo,
     );
 
@@ -274,6 +278,7 @@ fn root_registry_get_mut_for_state_update() {
             device: 1,
             inode: 2,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Repo,
     );
 
@@ -298,6 +303,7 @@ fn root_registry_remove() {
             device: 1,
             inode: 2,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Repo,
     );
     assert_eq!(registry.len(), 1);
@@ -316,6 +322,7 @@ fn root_registry_list() {
             device: 1,
             inode: 1,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Repo,
     );
     registry.register(
@@ -324,9 +331,9 @@ fn root_registry_list() {
             device: 2,
             inode: 2,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Filesystem,
     );
-
     let list = registry.list();
     assert_eq!(list.len(), 2);
 }
@@ -340,6 +347,7 @@ fn root_registry_count_by_state() {
             device: 1,
             inode: 1,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Repo,
     );
     registry.register(
@@ -348,9 +356,9 @@ fn root_registry_count_by_state() {
             device: 2,
             inode: 2,
         },
+        keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         GuardRootMode::Repo,
     );
-
     // Both start as Stopped.
     assert_eq!(registry.count_by_state(GuardRootState::Stopped), 2);
     assert_eq!(registry.count_by_state(GuardRootState::Current), 0);
@@ -391,6 +399,7 @@ fn durable_store_save_and_load_root() {
             device: 1,
             inode: 2,
         },
+        filesystem_authority: keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         mode: GuardRootMode::Repo,
         state: GuardRootState::Current,
         terminal_sequence: 42,
@@ -400,6 +409,7 @@ fn durable_store_save_and_load_root() {
         last_reconciliation_time: Some(2000),
         backend_route_label: "simd".to_string(),
         last_receipt: None,
+        recent_transitions: Vec::new(),
     };
     store.save_root(&record).expect("save root");
 
@@ -422,6 +432,7 @@ fn durable_store_remove_root() {
             device: 1,
             inode: 2,
         },
+        filesystem_authority: keyhog_core::guard_state::FilesystemAuthority::authoritative("ext4"),
         mode: GuardRootMode::Repo,
         state: GuardRootState::Stopped,
         terminal_sequence: 0,
@@ -431,6 +442,7 @@ fn durable_store_remove_root() {
         last_reconciliation_time: None,
         backend_route_label: String::new(),
         last_receipt: None,
+        recent_transitions: Vec::new(),
     };
     store.save_root(&record).expect("save root");
     assert_eq!(store.load_roots().expect("load").len(), 1);
@@ -740,4 +752,56 @@ fn durable_store_root_gaps_prefix_collision() {
         "child gaps must survive clearing parent gaps"
     );
     assert_eq!(child_gaps_after[0].0, "oid_c");
+}
+
+#[test]
+fn durable_store_open_read_only_and_get_root() {
+    let (_dir, path) = temp_store_path();
+    let record = sample_root_record("/read_only/test");
+    {
+        let store = DurableGuardStore::open(&path).expect("open store");
+        store.save_root(&record).expect("save root");
+    }
+
+    // Open in read-only mode.
+    let ro_store = DurableGuardStore::open_read_only(&path).expect("open read only");
+    assert_eq!(ro_store.path(), &path);
+
+    let fetched = ro_store
+        .get_root(b"/read_only/test")
+        .expect("get root")
+        .expect("root exists");
+    assert_eq!(fetched.canonical_path, record.canonical_path);
+    assert_eq!(fetched.state, GuardRootState::Current);
+
+    let missing = ro_store
+        .get_root(b"/missing/path")
+        .expect("get missing root");
+    assert!(missing.is_none());
+
+    let registry = ro_store.load_roots().expect("load roots ro");
+    assert_eq!(registry.len(), 1);
+}
+
+#[test]
+fn durable_store_open_read_only_fails_on_nonexistent_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("does_not_exist.redb");
+    let result = DurableGuardStore::open_read_only(&path);
+    assert!(result.is_err());
+}
+
+#[test]
+fn durable_store_open_read_only_rejects_missing_schema_version() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("no_meta.redb");
+    // Create an empty redb database with no meta table.
+    {
+        let _db = redb::Database::create(&path).expect("create empty redb");
+    }
+    let result = DurableGuardStore::open_read_only(&path);
+    assert!(
+        matches!(result, Err(GuardStoreError::Corrupt { .. })),
+        "open_read_only on store without meta table must fail with Corrupt error"
+    );
 }

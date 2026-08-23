@@ -17,6 +17,8 @@ match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20,
 # "rss" removed: over-broad prefilter (fires on any RSS/feed URL or "/rss" path)
 # that no regex references, the pattern requires the unambiguous `glft-` prefix
 # (keyword "glft-"), so "rss" only forced wasted scan passes. Recall-neutral.
+decode_transforms = { reverse_prefixes = ["glft-"], caesar_prefixes = ["glft-"] }
+validators = [{ type = "pattern-shape", prefixes = ["glft-"], allow_overlong = true }]
 keywords = ["glft-", "gitlab", "feed_token"]
 
 [[detector.patterns]]

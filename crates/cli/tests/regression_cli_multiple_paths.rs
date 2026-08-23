@@ -272,8 +272,9 @@ fn slack_finding_exact_identity_fields() {
     );
     assert_eq!(
         f["evidence_score"].as_f64(),
-        Some(1.0),
-        "the literal-anchored Slack bot token in assignment context reports evidence score 1.0"
+        Some(0.88),
+        "the fixture writes a bare token on its own line, so the detector's \
+         non-assignment context multiplier applies"
     );
     assert_eq!(
         f["credential_hash"].as_str(),

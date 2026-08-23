@@ -1,12 +1,58 @@
 # Changelog
 
 
-## 0.5.80 - 2026-08-17
+## 0.5.81 - 2026-08-20
 
+- fix(scanner): decode-union dedup keeps the stronger evidence. `union_unique_matches` dropped every later `(detector, credential)` twin, and the decoded twin is often the only one whose source role is parseable, so a base64 Kubernetes `Secret` value that decodes to `AWS_ACCESS_KEY_ID=...` reported at `review` with no assignment role. The survivor keeps the raw coordinate and unions the verdict.
+- fix(scanner): a decoded payload spliced into its container is classified against the payload, not the container offsets. `SourceSemanticCacheEntry` now carries the payload base beside its index and rebases the candidate span onto it.
+- perf(scanner): optimize startup memory floor and scanner structure layouts (Row 153). Pack LazyRegexState flags into a single atomic byte, shrink CsrU32 to exact boxed slices, flatten GenericKeywordStemSet byte buckets, dynamically scale LRU thread-local caches, scale DashMap absence cache shards dynamically with host parallelism, and box immutable compiled pattern slices.
+- feat(detectors): expand detector checksum and structured offline validators (Jwt, Uuid, HexHash, LuhnChecksum, PatternShape, Base62Crc32) to eliminate false positives and enforce checksum suppression (Row 152).
+- feat(scanner): instrument dynamic anchored regex compilation paths with `LAZY_REGEX_COMPILE_EVENTS` runtime counters to prevent invisible un-cached compilations (Row 150).
+- refactor(scanner): route matcher artifact storage through keyhog_core::state_file atomic durable write (Row 148).
+- feat(scanner): install-time compilation and scan-time loading for entropy policy, assignment keyword matcher, and detector plan metadata surfaces (Row 128).
+- feat(entropy): refine BPE entropy evaluations and token boundary chunking to support backtick quotes, preserve internal ampersands and punctuation in quoted secret keys, expand character class filters with tildes and trigger bytes, admit mixed-case alphanumeric tokens via detector-owned special length under credential context, and add generic-high-entropy-string detector and contract specification (Row 154).
+- fix(backend): GPU route explanation parity reporting compiled-in feature state when GPU hardware is physically present rather than false probe misses (Row 156).
+- feat(execution-pack): lazy canonical IR compilation and embedded IR digest for fast zero-compile scanner hydration (Row 158).
+- feat(pipeline): single large file chunk partitioning, worker-proportional subdivision, and deterministic match deduplication across chunk boundaries (Row 160).
+- feat(detectors): add and update competitor recall parity detectors with verified contracts and zero false-positive constraints for `sidekiq-secret`, `jumpcloud-api-key`, `disqus-api-key`, `configcat-sdk-key`, `curl-auth-user`, `datadog-application-key`, `bitly-access-token`, `aws-bedrock-api-key`, `anthropic-admin-api-key`, and `airtable-api-key` (Row 161).
+- fix(detectors): one detector owns the AWS Bedrock long-lived API key. The unanchored `ABSK` + 109-269 base64 body shape is now a second pattern on `aws-bedrock-api-key` instead of a separate `aws-amazon-bedrock-api-key-long-lived` detector with an identical name, service, severity, keyword set and confidence policy. An anchored key matched both, so the cross-detector fold reported whichever id sorted first on identical scores. Detector count 934.
+- fix(coverage): the vendored/minified drop count is what `--no-default-excludes` recovers. It counted adjudication events, so one planted key in a `wp-includes/` assignment reported as 2 dropped matches: the same credential is offered to every detector that can match it, and candidates a later gate would have dropped anyway reach the path policy first. The count is now keyed by `(path, credential)`, so a credential dropped by several detectors or shape gates counts once.
+- fix(scanner): classify standard configuration and credentials paths (`credentials`, `.credentials`, `config`, `.config`, `secrets`, `.secrets`, `.conf`, `.properties`) as structured INI context to prevent false downgrade of AWS credentials to unsupported-context (Row 164).
+- fix(confidence): a detector validator's `confidence_floor` no longer lifts a documentation sample. A placeholder body, a placeholder inside a decoded envelope, and a degenerate identical-character run keep their penalties unless the validator verified a CRC32 digest computed over the body; length, charset, UUID, JWT, base64 and Luhn checks prove the shape only.
+- feat(scanner): instrument compile surface invocations and prepared artifact loads across 13 compile entrypoints (Row 125).
+- fix(scanner): compile surface counters record only at the spec boundary. `FlatKeywords::compile`, `CompiledDetectorKeywordMatcher::compile_parts`, `CompiledDetectorLengthPolicy::compile`, `CompiledCanonicalHexRule::compile` and the derived `CompiledValidatorIndex::compile` are reached by both the spec path and the prepared-pack hydration path, so a scan that compiled nothing reported 1822 detector-execution-policy and 34 key-material-policy compilations. `AnchoredRegex::compile` is now counted by `record_lazy_regex_compile` alone rather than also as a detector-plan compile.
+- feat(scanner): `compiled_scanner::corpus_route_identity` returns the canonical route identity of a detector corpus: the exact compiled plan digest an execution pack built from that corpus carries. An unpacked compile now derives its plan digest from the same normalized detector set the IR uses, so self-test fixtures and declaration order no longer change the runtime detector digest and a compile and a pack hydration of one corpus agree.
+- fix(scanner): a scanner materialized from a prepared execution pack loads its assignment-keyword matcher instead of compiling one. The prepared cache was built with an empty secret-keyword list while every scan resolves it with the 20 embedded keywords the default config carries, so the first scanned line invalidated the hydrated matcher and compiled it again; the pack-matcher route also took the spec-compile branch because only the detector-plan prelude was inspected. A pack-hydrated scan now reports zero runtime compilations across all 13 compile surfaces.
+- fix(scanner): `DetectorResolutionIndex` and `CompiledDetectorRelationIndex` count a hydration as a load. Both builders are generic over the spec path and the prepared-pack path, so every pack-hydrated scan reported 2 detector-plan compilations it never performed.
+- fix(precision): a dotted snake_case identifier path is a source identifier, not an entropy candidate. `looks_like_dotted_source_identifier` required a camelCase segment beside a credential word, so snake_case field accesses and configuration keys (`entropy_match.value`, `plausibility.leading_slash_base64_min_len`) surfaced as `entropy-token` review findings in code and documentation, and a leading `&` or `*` sigil hid the path from the gate entirely. A dotted path of bare lowercase words such as `db.passwd.field` stays visible, and a segment whose words are digit runs rather than readable words (`api_key.7f3d9b2c1a`) is unaffected.
+- feat(parallelism): unify scanner execution width with keyhog_profile host parallelism (Row 110/137).
+- refactor(scanner): move rayon to dev-dependencies and replace internal usages with standard iterators (Row 119).
+- feat(gpu): resident accelerator execution pool for GPU region dispatch concurrency across CLI and daemon (Row 118).
+- perf(scanner): scratch buffer capacity retention under memory budget (Row 117).
+- perf(scanner): backend-derived dispatch byte limits for GPU region batching (Row 116).
+- perf(scanner): proportional scrub cost bounded to populated content bytes rather than reserved slot capacity (Row 115).
+- feat(scanner): single canonical owner of window overlap and size constants shared across reader, stdin, and scanner (Row 111).
+- feat(gpu): record positive upload and readback durations across all GPU dispatch modes to populate GpuUploadNs and GpuReadbackNs profile metrics.
+- feat(gpu): migrate GPU region dispatch timing from ad-hoc `Instant` stderr `perf-trace` lines into `keyhog_profile` typed metrics and render structured dispatch split during profile dumps.
+- fix(safety): enforce written `// SAFETY:` preconditions and release assertions across all `unsafe` blocks with `unsafe_guards.py` workspace gate.
+- fix(profile): separate Stage::ScanPipeline container from leaf Stage::BackendDispatch to prevent container-duration distortion in bottleneck and cost tables.
+- fix(runtime): enforce panic = "unwind" in release profile to enable catch_unwind GPU isolation boundaries and degradation in shipped release binaries.
+- fix(gpu): lazy-scope GPU API initialization to only the selected scan backend route and eliminate redundant WGPU enumeration during CUDA and CPU scans.
+- perf(gpu): eliminate intermediate host buffer copies and redundant scrubs on GPU region dispatch, enforcing <= 1 copy per dispatched byte with host data movement instrumentation.
+- perf(gpu): short-circuit phase-2 GPU regex-DFA admission and eliminate redundant backend dispatch spans when catalog covers zero patterns.
+- fix(router): eliminate inverted batch dominance heuristic in hardware probe backend selection and unify batch routing with measured threshold evaluation.
+- feat(cache): implement unified cache eviction engine (`cache_eviction`) and `CacheKind` layout reconciliation across Hyperscan, detector plan, GPU program, and matcher artifact caches with stale lock reclamation.
+- feat(cache): add `validate_and_tighten_matcher_artifact_cache_dir` to auto-repair loose default cache directory permissions to 0700 without disabling cache.
+- feat(compiled_artifact): wire `CompiledArtifactClass` and `canonical_identity` into scanner artifact producers (matcher_artifact_cache, execution_pack, gpu_literal_artifacts, compiled_scanner, simd backend, phase2_gpu_dfa).
+- feat(scanner): expose `PackFindingParityEvidence::validate` with doc comments for parity validation across routes and generations.
+- test(scanner): add benchmark corpus and synthetic pack finding parity regression coverage (Row 162).
 - fix(scanner): clamp decode-through window overlap to enforce strictly advancing window progress across UTF-8 scalar boundaries in release builds.
-- style: format guard massive diff test and git sources modules.
 - fix(detectors): resolve evasion gaps, required literal routing, and Unicode whitespace boundary handling across 8 detector specifications (`apple-push-notification-key`, `google-artifact-registry-key`, `near-api-credentials`, `netrc-password`, `twitter-ads-api-credentials`, `webex-access-token`, `wechat-api-credentials`, `wordpress-api-token`).
 - test(scanner): consolidate per-detector regression execution into sequential full-coverage suite to prevent parallel runner memory exhaustion.
+
+## 0.5.80 - 2026-08-17
+
+- style: format guard massive diff test and git sources modules.
 
 ## 0.5.79 - 2026-08-16
 

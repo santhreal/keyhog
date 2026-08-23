@@ -19,15 +19,16 @@
 //!   * `AUTOROUTE_CACHE_FILE_BYTES = 8 * 1024 * 1024` in the cache codec, the read
 //!     cap; a file one byte over is reported "unreadable".
 //!   * the production plan sweeps 96 workloads × 4 scan policies. The cache
-//!     inspection E2E uses the authenticated three-workload fixture across the
+//!     inspection E2E uses the authenticated five-workload fixture across the
 //!     same four policies, while the calibration unit suite pins all 96 workloads.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
 /// Schema version this build's cache reports and requires.
-const EXPECTED_CACHE_VERSION: u64 = 56;
+const EXPECTED_CACHE_VERSION: u64 = 58;
 /// Read cap for the cache file (kept in sync with the cache codec).
 const CACHE_FILE_CAP_BYTES: usize = 8 * 1024 * 1024;
 
@@ -41,6 +42,15 @@ fn unhealthy_inspection_exit() -> i32 {
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
+}
+
+/// The value of `<key>` in a rendered workload key line, which is a
+/// space-separated list of `name=value` fields.
+fn workload_field<'a>(workload: &'a str, key: &str) -> &'a str {
+    workload
+        .split_whitespace()
+        .find_map(|field| field.strip_prefix(key))
+        .unwrap_or_else(|| panic!("workload {workload:?} carries no {key} field"))
 }
 
 /// A fresh hermetic cache home: both `HOME` and `XDG_CACHE_HOME` point here so
@@ -452,10 +462,11 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
         String::from_utf8_lossy(&calibrate.stderr)
     );
     let cal_stdout = String::from_utf8_lossy(&calibrate.stdout);
-    // Three bounded E2E workloads × four policies = 12 probes.
+    // Five bounded workloads (two size bands per decode state) × four
+    // policies = 20 probes.
     assert!(
-        cal_stdout.contains("ran 12 workload probes"),
-        "summary reports the exact 12-probe bounded sweep; stdout={cal_stdout}"
+        cal_stdout.contains("ran 20 workload probes"),
+        "summary reports the exact 20-probe bounded sweep; stdout={cal_stdout}"
     );
     assert!(
         cal_stdout.contains("4 scan policies"),
@@ -554,11 +565,26 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
             count >= 1,
             "every primed policy config holds at least one workload decision; config={config}"
         );
+        // A route family pools the bands sharing a decode state, so every state
+        // a policy can produce needs two measured bands to be reusable.
+        let mut bands: BTreeMap<bool, BTreeSet<u32>> = BTreeMap::new();
         for decision in config
             .get("decisions")
             .and_then(serde_json::Value::as_array)
             .expect("decisions array")
         {
+            let workload = decision
+                .get("workload")
+                .and_then(serde_json::Value::as_str)
+                .expect("every decision renders its workload key");
+            bands
+                .entry(workload_field(workload, "decode_admitted=") == "true")
+                .or_default()
+                .insert(
+                    workload_field(workload, "bytes_log2=")
+                        .parse()
+                        .expect("bytes_log2 is an integer"),
+                );
             assert!(
                 decision
                     .get("backend")
@@ -594,6 +620,15 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
                 );
             }
         }
+        for (decode_admitted, measured) in &bands {
+            assert!(
+                measured.len() >= 2,
+                "config {digest} measured decode_admitted={decode_admitted} at {} band(s) \
+                 {measured:?}; a family pools the bands sharing a decode state and needs two \
+                 of them, so one band leaves every scan in that state uncalibrated",
+                measured.len()
+            );
+        }
         total_decisions += count;
     }
     assert!(
@@ -606,10 +641,10 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
     );
     assert_eq!(
         cal_stdout
-            .matches("retained 3 measured points in 3 route classes")
+            .matches("ran 5 workload probes across 1 scan policy")
             .count(),
         4,
-        "each policy child must report all three independently inspected decisions as newly measured; stdout={cal_stdout}; total={total_decisions}"
+        "every policy child must sweep the whole bounded plan; stdout={cal_stdout}"
     );
 
     // 4. The human inspection reports the same 4-config count in prose.

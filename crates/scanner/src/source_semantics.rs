@@ -412,6 +412,15 @@ fn syntax_for_path(path: &str) -> Option<StructuredSyntax> {
     {
         return Some(StructuredSyntax::Dotenv);
     }
+    if name.eq_ignore_ascii_case("credentials")
+        || name.eq_ignore_ascii_case(".credentials")
+        || name.eq_ignore_ascii_case("config")
+        || name.eq_ignore_ascii_case(".config")
+        || name.eq_ignore_ascii_case("secrets")
+        || name.eq_ignore_ascii_case(".secrets")
+    {
+        return Some(StructuredSyntax::Ini);
+    }
     let extension = name.rsplit_once('.')?.1;
     if extension.eq_ignore_ascii_case("env") {
         Some(StructuredSyntax::Dotenv)
@@ -423,7 +432,11 @@ fn syntax_for_path(path: &str) -> Option<StructuredSyntax> {
         Some(StructuredSyntax::Toml)
     } else if extension.eq_ignore_ascii_case("yaml") || extension.eq_ignore_ascii_case("yml") {
         Some(StructuredSyntax::Yaml)
-    } else if extension.eq_ignore_ascii_case("ini") || extension.eq_ignore_ascii_case("cfg") {
+    } else if extension.eq_ignore_ascii_case("ini")
+        || extension.eq_ignore_ascii_case("cfg")
+        || extension.eq_ignore_ascii_case("conf")
+        || extension.eq_ignore_ascii_case("properties")
+    {
         Some(StructuredSyntax::Ini)
     } else {
         None

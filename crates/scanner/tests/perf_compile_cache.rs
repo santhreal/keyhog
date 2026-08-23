@@ -178,9 +178,7 @@ fn cold_compile_must_parallelize_across_pattern_shards() {
     });
 
     let ratio = cold_full.as_secs_f64() / cold_half.as_secs_f64();
-    let cores = std::thread::available_parallelism()
-        .map(|c| c.get())
-        .unwrap_or(1);
+    let cores = keyhog_profile::logical_cpu_count();
 
     eprintln!(
         "perf_compile_cache: cores={cores} cold_full({n})={:.1}ms cold_half({})={:.1}ms \

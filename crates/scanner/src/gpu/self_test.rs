@@ -1,3 +1,12 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static TEST_FORCE_GPU_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
+
+/// Force the GPU region-presence self-test to report GPU unavailability (test seam).
+pub fn set_force_gpu_unavailable_for_test(force: bool) {
+    TEST_FORCE_GPU_UNAVAILABLE.store(force, Ordering::SeqCst);
+}
+
 /// Result from an explicit VYRE GPU scanner self-test.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VyreGpuSelfTest {
@@ -119,6 +128,12 @@ pub fn gpu_region_presence_self_test(
     }
     #[cfg(feature = "gpu")]
     {
+        if TEST_FORCE_GPU_UNAVAILABLE.load(Ordering::SeqCst) {
+            return Err(GpuRegionPresenceSelfTestFailure {
+                acquired_backends: Vec::new(),
+                message: "test-injected GPU unavailability".to_string(),
+            });
+        }
         gpu_region_presence_self_test_impl()
     }
 }

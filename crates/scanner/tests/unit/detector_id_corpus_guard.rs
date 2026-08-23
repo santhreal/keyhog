@@ -210,22 +210,34 @@ fn structural_password_slot_family_is_toml_declared() {
 }
 
 /// The weak-anchor family membership is DECLARED in the detector TOMLs
-/// (`weak_anchor = true`), read back through `DetectorSpec::weak_anchor`
-/// (DET-0; migrated out of the `rules/detector-classification.toml`
-/// `weak_anchor` list). Pins the EXACT member set against the embedded corpus
-/// so adding/removing the flag on any detector, or a typo'd id, fails
-/// loudly here, preserving the "see the whole family at a glance" view the
-/// centralized list gave.
+/// (`weak_anchor = true`), read back through `DetectorSpec::weak_anchor` and
+/// `PatternSpec::weak_anchor` (DET-0; migrated out of the
+/// `rules/detector-classification.toml` `weak_anchor` list).
+///
+/// The two scopes are NOT interchangeable: detector-level applies the Tier-B
+/// policy to every pattern, pattern-level to one regex only, and
+/// `spec::validate` rejects a detector that declares both. Pins each EXACT
+/// member set against the embedded corpus so adding, removing, or moving the
+/// flag between scopes fails loudly here, preserving the "see the whole family
+/// at a glance" view the centralized list gave.
+///
+/// What it does not catch: whether a member's entropy floors are correctly
+/// tuned, only that its scope is the declared one.
 #[test]
 fn weak_anchor_family_is_toml_declared() {
     use std::collections::BTreeSet;
     let specs = keyhog_core::load_embedded_detectors_or_fail().expect("embedded corpus loads");
-    let members: BTreeSet<&str> = specs
+    let detector_scope: BTreeSet<&str> = specs
         .iter()
         .filter(|s| s.weak_anchor)
         .map(|s| s.id.as_str())
         .collect();
-    let expected: BTreeSet<&str> = [
+    let pattern_scope: BTreeSet<&str> = specs
+        .iter()
+        .filter(|s| !s.weak_anchor && s.patterns.iter().any(|p| p.weak_anchor))
+        .map(|s| s.id.as_str())
+        .collect();
+    let expected_detector_scope: BTreeSet<&str> = [
         "activecampaign-api-key",
         "adobe-api-key",
         "aerisweather-api-credentials",
@@ -237,6 +249,7 @@ fn weak_anchor_family_is_toml_declared() {
         "census-api-key",
         "chef-automate-token",
         "crowdin-api-token",
+        "curl-auth-user",
         "etherscan-api-key",
         "flickr-api-key",
         "foundation-api-key",
@@ -249,10 +262,57 @@ fn weak_anchor_family_is_toml_declared() {
     ]
     .into_iter()
     .collect();
+    let expected_pattern_scope: BTreeSet<&str> = [
+        "alertmanager-credentials",
+        "azure-iot-connection-string",
+        "booking-com-api-credentials",
+        "catchpoint-api-credentials",
+        "cyberark-credentials",
+        "delinea-secret-server-credentials",
+        "dhl-api-credentials",
+        "eloqua-api-credentials",
+        "firebase-storage-credentials",
+        "libsql-credentials",
+        "looker-api-credentials",
+        "marketo-api-credentials",
+        "mlflow-tracking-credentials",
+        "okta-widget-api-credentials",
+        "opencart-api-credentials",
+        "oracle-cloud-api-key",
+        "playwright-test-credentials",
+        "retool-database-credentials",
+        "saltstack-credentials",
+        "sap-api-key",
+        "scylladb-credentials",
+        "servicenow-api-key",
+        "smartproxy-credentials",
+        "snowflake-account-info",
+        "snowflake-credentials",
+        "spacelift-api-key",
+        "tableau-api-token",
+        "teamcity-api-credentials",
+        "thales-ciphertrust-credentials",
+        "transifex-api-token",
+        "volusion-api-credentials",
+        "workday-api-key",
+    ]
+    .into_iter()
+    .collect();
     assert_eq!(
-        members, expected,
-        "weak_anchor TOML declarations drifted from the known family"
+        detector_scope, expected_detector_scope,
+        "detector-level weak_anchor TOML declarations drifted from the known family"
     );
+    assert_eq!(
+        pattern_scope, expected_pattern_scope,
+        "pattern-level weak_anchor TOML declarations drifted from the known family"
+    );
+    for id in &detector_scope {
+        let spec = specs.iter().find(|s| s.id == *id).expect("member exists");
+        assert!(
+            !spec.patterns.iter().any(|p| p.weak_anchor),
+            "{id} declares weak_anchor at both scopes; detector-level already covers every pattern"
+        );
+    }
 }
 
 /// WHY: the structurally named OAuth assignment is not a weak anchor. Runtime

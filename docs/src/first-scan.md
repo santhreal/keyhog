@@ -94,10 +94,10 @@ banner to stderr before the findings:
 ```text
     K E Y H O G
     ───────────
-    v0.5.80 · secret scanner · 926 detectors
+    v0.5.81 · secret scanner · 934 detectors
     by santh
 
-  16 cores | SIMD: AVX-512 | Hyperscan | 926 detectors (5800 patterns) io_uring | backend=simd-regex | gpu=none
+  16 cores | SIMD: AVX-512 | Hyperscan | 934 detectors (5820 patterns) io_uring | backend=simd-regex | gpu=none
 ```
 
 The banner reports this host's CPU and GPU labels, the scanner engine, the
@@ -157,9 +157,9 @@ the artifact without scraping console progress.
   "metadata": {
     "scan_id": "0123456789abcdef0123456789abcdef",
     "scan_status": "success",
-    "keyhog_version": "0.5.80",
+    "keyhog_version": "0.5.81",
     "git_hash": "<build-commit>",
-    "detector_digest": "926-<digest>",
+    "detector_digest": "934-<digest>",
     "config_digest": "<effective-config-digest>",
     "resolved_scan": {
       "schema_version": 1,
@@ -174,7 +174,7 @@ the artifact without scraping console progress.
     "targets": ["."],
     "source_chunks_scanned": 1,
     "source_bytes_scanned": 128,
-    "detector_count": 926
+    "detector_count": 934
   },
   "coverage_gap_summary": [],
   "findings": [

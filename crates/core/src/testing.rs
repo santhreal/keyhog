@@ -123,6 +123,7 @@ pub trait CoreTestApi {
         index: &MerkleIndex,
         path: &Path,
         mtime_ns: u64,
+        ctime_ns: u64,
         size: u64,
     ) -> bool;
     fn merkle_record_with_metadata(
@@ -130,6 +131,7 @@ pub trait CoreTestApi {
         index: &MerkleIndex,
         path: PathBuf,
         mtime_ns: u64,
+        ctime_ns: u64,
         size: u64,
         content_hash: [u8; 32],
     );
@@ -139,6 +141,7 @@ pub trait CoreTestApi {
         path: PathBuf,
         chunk_offset: u64,
         mtime_ns: u64,
+        ctime_ns: u64,
         size: u64,
         content: &[u8],
     ) -> bool;
@@ -324,7 +327,7 @@ impl CoreTestApi for TestApi {
     }
 
     fn merkle_record(&self, index: &MerkleIndex, path: PathBuf, content_hash: [u8; 32]) {
-        index.seed_for_testing(path, 0, 0, content_hash);
+        index.seed_for_testing(path, 0, 0, 0, content_hash);
     }
 
     fn merkle_is_empty(&self, index: &MerkleIndex) -> bool {
@@ -344,9 +347,10 @@ impl CoreTestApi for TestApi {
         index: &MerkleIndex,
         path: &Path,
         mtime_ns: u64,
+        ctime_ns: u64,
         size: u64,
     ) -> bool {
-        index.metadata_unchanged(path, mtime_ns, size)
+        index.metadata_unchanged(path, mtime_ns, ctime_ns, size)
     }
 
     fn merkle_record_with_metadata(
@@ -354,10 +358,11 @@ impl CoreTestApi for TestApi {
         index: &MerkleIndex,
         path: PathBuf,
         mtime_ns: u64,
+        ctime_ns: u64,
         size: u64,
         content_hash: [u8; 32],
     ) {
-        index.seed_for_testing(path, mtime_ns, size, content_hash);
+        index.seed_for_testing(path, mtime_ns, ctime_ns, size, content_hash);
     }
 
     fn merkle_record_chunk_at_offset_and_check_unchanged(
@@ -366,6 +371,7 @@ impl CoreTestApi for TestApi {
         path: PathBuf,
         chunk_offset: u64,
         mtime_ns: u64,
+        ctime_ns: u64,
         size: u64,
         content: &[u8],
     ) -> bool {
@@ -373,6 +379,7 @@ impl CoreTestApi for TestApi {
             path,
             chunk_offset,
             mtime_ns,
+            ctime_ns,
             size,
             content,
         )

@@ -31,7 +31,8 @@ pub use cpu_program::{
 pub use detector_plan::{CompiledDetectorPlanSection, DETECTOR_PLAN_SECTION_VERSION};
 pub use format::{
     ExecutionPackBackend, ExecutionPackIdentity, ExecutionPackPolicy, ExecutionPackSectionKind,
-    EXECUTION_PACK_COMPILER_ABI, EXECUTION_PACK_FORMAT_VERSION, EXECUTION_PACK_HEADER_LEN,
+    ARTIFACT_CLASS, EXECUTION_PACK_COMPILER_ABI, EXECUTION_PACK_FORMAT_VERSION,
+    EXECUTION_PACK_HEADER_LEN,
 };
 #[cfg(feature = "gpu")]
 pub use generation::CompiledVyreBackendProgram;
@@ -103,6 +104,24 @@ impl std::error::Error for ExecutionPackError {
         match self {
             Self::Io { source, .. } => Some(source),
             _ => None,
+        }
+    }
+}
+impl Clone for ExecutionPackError {
+    fn clone(&self) -> Self {
+        match self {
+            Self::InvalidCompilerInput(message) => Self::InvalidCompilerInput(message.clone()),
+            Self::InvalidPack(message) => Self::InvalidPack(message.clone()),
+            Self::Incompatible(message) => Self::Incompatible(message.clone()),
+            Self::Io {
+                operation,
+                path,
+                source,
+            } => Self::Io {
+                operation,
+                path: path.clone(),
+                source: std::io::Error::new(source.kind(), source.to_string()),
+            },
         }
     }
 }

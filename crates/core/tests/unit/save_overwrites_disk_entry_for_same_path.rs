@@ -20,6 +20,7 @@ fn save_overwrites_disk_entry_for_same_path() {
         &idx_old,
         PathBuf::from("/x"),
         100,
+        100 + 100,
         10,
         sample_hash(b"old"),
     );
@@ -31,6 +32,7 @@ fn save_overwrites_disk_entry_for_same_path() {
         &idx_new,
         PathBuf::from("/x"),
         200,
+        200 + 100,
         20,
         sample_hash(b"new"),
     );
@@ -46,6 +48,6 @@ fn save_overwrites_disk_entry_for_same_path() {
         1
     );
     // The mtime/size from idx_new must be the surviving copy.
-    assert!(loaded.metadata_unchanged(Path::new("/x"), 200, 20));
-    assert!(!loaded.metadata_unchanged(Path::new("/x"), 100, 10));
+    assert!(loaded.metadata_unchanged(Path::new("/x"), 200, 200 + 100, 20));
+    assert!(!loaded.metadata_unchanged(Path::new("/x"), 100, 100 + 100, 10));
 }

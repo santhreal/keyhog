@@ -34,9 +34,16 @@ use keyhog_core::{Chunk, RawMatch, Source};
 use keyhog_scanner::hw_probe::ScanBackend;
 use keyhog_scanner::CompiledScanner;
 use pipeline::{coalesced_pipeline_plan, CoalescedPipelinePlan};
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Instant;
+
+static TEST_SCANNER_THREAD_PANIC: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn set_test_scanner_thread_panic_injection(inject: bool) {
+    TEST_SCANNER_THREAD_PANIC.store(inject, Ordering::SeqCst);
+}
 
 /// Single owner of the per-chunk scan ceiling. Enforced by the in-process
 /// coalesced pipeline (below) AND the daemon path (`daemon::server`), so both
@@ -124,8 +131,8 @@ pub(super) fn finalize_source_outcome(src_chunks: usize, src_errored: bool) {
 /// wait is the summed time consumer threads spent with no batch to scan. That
 /// is [`keyhog_profile::Stage::ScannerQueueWait`], and it is the only place the
 /// figure is produced.
-struct TimedBatches<I> {
-    batches: I,
+pub(crate) struct TimedBatches<I> {
+    pub(crate) batches: I,
 }
 
 impl<I> Iterator for TimedBatches<I>
@@ -135,8 +142,12 @@ where
     type Item = Vec<Chunk>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerQueueWait);
-        self.batches.next()
+        let _profile_span = keyhog_profile::blocked(keyhog_profile::Stage::ScannerQueueWait);
+        let next = self.batches.next();
+        if next.is_some() {
+            keyhog_profile::record_queue_depth_dequeue(keyhog_profile::QueueId::ScannerWork);
+        }
+        next
     }
 }
 
@@ -152,7 +163,7 @@ where
     F: FnOnce(std::iter::Chain<std::iter::Once<Vec<Chunk>>, I>) -> T,
 {
     let first = {
-        let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerQueueWait);
+        let _profile_span = keyhog_profile::blocked(keyhog_profile::Stage::ScannerQueueWait);
         batches.next()?
     };
     Some(scan(std::iter::once(first).chain(batches)))
@@ -1100,11 +1111,15 @@ impl CoalescedBatchProducer {
             std::path::Path::new(path_str),
             c.metadata.base_offset as u64,
             c.metadata.mtime_ns.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
+            c.metadata.ctime_ns.unwrap_or(0), // LAW10: absent change time is never trusted by the read-free skip
             c.metadata.size_bytes.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
             c.data.as_bytes(),
         );
         if unchanged {
+            keyhog_profile::record_cache_hit(keyhog_profile::CacheId::IncrementalUnchanged);
             self.skipped_unchanged += 1;
+        } else {
+            keyhog_profile::record_cache_miss(keyhog_profile::CacheId::IncrementalUnchanged);
         }
         unchanged
     }
@@ -1146,8 +1161,12 @@ impl CoalescedBatchProducer {
         let payload = std::mem::take(&mut self.batch);
         self.batch_bytes = 0;
         let send_result = {
-            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
-            self.tx.send(payload)
+            let _profile_span = keyhog_profile::blocked(keyhog_profile::Stage::SourceQueueWait);
+            let res = self.tx.send(payload);
+            if res.is_ok() {
+                keyhog_profile::record_queue_depth_enqueue(keyhog_profile::QueueId::ScannerWork);
+            }
+            res
         };
         if send_result.is_err() {
             self.pipeline_alive = false;
@@ -1220,12 +1239,7 @@ impl ScanOrchestrator {
             return self.scan_sources_fused(sources, show_progress, merkle, incremental_path);
         }
 
-        keyhog_sources::reset_skipped_over_max_size();
-        // Binary-source degradation counters live in a separate module from the
-        // walker skip counters, so reset them alongside (otherwise Ghidra-fallback
-        // / unreadable-binary totals leak across scans in `watch`/multi-scan runs).
-        #[cfg(feature = "binary")]
-        keyhog_sources::reset_binary_counters();
+        keyhog_sources::reset_for_scan();
 
         let progress = CoalescedProgressTicker::spawn(show_progress && !self.args.stream);
 
@@ -1286,6 +1300,9 @@ impl ScanOrchestrator {
         let dispatch_starts = Arc::clone(&self.scanner_dispatch_starts);
         let scanner_thread = std::thread::spawn(move || {
             let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
+            if TEST_SCANNER_THREAD_PANIC.load(Ordering::SeqCst) {
+                panic!("test-injected scanner thread panic");
+            }
             with_nonempty_batches(rx.into_iter(), |batches| {
                 #[cfg(test)]
                 let worker = worker_config.start(scanner, dispatch_starts);

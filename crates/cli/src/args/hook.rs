@@ -1,3 +1,5 @@
+use crate::args::ScanArgs;
+
 #[derive(clap::Subcommand, Debug, Clone)]
 pub enum HookCommand {
     /// Install a git pre-commit hook in the current repository
@@ -8,4 +10,6 @@ pub enum HookCommand {
     },
     /// Remove the KeyHog pre-commit hook from the current repository
     Uninstall,
+    /// Run the git pre-commit hook scan
+    Run(Box<ScanArgs>),
 }

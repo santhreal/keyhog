@@ -413,6 +413,7 @@ pub(crate) fn build_sources(
         let roots = resolve_scan_roots(&requested_roots)?;
         for root in &roots {
             let mut fs_source = keyhog_sources::FilesystemSource::new(root.clone())
+                .with_window_overlap(resolved.window_overlap)
                 .with_ignore_paths(merged_ignore_paths.clone())
                 // Default excludes are source-owned. `--no-default-excludes` must
                 // toggle the actual file classifier, not a CLI-side glob mirror.
@@ -425,6 +426,10 @@ pub(crate) fn build_sources(
             }
             if let Some(idx) = merkle.as_ref() {
                 fs_source = fs_source.with_merkle_skip(idx.clone());
+            }
+            if let Some(overlap) = args.window_overlap {
+                fs_source =
+                    fs_source.with_window_config(keyhog_core::DEFAULT_WINDOW_SIZE_BYTES, overlap);
             }
             #[cfg(feature = "binary")]
             if args.binary {

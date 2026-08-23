@@ -392,6 +392,9 @@ pub(crate) fn log_quality_warnings(warnings: &[String]) {
 pub(crate) fn compile_detector_companions(
     detector: &DetectorSpec,
 ) -> Result<Vec<CompiledCompanion>> {
+    keyhog_profile::record_compile_surface_invocation(
+        keyhog_profile::CompileSurfaceId::CompileState,
+    );
     detector
         .companions
         .iter()
@@ -406,6 +409,9 @@ pub(crate) fn compile_pattern(
     detector_id: &str,
     detector_keywords: &[String],
 ) -> Result<CompiledPattern> {
+    keyhog_profile::record_compile_surface_invocation(
+        keyhog_profile::CompileSurfaceId::CompileState,
+    );
     spec.validate_required_literals()
         .map_err(|reason| ScanError::DetectorPatternPolicy {
             detector_id: detector_id.to_string(),
@@ -514,17 +520,15 @@ const REGEX_CACHE_CAPACITY: usize = 8192;
 
 type RegexCacheShard = parking_lot::Mutex<lru::LruCache<String, std::sync::Weak<Regex>>>;
 
-static REGEX_CACHE: std::sync::OnceLock<Box<[RegexCacheShard]>> = std::sync::OnceLock::new();
+static REGEX_CACHE: std::sync::LazyLock<Box<[RegexCacheShard]>> = std::sync::LazyLock::new(|| {
+    (0..REGEX_CACHE_SHARDS)
+        .map(|_| parking_lot::Mutex::new(lru::LruCache::new(std::num::NonZeroUsize::MIN)))
+        .collect::<Vec<_>>()
+        .into_boxed_slice()
+});
 
 fn regex_cache() -> &'static [RegexCacheShard] {
-    REGEX_CACHE.get_or_init(|| {
-        let per_shard = (REGEX_CACHE_CAPACITY / REGEX_CACHE_SHARDS).max(1);
-        let nz = std::num::NonZeroUsize::new(per_shard).unwrap_or(std::num::NonZeroUsize::MIN); // LAW10: zero => NonZeroUsize::MIN floor; shard/size knob, perf-only
-        (0..REGEX_CACHE_SHARDS)
-            .map(|_| parking_lot::Mutex::new(lru::LruCache::new(nz)))
-            .collect::<Vec<_>>()
-            .into_boxed_slice()
-    })
+    &REGEX_CACHE
 }
 
 /// Pick the shard for a pattern from a hash of its source bytes, so the same
@@ -571,6 +575,8 @@ pub(crate) fn shared_regex(
     if let Some(hit) = lock.get(pattern).and_then(std::sync::Weak::upgrade) {
         return Ok(hit);
     }
+    let per_shard = (REGEX_CACHE_CAPACITY / REGEX_CACHE_SHARDS).max(1);
+    crate::fragment_cache::grow_lru_for_workload(&mut lock, per_shard);
     lock.put(pattern.to_string(), std::sync::Arc::downgrade(&arc));
     Ok(arc)
 }
@@ -612,6 +618,9 @@ pub(crate) fn compile_companion(
     spec: &CompanionSpec,
     detector_id: &str,
 ) -> Result<CompiledCompanion> {
+    keyhog_profile::record_compile_surface_invocation(
+        keyhog_profile::CompileSurfaceId::CompileState,
+    );
     let regex = companion_regex(&spec.regex).map_err(|e| ScanError::RegexCompile {
         detector_id: detector_id.to_string(),
         index: FIRST_CAPTURE_GROUP_INDEX,

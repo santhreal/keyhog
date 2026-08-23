@@ -145,3 +145,4 @@ axiomexec/
 *.runner.json
 runner-*.token
 APLXTN*
+.test-tmp/

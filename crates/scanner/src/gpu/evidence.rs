@@ -185,8 +185,8 @@ pub(crate) fn report_counter_caps_unsupported(backend_code: u64) {
     }
 }
 
-/// Host-to-device upload evidence for one dispatch batch. `ns` is `None` when
-/// the upload latency is not separable from the enclosing vyre call.
+/// Host-to-device upload evidence for one dispatch batch. `ns` is the upload
+/// transfer and staging latency in nanoseconds.
 pub(crate) fn record_upload(bytes: u64, ns: Option<u64>) {
     keyhog_profile::add_counter(CounterId::GpuUploadBytes, bytes);
     if let Some(ns) = ns {
@@ -195,8 +195,8 @@ pub(crate) fn record_upload(bytes: u64, ns: Option<u64>) {
     }
 }
 
-/// Device-to-host readback evidence for one dispatch batch. `ns` is `None`
-/// when the readback latency is not separable from the enclosing vyre call.
+/// Device-to-host readback evidence for one dispatch batch. `ns` is the readback
+/// transfer latency in nanoseconds.
 pub(crate) fn record_readback(bytes: u64, ns: Option<u64>) {
     keyhog_profile::add_counter(CounterId::GpuReadbackBytes, bytes);
     if let Some(ns) = ns {
@@ -282,11 +282,92 @@ pub(crate) fn note_device_free(bytes: u64) {
     }
     keyhog_profile::add_counter(CounterId::GpuFreeBytes, bytes);
     let current = DEVICE_RESIDENT_BYTES
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
             Some(value.saturating_sub(bytes))
         })
         .map_or(0, |previous| previous.saturating_sub(bytes));
     keyhog_profile::set_gauge(GaugeId::GpuResidentBytes, current);
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub(crate) enum GpuHostDataMovementSite {
+    RegionPresenceScratchCoalesce,
+    RegionPresenceScratchScrub,
+}
+
+#[cfg(test)]
+impl GpuHostDataMovementSite {
+    pub(crate) const ALL: &'static [Self] = &[
+        Self::RegionPresenceScratchCoalesce,
+        Self::RegionPresenceScratchScrub,
+    ];
+}
+
+static HOST_COPIED_BYTES: [AtomicU64; 2] = [AtomicU64::new(0), AtomicU64::new(0)];
+static HOST_SCRUBBED_BYTES: [AtomicU64; 2] = [AtomicU64::new(0), AtomicU64::new(0)];
+
+pub(crate) fn record_host_byte_copy(site: GpuHostDataMovementSite, bytes: usize) {
+    if bytes == 0 {
+        return;
+    }
+    let idx = match site {
+        GpuHostDataMovementSite::RegionPresenceScratchCoalesce => 0,
+        GpuHostDataMovementSite::RegionPresenceScratchScrub => 1,
+    };
+    HOST_COPIED_BYTES[idx].fetch_add(bytes as u64, Ordering::Relaxed);
+}
+
+pub(crate) fn record_host_byte_scrub(site: GpuHostDataMovementSite, bytes: usize) {
+    if bytes == 0 {
+        return;
+    }
+    let idx = match site {
+        GpuHostDataMovementSite::RegionPresenceScratchCoalesce => 0,
+        GpuHostDataMovementSite::RegionPresenceScratchScrub => 1,
+    };
+    HOST_SCRUBBED_BYTES[idx].fetch_add(bytes as u64, Ordering::Relaxed);
+}
+
+#[cfg(test)]
+pub(crate) fn host_data_movement_snapshot() -> (u64, u64) {
+    let copies: u64 = HOST_COPIED_BYTES
+        .iter()
+        .map(|a| a.load(Ordering::Relaxed))
+        .sum();
+    let scrubs: u64 = HOST_SCRUBBED_BYTES
+        .iter()
+        .map(|a| a.load(Ordering::Relaxed))
+        .sum();
+    (copies, scrubs)
+}
+
+#[cfg(test)]
+pub(crate) fn reset_host_data_movement_counters() {
+    for a in &HOST_COPIED_BYTES {
+        a.store(0, Ordering::Relaxed);
+    }
+    for a in &HOST_SCRUBBED_BYTES {
+        a.store(0, Ordering::Relaxed);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub(crate) enum GpuApiKind {
+    Cuda,
+    Metal,
+    Wgpu,
+}
+
+static INITIALIZED_GPU_APIS: [AtomicU64; 3] =
+    [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
+
+pub(crate) fn record_gpu_api_initialized(api: GpuApiKind) {
+    let idx = match api {
+        GpuApiKind::Cuda => 0,
+        GpuApiKind::Metal => 1,
+        GpuApiKind::Wgpu => 2,
+    };
+    INITIALIZED_GPU_APIS[idx].fetch_add(1, Ordering::Relaxed);
 }
 
 /// Current (resident, peak) device-byte tracker state; test diagnostics only.

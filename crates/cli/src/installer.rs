@@ -1,4 +1,5 @@
-//! Local install primitives for `keyhog doctor` and `keyhog uninstall`.
+//! Local install primitives for `keyhog install`, `keyhog doctor`, and
+//! `keyhog uninstall`.
 //!
 //! There is no self-update path. KeyHog ships through crates.io, and the
 //! signed binary-asset release channel it used to update from is retired: no
@@ -13,13 +14,16 @@
 //! `scripts/gates/release_channel_coherence.py` keeps it that way: it fails if
 //! any install/update path consumes release assets that no workflow produces.
 //!
-//! What remains is the local half that other subcommands still need:
-//! resolving the running binary, testing PID liveness, and the doctor
-//! scan-engine self test in [`self_test`].
+//! What remains is local: `keyhog install` compiles, authenticates, calibrates,
+//! and publishes this binary's exact execution generation from the binary
+//! itself, plus resolving the running binary, testing PID liveness, and the
+//! doctor scan-engine self test in [`self_test`].
 
 use anyhow::{Context, Result};
 
+mod execution_packs;
 mod self_test;
+pub(crate) use execution_packs::*;
 pub(crate) use self_test::*;
 
 /// Resolve the running binary, following symlinks so callers act on the real
@@ -49,6 +53,7 @@ pub(crate) fn process_is_running(pid: u32) -> bool {
     if pid <= 0 {
         return false;
     }
+    // SAFETY: pid is validated positive; signal 0 performs an existence check without sending a signal.
     let rc = unsafe { libc::kill(pid, 0) };
     if rc == 0 {
         return true;
@@ -73,6 +78,7 @@ pub(crate) fn process_is_running(pid: u32) -> bool {
         fn GetLastError() -> u32;
     }
 
+    // SAFETY: OpenProcess has no pointer preconditions and receives a numeric PID.
     let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
     if handle.is_null() {
         // ERROR_INVALID_PARAMETER is the normal "PID does not exist" result.
@@ -80,8 +86,10 @@ pub(crate) fn process_is_running(pid: u32) -> bool {
         // owned at a privilege boundary; reaping its artifact would race live
         // higher-privilege work.
         const ERROR_INVALID_PARAMETER: u32 = 87;
+        // SAFETY: GetLastError reads the calling thread's last error code and has no preconditions.
         return unsafe { GetLastError() } != ERROR_INVALID_PARAMETER;
     }
+    // SAFETY: handle is non-null and was returned by successful OpenProcess above.
     unsafe {
         CloseHandle(handle);
     }

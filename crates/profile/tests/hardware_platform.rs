@@ -88,6 +88,6 @@ fn registry_additions_have_exact_descriptors() {
         MetricId::GpuPeakResidentBytes
     );
     assert_eq!(keyhog_profile::EventId::COUNT, 8);
-    assert_eq!(keyhog_profile::CounterId::ALL.len(), 78);
-    assert_eq!(keyhog_profile::GaugeId::ALL.len(), 10);
+    assert_eq!(keyhog_profile::CounterId::ALL.len(), 157);
+    assert_eq!(keyhog_profile::GaugeId::ALL.len(), 11);
 }

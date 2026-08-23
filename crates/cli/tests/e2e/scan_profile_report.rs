@@ -39,7 +39,14 @@ fn scan_profile_emits_causal_run_identity_and_macro_measurements() {
     assert!(stderr.contains("macro scanning"));
     assert!(stderr.contains("macro resolving"));
     assert!(stderr.contains("bottleneck macro="));
-    assert!(stderr.contains("backend-dispatch"));
+    // `backend-dispatch` is the GPU region-dispatch and literal-compile stage
+    // (`crates/scanner/src/scan_profile.rs`); a `--backend cpu` run performs no
+    // region dispatch, so the stage this scan attributes is `scan-pipeline`.
+    assert!(stderr.contains("scan-pipeline"));
+    assert!(
+        !stderr.contains("backend-dispatch"),
+        "a CPU-only scan must not attribute GPU region dispatch; stderr={stderr}"
+    );
     assert!(stderr.contains("suppression"));
     assert!(stderr.contains("live-verification"));
     assert!(stderr.contains("reporting"));
@@ -168,9 +175,12 @@ fn scan_profile_emits_causal_run_identity_and_macro_measurements() {
         .lines()
         .filter(|line| line.starts_with("cache layer="))
         .collect::<Vec<_>>();
+    // Every `CacheLayerKindV2` variant except `legacy-aggregate` (the pre-v2
+    // single-cache rollup) is a causal layer a scan must report. Adding a
+    // variant without emitting it turns this red on the count.
     assert_eq!(
         cache_lines.len(),
-        6,
+        10,
         "every causal cache layer must be reported: {cache_lines:?}"
     );
     for layer in [
@@ -180,6 +190,10 @@ fn scan_profile_emits_causal_run_identity_and_macro_measurements() {
         "verifier",
         "daemon",
         "page-cache",
+        "hyperscan-shards",
+        "matcher-artifacts",
+        "gpu-programs",
+        "lock-files",
     ] {
         assert!(
             cache_lines

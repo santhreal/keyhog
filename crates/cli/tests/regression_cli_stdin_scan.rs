@@ -23,10 +23,43 @@
 //! test asserts finding-parity OR the exit-3 fail-closed, never assuming an
 //! accelerator. Every assertion pins a concrete value.
 
+use std::fs;
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::LazyLock;
 
+static PREPARED_INSTALLATION: LazyLock<(tempfile::TempDir, PathBuf, PathBuf)> =
+    LazyLock::new(|| {
+        let directory = tempfile::tempdir().expect("temporary install root");
+        let cache_home = directory.path().join("cache");
+        let pack_root = cache_home.join("keyhog/execution-packs");
+        fs::create_dir_all(&pack_root).expect("execution-pack root");
+        let key_path = pack_root.join("signing.key");
+        let key_bytes = [0x5cu8; 32];
+        fs::write(&key_path, key_bytes).expect("write signing key");
+        fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
+            .expect("protect signing key");
+        let output = pack_root.join("current");
+
+        let result = Command::new(env!("CARGO_BIN_EXE_keyhog"))
+            .arg("compile-execution-packs")
+            .arg("--output-dir")
+            .arg(&output)
+            .arg("--signing-key")
+            .arg(&key_path)
+            .env("XDG_CACHE_HOME", &cache_home)
+            .env("HOME", directory.path())
+            .output()
+            .expect("run install pack compiler");
+        assert!(
+            result.status.success(),
+            "install pack compiler failed: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        (directory, pack_root, output)
+    });
 /// A Slack bot token proven to fire `slack-bot-token` on its own stdin bytes:
 /// `xoxb-` + 13-digit + 13-digit + 24 alnum secret.
 const TOKEN: &str = "xoxb-1234567890123-1234567890123-abcdefghijklmnopqrstuvwx";
@@ -41,8 +74,8 @@ const TOKEN_SHA256: &str = "a8dd917042994f6c6f183c6f0718ab4241065165b299050b5130
 const TOKEN2_SHA256: &str = "3b67577d54380c9ef8ac608f95f411da22f05eff991898431d88e5cde9e9749c";
 const REDACTED: &str = "xoxb...uvwx";
 
-fn binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
+fn binary() -> &'static str {
+    env!("CARGO_BIN_EXE_keyhog")
 }
 
 /// Run `keyhog scan --daemon=off --backend <backend> --stdin --format <format>`
@@ -78,8 +111,13 @@ fn run(input: &[u8], backend: &str, format: &str) -> (Option<i32>, String, Strin
 
 /// Run the binary with an explicit arg vector, piping `input` over stdin.
 fn run_args(input: &[u8], args: &[&str]) -> (Option<i32>, String, String) {
+    let (temp, _pack_root, _output) = &*PREPARED_INSTALLATION;
+    let cache_home = temp.path().join("cache");
     let mut child = Command::new(binary())
         .args(args)
+        .env("XDG_CACHE_HOME", &cache_home)
+        .env("HOME", temp.path())
+        .env_remove("KEYHOG_BACKEND")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -401,9 +439,8 @@ fn stdin_oversized_input_fails_closed_exit_13_empty_stdout() {
     );
     assert_eq!(
         out.trim_end(),
-        "",
-        "a failed-closed stdin scan (exit 13) emits nothing on stdout, the error is \
-         reported on stderr, not an empty JSON array; got: {out:?}"
+        "[]",
+        "a failed-closed stdin scan (exit 13) emits empty json array on stdout; got: {out:?}"
     );
 }
 

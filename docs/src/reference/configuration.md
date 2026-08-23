@@ -98,7 +98,7 @@ A dash means that layer intentionally has no surface.
 | Output format | `text` | `[scan].format` | `--format` | text/json/json-envelope/jsonl/jsonl-envelope/sarif/csv/github-annotations/gitlab-sast/html/junit. |
 | Evidence exit policy | `default` | `[scan].evidence_policy` | `--evidence-policy` | `default` blocks `likely` and `confirmed` findings while leaving `review` findings visible; `paranoid` also blocks `review`. The policy changes exit status, not report retention. |
 | Show secrets | off | `show_secrets` | `--show-secrets` | Print plaintext credentials. **Never enable in CI/logs.** |
-| Incremental cache | off | `[scan].incremental` / `[scan].incremental_cache` | `--incremental` / `--incremental-cache` | BLAKE3 Merkle skip-cache. Trusted clean-file hits count as complete coverage. A run containing only unchanged files skips backend routing and scanner dispatch startup. |
+| Incremental cache | off | `[scan].incremental` / `[scan].incremental_cache` | `--incremental` / `--incremental-cache` | BLAKE3 Merkle skip-cache. The read-free skip requires mtime, inode change time, and size to match; a file whose change time moved is re-read and re-hashed. Trusted clean-file hits count as complete coverage. A run containing only unchanged files skips backend routing and scanner dispatch startup. |
 | Hyperscan cache dir | platform cache dir | `[system].cache_dir` | `--cache-dir` | Compiled-database cache directory. Must be an absolute user-owned path under the home directory or per-user keyhog temp cache root. |
 | Autoroute cache file | platform cache file | `[system].autoroute_cache` | `--autoroute-cache` | Persisted fastest-correct backend decisions. Use an absolute file path or `off` to disable persistence. Missing, stale, invalid, incomplete, or quarantined evidence selects no backend, leaves the affected batch unscanned, and returns incomplete coverage. |
 | MatcherArtifact cache dir | platform cache dir | `[system].matcher_cache` | `--matcher-cache` | Persisted eager compiled matcher graph reused across process invocations. Distinct from Hyperscan `--cache-dir` `.db` shards. Default-on mirrors Hyperscan's local shard cache (unsigned, identity-bound). `--lockdown` disables it. Use an absolute directory or `off` to disable. Identity binds binary, features, detector digest, matcher-relevant config digest, pack generation, backend, and runtime identity; mismatches miss and rebuild. LazyRegex residency is not retained. |
@@ -568,9 +568,11 @@ runtime. See [Guard workflow](../workflows/guard.md) for operational details.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `hot_index_memory` | string | unlimited | Hot clean attestation index memory budget (e.g. `64MiB`). |
+| `hot_index_memory` | string | 64MB | Memory budget for the clean attestation cache index (for example 64 megabytes). |
 | `max_pending_events_per_root` | integer | 8192 | Maximum queued filesystem events per root. |
+| `max_pending_events_total` | integer | 65536 | Maximum total queued filesystem events across all roots. |
 | `coalesce_window` | string | 100ms | Event coalescing window before applying state transitions. |
+| `scanner_residency` | string | warm | Scanner residency mode (`warm` or `idle-unload`). |
 | `scanner_idle_timeout` | string | 5m | Scanner idle-unload timeout. After this duration without guard activity, the residency label reports `idle-unload`. |
 | `scrub_interval` | string | disabled | Periodic re-scan interval for `current` roots. Catches changes that filesystem events missed. |
 | `state_path` | string | disabled | Durable guard state path (e.g. `~/.local/state/keyhog/guard.redb`). Persists root records and attestations across daemon restarts. Rejected in lockdown mode. |

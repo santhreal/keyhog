@@ -7,6 +7,7 @@
 mod compile;
 mod compile_helpers;
 pub(crate) mod detector_digest;
+pub use detector_digest::corpus_route_identity;
 mod runtime;
 mod types;
 mod validation;
@@ -17,6 +18,9 @@ pub use types::{
 };
 pub(crate) use types::{GpuBackendAcquisitionFailure, GpuBackendPeers, SelectedGpuPeer};
 
+/// The compiled artifact class for detector plans.
+pub const ARTIFACT_CLASS: keyhog_core::CompiledArtifactClass =
+    keyhog_core::CompiledArtifactClass::DetectorPlan;
 use crate::compiler::*;
 #[cfg(feature = "simd")]
 use crate::engine::build_simd_compile_plan;

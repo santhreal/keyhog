@@ -27,11 +27,11 @@ fn parallel_scan_subprocesses_emit_valid_json() {
                     "--daemon=off",
                     "--backend",
                     crate::support::DIAGNOSTIC_BACKEND,
+                    "--developer-compile-embedded-detectors",
                     "--format",
                     "json",
                 ])
                 .arg(dir.path())
-                .env(format!("KEYHOG_CONCURRENT_{worker}"), "1")
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()

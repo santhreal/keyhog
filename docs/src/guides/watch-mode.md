@@ -10,8 +10,8 @@ It runs in the foreground, compiles one scanner at startup, scans what is
 already in the tree, and then prints each finding as it happens:
 
 ```text
-🔍 stripe-secret-key /home/you/project/src/b.env:1 CRITICAL (1.00)  sk_l...EaNn
-👁  keyhog watch (☰ 926 detectors compiled)
+🔍 stripe-secret-key /home/you/project/src/b.env:1 CRITICAL (1.00)  sk_l...EaNn sha256:<credential-digest>
+👁  keyhog watch (☰ 934 detectors compiled)
     workers: 16
     watching: /home/you/project/src
     Ctrl-C to exit

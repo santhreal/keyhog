@@ -192,6 +192,7 @@ pub(crate) fn run(args: BloomDiagnosticArgs) -> Result<ExitCode> {
                 base_offset: start,
                 base_line: input.line_start.saturating_sub(1),
                 source_type: "bloom-diagnostic".into(),
+                ctime_ns: None,
                 path: Some(format!("{}#{}", input.path, input.id).into()),
                 commit: None,
                 author: None,

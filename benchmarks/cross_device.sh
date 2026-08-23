@@ -31,7 +31,7 @@ SEED="${SEED:-0}"
 REMOTE_TMP="${REMOTE_TMP:-/tmp/keyhog-bench}"
 # cargo-install feature set. Empty = the device picks per-OS: macOS/Darwin gets
 # `--no-default-features --features portable` (keyhog's documented system-lib-free
-# build: no Hyperscan/pkg-config/CUDA), Linux gets the default (Hyperscan SIMD).
+# build: no Hyperscan/pkg-config/CUDA), Linux gets `--features simd` (Hyperscan SIMD).
 KEYHOG_INSTALL_FEATURES="${KEYHOG_INSTALL_FEATURES:-}"
 # We rsync THIS host's current tree to a device-local scratch copy and build
 # there, so a device's stale/absent clone never benches old code. (The repo's
@@ -72,8 +72,14 @@ KH_FEAT="$KEYHOG_INSTALL_FEATURES"
 if [ -z "\$KH_FEAT" ]; then
   case "\$OS" in
     Darwin*) KH_FEAT="--no-default-features --features portable" ;;  # no system libs
-    *)       KH_FEAT="" ;;                                            # Linux: Hyperscan SIMD
+    *)       KH_FEAT="--features simd" ;;                            # Linux: Hyperscan SIMD
   esac
+fi
+if [ -n "\$KH_FEAT" ] && echo "\$KH_FEAT" | grep -q "simd"; then
+  if [ "\$OS" = "Linux" ] && ! pkg-config --exists libhs 2>/dev/null && ! pkg-config --exists vectorscan 2>/dev/null && ! pkg-config --exists hyperscan 2>/dev/null; then
+    echo "error: libhs/vectorscan pkg-config package not found on remote; install libhyperscan-dev or libvectorscan-dev to build with --features simd, or override KEYHOG_INSTALL_FEATURES='--no-default-features --features portable'" >&2
+    exit 4
+  fi
 fi
 echo "installing keyhog (cargo install --path crates/cli \$KH_FEAT)..." >&2
 cargo install --path crates/cli --root "$REMOTE_TMP/kh" \$KH_FEAT --quiet --locked >&2

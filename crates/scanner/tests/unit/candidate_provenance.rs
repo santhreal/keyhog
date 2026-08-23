@@ -520,3 +520,43 @@ fn dotenv_source_roles_recognize_prefixed_and_named_env_files() {
         );
     }
 }
+
+/// WHY: Standard config and credentials files (e.g. `~/.aws/credentials`, `credentials`, `config`, `.config`, `secrets.ini`)
+/// must classify assignments as StructuredAssignmentValue and derive VendorPattern / likely tier instead of UnsupportedContext.
+#[test]
+fn ini_source_roles_recognize_standard_config_and_credentials_files() {
+    for path in [
+        "~/.aws/credentials",
+        "credentials",
+        ".credentials",
+        "config",
+        ".config",
+        "secrets",
+        ".secrets",
+        "aws.ini",
+        "app.cfg",
+        "service.conf",
+        "settings.properties",
+    ] {
+        let source = "[default]\naws_access_key_id = AKIAQYLPMN5HFIQR7XYA\naws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n";
+        let start = source.find("AKIAQYLPMN5HFIQR7XYA").unwrap();
+        let evidence = crate::source_semantics::classify_structured_candidate(
+            source,
+            Some(path),
+            start,
+            start + "AKIAQYLPMN5HFIQR7XYA".len(),
+        )
+        .unwrap_or_else(|| panic!("structured source evidence must parse for {path}"));
+        let parsed = CandidateProvenance::named(7, 11).with_source_semantics(evidence, None);
+        assert_eq!(
+            parsed.source_role(),
+            SemanticSourceRole::StructuredAssignmentValue,
+            "failed for path {path}"
+        );
+        assert_eq!(
+            parsed.context_class(),
+            keyhog_core::EvidenceReasonCode::VendorPattern,
+            "context class failed for path {path}"
+        );
+    }
+}

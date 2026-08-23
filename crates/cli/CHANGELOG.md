@@ -1,10 +1,69 @@
 # Changelog
 
+## 0.5.81 - 2026-08-20
+
+- fix(daemon): the detector rules identity is derived from the rule set, not from the route that loaded it. `detector_rules_digest` is the single owner for the client, the daemon handshake, the staleness check and the scan request, so a warm daemon and the CLI that started it no longer disagree about their own rules and re-route to an in-process scan.
+- fix(cli): an Action receipt certifies a fail-closed scan. `validate_semantics` accepted only `partial` on exit 11 and 13, so a total source failure, which reports `failed`, was rejected as contradictory semantics and the receipt bailed on the scan it exists to record.
+- fix(cli): `--autoroute` calibration state that is missing, stale, invalid, incomplete, or quarantined exits 2 on a normal automatic scan, with `[]` on stdout and the state plus its repair on stderr. `docs/src/reference/exit-codes.md` documents that, and the scan never benchmarks at scan time or substitutes scalar execution.
+- feat(guard): derive effective root GuardPolicyIdentity digests across .keyhogignore, .keyhogignore.toml, .keyhog.toml, and suppression files, transitioning active roots to StalePolicy and invalidating attestations upon policy modifications (Row 142).
+- Benchmark corpus synthetic packs & representative test coverage (Row 162). Fixed AWS Access Key token shape in the built-in benchmark corpus template to match 20-character credential length (`AKIA` + 16 chars). Added integration tests verifying benchmark corpus structure, metadata, planted credential shapes, and synthetic execution pack finding parity invariants.
+- fix(guard): `guard list` exits with a system error when a registered root cannot be queried instead of reporting success for the roots it did reach.
+- fix(cli): `--window-overlap` accepts 1KB up to strictly less than the 1MB window size. The previous 16MB ceiling accepted values the source reader rejects at runtime.
+- fix(cli): `detectors --audit` loads the corpus named by `--detectors` ungated, so it reports every failing detector instead of exiting 2 through the fail-closed corpus gate with no report. `EXIT_DETECTOR_AUDIT_FAILED` (3) is reachable again.
+- fix(guard): a degraded root transitions on repeat coverage loss instead of ignoring the watcher overflow, so the coverage-loss count and the reason stay current. A stale-policy root still ignores overflow, because reconciliation clears it.
+- fix(artifacts): a missing execution-pack verification key names the artifact class, the expected file pattern beside the generation directory, and `keyhog install`, instead of reporting that the manifest has no sibling `signing.key`.
+- fix(docs): `docs/src/capabilities.md` and `docs/src/hardening.md` name `cargo install --locked --force keyhog` followed by `keyhog doctor` for replacement, and the capabilities table row for authenticated execution packs describes the generation `keyhog install` signs and verifies rather than release checksum verification KeyHog does not perform. The subcommand table lists `install`, `triage`, and `guard`.
+- fix(routing): the autoroute rules identity no longer depends on how the scanner was materialized. A scan that compiled the detector corpus keyed on the raw spec hash while a scan that hydrated the installed execution-pack generation keyed on the pack's compiled plan digest, so an install performed in a repository carrying `detectors/` produced a table every scan outside that directory rejected as a different corpus and exited 2. Both routes now read `keyhog_scanner::compiled_scanner::corpus_route_identity` for the corpus they run, computed before `compose_detector_min_confidence` mutates declared floors.
+- fix(cli): scanner materialization and compiled-cache state are reported whether or not stderr is a terminal. Both lines were gated on an interactive terminal, so a piped or redirected scan, the exact shape CI and installers run, could not tell whether it mapped the installed execution-pack generation or compiled in process through the developer escape hatch. `--quiet` still silences them.
+- fix(cli): a not-ready autoroute calibration reported by `keyhog install` names the identity that drifted. The verification step printed only the readiness status, so a stale cache gave no way to tell a replaced binary from a changed feature set or detector corpus.
+- fix(cli): a working directory carrying the same detector corpus the installed generation was built from hydrates that generation instead of compiling it in process. Reuse is decided by comparing the compiled digest of the on-disk `detectors/` against the pack identity, so an edited corpus still gets neither the pack nor its calibration and exits 2 with `detector digest mismatch`.
+- fix(cli): a per-detector `enabled = false` or `min_confidence` in `.keyhog.toml` no longer invalidates the installed autoroute table. The corpus route identity is computed before the disable filter, and `autoroute_config_digest` drops both per-detector fields: an install publishes 4 calibrated policy configs and these are per-invocation filters of unbounded cardinality whose routing-relevant effect, pattern-set size, the workload key already carries. `matcher_resolved_config_digest` still binds both. Autoroute caches installed by an earlier version no longer match: re-run `keyhog install`.
+- bench(cli): add criterion benchmarks for CLI startup latency, git hook execution lifecycle, and guard status protocol roundtrips (Row 147).
+- feat(guard): implement continuous guard transition feed / event log surface with causal attribution across registered roots (`keyhog guard feed`, `GuardFeed` protocol frame) (Row 146).
+- feat(cli): enhance pass-gate terminal output craft with structured volume, blob counts, bytes scanned, and execution timing (Row 143).
+- fix(daemon): filter out ignored and excluded paths (.git, target, node_modules, ignore_paths, default excludes) in guard filesystem watcher matching scan path semantics (Row 141).
+- fix(daemon): filter out ignored and excluded paths (.git, target, node_modules, [scan].exclude, .gitignore, .keyhogignore, default excludes) in guard filesystem watcher matching scan path semantics with dynamic ignore matcher reloading (Row 141).
+- feat(guard): offline guard status and list inspectability reading durable store from disk with optional root summary (Row 140).
+- feat(cli): optimize startup execution path for informational commands with fast zero-allocation dispatch, deferred runtime initialization, and zero detector corpus parsing (Row 138).
+- feat(installer): multi-dimensional artifact invalidation and regeneration across detector corpus changes, configuration updates, and calibration changes (Row 135).
+- feat(installer): update recommendation parity and complete artifact generation on binary replacement (Row 134).
+- feat(build): audit and enforce release binary symbol stripping and zero DWARF debuginfo bloat via Cargo.toml [profile.release] and profile divergence gates (Row 139).
+- feat(installer): acceptance gate for clean install on empty cache with zero runtime compilations across all surfaces (Row 130).
+- feat(artifacts): fail closed with EXIT_USER_ERROR and repair command on stale execution-pack identity inputs (Row 129).
+- feat(hook): utilize prepared execution pack in pre-commit hook run for zero runtime compilations and sub-second execution (Row 145).
+- feat(gates): consolidate structural assertions into unified workspace gates and eliminate duplicate per-crate gap tests (Row 149).
+- fix(backend): GPU route explanation parity reporting compiled-in feature state when GPU hardware is physically present rather than false probe misses (Row 156).
+- feat(execution-pack): optimize startup footprint and execution pack pre-installation floor with lazy canonical IR compilation and zero-compile scan path (Row 158).
+- feat(pipeline): scale fused CPU wave concurrency across worker pool and enable parallel wave dispatch in auto backend mode (Row 160).
+- feat(pipeline): enable parallel fused wave dispatch in auto backend mode, keeping autoroute calibration serial (Row 160).
+- feat(reporting): fail closed scan document status on source failure and oversized stdin (Row 163).
+- feat(compiler): install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata (Row 128).
+- feat(cache): load-only scan execution and zero compilation fallback on prepared artifact caches (Row 127).
+- feat(installer): unified installed artifact registry connecting installer production, updater regeneration, and scan loading (Row 126).
+- feat(profile): compile surface runtime counters across all 13 compiler surfaces (Row 125).
+- fix(cli): eliminate noisy internal execution-pack fallback warning on clean scan passes and enforce unpolluted structured output (Row 144).
+- feat(cli): fail closed on in-process detector compilation during scan; execution packs must be prepared via keyhog install or update, with --developer-compile-embedded-detectors available as a hidden developer escape hatch (Row 124).
+- feat(gates): validate allowlists across reality and enforce meta-gate audit against unvalidated bypasses (Row 137).
+- feat(profile): directional queue attribution distinguishing producer backpressure from consumer starvation (Row 133).
+- feat(daemon): filesystem authority probe and default periodic scrub for unauthoritative filesystems (Row 132).
+- feat(config): add guard configuration section to example TOML and docs truth (Row 131).
+- feat(daemon): report active watcher backend, latency tier, and polling interval in guard status (Row 123).
+- fix(daemon): attribute multi-path watcher events across all enclosing roots and trigger subtree reconciliation on pathless events (Row 121).
+- fix(daemon): fail-closed reconciliation and root degradation on watcher channel disconnection (Row 120).
+- feat(cli): 3-layer configuration governance and runtime metadata enumeration for Tier-A operational performance constants (Row 113).
+- feat(cli): single canonical owner of byte size parsing across CLI, daemon, and config (Row 112).
+- fix(profile): wire queue depth tracking, blocked wait attribution, and per-worker blocked time across fused and coalesced dispatch pipelines (Row 107).
+- test(cli): assert incremental Merkle cache detection across four adversarial change kinds and verify interrupt recovery without state corruption (`incremental_rescan_reports_unchanged_secret`, `sigint_mid_scan_exits_130`).
+- test(cli): enforce exit code totality through real binary execution across all scan-reachable codes and assert corrective action guidance on error enum variants (`regression_exit_code_matrix`).
+- fix(daemon): wrap daemon request dispatch and filesystem drain in `catch_unwind` isolation boundaries under shipped `panic = "unwind"` release profile, preventing server crash on internal request panics.
+- feat(cache): hook detector plan save operations into `keyhog_scanner::evict_cache_dir_with_policy` using `CacheKind::DetectorPlans`.
+- Benchmark corpus synthetic packs & representative test coverage (Row 162). Fixed AWS Access Key token shape in the built-in benchmark corpus template to match 20-character credential length (`AKIA` + 16 chars). Added integration tests verifying benchmark corpus structure, metadata, planted credential shapes, and synthetic execution pack finding parity invariants.
+- Removed `keyhog update` and `keyhog repair`, and the download, signature-verification, asset-selection, self-replace, backup/rollback, and orphan-reaping code behind them. They installed from a signed binary-asset release channel that no workflow produces; because each searched backward for a release that still carried a complete bundle, the dead channel installed a 33-version-stale binary instead of failing. Update and repair with `cargo install --locked --force keyhog`. `EXIT_REPAIR_FAILED` and `EXIT_UPDATE_AVAILABLE` are gone; exit 4 is now produced by `doctor` and `backend --self-test` only.
+- Exit code 10 now means exactly one thing, a live credential confirmed by `scan --verify`. Its second meaning, a newer release found by `update --check`, went with the retired channel. Exit code 4 drops `repair` from its producer list.
+
 ## 0.5.80 - 2026-08-17
 
 - Include known reason and repair command in daemon warm-route errors and startup banner instead of hiding them behind a generic fallback. Apply the same fix to the daemon status command. Make is_work_request exhaustive so adding a new Request variant causes a compile error. Add regression tests pinning daemon server pure-function behaviors before modularization.
-- Removed `keyhog update` and `keyhog repair`, and the download, signature-verification, asset-selection, self-replace, backup/rollback, and orphan-reaping code behind them. They installed from a signed binary-asset release channel that no workflow produces; because each searched backward for a release that still carried a complete bundle, the dead channel installed a 33-version-stale binary instead of failing. Update and repair with `cargo install --locked --force keyhog`. `EXIT_REPAIR_FAILED` and `EXIT_UPDATE_AVAILABLE` are gone; exit 4 is now produced by `doctor` and `backend --self-test` only.
-- Exit code 10 now means exactly one thing, a live credential confirmed by `scan --verify`. Its second meaning, a newer release found by `update --check`, went with the retired channel. Exit code 4 drops `repair` from its producer list.
 
 ## 0.5.79 - 2026-08-16
 

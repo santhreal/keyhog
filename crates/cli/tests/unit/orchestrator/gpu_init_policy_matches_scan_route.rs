@@ -283,8 +283,7 @@ fn autoroute_config_digest_includes_min_secret_len() {
         .expect("resolved min_secret_len digest");
 
     assert_ne!(
-        default_digest,
-        longer_digest,
+        default_digest, longer_digest,
         "autoroute cache identity must include min_secret_len because it changes entropy fallback candidate admission"
     );
 }
@@ -394,6 +393,65 @@ fn every_calibration_shape_shares_the_normal_scan_config_identity() {
         cpu_only_calibration_digest, cpu_only_normal_digest,
         "GPU exclusion is complete when the resolved runtime policy disables GPU"
     );
+}
+
+/// Per-detector config splits across two identities, and putting it in the
+/// wrong one is fatal in opposite directions.
+///
+/// `[detector.<id>] enabled = false` and a per-detector `confidence_floor` are
+/// per-invocation filters. They MUST NOT reach the autoroute identity: an
+/// install publishes four calibrated policy configs, none of which carries a
+/// user's disable list, so hashing it made every such scan reject the whole
+/// table and exit 2 with nothing scanned. They MUST reach the matcher artifact
+/// identity, because a matcher compiled for the full corpus cannot be replayed
+/// for a filtered one.
+#[test]
+fn per_detector_config_binds_the_matcher_identity_and_not_the_route_identity() {
+    let directory = tempfile::tempdir().expect("config directory");
+    let baseline_path = directory.path().join("baseline.toml");
+    std::fs::write(&baseline_path, "[scan]\n").expect("write baseline config");
+    let disabled_path = directory.path().join("disabled.toml");
+    std::fs::write(
+        &disabled_path,
+        "[detector.razorpay-key-secret]\nenabled = false\n",
+    )
+    .expect("write disabling config");
+    let floor_path = directory.path().join("floor.toml");
+    std::fs::write(
+        &floor_path,
+        "[detector.razorpay-key-secret]\nmin_confidence = 0.99\n",
+    )
+    .expect("write floor config");
+
+    let digests = |path: &std::path::Path| {
+        let raw = path.to_str().expect("config path is utf-8");
+        let mut route_args = scan_args(&["scan", "--config", raw, "--stdin"]);
+        let route = API
+            .autoroute_config_digest_for_args(&mut route_args)
+            .expect("autoroute config digest");
+        let mut matcher_args = scan_args(&["scan", "--config", raw, "--stdin"]);
+        let matcher = API
+            .matcher_resolved_config_digest_for_args(&mut matcher_args)
+            .expect("matcher resolved config digest");
+        (route, matcher)
+    };
+
+    let (baseline_route, baseline_matcher) = digests(&baseline_path);
+    for path in [&disabled_path, &floor_path] {
+        let (route, matcher) = digests(path);
+        assert_eq!(
+            route,
+            baseline_route,
+            "per-detector config must reuse the calibrated route identity ({})",
+            path.display()
+        );
+        assert_ne!(
+            matcher,
+            baseline_matcher,
+            "per-detector config must not reuse a matcher artifact built for the full corpus ({})",
+            path.display()
+        );
+    }
 }
 
 /// Coherence gate: every value the `--backend` flag ADVERTISES (clap

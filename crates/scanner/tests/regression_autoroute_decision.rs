@@ -246,6 +246,14 @@ fn backend_routing_reason_labels_are_stable() {
         "gpu_threshold_not_met"
     );
     assert_eq!(BackendRoutingReason::GpuSelected.label(), "gpu_selected");
+    assert_eq!(
+        BackendRoutingReason::CompiledWithoutGpu.label(),
+        "compiled_without_gpu_backend"
+    );
+    assert_eq!(
+        BackendRoutingReason::SingleCompiledBackend.label(),
+        "single_compiled_backend"
+    );
 }
 
 // ─── CPU-tier ladder: deterministic when no GPU is in play ──────────────────

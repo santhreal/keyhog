@@ -107,6 +107,7 @@ fn record_chunk_first_is_new_then_unchanged() {
         path.clone(),
         0,
         1_000,
+        1_000 + 100,
         content.len() as u64,
         content,
     );
@@ -118,6 +119,7 @@ fn record_chunk_first_is_new_then_unchanged() {
         path.clone(),
         0,
         1_000,
+        1_000 + 100,
         content.len() as u64,
         content,
     );
@@ -135,23 +137,55 @@ fn byte_edit_flips_unchanged_back_to_changed() {
 
     let v1 = b"token = AKIA0000000000000000";
     assert!(
-        !api.merkle_record_chunk_at_offset_and_check_unchanged(&idx, path.clone(), 0, 5, 27, v1),
+        !api.merkle_record_chunk_at_offset_and_check_unchanged(
+            &idx,
+            path.clone(),
+            0,
+            5,
+            5 + 100,
+            27,
+            v1
+        ),
         "initial content is new"
     );
     assert!(
-        api.merkle_record_chunk_at_offset_and_check_unchanged(&idx, path.clone(), 0, 5, 27, v1),
+        api.merkle_record_chunk_at_offset_and_check_unchanged(
+            &idx,
+            path.clone(),
+            0,
+            5,
+            5 + 100,
+            27,
+            v1
+        ),
         "unchanged content is recognized"
     );
 
     // Edit one byte at the same path/offset: must be seen as changed.
     let v2 = b"token = AKIA0000000000000001";
     assert!(
-        !api.merkle_record_chunk_at_offset_and_check_unchanged(&idx, path.clone(), 0, 5, 27, v2),
+        !api.merkle_record_chunk_at_offset_and_check_unchanged(
+            &idx,
+            path.clone(),
+            0,
+            5,
+            5 + 100,
+            27,
+            v2
+        ),
         "edited content must return false (changed)"
     );
     // And now the NEW content is the cached one.
     assert!(
-        api.merkle_record_chunk_at_offset_and_check_unchanged(&idx, path.clone(), 0, 5, 27, v2),
+        api.merkle_record_chunk_at_offset_and_check_unchanged(
+            &idx,
+            path.clone(),
+            0,
+            5,
+            5 + 100,
+            27,
+            v2
+        ),
         "the edited content becomes the new baseline"
     );
     assert_eq!(
@@ -167,7 +201,7 @@ fn unchanged_by_stored_hash_is_exact() {
     let idx = api.merkle_empty();
     let path = std::path::PathBuf::from("a/b/c.txt");
     let h = api.merkle_hash_content(b"the cached content");
-    api.merkle_record_with_metadata(&idx, path.clone(), 10, 18, h);
+    api.merkle_record_with_metadata(&idx, path.clone(), 10, 10 + 100, 18, h);
 
     assert!(
         api.merkle_unchanged(&idx, &path, &h),
@@ -193,22 +227,22 @@ fn metadata_unchanged_exact_and_boundaries() {
     let idx = api.merkle_empty();
     let path = std::path::PathBuf::from("src/main.rs");
     let h = api.merkle_hash_content(b"fn main() {}");
-    api.merkle_record_with_metadata(&idx, path.clone(), 42, 7, h);
+    api.merkle_record_with_metadata(&idx, path.clone(), 42, 42 + 100, 7, h);
 
     assert!(
-        api.merkle_metadata_unchanged(&idx, &path, 42, 7),
+        api.merkle_metadata_unchanged(&idx, &path, 42, 42 + 100, 7),
         "exact (mtime,size) match => true"
     );
     assert!(
-        !api.merkle_metadata_unchanged(&idx, &path, 42, 8),
+        !api.merkle_metadata_unchanged(&idx, &path, 42, 42 + 100, 8),
         "size drift by one => false"
     );
     assert!(
-        !api.merkle_metadata_unchanged(&idx, &path, 43, 7),
+        !api.merkle_metadata_unchanged(&idx, &path, 43, 43 + 100, 7),
         "mtime drift by one => false"
     );
     assert!(
-        !api.merkle_metadata_unchanged(&idx, std::path::Path::new("other.rs"), 42, 7),
+        !api.merkle_metadata_unchanged(&idx, std::path::Path::new("other.rs"), 42, 42 + 100, 7),
         "unknown path => false"
     );
 }
@@ -221,10 +255,10 @@ fn metadata_match_does_not_imply_content_match() {
     let idx = api.merkle_empty();
     let path = std::path::PathBuf::from("racy.rs");
     let stored = api.merkle_hash_content(b"AAA");
-    api.merkle_record_with_metadata(&idx, path.clone(), 5, 3, stored);
+    api.merkle_record_with_metadata(&idx, path.clone(), 5, 5 + 100, 3, stored);
 
     assert!(
-        api.merkle_metadata_unchanged(&idx, &path, 5, 3),
+        api.merkle_metadata_unchanged(&idx, &path, 5, 5 + 100, 3),
         "metadata matches"
     );
     let actual = api.merkle_hash_content(b"BBB");
@@ -247,7 +281,7 @@ fn lookup_returns_exact_tuple_or_none() {
     let idx = api.merkle_empty();
     let path = std::path::PathBuf::from("dir/file.env");
     let h = api.merkle_hash_content(b"KEY=value");
-    api.merkle_record_with_metadata(&idx, path.clone(), 123, 9, h);
+    api.merkle_record_with_metadata(&idx, path.clone(), 123, 123 + 100, 9, h);
 
     assert_eq!(
         api.merkle_lookup(&idx, &path),
@@ -272,8 +306,8 @@ fn save_load_roundtrips_exact_entries() {
     let idx = api.merkle_empty();
     let ha = api.merkle_hash_content(b"alpha");
     let hb = api.merkle_hash_content(b"bravo");
-    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("a.rs"), 11, 5, ha);
-    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("b.rs"), 22, 5, hb);
+    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("a.rs"), 11, 11 + 100, 5, ha);
+    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("b.rs"), 22, 22 + 100, 5, hb);
     assert_eq!(api.merkle_len(&idx), 2, "two entries before save");
 
     api.merkle_save(&idx, &cache).expect("save must succeed");
@@ -346,7 +380,7 @@ fn save_load_with_spec_gate_matches_and_invalidates() {
 
     let idx = api.merkle_empty();
     let h = api.merkle_hash_content(b"gated content");
-    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("g.rs"), 33, 13, h);
+    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("g.rs"), 33, 33 + 100, 13, h);
     // `save_with_spec` is a `pub` method on the index value.
     idx.save_with_spec(&cache, &spec_a)
         .expect("spec-tagged save must succeed");
@@ -388,6 +422,7 @@ fn forget_removes_entry_and_reexposes_as_new() {
             path.clone(),
             0,
             1,
+            1 + 100,
             content.len() as u64,
             content
         ),
@@ -412,6 +447,7 @@ fn forget_removes_entry_and_reexposes_as_new() {
             path.clone(),
             0,
             1,
+            1 + 100,
             content.len() as u64,
             content
         ),
@@ -432,12 +468,12 @@ fn entry_cap_blocks_new_paths_but_allows_updates() {
     let h0 = api.merkle_hash_content(b"zero");
     let h1 = api.merkle_hash_content(b"one");
     let h2 = api.merkle_hash_content(b"two");
-    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("p0"), 1, 4, h0);
-    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("p1"), 2, 3, h1);
+    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("p0"), 1, 1 + 100, 4, h0);
+    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("p1"), 2, 2 + 100, 3, h1);
     assert_eq!(api.merkle_len(&idx), 2, "cap reached at two entries");
 
     // A THIRD new path is dropped (cap reached), not cached.
-    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("p2"), 3, 3, h2);
+    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("p2"), 3, 3 + 100, 3, h2);
     assert_eq!(api.merkle_len(&idx), 2, "new path over cap is dropped");
     assert_eq!(
         api.merkle_lookup(&idx, std::path::Path::new("p2")),
@@ -447,7 +483,7 @@ fn entry_cap_blocks_new_paths_but_allows_updates() {
 
     // Updating an EXISTING path always succeeds (does not grow the set).
     let h0b = api.merkle_hash_content(b"zero-updated");
-    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("p0"), 5, 12, h0b);
+    api.merkle_record_with_metadata(&idx, std::path::PathBuf::from("p0"), 5, 5 + 100, 12, h0b);
     assert_eq!(api.merkle_len(&idx), 2, "update does not add an entry");
     assert_eq!(
         api.merkle_lookup(&idx, std::path::Path::new("p0")),
@@ -471,6 +507,7 @@ fn distinct_chunk_offsets_are_independent_entries() {
             path.clone(),
             0,
             9,
+            9 + 100,
             8_192,
             chunk0
         ),
@@ -482,6 +519,7 @@ fn distinct_chunk_offsets_are_independent_entries() {
             path.clone(),
             4_096,
             9,
+            9 + 100,
             8_192,
             chunk1
         ),
@@ -496,6 +534,7 @@ fn distinct_chunk_offsets_are_independent_entries() {
             path.clone(),
             0,
             9,
+            9 + 100,
             8_192,
             chunk0
         ),

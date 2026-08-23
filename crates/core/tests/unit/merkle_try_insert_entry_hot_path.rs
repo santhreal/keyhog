@@ -40,6 +40,7 @@ fn merkle_over_cap_updates_existing_path() {
         &idx,
         path.clone(),
         1,
+        1 + 100,
         5,
         first,
     );
@@ -48,6 +49,7 @@ fn merkle_over_cap_updates_existing_path() {
         &idx,
         blocked.clone(),
         2,
+        2 + 100,
         7,
         sample_hash(b"blocked"),
     );
@@ -56,6 +58,7 @@ fn merkle_over_cap_updates_existing_path() {
         &idx,
         path.clone(),
         3,
+        3 + 100,
         6,
         second,
     );

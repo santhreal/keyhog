@@ -1,11 +1,22 @@
 #[cfg(feature = "decode")]
-use std::collections::HashSet;
+use std::collections::hash_map::Entry;
+#[cfg(feature = "decode")]
+use std::collections::HashMap;
 #[cfg(feature = "decode")]
 use std::sync::Arc;
 
 #[cfg(feature = "decode")]
 use keyhog_core::{Chunk, RawMatch, SensitiveString};
 
+/// Union decoded findings into the raw findings of the same chunk.
+///
+/// A decoded twin of an already-reported `(detector, credential)` adds no new
+/// location: the raw coordinate is the one an operator can open, so it stays
+/// primary. Its evidence is a different matter. The decoded text is often the
+/// only place the source role is parseable (a base64 `data:` value in a k8s
+/// Secret decodes to `KEY=value`), so dropping the twin outright downgraded the
+/// finding to `review` and stopped it blocking. The twin's verdict is unioned
+/// into the survivor instead; evidence only ever moves up.
 #[cfg(feature = "decode")]
 pub(crate) fn union_unique_matches(dest: &mut Vec<RawMatch>, src: Vec<RawMatch>) {
     if src.is_empty() {
@@ -15,13 +26,21 @@ pub(crate) fn union_unique_matches(dest: &mut Vec<RawMatch>, src: Vec<RawMatch>)
         *dest = src;
         return;
     }
-    let mut seen: HashSet<(Arc<str>, SensitiveString)> = dest
+    let mut seen: HashMap<(Arc<str>, SensitiveString), usize> = dest
         .iter()
-        .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
+        .enumerate()
+        .map(|(index, m)| ((Arc::clone(&m.detector_id), m.credential.clone()), index))
         .collect();
     for m in src {
-        if seen.insert((Arc::clone(&m.detector_id), m.credential.clone())) {
-            dest.push(m);
+        match seen.entry((Arc::clone(&m.detector_id), m.credential.clone())) {
+            Entry::Vacant(slot) => {
+                slot.insert(dest.len());
+                dest.push(m);
+            }
+            Entry::Occupied(slot) => {
+                let existing = &mut dest[*slot.get()];
+                existing.evidence = existing.evidence.stronger(m.evidence);
+            }
         }
     }
 }
@@ -30,6 +49,7 @@ pub(crate) fn union_unique_matches(dest: &mut Vec<RawMatch>, src: Vec<RawMatch>)
 pub(crate) fn decode_source_windows(
     limit: usize,
     chunk: &Chunk,
+    overlap: usize,
     mut visit: impl FnMut(&Chunk) -> crate::error::Result<()>,
 ) -> crate::error::Result<()> {
     let text = chunk.data.as_str();
@@ -73,11 +93,9 @@ pub(crate) fn decode_source_windows(
         }
 
         let max_overlap = (end - start).saturating_sub(1);
-        let overlap = crate::types::WINDOW_OVERLAP_BYTES
-            .min(limit / 2)
-            .min(max_overlap);
+        let actual_overlap = overlap.min(max_overlap);
 
-        let mut next = end.saturating_sub(overlap);
+        let mut next = end.saturating_sub(actual_overlap);
         while next < end && !text.is_char_boundary(next) {
             next += 1;
         }

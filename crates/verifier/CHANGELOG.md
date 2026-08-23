@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.81 - 2026-08-20
+
+- bench(verifier): add criterion benchmarks for template interpolation, response classification, verification cache operations, SSRF/domain policy checks, and SigV4 canonicalization (Row 147).
+
 ## 0.5.80 - 2026-08-17
 
 - style: format guard massive diff test and git sources modules.

@@ -100,18 +100,23 @@ fn explicit_profile_covers_most_of_whole_process_wall() {
         elapsed("execution-pack-select") > 0,
         "execution plan selection was not attributed"
     );
+    // Scanner materialization is attributed on the route the run actually took:
+    // `execution-pack-map` when an authenticated pack is mapped, `scanner-compile`
+    // when the corpus is compiled in process. This scan passes `--detectors`, so
+    // it compiles; asserting only the pack stage would test the fixture, not the
+    // attribution.
     assert!(
-        elapsed("execution-pack-map") > 0,
-        "execution plan materialization was not attributed"
+        elapsed("execution-pack-map") + elapsed("scanner-compile") > 0,
+        "scanner materialization was not attributed"
     );
     assert!(
         elapsed("backend-acquire") > 0,
         "backend availability acquisition was not attributed"
     );
-    assert!(
-        elapsed("backend-init") > 0,
-        "backend initialization was not attributed"
-    );
+    // No `backend-init` assertion: this scan runs `--backend cpu --no-gpu`, and
+    // the portable CPU route materializes no backend runtime or compiled
+    // database. `backend-init` is attributed where an initialization exists,
+    // which is the Hyperscan database materialization on the SIMD route.
     assert!(
         elapsed("source-acquire") > 0,
         "source acquisition was not attributed"
@@ -124,8 +129,11 @@ fn explicit_profile_covers_most_of_whole_process_wall() {
         elapsed("source-read") > 0,
         "source reads were not attributed"
     );
+    // `backend-dispatch` is the GPU region-dispatch and literal-compile stage and
+    // is zero for a CPU-only scan (`crates/scanner/src/scan_profile.rs`). The
+    // dispatch this run performs is the scan pipeline itself.
     assert!(
-        elapsed("backend-dispatch") > 0,
+        elapsed("scan-pipeline") > 0,
         "scan dispatch was not attributed"
     );
     assert!(
@@ -182,7 +190,7 @@ fn explicit_profile_covers_most_of_whole_process_wall() {
         let owned = allocation["stages"]
             .as_array()
             .expect("allocation stage owners");
-        for owner in ["detector-load", "backend-init", "reporting"] {
+        for owner in ["detector-load", "scanner-compile", "reporting"] {
             let row = owned
                 .iter()
                 .find(|row| row["metric_id"] == owner)

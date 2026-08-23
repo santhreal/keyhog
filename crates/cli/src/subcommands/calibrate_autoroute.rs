@@ -324,17 +324,28 @@ fn core_workload_plan() -> Vec<Workload> {
     workloads
 }
 
+/// The CI fixture plan: two size bands per decode state.
+///
+/// A route family pools the bands that share a decode state, and reuse needs at
+/// least two of them, so a plan that probes one decode state leaves every scan
+/// in the other state uncalibrated. Real content decodes, so a fixture without
+/// the decode-heavy bands failed closed on a planted `.env` while the full
+/// production ladder routed it.
 #[cfg(any(test, feature = "ci-lean"))]
 fn bounded_e2e_workload_plan(mut workloads: Vec<Workload>) -> Result<Vec<Workload>> {
     workloads.retain(|workload| {
         matches!(
             workload.label(),
-            "1 KiB workload" | "4 KiB workload" | "64 KiB workload"
+            "1 KiB workload"
+                | "4 KiB workload"
+                | "64 KiB workload"
+                | "decode-heavy 4 KiB workload"
+                | "decode-heavy 64 KiB workload"
         )
     });
-    if workloads.len() != 3 {
+    if workloads.len() != 5 {
         anyhow::bail!(
-            "bounded-e2e-v1 expected three canonical file workloads, found {}",
+            "bounded-e2e-v1 expected five canonical file workloads, found {}",
             workloads.len()
         );
     }
@@ -493,6 +504,10 @@ fn isolated_policy_argv(
         argv.push(OsString::from("--execution-packs"));
         argv.push(packs.as_os_str().to_owned());
     }
+    if let Some(key) = args.signing_key.as_deref() {
+        argv.push(OsString::from("--signing-key"));
+        argv.push(key.as_os_str().to_owned());
+    }
     argv
 }
 
@@ -519,8 +534,7 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
         )
     })?;
     let staged_cache_path = transaction.staged_path().to_path_buf();
-    let executable =
-        std::env::current_exe().context("resolving keyhog for isolated autoroute calibration")?;
+    let executable = keyhog_core::current_executable_path().map_err(anyhow::Error::msg)?;
     let mut measured_routes = BTreeSet::new();
     for policy in [
         AutorouteCalibrationPolicy::Default,
@@ -561,7 +575,10 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
         measured_routes.extend(policy_receipts);
     }
 
-    if let Some(binding) = resolve_execution_pack_binding(args.execution_packs.as_deref())? {
+    if let Some(binding) = resolve_execution_pack_binding(
+        args.execution_packs.as_deref(),
+        args.signing_key.as_deref(),
+    )? {
         crate::orchestrator::bind_autoroute_cache_to_execution_packs(&staged_cache_path, binding)
             .context("binding all-policy calibration evidence to exact execution packs")?;
     }
@@ -654,9 +671,10 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
 /// does.
 fn resolve_execution_pack_binding(
     requested: Option<&Path>,
+    signing_key: Option<&Path>,
 ) -> Result<Option<crate::execution_pack_install::ExecutionPackGenerationBinding>> {
     if let Some(directory) = requested {
-        return crate::execution_pack_install::load_authenticated_binding(directory)
+        return crate::execution_pack_install::load_authenticated_binding(directory, signing_key)
             .map(Some)
             .context("loading authenticated execution-pack generation for calibration");
     }
@@ -665,7 +683,15 @@ fn resolve_execution_pack_binding(
     if !installed.exists() {
         return Ok(None);
     }
-    Ok(crate::execution_pack_install::load_authenticated_binding(&installed).ok())
+    match crate::execution_pack_install::load_authenticated_binding(&installed, signing_key) {
+        Ok(binding) => Ok(Some(binding)),
+        Err(error) => {
+            eprintln!(
+                "keyhog: installed execution-pack generation is not authenticated ({error}); autoroute evidence stays unbound"
+            );
+            Ok(None)
+        }
+    }
 }
 
 pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
@@ -684,7 +710,10 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
              default cache, or pass a writable file path."
         );
     }
-    let execution_pack_binding = resolve_execution_pack_binding(args.execution_packs.as_deref())?;
+    let execution_pack_binding = resolve_execution_pack_binding(
+        args.execution_packs.as_deref(),
+        args.signing_key.as_deref(),
+    )?;
     if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
         if !args.quiet {
             println!(

@@ -19,6 +19,7 @@
 use std::sync::OnceLock;
 
 mod banner;
+mod host_class;
 pub(crate) mod platform;
 pub(crate) mod select;
 mod tier;
@@ -26,6 +27,7 @@ mod tier;
 pub(crate) mod thresholds;
 
 pub use banner::startup_banner;
+pub use host_class::HostClass;
 pub use select::{
     gpu_could_engage, parse_backend_str, select_backend, select_backend_verdict,
     BackendRoutingReason, BackendRoutingVerdict, BACKEND_OVERRIDE_VALUES,
@@ -118,6 +120,45 @@ pub const fn gpu_backend_compiled() -> bool {
     cfg!(feature = "gpu")
 }
 
+/// Canonical explanation string when GPU backend is not compiled into this binary.
+#[must_use]
+pub fn uncompiled_gpu_backend_explanation() -> &'static str {
+    if !multiple_backends_compiled() {
+        "compiled without GPU backend / single compiled backend"
+    } else {
+        "compiled without GPU backend"
+    }
+}
+
+/// Canonical formatted GPU status label across CLI diagnostics (doctor, backend report, version).
+#[must_use]
+pub fn format_gpu_status(caps: &HardwareCaps) -> String {
+    if caps.gpu_available {
+        let name = caps.gpu_name.as_deref().unwrap_or("yes"); // LAW10: display-only label for an unnamed adapter
+        if caps.gpu_is_software {
+            format!("{name} (software renderer: disabled)")
+        } else {
+            name.to_string()
+        }
+    } else if let Some(name) = caps.gpu_name.as_deref() {
+        if caps.gpu_is_software {
+            format!("{name} (software renderer: disabled)")
+        } else if !gpu_backend_compiled() {
+            format!("{name} ({})", uncompiled_gpu_backend_explanation())
+        } else {
+            format!("{name} (runtime unavailable)")
+        }
+    } else if !gpu_backend_compiled() {
+        if !multiple_backends_compiled() {
+            "not detected (compiled without GPU backend / single compiled backend)".to_string()
+        } else {
+            "not detected (binary built without --features gpu)".to_string()
+        }
+    } else {
+        "not detected".to_string()
+    }
+}
+
 /// Single owner of the SIMD-tier label precedence chain.
 ///
 /// The label reported by the startup banner, `keyhog backend`, `keyhog doctor`,
@@ -186,9 +227,7 @@ pub fn probe_host_hardware() -> HardwareCaps {
 }
 
 fn detect_hardware(include_gpu: bool) -> HardwareCaps {
-    let logical_cores = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1); // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
+    let logical_cores = keyhog_profile::logical_cpu_count();
     let physical_cores = platform::physical_core_count().unwrap_or(logical_cores); // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
 
     #[cfg(target_arch = "x86_64")]

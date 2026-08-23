@@ -48,7 +48,8 @@ impl CoalescedWorkLanes {
 
 /// Builds the scheduler topology used by every parallel chunk dispatch path.
 pub(super) fn coalesced_work_lanes(chunks: &[Chunk], threshold_bytes: usize) -> CoalescedWorkLanes {
-    coalesced_work_lanes_for_workers(chunks, threshold_bytes, rayon::current_num_threads().max(1))
+    let workers = keyhog_profile::logical_cpu_count();
+    coalesced_work_lanes_for_workers(chunks, threshold_bytes, workers)
 }
 
 pub(crate) fn coalesced_work_lanes_for_workers(

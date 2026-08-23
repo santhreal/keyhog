@@ -15,6 +15,7 @@ fn save_with_spec_then_load_with_matching_spec_keeps_entries() {
         &idx,
         p.clone(),
         7,
+        7 + 100,
         1,
         h,
     );
@@ -29,5 +30,5 @@ fn save_with_spec_then_load_with_matching_spec_keeps_entries() {
         keyhog_core::testing::CoreTestApi::merkle_len(&keyhog_core::testing::TestApi, &loaded),
         1
     );
-    assert!(loaded.metadata_unchanged(&p, 7, 1));
+    assert!(loaded.metadata_unchanged(&p, 7, 7 + 100, 1));
 }

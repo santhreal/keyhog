@@ -834,10 +834,9 @@ impl HardwareSession {
             &self.utilization_samples,
             self.dropped_utilization_samples,
             wall_ns,
-            self.topology.as_ref().map_or_else(
-                || std::thread::available_parallelism().map_or(1, |n| n.get() as u32),
-                |t| t.logical_cpus,
-            ),
+            self.topology
+                .as_ref()
+                .map_or_else(crate::host_parallelism::logical_cpus, |t| t.logical_cpus),
             std::mem::take(&mut self.frequency_samples),
             self.dropped_frequency_samples,
         );
@@ -986,13 +985,12 @@ fn compute_utilization(
         total_thread_cpu_ns: total,
         effective_parallelism_milli: milli_ratio(total, wall_ns)
             .map_or_else(|| gap(EvidenceGap::Unavailable), Evidence::recorded),
-        capacity_utilization_milli: if capacity_ns == 0 {
-            gap(EvidenceGap::Unavailable)
-        } else {
-            Evidence::recorded(
-                u64::try_from(u128::from(total) * 1_000 / capacity_ns).unwrap_or(u64::MAX),
-            )
-        },
+        capacity_utilization_milli: (u128::from(total) * 1_000)
+            .checked_div(capacity_ns)
+            .map_or_else(
+                || gap(EvidenceGap::Unavailable),
+                |ratio| Evidence::recorded(u64::try_from(ratio).unwrap_or(u64::MAX)),
+            ),
         threads,
         exited_threads,
         joined_threads,
@@ -1133,8 +1131,7 @@ mod stubs {
 
     pub(super) fn capture_topology() -> TopologyEvidenceV2 {
         let reason = stub_reason();
-        let logical_cpus =
-            std::thread::available_parallelism().map_or(1, |count| count.get() as u32);
+        let logical_cpus = crate::host_parallelism::logical_cpus();
         TopologyEvidenceV2 {
             version: HARDWARE_EVIDENCE_V2_VERSION,
             logical_cpus,

@@ -22,8 +22,11 @@ installed-corpus discovery. Disabling default exclusions makes every benchmark
 corpus file part of the scored coverage contract. Findings are written to
 ``--output`` so GNU time's RSS report never crosses the JSON.
 
-The default config (``variants()[0]``) is ``simd-nocache-nodaemon-full`` 
-the deterministic build the README leaderboard cites.
+The default config (``variants()[0]``) is ``simd-nocache-nodaemon-full``,
+the deterministic build the README leaderboard cites. Note that the default
+cargo install uses ``default = ["portable"]`` (pure-Rust CPU); the benchmark
+SIMD backend requires building or installing with ``--features simd``
+(or ``--features portable,simd`` / ``--no-default-features --features ci-lean``).
 """
 
 from __future__ import annotations
@@ -110,27 +113,13 @@ def resolve_keyhog_binary(explicit: str | None = None) -> str | None:
     """Canonical keyhog-binary locator shared by the bench AND the gate tests
     (recall matrix, backend-parity) so there is ONE resolution order, not
     several that drift: explicit arg / `KEYHOG_BIN` env, else the freshly-built
-    release binary, else a `release`/`release-fast` binary in either known cargo
-    target dir. Returns None if no real binary exists (callers fail LOUDLY 
+    release binary resolved dynamically from `CARGO_TARGET_DIR` / host cargo
+    config / repo target. Returns None if no real binary exists (callers fail LOUDLY
     never silently treat 'no binary' as 'no findings')."""
-    import pathlib as _pl
-    # An explicit arg / KEYHOG_BIN is honored unconditionally: the operator
-    # pointed at a specific binary, so a missing one must fail LOUDLY at exec 
-    # never be silently swapped for the freshly-built or archive binary (Law 10).
     cand = explicit or os.environ.get("KEYHOG_BIN")
     if cand:
         return cand
-    fresh = _freshly_built_keyhog()
-    if fresh:
-        return fresh
-    for base in ("/mnt/FlareTraining/santh-archive/cargo-target",
-                 str(_REPO_ROOT / "target")):
-        for profile in ("release", "release-fast"):
-            p = _pl.Path(base) / profile / "keyhog"
-            if p.exists():
-                return str(p)
-    return None
-
+    return _freshly_built_keyhog()
 
 def _normalize_keyhog(data: object) -> list[Finding]:
     if isinstance(data, list):
@@ -278,7 +267,8 @@ class KeyhogScanner(Scanner):
             return resolved
         raise RuntimeError(
             "no keyhog binary found for the benchmark: build a release binary "
-            "(`cargo build --release -p keyhog`) or set KEYHOG_BIN to its path. "
+            "(`cargo build --release -p keyhog --features simd` or `cargo build --release -p keyhog`) "
+            "or set KEYHOG_BIN to its path. "
             "Refusing to silently fall back to a PATH `keyhog`, which would score a "
             "stale install as if it were HEAD and misreport recall."
         )
@@ -435,6 +425,7 @@ class KeyhogScanner(Scanner):
                # `--no-config` skips the walk-up discovery so the benched config
                # is the shipped default by design, not by accident (MC-07).
                "--no-config",
+               "--developer-compile-embedded-detectors",
                "--detectors", str(detector_corpus or self._detector_corpus),
                "--backend", cfg.backend,
                "--output", str(output)]

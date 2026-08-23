@@ -35,8 +35,27 @@ fn oversized_sparse_artifact_is_rejected_before_read() {
 fn atomic_writer_rejects_length_mismatch_before_publish() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("short.khm");
-    let error =
-        atomic_write(&path, 2, |tmp| tmp.write_all(b"x")).expect_err("short artifact write");
+    let expected_len = 2usize;
+    let error = write_matcher_artifact_atomically(&path, expected_len, |tmp| {
+        use std::io::Write as _;
+        tmp.write_all(b"x")?;
+        let actual_len = usize::try_from(tmp.as_file().metadata()?.len()).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "matcher artifact length exceeds usize",
+            )
+        })?;
+        if actual_len != expected_len {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "matcher artifact writer produced {actual_len} bytes, expected {expected_len}"
+                ),
+            ));
+        }
+        Ok(())
+    })
+    .expect_err("short artifact write");
     assert!(error.to_string().contains("produced 1 bytes, expected 2"));
     assert!(!path.exists());
 }

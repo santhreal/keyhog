@@ -52,13 +52,13 @@ impl CompiledScanner {
 pub(crate) struct ConfirmedAnchorIndex {
     anchor_ac: OnceLock<AhoCorasick>,
     anchor_first_bigram: FirstBigramSet,
-    anchor_literals: Vec<String>,
+    anchor_literals: Box<[String]>,
     literal_patterns: super::super::CsrU32,
     /// Reverse of `literal_patterns`: per confirmed pattern, the shared-anchor
     /// literal ids that localize it. Drives the sparse active-set collect path.
     pattern_literals: super::super::CsrU32,
-    eligible: Vec<bool>,
-    anchored: Vec<Option<AnchoredRegex>>,
+    eligible: Box<[bool]>,
+    anchored: Box<[Option<AnchoredRegex>]>,
     eligible_count: usize,
 }
 
@@ -127,11 +127,11 @@ impl ConfirmedAnchorIndex {
         Some(Self {
             anchor_ac,
             anchor_first_bigram,
-            anchor_literals: literals,
+            anchor_literals: literals.into_boxed_slice(),
             literal_patterns,
             pattern_literals,
-            eligible,
-            anchored,
+            eligible: eligible.into_boxed_slice(),
+            anchored: anchored.into_boxed_slice(),
             eligible_count,
         })
     }

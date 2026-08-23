@@ -299,14 +299,61 @@ pub(crate) fn looks_like_kebab_config_identifier(value: &str) -> bool {
     !bytes.iter().any(|&b| matches!(b as char, '+' | '/' | '='))
 }
 
+/// One lowercase snake_case identifier segment: `leading_slash_base64_min_len`
+/// or `value`, not `7f3d9b2c1a`. Digits are ordinary inside an identifier word
+/// (`base64`, `sha256`), so the discriminator is that a word starts with a
+/// letter and carries a readable letter run rather than alternating with
+/// digits.
+fn is_lowercase_identifier_segment(seg: &[u8]) -> bool {
+    if seg.len() < 2
+        || !seg
+            .iter()
+            .all(|&byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+    {
+        return false;
+    }
+    let mut letters = 0usize;
+    let mut digits = 0usize;
+    let mut run = 0usize;
+    let mut longest_run = 0usize;
+    let mut word_start = true;
+    for &byte in seg {
+        if byte == b'_' {
+            word_start = true;
+            run = 0;
+            continue;
+        }
+        if word_start && byte.is_ascii_digit() {
+            return false;
+        }
+        word_start = false;
+        if byte.is_ascii_digit() {
+            digits += 1;
+            run = 0;
+        } else {
+            letters += 1;
+            run += 1;
+            longest_run = longest_run.max(run);
+        }
+    }
+    letters >= digits && longest_run >= 3
+}
+
 pub(crate) fn looks_like_dotted_source_identifier(value: &str) -> bool {
+    // A reference or deref sigil belongs to the surrounding expression, not to
+    // the identifier path: `&self.credential` is the same shape as
+    // `self.credential`.
+    let value = value.trim_start_matches(['&', '*']);
     // Single validating pass over `.`-separated segments (Law 7: per-candidate
     // suppression predicate, no `Vec`). Tracks count, first segment (for the
-    // receiver match), camel-case presence, and credential-word presence.
+    // receiver match), camel-case presence, credential-word presence, and
+    // whether the path is a lowercase snake_case word path.
     let mut count = 0usize;
     let mut first = "";
     let mut has_camel_segment = false;
     let mut has_credential_word = false;
+    let mut all_lower_word_segments = true;
+    let mut has_snake_case_segment = false;
     for segment in value.split('.') {
         count += 1;
         if count == 1 {
@@ -325,6 +372,12 @@ pub(crate) fn looks_like_dotted_source_identifier(value: &str) -> bool {
             .any(|pair| pair[0].is_ascii_lowercase() && pair[1].is_ascii_uppercase())
         {
             has_camel_segment = true;
+        }
+        if !is_lowercase_identifier_segment(seg) {
+            all_lower_word_segments = false;
+        }
+        if seg.contains(&b'_') {
+            has_snake_case_segment = true;
         }
         // `ci_find` needles are pre-lowered against the ONE canonical
         // credential-keyword needle set (`super::CREDENTIAL_KEYWORD_NEEDLES`).
@@ -347,7 +400,15 @@ pub(crate) fn looks_like_dotted_source_identifier(value: &str) -> bool {
         return true;
     }
 
-    has_camel_segment && has_credential_word
+    // A dotted path whose every segment is a lowercase word and at least one of
+    // which is snake_case is a config key or a field access
+    // (`plausibility.leading_slash_base64_min_len`, `entropy_match.value`),
+    // never a credential: no case variation, no symbol outside `_`, and every
+    // word reads as a word. A dotted path of bare lowercase words
+    // (`db.passwd.field`) stays visible, because that shape is also how a
+    // checked-in credential is written.
+    (all_lower_word_segments && has_snake_case_segment)
+        || (has_camel_segment && has_credential_word)
 }
 
 fn has_call_or_index_syntax(value: &str) -> bool {

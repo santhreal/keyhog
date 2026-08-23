@@ -181,8 +181,7 @@ pub(crate) fn load_effective_detector_corpus(
             },
         }),
         keyhog_core::DetectorCorpusMode::Overlay => {
-            let embedded = keyhog_core::load_embedded_detectors_or_fail()
-                .context("loading embedded detectors for overlay")?;
+            let embedded = keyhog_core::embedded_detector_specs().to_vec();
             let embedded_count = embedded.len();
             let detectors = keyhog_core::compose_detector_corpus(embedded, custom_specs, mode)
                 .context("composing detector overlay")?;
@@ -260,7 +259,15 @@ fn save_detector_cache(
         schema_version: corpus.schema_version,
         detectors: corpus.specs.clone(),
     })?;
-    crate::atomic_file::write_bytes(cache_path, &json)
+    crate::atomic_file::write_bytes(cache_path, &json)?;
+    if let Some(parent) = cache_path.parent() {
+        keyhog_scanner::evict_cache_dir_with_policy(
+            parent,
+            keyhog_core::CacheKind::DetectorPlans,
+            keyhog_core::CacheKind::DetectorPlans.default_policy(),
+        );
+    }
+    Ok(())
 }
 
 fn load_detector_cache(
@@ -547,7 +554,7 @@ pub(crate) fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<Detecto
     // Fails closed (returns `Err`) if ANY embedded detector TOML is malformed -
     // a corrupt compiled-in corpus is a hard error, never a silently-dropped
     // recall hole (Law 10).
-    Ok(keyhog_core::load_embedded_detectors_or_fail()?)
+    Ok(keyhog_core::embedded_detector_specs().to_vec())
 }
 
 #[doc(hidden)]

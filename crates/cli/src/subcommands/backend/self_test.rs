@@ -263,10 +263,18 @@ pub(super) fn unavailable_gpu_self_test_report(
     hw: &HardwareCaps,
     require_gpu: bool,
 ) -> BackendSelfTestReport {
-    let reason = if !hw.gpu_available {
-        "no GPU adapter detected"
+    let reason = if hw.gpu_is_software {
+        "GPU adapter is a software renderer and is disabled for scans"
+    } else if hw.gpu_name.is_some() {
+        if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
+            keyhog_scanner::hw_probe::uncompiled_gpu_backend_explanation()
+        } else {
+            "GPU runtime unavailable or failed initialization"
+        }
+    } else if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
+        keyhog_scanner::hw_probe::uncompiled_gpu_backend_explanation()
     } else {
-        "only software adapter (llvmpipe/lavapipe/swiftshader): won't be used for scans"
+        "no GPU adapter detected"
     };
     let status = if require_gpu {
         BackendSelfTestStatus::Fail

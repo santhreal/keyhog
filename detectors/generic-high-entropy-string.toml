@@ -1,0 +1,71 @@
+# Generic high-entropy string detector for config files, code assignments, and env vars.
+# Single home for the generic-high-entropy-string detector's knobs.
+
+[detector]
+id = "generic-high-entropy-string"
+name = "Generic High-Entropy String"
+service = "generic"
+severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "authoritative", weight = 1.0, context_radius_lines = 5 }
+match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.2999999999999998, low_promise_confidence = 0.10, assignment_context_multiplier = 1.0, string_literal_context_multiplier = 0.9, unknown_context_multiplier = 0.8, documentation_context_multiplier = 0.3, comment_context_multiplier = 0.4, test_context_multiplier = 0.3, encrypted_context_multiplier = 0.05, soft_context_suppression_threshold = 0.5, encrypted_context_suppression_threshold = 0.8, post_match = { placeholder_multiplier = 0.05, minimum_byte_diversity = 0.3, low_diversity_multiplier = 0.1, maximum_repeat_ratio = 0.5, degenerate_run_min_length = 10, degenerate_repeat_multiplier = 0.1, data_envelope_multiplier = 0.02, fixture_path_multiplier = 0.5, ml_context_reapply_below = 0.95 } }
+kind = "phase2-generic"
+keywords = ["secret_token", "api_secret", "private_token", "auth_secret", "master_secret", "encryption_secret", "security_token", "app_token"]
+entropy_high = 4.5
+entropy_low = 3.0
+entropy_very_high = 5.8
+entropy_fallback_confidence = { low_entropy_max = 0.55, high_entropy = 0.65, very_high_entropy = 0.75, keyword_lift = 0.1, max_confidence = 0.9 }
+sensitive_path_entropy_very_high = 5.8
+plausibility = { mixed_alnum_floor = 4.0, symbolic_entropy_floor = 3.5, second_half_entropy_floor = 2.5, second_half_min_len = 17, unique_chars_min_len = 17, min_unique_chars = 8, unanchored_hex_max_len = 10, identical_char_max_len = 4, structured_dotted_min_len = 40, mixed_alnum_min_len = 20, isolated_mixed_entropy_floor = 3.65, isolated_symbolic_min_len = 18, isolated_symbolic_min_symbols = 2, isolated_symbolic_requires_non_underscore = true, isolated_alpha_only_min_symbols = 3, isolated_alpha_only_min_alpha_ratio = 0.5, min_alnum_ratio = 0.5, source_type_name_max_len = 40, source_type_name_min_uppercase = 2, url_path_high_entropy_min_len = 41, isolated_colon_left_min_len = 20, isolated_colon_right_min_len = 16, leading_slash_base64_entropy_floor = 4.8, leading_slash_base64_min_len = 40, reject_repeated_blocks = true, allow_alphabetic_credential = true, reject_program_identifiers = true, reject_source_symbol_identifiers = true, reject_dash_segmented_alnum = true }
+entropy_policy_priority = 50
+bpe_enabled = true
+bpe_max_bytes_per_token = 2.3
+min_len = 8
+max_len = 512
+keyword_free_min_len = 20
+stopwords = ["example", "sample", "test", "dummy", "placeholder", "changeme", "xxxxxxxx", "your_key_here", "000000"]
+public_identifier_assignment_markers = [
+    "_ADDR=", "_ADDR ", "_ADDR\"", "_ADDR:",
+    "_ADDRS=", "_ADDRS ", "_ADDRS\"",
+    "_ADDRESS=", "_ADDRESS ", "_ADDRESS\"",
+    "_WALLET=", "_WALLET ", "_WALLET\"", "_MINT_ADDR",
+    "_PUBKEY=", "_PUBKEY ", "_PUBLIC_KEY=", "_PUBLIC_KEY ", "_PUBLIC_KEY\"",
+    "_CONTRACT=", "_CONTRACT ", "_OWNER=", "_ACCOUNT_ID=", "_PEER_ID=", "_NODE_ID=",
+]
+
+entropy_floor = [
+    { max_len = 24, floor = 2.8 },
+    { max_len = 40, floor = 3.2 },
+    { floor = 3.5 },
+]
+
+[[detector.entropy_shapes]]
+charset = "lower-alnum"
+entropy_floor = 3.9
+special_min_length = 16
+grouping = { group_count = 4, group_length = 4, separator = "-" }
+require_non_hex_alpha = true
+require_group_alpha_digit = true
+
+[detector.generic_assignment_confidence]
+ordinary_base = 0.60
+test_base = 0.25
+documentation_base = 0.30
+comment_base = 0.30
+scanned_comment_base = 0.60
+entropy_reference = 3.5
+entropy_gain_per_bit = 0.10
+entropy_lift_max = 0.25
+length_reference = 16
+length_gain_per_byte = 0.005
+length_lift_max = 0.15
+max_confidence = 0.95
+
+[detector.entropy_fallback]
+class = "generic"
+id = "entropy-generic-high-entropy-string"
+name = "Generic High-Entropy String"
+service = "generic"
+
+[[detector.tests]]
+test_positive = "api_secret=kdheufnzbwqmaslr"
+test_negative = "api_secret=example"

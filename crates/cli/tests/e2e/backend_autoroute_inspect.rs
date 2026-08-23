@@ -350,15 +350,24 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
     let workload = decisions[0]["workload"]
         .as_str()
         .expect("decision workload is a string");
-    assert!(
-        workload.contains("bytes_log2=")
-            && workload.contains("phase1_alphabet_rejected_chunks_log2=")
-            && workload.contains("phase1_bigram_rejected_bytes_log2=")
-            && workload.contains("phase1_admitted_bytes_log2=")
-            && workload.contains("source_mixture="),
-        "the workload bucket must render in the same field layout as the fail-closed \
-         scan error so operators can match them; got: {workload}"
-    );
+    // One owner renders this string for both surfaces
+    // (`render_workload_key`), so the inspection bucket and the fail-closed
+    // scan error carry exactly these fields.
+    for field in [
+        "bytes_log2=",
+        "chunks_log2=",
+        "max_file_log2=",
+        "patterns_log2=",
+        "decode_admitted=",
+        "source_mixture=",
+    ] {
+        assert!(
+            workload.contains(field),
+            "the workload bucket must render in the same field layout as the \
+             fail-closed scan error so operators can match them; missing \
+             {field} in: {workload}"
+        );
+    }
 
     let text = Command::new(binary())
         .args(["backend", "--autoroute", "--verbose"])

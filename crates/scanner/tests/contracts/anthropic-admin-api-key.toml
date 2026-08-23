@@ -1,0 +1,27 @@
+schema_version = 1
+detector_id = "anthropic-admin-api-key"
+service = "anthropic"
+severity = "critical"
+
+[[positive]]
+text = "sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6wW8kL2mP4nQ6rT8yAA"
+credential = "sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6wW8kL2mP4nQ6rT8yAA"
+reason = "Anthropic Admin API key."
+
+[[positive]]
+text = "ANTHROPIC_ADMIN_KEY=\"sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6wW8kL2mP4nQ6rT8yAA\""
+credential = "sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6wW8kL2mP4nQ6rT8yAA"
+reason = "Anthropic Admin API key in env var."
+
+[[negative]]
+text = "sk-ant-admin01-short"
+reason = "Too short."
+
+[[negative]]
+text = "sk-ant-admin01-abc123xyz-456de-klMnopqrstuvwx-3456yza789bcde-1234fghijklmnopAA"
+reason = "Body length below 80 characters."
+
+[[evasion]]
+text = "x-api-key: sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6wW8kL2mP4nQ6rT8yAA"
+credential = "sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6wW8kL2mP4nQ6rT8yAA"
+reason = "Header form."

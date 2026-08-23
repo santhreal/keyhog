@@ -52,8 +52,8 @@ fn selected_gpu_peer(backend: crate::hw_probe::ScanBackend) -> SelectedGpuPeer {
                         caps.compute_capability.1,
                         caps.total_memory
                     );
-                    let runtime_identity = linux_cuda_runtime_identity()
-                        .map_err(|diagnostic| {
+                    let runtime_identity = crate::gpu::linux_cuda_runtime_identity()
+                        .inspect_err(|diagnostic| {
                             tracing::warn!(
                                 target: "keyhog::routing",
                                 %diagnostic,
@@ -633,6 +633,12 @@ impl CompiledScanner {
             crate::entropy::policy::validate_feature_compatibility(&detectors)
                 .map_err(crate::error::ScanError::Config)?;
         }
+        // Every packed input is a prepared artifact, and a scanner materialized
+        // from one loads its matchers instead of compiling them. Only the plan
+        // prelude carries detector rows, so it alone cannot decide this.
+        let from_prepared_artifact = packed_state.is_some()
+            || packed_decoder_plan.is_some()
+            || packed_detector_plan.is_some();
         let packed_schema_digest = packed_decoder_plan.as_ref().map(|(_, digest)| *digest);
         let decoder_plan = match (
             packed_decoder_plan.map(|(plan, _)| plan),
@@ -759,13 +765,19 @@ impl CompiledScanner {
                 }
                 (prelude.compiled_plan_digest, plans, prelude.detector_count)
             } else {
-                // LAW10: unpacked development compilation computes the same canonical digest from exact detector and decoder inputs.
-                let digest = packed_schema_digest.unwrap_or_else(|| {
-                    super::detector_digest::from_execution_plan(
-                        keyhog_core::compute_spec_hash(&detectors),
+                // LAW10: an unpacked compile computes the same canonical digest
+                // a pack carries, so autoroute identity does not depend on how
+                // the scanner was materialized.
+                let digest = match packed_schema_digest {
+                    Some(digest) => digest,
+                    None => super::detector_digest::from_execution_plan(
+                        crate::execution_pack::CanonicalDetectorExecutionIr::canonical_spec_hash(
+                            &detectors,
+                        )
+                        .map_err(|error| crate::error::ScanError::Config(error.to_string()))?,
                         decoder_plan.identity(),
-                    )
-                });
+                    ),
+                };
                 let plans = crate::detector_plan::CompiledDetectorPlans::compile_with_decoder_plan(
                     &detectors,
                     static_intern.as_ref(),
@@ -909,7 +921,7 @@ impl CompiledScanner {
                                     caps.compute_capability.1,
                                     caps.total_memory
                                 ));
-                                match linux_cuda_runtime_identity() {
+                                match crate::gpu::linux_cuda_runtime_identity() {
                                     Ok(identity) => peers.cuda_runtime_identity = Some(identity),
                                     Err(diagnostic) => {
                                         tracing::warn!(
@@ -1123,23 +1135,15 @@ impl CompiledScanner {
         //     detector whose rare trailing literal (`.*<sitename>`) is absent
         //     skips its O(chunk) whole-chunk regex run.
         //   - confirmed_anchor_index: AC over the confirmed ac_map anchors.
-        let phase2_always_active_indices_ref = &phase2_always_active_indices;
-        let (phase2_anchor_index, ((suffix_gate_ac, ac_suffix_gate), confirmed_anchor_index)) =
-            rayon::join(
-                move || {
-                    Phase2AnchorIndex::build_with_hints(
-                        phase2_patterns,
-                        phase2_always_active_indices_ref,
-                        phase2_localization,
-                    )
-                },
-                move || {
-                    rayon::join(
-                        move || build_confirmed_suffix_gate_with_hints(ac_map, confirmed_suffixes),
-                        move || ConfirmedAnchorIndex::build_with_hints(ac_map, confirmed_prefixes),
-                    )
-                },
-            );
+        let phase2_anchor_index = Phase2AnchorIndex::build_with_hints(
+            phase2_patterns,
+            &phase2_always_active_indices,
+            phase2_localization,
+        );
+        let (suffix_gate_ac, ac_suffix_gate) =
+            build_confirmed_suffix_gate_with_hints(ac_map, confirmed_suffixes);
+        let confirmed_anchor_index =
+            ConfirmedAnchorIndex::build_with_hints(ac_map, confirmed_prefixes);
         let phase2_always_anchor_literal_count = phase2_anchor_index
             .as_ref()
             .map_or(0, |index| index.always_anchor_literals().len());
@@ -1307,8 +1311,8 @@ impl CompiledScanner {
         // index has consumed it; the lazy SIMD plan then shares one Arc owner
         // instead of cloning the complete table until first backend use.
         #[cfg(feature = "simd")]
-        let simd_compile_plan = if selected_backend
-            .is_none_or(|backend| backend == crate::hw_probe::ScanBackend::SimdCpu)
+        let simd_compile_plan = if selected_backend.is_none()
+            || selected_backend == Some(crate::hw_probe::ScanBackend::SimdCpu)
         {
             let ac_literals: std::sync::Arc<[String]> =
                 std::mem::take(&mut state.ac_literals).into();
@@ -1384,13 +1388,29 @@ impl CompiledScanner {
                 unreachable!("new packed GPU matcher cell was already initialized");
             }
         }
+        // The engine starts on the default scan config, so the prepared matcher
+        // must be built from the same keyword inputs `resolve` will pass, or the
+        // first scan line invalidates the hydrated matcher and compiles one.
+        let config = ScannerConfig::default();
         let scanner = Self {
-            backend_state,
             #[cfg(feature = "gpu")]
-            direct_gpu_resident_dispatch: std::sync::Mutex::new(()),
+            gpu_resident_execution_pool:
+                crate::engine::gpu_region_dispatch::GpuResidentExecutionPool::for_backend_state(
+                    &backend_state,
+                ),
+            #[cfg(feature = "gpu")]
+            direct_gpu_resident_dispatch: parking_lot::Mutex::new(()),
+            backend_state,
             quantized_confidence_authenticated,
             detector_digest,
-            vocab_stage_absence_cache: dashmap::DashMap::with_hasher(ahash::RandomState::new()),
+            vocab_stage_absence_cache: dashmap::DashMap::with_capacity_and_hasher_and_shard_amount(
+                0,
+                ahash::RandomState::new(),
+                keyhog_profile::logical_cpu_count()
+                    .saturating_mul(4)
+                    .next_power_of_two()
+                    .clamp(16, 128),
+            ),
             entropy_config_digest_cache: parking_lot::Mutex::new(None),
             compiled_plan_digest,
             ac,
@@ -1402,20 +1422,28 @@ impl CompiledScanner {
             gpu_degrade_count: std::sync::atomic::AtomicU64::new(0),
             autoroute_gpu_shared_cold_ns: std::sync::atomic::AtomicU64::new(0),
             static_intern,
+            assignment_keyword_matcher: std::sync::Mutex::new(if from_prepared_artifact {
+                crate::assignment_keyword_matcher::AssignmentKeywordMatcherCache::new_hydrated(
+                    &config.secret_keywords,
+                    detector_plans.generic_ownership().policy_keywords(),
+                )
+            } else {
+                crate::assignment_keyword_matcher::AssignmentKeywordMatcherCache::new_compiled(
+                    &config.secret_keywords,
+                    detector_plans.generic_ownership().policy_keywords(),
+                )
+            }),
             detector_plans,
-            assignment_keyword_matcher: std::sync::Mutex::new(
-                crate::assignment_keyword_matcher::AssignmentKeywordMatcherCache::default(),
-            ),
             #[cfg(feature = "gpu")]
             ac_match_upper_bounds,
             suffix_gate_ac,
             ac_suffix_gate,
-            hot_confirmed_by_pattern,
+            hot_confirmed_by_pattern: hot_confirmed_by_pattern.into_boxed_slice(),
             confirmed_anchor_index,
-            ac_map: state.ac_map,
+            ac_map: state.ac_map.into_boxed_slice(),
             pattern_boundary_context,
             prefix_propagation,
-            phase2_patterns: state.phase2_patterns,
+            phase2_patterns: state.phase2_patterns.into_boxed_slice(),
             structural_confirmed_patterns,
             structural_phase2_patterns,
             same_prefix_patterns,
@@ -1426,7 +1454,7 @@ impl CompiledScanner {
             confirmed_anchor_literal_count,
             #[cfg(feature = "gpu")]
             generic_keyword_literal_count,
-            phase2_always_active_indices,
+            phase2_always_active_indices: phase2_always_active_indices.into_boxed_slice(),
             phase2_always_active_prefilter,
             phase2_anchor_index,
             #[cfg(feature = "gpu")]
@@ -1442,7 +1470,7 @@ impl CompiledScanner {
             simd_initialization_ns: std::sync::atomic::AtomicU64::new(0),
             #[cfg(feature = "simdsieve")]
             hot_pattern_slots,
-            config: ScannerConfig::default(),
+            config,
             route_classification: Arc::new(
                 crate::engine::phase1_admission::RouteClassificationPlan {
                     alphabet_screen,
@@ -1522,17 +1550,5 @@ impl CompiledScanner {
             .apply_config(&config)
             .map_err(crate::error::ScanError::Config)?;
         Ok(self)
-    }
-}
-
-#[cfg(all(target_os = "linux", feature = "gpu"))]
-fn linux_cuda_runtime_identity() -> std::result::Result<String, String> {
-    let version = std::fs::read_to_string("/proc/driver/nvidia/version")
-        .map_err(|error| format!("cannot read /proc/driver/nvidia/version: {error}"))?;
-    let version = version.split_whitespace().collect::<Vec<_>>().join(" ");
-    if version.is_empty() {
-        Err("/proc/driver/nvidia/version contains no runtime identity".to_owned())
-    } else {
-        Ok(format!("nvidia-kernel:{version}"))
     }
 }

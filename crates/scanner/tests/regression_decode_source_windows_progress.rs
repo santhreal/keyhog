@@ -5,6 +5,7 @@
 //! to advance (`start = next = start`), creating an infinite loop that allocated matches
 //! without bound. This suite verifies strict window advancement, termination under deadline,
 //! and complete coverage across multi-byte UTF-8 scalar boundaries.
+//! What it does not catch: memory allocation exhaustion outside the decode loop.
 
 #![cfg(feature = "decode")]
 
@@ -28,7 +29,7 @@ fn decode_source_windows_one_byte_followed_by_four_byte_scalar_terminates() {
 
     let start_time = Instant::now();
     let mut visited = Vec::new();
-    decode_source_windows_for_test(4, &chunk, |window| {
+    decode_source_windows_for_test(4, &chunk, 2, |window| {
         visited.push(window.data.to_string());
         assert!(
             start_time.elapsed() < Duration::from_secs(2),
@@ -61,7 +62,7 @@ fn decode_source_windows_four_ascii_followed_by_three_byte_scalar_terminates() {
 
     let start_time = Instant::now();
     let mut visited = Vec::new();
-    decode_source_windows_for_test(4, &chunk, |window| {
+    decode_source_windows_for_test(4, &chunk, 2, |window| {
         visited.push(window.data.to_string());
         assert!(
             start_time.elapsed() < Duration::from_secs(2),
@@ -101,7 +102,7 @@ fn decode_source_windows_sweeps_multibyte_scalars_and_strictly_advances() {
                     let mut prev_offset = None;
                     let mut visited_bytes = 0usize;
 
-                    decode_source_windows_for_test(limit, &chunk, |window| {
+                    decode_source_windows_for_test(limit, &chunk, limit / 2, |window| {
                         let cur_offset = window.metadata.base_offset;
                         if let Some(prev) = prev_offset {
                             assert!(

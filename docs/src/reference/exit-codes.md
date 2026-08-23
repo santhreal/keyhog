@@ -1,6 +1,6 @@
 # Exit codes
 
-The table below is the KeyHog 0.5.80 process contract. The canonical numeric
+The table below is the KeyHog 0.5.81 process contract. The canonical numeric
 definitions live in `crates/cli/src/exit_codes.rs` and are rendered in
 `keyhog --help` and `keyhog scan --help`.
 
@@ -96,21 +96,29 @@ Examples include:
   daemon problem: any daemon failure falls back to an in-process scan and the
   scan's own exit code is returned;
 - a failed or inconclusive autoroute calibration operation;
+- missing, stale, invalid, incomplete, or quarantined autoroute evidence on a
+  normal automatic scan;
 - I/O classified as not found, permission denied, connection refused, invalid
   input, invalid data, or already exists.
 
-Missing, stale, invalid, incomplete, or quarantined autoroute evidence during a
-normal automatic scan is not an exit `2`. The scan warns and uses scalar
-correctness recovery for the affected work. Its final exit follows completed
-scan precedence. Inspect the unhealthy evidence with:
+A normal automatic scan needs a valid autoroute decision for the exact workload
+class, detector corpus, config, binary, and host. Without one there is no
+measured-correct backend to select, so the scan fails closed: nothing is
+scanned, stdout carries no findings document, and stderr names the state and the
+repair. An empty findings document reads as a clean tree, so an unroutable scan
+writes none. KeyHog never benchmarks at scan time and never substitutes scalar
+execution for a missing decision. Inspect the state and repair it with:
 
 ```sh
 keyhog backend --autoroute --json
 keyhog calibrate-autoroute
 ```
 
-An explicit backend request is different. It bypasses automatic selection for
-that diagnostic run and keeps its own fail-closed execution contract.
+`backend --autoroute` reports the same unhealthy state as `4`, its maintenance
+health code.
+
+An explicit `--backend` request is different. It bypasses automatic selection
+for that diagnostic run and keeps its own fail-closed execution contract.
 
 ## `3`: system or local environment failure
 

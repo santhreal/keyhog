@@ -20,12 +20,13 @@ fn binary() -> PathBuf {
 /// Helper: scan a text fixture with given args, return (stdout, stderr, exit-code).
 fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option<i32>) {
     let dir = TempDir::new().expect("tempdir");
-    // `config.txt`, NOT `fixture.txt`: the ML scorer down-weights secrets in
-    // files whose name contains a test-context fragment (`test`/`mock`/
-    // `fixture`/`spec`), which would drop an otherwise high-confidence
-    // credential below the 0.85 precision floor and confound these
-    // floor/plumbing assertions with the unrelated test-fixture heuristic.
-    let path = dir.path().join("config.txt");
+    // `config.env`, NOT `fixture.txt`: an assignment in a `.env` is a
+    // credential-bearing source role, so the finding is `likely` and the exit
+    // code observes the floor under test, while an inert `.txt` would be
+    // `review` (exit 0). The name also avoids the `test`/`mock`/`fixture`/`spec`
+    // fragments the ML scorer down-weights, which would drop a high-confidence
+    // credential below the 0.85 precision floor.
+    let path = dir.path().join("config.env");
     std::fs::write(&path, content).expect("write fixture");
 
     let output = Command::new(binary())
@@ -127,7 +128,7 @@ fn precision_mode_exits_one_on_findings() {
 }
 
 /// Precision mode respects the literal 0.85 min_confidence floor.
-/// The anchored AbuseIPDB credential has a stable reported confidence of 0.795:
+/// The anchored AbuseIPDB credential has a stable reported confidence of 0.8:
 /// default keeps its detector-owned 0.25 floor, while precision must clamp that
 /// floor to 0.85 and drop the exact same candidate.
 #[test]
@@ -138,7 +139,7 @@ fn precision_mode_enforces_0_85_floor_on_weak_credentials() {
         "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz\n",
     );
 
-    // Default mode: the 0.795 finding clears its detector-owned 0.25 floor.
+    // Default mode: the 0.8 finding clears its detector-owned 0.25 floor.
     let (def_out, _e, def_code) = scan_text_file(fixture, &[]);
     assert_eq!(
         def_code,
@@ -156,12 +157,12 @@ fn precision_mode_enforces_0_85_floor_on_weak_credentials() {
                 && finding
                     .get("evidence_score")
                     .and_then(|value| value.as_f64())
-                    == Some(0.795)
+                    == Some(0.8)
         }),
-        "default must surface the 0.795 AbuseIPDB finding; got {def_out}"
+        "default must surface the 0.8 AbuseIPDB finding; got {def_out}"
     );
 
-    // Precision mode: the same 0.795 credential must be dropped by the 0.85 floor.
+    // Precision mode: the same 0.8 credential must be dropped by the 0.85 floor.
     let (prec_out, _e2, prec_code) = scan_text_file(fixture, &["--precision"]);
     let prec_findings: serde_json::Value =
         serde_json::from_str(&prec_out).expect("precision stdout is JSON");
@@ -169,7 +170,7 @@ fn precision_mode_enforces_0_85_floor_on_weak_credentials() {
 
     assert!(
         prec_arr.is_empty(),
-        "precision mode must drop the credential (confidence 0.795 < 0.85); got {prec_out}"
+        "precision mode must drop the credential (confidence 0.8 < 0.85); got {prec_out}"
     );
     assert!(
         prec_code.is_some_and(|c| c == 0),
@@ -187,7 +188,7 @@ fn precision_mode_clamps_detector_floor_up_to_0_85() {
     // AWS secret key: high confidence, survives both 0.25 and 0.85 floors.
     let aws_secret =
         concat!("aws_secret_access_key = \"kP8xQ2mNvR7tZ4wL9bYsH3jD6fG1cA0eXuViK5oT\"\n");
-    std::fs::write(dir.path().join("planted.txt"), aws_secret).expect("write fixture");
+    std::fs::write(dir.path().join("planted.env"), aws_secret).expect("write fixture");
     // Configure a low per-detector floor (0.25) for aws-secret-access-key.
     let config = "[detector.aws-secret-access-key]\nmin_confidence = 0.25\n";
     std::fs::write(dir.path().join(".keyhog.toml"), config).expect("write config");
@@ -291,14 +292,14 @@ fn precision_mode_json_schema_carries_required_fields() {
 
 /// Precision mode effectiveness: a corpus of mixed-confidence findings shows
 /// that precision is tighter than default. The fixture includes both a
-/// high-confidence AWS secret and an anchored 0.795 AbuseIPDB credential.
+/// high-confidence AWS secret and an anchored 0.8 AbuseIPDB credential.
 /// Precision must reduce the count vs default.
 #[test]
 fn precision_mode_is_stricter_than_default_overall_reduction() {
     let fixture = concat!(
         "aws_secret_access_key = \"kP8xQ2mNvR7tZ4wL9bYsH3jD6fG1cA0eXuViK5oT\"\n",
         // The AbuseIPDB detector owns a 0.25 default floor and reports this
-        // anchored credential at exactly 0.795. Precision clamps the detector
+        // anchored credential at exactly 0.8. Precision clamps the detector
         // floor to 0.85, so it must remove this finding.
         "ABUSEIPDB_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz\n",
     );

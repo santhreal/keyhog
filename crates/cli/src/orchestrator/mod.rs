@@ -3,6 +3,7 @@
 mod allowlist;
 pub(crate) use allowlist::load_rule_suppressor;
 mod dispatch;
+pub(crate) use dispatch::set_test_scanner_thread_panic_injection;
 pub(crate) use dispatch::{
     automatic_backend_recovery_allowed, canonical_source_classes,
     record_completed_backend_recovery, scan_selected_batch, AutorouteMeasurementReceipt,
@@ -54,10 +55,11 @@ fn collect_detector_signatures(detectors: &[DetectorSpec]) -> std::collections::
 ///
 /// Unknown relation targets are preserved so corpus validation still rejects
 /// misspelled or missing detector IDs instead of treating them as configuration.
-fn filter_disabled_detectors(
+#[allow(dead_code)]
+pub(crate) fn filter_disabled_detectors(
     detectors: &mut Vec<DetectorSpec>,
-    disabled_detectors: &std::collections::HashSet<String>,
-) -> usize {
+    disabled_detectors: &mut std::collections::HashSet<String>,
+) -> std::collections::HashSet<String> {
     let known_ids: std::collections::HashSet<String> = detectors
         .iter()
         .map(|detector| detector.id.clone())
@@ -67,7 +69,7 @@ fn filter_disabled_detectors(
         .cloned()
         .collect();
     if removed.is_empty() {
-        return 0;
+        return std::collections::HashSet::new();
     }
 
     let mut required_by: std::collections::HashMap<String, Vec<String>> =
@@ -96,14 +98,14 @@ fn filter_disabled_detectors(
         }
     }
 
-    let before = detectors.len();
+    disabled_detectors.extend(removed.iter().cloned());
     detectors.retain(|detector| !removed.contains(&detector.id));
     for detector in detectors.iter_mut() {
         detector
             .detector_relations
             .retain(|relation| !removed.contains(&relation.detector_id));
     }
-    before - detectors.len()
+    removed
 }
 
 /// Hosts with strictly less RAM than this are treated as low-RAM and get the
@@ -395,21 +397,45 @@ pub(crate) fn probe_route_hardware(
     probe_router_hardware(router_gpu_participates(backend_override, runtime_policy))
 }
 
+/// Autoroute's rules identity for a corpus this process compiled. It is the same
+/// value an execution pack built from that corpus carries as its compiled plan
+/// digest, so an installed generation's calibration is reusable by a scan that
+/// compiled the corpus itself, and the reverse. Keying it on the raw spec hash
+/// instead made every scan outside the install directory miss the table the
+/// install had just given it.
+///
+/// Per-invocation confidence floors must NOT reach this identity:
+/// `autoroute_config_digest` already carries them, and a pack hydration cannot
+/// see them at all, so folding them in made one calibrated profile supersede
+/// every other profile in the multi-config cache. Compute it before
+/// `compose_detector_min_confidence` mutates the corpus.
+pub(crate) fn corpus_rules_digest(detectors: &[DetectorSpec]) -> Result<String> {
+    keyhog_scanner::compiled_scanner::corpus_route_identity(detectors)
+        .map(|digest| keyhog_core::hex_encode(&digest))
+        .map_err(|error| anyhow::anyhow!("computing detector corpus route identity: {error}"))
+}
+
+/// The same identity read off a scanner hydrated from an authenticated pack,
+/// where the pack carries it and the specs are never materialized.
+pub(crate) fn pack_rules_digest(scanner: &CompiledScanner) -> String {
+    keyhog_core::hex_encode(&scanner.runtime_status().compiled_plan_digest)
+}
+
 pub(crate) fn cached_autoroute_router_for_default_config(
     scanner: &CompiledScanner,
     detectors: &[DetectorSpec],
     backend_override: Option<keyhog_scanner::ScanBackend>,
-) -> CachedBackendRouter {
-    let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(detectors));
+) -> Result<CachedBackendRouter> {
+    let rules_digest = corpus_rules_digest(detectors)?;
     let resolved = resolved_default_autoroute_config();
     let gpu_participates = router_gpu_participates(backend_override, resolved.gpu_runtime_policy);
-    cached_autoroute_router(
+    Ok(cached_autoroute_router(
         scanner,
         rules_digest,
         autoroute_config_digest(&resolved),
         gpu_participates,
         crate::autoroute_cache_path::resolve_autoroute_cache_path(None),
-    )
+    ))
 }
 
 fn cached_autoroute_router(
@@ -568,10 +594,11 @@ impl DefaultScanRuntime {
         scanner: Arc<CompiledScanner>,
         detectors: &[DetectorSpec],
         backend_override: Option<keyhog_scanner::ScanBackend>,
-    ) -> Self {
+    ) -> Result<Self> {
         let router =
-            cached_autoroute_router_for_default_config(&scanner, detectors, backend_override);
-        Self::new_with_router(scanner, detectors, router).with_backend_override(backend_override)
+            cached_autoroute_router_for_default_config(&scanner, detectors, backend_override)?;
+        Ok(Self::new_with_router(scanner, detectors, router)
+            .with_backend_override(backend_override))
     }
 
     fn new_with_router(
@@ -864,11 +891,7 @@ pub(crate) fn compile_default_scan_runtime(
         )
         .map_err(|error| map_compile_error(&error))?,
     );
-    Ok(DefaultScanRuntime::new(
-        scanner,
-        &detectors,
-        backend_override,
-    ))
+    DefaultScanRuntime::new(scanner, &detectors, backend_override)
 }
 
 /// Build the compile-once/scan-many runtime shared by `keyhog watch` and
@@ -1017,10 +1040,10 @@ fn setup_default_scan_runtime_with_rayon_policy(
 
     // Apply `[detector.<id>] enabled = false`: drop the disabled detectors before
     // compilation so they never fire (mirrors `ScanOrchestrator::new`).
-    let disabled_detectors = effective_config.disabled_detectors.clone();
+    let mut disabled_detectors = effective_config.disabled_detectors.clone();
     if !disabled_detectors.is_empty() {
         let before = detectors.len();
-        filter_disabled_detectors(&mut detectors, &disabled_detectors);
+        filter_disabled_detectors(&mut detectors, &mut disabled_detectors);
         if detectors.is_empty() && before > 0 {
             anyhow::bail!(
                 "all {before} loaded detector(s) were disabled by .keyhog.toml \
@@ -1030,10 +1053,9 @@ fn setup_default_scan_runtime_with_rayon_policy(
         }
     }
 
-    // Performance identity describes the active corpus before per-invocation
-    // confidence floors are composed. The effective config digest below owns
-    // those overrides, keeping detector identity stable across scan profiles.
-    let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
+    // Before composition: per-invocation floors belong to the config digest, not
+    // to corpus identity.
+    let rules_digest = corpus_rules_digest(&detectors)?;
 
     // Compose detector TOML defaults and operator overrides BEFORE compilation.
     // `watch` and `scan-system` use this runtime; compiling first would let the
@@ -1209,6 +1231,64 @@ fn execution_pack_policy_for_args(
     }
 }
 
+/// The installed execution pack for this scan, but only when it was built from
+/// exactly the corpus `detectors` resolves to.
+///
+/// A pack whose detector identity differs is a pack for another corpus: a
+/// custom or edited `detectors/` directory compiles in process, which is the
+/// documented behavior for a corpus no generation was installed for.
+fn installed_pack_for_corpus(
+    args: &ScanArgs,
+    backend_override: Option<keyhog_scanner::ScanBackend>,
+    detectors: &[DetectorSpec],
+) -> Result<Option<keyhog_scanner::execution_pack::ExecutionPack>> {
+    let policy = execution_pack_policy_for_args(args);
+    let installed = match backend_override {
+        Some(backend) => {
+            let Some(pack_backend) =
+                keyhog_scanner::execution_pack::ExecutionPackBackend::from_scan_backend(backend)
+            else {
+                return Ok(None);
+            };
+            crate::execution_pack_install::load_installed_detector_execution_pack_for_backend(
+                policy,
+                pack_backend,
+            )
+        }
+        None => {
+            crate::execution_pack_install::load_installed_preferred_detector_execution_pack(policy)
+        }
+    };
+    let Ok(pack) = installed else {
+        return Ok(None);
+    };
+    let corpus_digest =
+        keyhog_scanner::execution_pack::CanonicalDetectorExecutionIr::compile(detectors)
+            .map_err(anyhow::Error::msg)
+            .context("computing the detector identity of the resolved corpus")?
+            .digest();
+    if corpus_digest == pack.identity().detector_digest {
+        Ok(Some(pack))
+    } else {
+        tracing::debug!(
+            target: "keyhog::routing",
+            "resolved detector corpus differs from the installed generation; compiling in process"
+        );
+        Ok(None)
+    }
+}
+
+/// How the scanner runtime was materialized for this scan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ScannerMaterialization {
+    MappedPack {
+        generation: String,
+    },
+    Compiled {
+        matcher_outcome: keyhog_scanner::MatcherArtifactCacheOutcome,
+    },
+}
+
 pub(crate) struct ScanOrchestrator {
     pub(crate) args: ScanArgs,
     pub(crate) detector_count: usize,
@@ -1219,6 +1299,7 @@ pub(crate) struct ScanOrchestrator {
     pub(crate) detector_corpus_digest: String,
     pub(crate) detector_corpus_provenance: DetectorCorpusProvenance,
     pub(crate) scanner: Arc<CompiledScanner>,
+    pub(crate) scanner_materialization: Option<ScannerMaterialization>,
     pub(crate) signatures: std::collections::HashSet<Arc<str>>,
     pub(crate) test_fixture_suppressions: crate::test_fixture_suppressions::TestFixtureSuppressions,
     /// Detector ids disabled via `.keyhog.toml` `[detector.<id>] enabled = false`.
@@ -1262,10 +1343,20 @@ impl ScanOrchestrator {
             );
             let session = keyhog_profile::Session::start(identity).map_err(anyhow::Error::new)?;
             crate::set_operator_profile_active(true);
+            if args.developer_compile_embedded_detectors {
+                keyhog_profile::set_compile_phase(keyhog_profile::CompilePhase::Developer);
+            } else {
+                keyhog_profile::set_compile_phase(keyhog_profile::CompilePhase::Scan);
+            }
             Some(session)
         } else {
             None
         };
+        if args.developer_compile_embedded_detectors {
+            keyhog_profile::set_compile_phase(keyhog_profile::CompilePhase::Developer);
+        } else {
+            keyhog_profile::set_compile_phase(keyhog_profile::CompilePhase::Scan);
+        }
         let early_profile_build = early_profile_session
             .as_ref()
             .map(|_| std::thread::spawn(run::profiler_build_identity));
@@ -1327,7 +1418,7 @@ impl ScanOrchestrator {
         }
         let mut effective_config = resolve_scan_config(&mut args)?;
         ResolvedEngineRuntimeSettings::from(&effective_config).apply();
-        let disabled_detectors = effective_config.disabled_detectors.clone();
+        let mut disabled_detectors = effective_config.disabled_detectors.clone();
         // Operator `.keyhog.toml` `[detector.<id>] min_confidence` overrides;
         // detector self-declared floors (DetectorSpec::min_confidence, merged
         // below once the corpus is loaded) fill the gaps.
@@ -1358,7 +1449,14 @@ impl ScanOrchestrator {
             let requested_detector_mode = args.detectors_mode.map(Into::into);
             validate_detector_mode_selection(args.detectors_cli_explicit, requested_detector_mode)?;
             validate_explicit_detector_path(&args.detectors, args.detectors_cli_explicit)?;
-            let detectors_path = auto_discover_detectors(&args.detectors)?;
+            let custom_corpus_requested = args.detectors_cli_explicit
+                || args.detectors != std::path::Path::new("detectors")
+                || requested_detector_mode.is_some();
+            let detectors_path = if custom_corpus_requested {
+                auto_discover_detectors(&args.detectors)?
+            } else {
+                args.detectors.clone()
+            };
             (requested_detector_mode, detectors_path)
         };
         let resolved_config_digest =
@@ -1399,9 +1497,20 @@ impl ScanOrchestrator {
                         load_installed_preferred_detector_execution_pack(policy),
                 };
                 match installed {
-                    Ok(pack) => (None, Some(pack)),
+                    Ok(pack) => {
+                        keyhog_profile::record_cache_hit(keyhog_profile::CacheId::DetectorPlan);
+                        if detectors_path.exists()
+                            && detectors_path != std::path::Path::new("detectors")
+                        {
+                            tracing::info!(
+                                detectors_path = %detectors_path.display(),
+                                "using installed execution pack for standard scan; pass `--detectors <path>` to scan with custom detectors directory"
+                            );
+                        }
+                        (None, Some(pack))
+                    }
                     Err(error) if !execution_pack_directory.exists() => {
-                        tracing::warn!(
+                        tracing::debug!(
                             error = %error,
                             "no installed execution-pack generation; parsing embedded detectors"
                         );
@@ -1426,17 +1535,30 @@ impl ScanOrchestrator {
                     }
                 }
             } else {
-                (
-                    Some(
-                        load_effective_detector_corpus(
-                            &detectors_path,
-                            requested_detector_mode,
-                            !args.lockdown,
-                        )
-                        .context("loading effective detector corpus")?,
-                    ),
-                    None,
+                let loaded = load_effective_detector_corpus(
+                    &detectors_path,
+                    requested_detector_mode,
+                    !args.lockdown,
                 )
+                .context("loading effective detector corpus")?;
+                // A replacement corpus can be the same corpus. Scanning inside a
+                // tree that ships `detectors/` (KeyHog's own repository, a
+                // vendored copy) resolved a directory whose identity equals the
+                // installed generation and then compiled it again in process,
+                // losing every prepared artifact. Identity decides, not the
+                // presence of a directory.
+                let installed_matching_pack = installed_pack_for_corpus(
+                    &args,
+                    effective_config.backend_override,
+                    &loaded.detectors,
+                )?;
+                match installed_matching_pack {
+                    Some(pack) => {
+                        keyhog_profile::record_cache_hit(keyhog_profile::CacheId::DetectorPlan);
+                        (None, Some(pack))
+                    }
+                    None => (Some(loaded), None),
+                }
             }
         };
         #[cfg(feature = "verify")]
@@ -1495,15 +1617,24 @@ impl ScanOrchestrator {
                     )
                 }
             };
+        // Compiled-corpus route identity, taken before per-invocation config
+        // touches the corpus: `.keyhog.toml` disables and composed confidence
+        // floors are carried by `autoroute_config_digest`, and a pack hydration
+        // cannot see either, so folding them in here makes every scan that
+        // disables one detector reject the installed autoroute table.
+        let compiled_corpus_rules_digest = (!direct_pack_hydration)
+            .then(|| corpus_rules_digest(&detectors))
+            .transpose()?;
+
         let detector_validation_span =
             keyhog_profile::span(keyhog_profile::Stage::DetectorValidate);
 
         // Apply `[detector.<id>] enabled = false` from .keyhog.toml: drop the
-        // disabled detectors from the corpus so they never compile or fire.
-        // (Previously this config key was parsed and silently ignored.)
+        // disabled detectors from the corpus in developer compile mode, and suppress
+        // their matches during postprocess filtering when using precompiled execution packs.
         if !disabled_detectors.is_empty() {
             let before = detectors.len();
-            let dropped = filter_disabled_detectors(&mut detectors, &disabled_detectors);
+            let dropped = filter_disabled_detectors(&mut detectors, &mut disabled_detectors).len();
             if dropped > 0 {
                 if detectors.is_empty() {
                     let mut disabled_ids: Vec<&str> =
@@ -1541,16 +1672,6 @@ impl ScanOrchestrator {
             }
         }
 
-        // Autoroute's shared rules identity describes the active TOML corpus,
-        // before per-invocation confidence floors are composed into it. Those
-        // effective floors (including --precision clamping and operator
-        // overrides) already participate in `autoroute_config_digest`; folding
-        // them into this shared identity as well made calibrating one profile
-        // replace every previously calibrated profile in the multi-config
-        // cache. Disabled detectors remain part of corpus identity because they
-        // change the compiled pattern set and backend workload materially.
-        let mut detector_rules_digest =
-            keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
         let mut detector_corpus_digest = keyhog_core::hex_encode(
             &keyhog_core::compute_detector_corpus_digest_for_schema(
                 &detectors,
@@ -1599,66 +1720,46 @@ impl ScanOrchestrator {
         let detectors: Option<Arc<[DetectorSpec]>> =
             (!direct_pack_hydration).then(|| detectors.into());
 
+        let mut scanner_materialization = None;
         let scanner = {
-            let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
-            let compiled = if disabled_detectors.is_empty() {
-                match detector_execution_pack.as_ref() {
-                    Some(pack) => {
-                        // Keep Result intact so the shared with_context below
-                        // still labels pack-backed scanner materialization.
-                        // Do not attribute pack hydration to
-                        // CacheId::MatcherArtifact. That counter is reserved for
-                        // the on-disk MatcherArtifact cache so --profile can
-                        // prove a real .khm hit/miss.
-                        CompiledScanner::compile_from_execution_pack_with_gpu_policy_and_tuning(
-                            pack,
-                            gpu_init_policy,
-                            &effective_config.scanner_tuning,
-                        )
-                    }
-                    None => {
-                        let detectors = detectors.as_ref().context(
-                            "embedded/debug scanner construction requires detector schemas",
-                        )?;
-                        // No installed pack on this path; pack generation is "none".
-                        keyhog_scanner::compile_shared_with_matcher_artifact_cache(
-                            Arc::clone(detectors),
-                            gpu_init_policy,
-                            &effective_config.scanner_tuning,
-                            resolved_config_digest,
-                            None,
-                            runtime_identity.as_deref(),
-                        )
-                        .map(|(scanner, outcome)| {
-                            tracing::debug!(
-                                target: "keyhog::matcher_artifact_cache",
-                                outcome = outcome.as_str(),
-                                "matcher artifact cache outcome"
-                            );
-                            scanner
-                        })
-                    }
+            let compiled = match detector_execution_pack.as_ref() {
+                Some(pack) => {
+                    let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
+                    scanner_materialization = Some(ScannerMaterialization::MappedPack {
+                        generation: pack.path().display().to_string(),
+                    });
+                    CompiledScanner::compile_from_execution_pack_with_gpu_policy_and_tuning(
+                        pack,
+                        gpu_init_policy,
+                        &effective_config.scanner_tuning,
+                    )
                 }
-            } else {
-                let detectors = detectors
-                    .as_ref()
-                    .context("disabled-detector scanner construction requires detector schemas")?;
-                keyhog_scanner::compile_shared_with_matcher_artifact_cache(
-                    Arc::clone(detectors),
-                    gpu_init_policy,
-                    &effective_config.scanner_tuning,
-                    resolved_config_digest,
-                    None,
-                    runtime_identity.as_deref(),
-                )
-                .map(|(scanner, outcome)| {
-                    tracing::debug!(
-                        target: "keyhog::matcher_artifact_cache",
-                        outcome = outcome.as_str(),
-                        "matcher artifact cache outcome"
-                    );
-                    scanner
-                })
+                None => {
+                    // developer_compile_embedded_detectors: in-process compilation when no pack is mapped.
+                    let _compile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerCompile);
+                    let detectors = detectors
+                        .as_ref()
+                        .context("embedded/debug scanner construction requires detector schemas")?;
+                    keyhog_scanner::compile_shared_with_matcher_artifact_cache(
+                        Arc::clone(detectors),
+                        gpu_init_policy,
+                        &effective_config.scanner_tuning,
+                        resolved_config_digest,
+                        None,
+                        runtime_identity.as_deref(),
+                    )
+                    .map(|(scanner, outcome)| {
+                        tracing::debug!(
+                            target: "keyhog::matcher_artifact_cache",
+                            outcome = outcome.as_str(),
+                            "matcher artifact cache outcome"
+                        );
+                        scanner_materialization = Some(ScannerMaterialization::Compiled {
+                            matcher_outcome: outcome,
+                        });
+                        scanner
+                    })
+                }
             };
             Arc::new(
                 compiled
@@ -1668,6 +1769,19 @@ impl ScanOrchestrator {
                     .with_config(effective_config.engine_scanner_config()),
             )
         };
+
+        // One rules identity for both routes: a pack carries it, a compile
+        // derives the same value from the corpus it compiled.
+        let detector_rules_digest = match compiled_corpus_rules_digest {
+            Some(digest) => digest,
+            None => pack_rules_digest(&scanner),
+        };
+        tracing::debug!(
+            target: "keyhog::routing",
+            rules_digest = %detector_rules_digest,
+            direct_pack_hydration,
+            "autoroute rules identity"
+        );
 
         if direct_pack_hydration {
             detector_count = scanner.detector_count();
@@ -1685,7 +1799,6 @@ impl ScanOrchestrator {
             }
 
             let runtime = scanner.runtime_status();
-            detector_rules_digest = keyhog_core::hex_encode(&runtime.compiled_plan_digest);
             let pack = detector_execution_pack.as_ref().context(
                 "direct scanner hydration requires a retained authenticated execution pack",
             )?;
@@ -1729,6 +1842,7 @@ impl ScanOrchestrator {
             detector_corpus_digest,
             detector_corpus_provenance,
             scanner,
+            scanner_materialization,
             signatures,
             test_fixture_suppressions,
             disabled_detectors,
@@ -1852,8 +1966,9 @@ impl ScanOrchestrator {
             .unwrap_or(crate::orchestrator_config::FUSED_BATCH_DEFAULT); // LAW10: absent fused-batch config => documented compiled throughput default; no scan feature disabled and effective config prints the concrete value
         let fused_depth = args.fused_depth;
         let detector_spec_hash = keyhog_core::compute_spec_hash(&detectors);
-        let detector_rules_digest = keyhog_core::hex_encode(&detector_spec_hash);
-        let detector_corpus_digest = detector_rules_digest.clone();
+        // Route on the identity the compiled scanner carries, as a scan does.
+        let detector_rules_digest = pack_rules_digest(&scanner);
+        let detector_corpus_digest = keyhog_core::hex_encode(&detector_spec_hash);
         let detector_corpus_provenance = DetectorCorpusProvenance {
             mode: "provided",
             source: "library/test constructor".to_string(),
@@ -1875,6 +1990,7 @@ impl ScanOrchestrator {
             detector_corpus_provenance,
             detector_corpus_digest,
             scanner,
+            scanner_materialization: None,
             signatures,
             test_fixture_suppressions,
             disabled_detectors: std::collections::HashSet::new(),
@@ -1891,6 +2007,7 @@ impl ScanOrchestrator {
                 reader_threads,
                 fused_batch,
                 fused_depth,
+                window_overlap: keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES,
                 gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy::Auto,
                 autoroute_gpu: false,
                 autoroute_calibration: false,

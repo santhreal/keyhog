@@ -15,14 +15,14 @@ pub(crate) const MAX_WINDOW_DEDUP_ENTRIES: usize = 100_000;
 /// Maximum bytes scanned in a single chunk. Files larger than this are split
 /// into overlapping windows. 1 MiB keeps peak RSS predictable under parallel
 /// scanning with `rayon` (N threads × 1 MiB per chunk = bounded memory).
-pub(crate) const MAX_SCAN_CHUNK_BYTES: usize = 1024 * 1024;
+pub const MAX_SCAN_CHUNK_BYTES: usize = keyhog_core::DEFAULT_WINDOW_SIZE_BYTES;
 
 /// Overlap between adjacent scan windows when a file exceeds
 /// `MAX_SCAN_CHUNK_BYTES`. Must be larger than the longest secret the scanner
 /// can detect to avoid missing secrets that straddle a chunk boundary.
 /// 128 KiB covers PEM-encoded RSA-8192 keys, large JWTs, and multi-line
 /// concatenated secrets with generous margin.
-pub(crate) const WINDOW_OVERLAP_BYTES: usize = 128 * 1024;
+pub const WINDOW_OVERLAP_BYTES: usize = keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES;
 
 pub(crate) const FIRST_CAPTURE_GROUP_INDEX: usize = 1;
 pub(crate) const FIRST_LINE_NUMBER: usize = 1;
@@ -57,24 +57,30 @@ pub(crate) const REGEX_SIZE_LIMIT_BYTES: usize = 1 << 20; // 1 MiB default
 static REGEX_DFA_LIMIT_OVERRIDE: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
-/// Process-wide count of [`LazyRegex`] first-use compilations - incremented
-/// EXACTLY once per `LazyRegex` the moment its `OnceLock` actually builds the
-/// `Regex` (the cold-cache miss inside [`LazyRegex::get`]). Scanner
+/// Process-wide count of dynamic regex first-use compilations - incremented
+/// EXACTLY once per lazily compiled regex the moment its `OnceLock` builds the
+/// `Regex` (the cold-cache miss inside [`LazyRegex::get`] or dynamic verifier
+/// compilation in [`crate::anchored_regex::AnchoredRegex::compile`]). Scanner
 /// construction VALIDATES every detector pattern by building it once and
 /// dropping it again (see `compiler_compile::compile_pattern`), so the first
-/// chunk that actually reaches a pattern pays one compile for it and every
-/// later chunk is a `OnceLock` hit: this counter is the observable that proves
-/// "compile once per reached pattern, scan many" - no per-scan regex rebuild.
+/// chunk that actually reaches a pattern or anchored verifier pays one compile
+/// for it and every later chunk is a cache hit: this counter is the observable
+/// that proves "compile once per reached pattern, scan many" - no per-scan regex rebuild.
 /// A regression that reintroduced per-scan `Regex::new` (the bug #13 fixed)
 /// would make this climb across scans. Pure observability (Law 10): it only
 /// ticks on a real compile, never gates or alters behaviour.
 static LAZY_REGEX_COMPILE_EVENTS: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-/// Snapshot of [`LAZY_REGEX_COMPILE_EVENTS`]: how many `LazyRegex` first-use
-/// compilations have happened process-wide so far. The zero-recompile regression
-/// gate snapshots this around repeated scans to prove steady-state scanning
-/// rebuilds no regex.
+#[inline]
+pub(crate) fn record_lazy_regex_compile() {
+    LAZY_REGEX_COMPILE_EVENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Snapshot of [`LAZY_REGEX_COMPILE_EVENTS`]: how many dynamic regex first-use
+/// compilations (including [`LazyRegex`] and [`crate::anchored_regex::AnchoredRegex`])
+/// have happened process-wide so far. The zero-recompile regression gate snapshots
+/// this around repeated scans to prove steady-state scanning rebuilds no regex.
 pub(crate) fn lazy_regex_compile_events() -> u64 {
     LAZY_REGEX_COMPILE_EVENTS.load(std::sync::atomic::Ordering::Relaxed)
 }
@@ -286,6 +292,34 @@ pub(crate) type ScannerPreprocessedText<'a> = crate::multiline::PreprocessedText
 #[cfg(not(feature = "multiline"))]
 pub(crate) type ScannerPreprocessedText<'a> = PreprocessedText<'a>;
 
+/// Flag indicating that regex matching is case-insensitive.
+const LAZY_REGEX_FLAG_CASE_INSENSITIVE: u8 = 1 << 0;
+/// Flag indicating that regex matching is CRLF-aware.
+const LAZY_REGEX_FLAG_CRLF: u8 = 1 << 1;
+/// Mask isolating the memoized literal prefix extraction state.
+const LAZY_REGEX_PREFIX_STATE_MASK: u8 = 0b11 << 2;
+/// Memoized state indicating literal prefix extraction yielded false.
+const LAZY_REGEX_PREFIX_STATE_FALSE: u8 = 1 << 2;
+/// Memoized state indicating literal prefix extraction yielded true.
+const LAZY_REGEX_PREFIX_STATE_TRUE: u8 = 2 << 2;
+/// Mask isolating the memoized required literal run state.
+const LAZY_REGEX_INFIX_STATE_MASK: u8 = 0b11 << 4;
+/// Memoized state indicating required literal run detection yielded false.
+const LAZY_REGEX_INFIX_STATE_FALSE: u8 = 1 << 4;
+/// Memoized state indicating required literal run detection yielded true.
+const LAZY_REGEX_INFIX_STATE_TRUE: u8 = 2 << 4;
+
+/// Internal shared state for [`LazyRegex`].
+///
+/// Clones share one allocation containing the compiled matcher, regex source,
+/// and bit-packed atomic flags / memoized source facts.
+#[derive(Debug)]
+struct LazyRegexState {
+    src: Arc<str>,
+    cell: std::sync::OnceLock<Arc<Regex>>,
+    flags: std::sync::atomic::AtomicU8,
+}
+
 /// A regex wrapper that holds a detector regex source and compiles it at most
 /// once, on the first chunk that actually reaches the pattern.
 ///
@@ -308,22 +342,6 @@ pub(crate) type ScannerPreprocessedText<'a> = PreprocessedText<'a>;
 /// Clones share one allocation containing the compiled matcher and memoized
 /// source facts. Keeping each `OnceLock` in a separate `Arc` multiplied
 /// allocation metadata and widened every retained `CompiledPattern`.
-#[derive(Debug)]
-struct LazyRegexState {
-    src: Arc<str>,
-    /// Detector patterns are case-insensitive + CRLF-aware + size-bounded
-    /// (the `shared_regex_compile` build); homoglyph-expanded plain variants
-    /// use default regex flags. Tracked for callers that need to build an
-    /// equivalent combined matcher.
-    case_insensitive: bool,
-    crlf: bool,
-    cell: std::sync::OnceLock<Arc<Regex>>,
-    /// Memoized `extract_literal_prefix(src).is_some()`.
-    has_literal_prefix: std::sync::OnceLock<bool>,
-    /// Memoized required distinctive-inner-literal classification.
-    has_distinctive_inner_literal: std::sync::OnceLock<bool>,
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct LazyRegex {
     state: Arc<LazyRegexState>,
@@ -339,7 +357,6 @@ impl LazyRegex {
 
     /// Test-only: a detector pattern with its compiled regex already seeded,
     /// so a test can assert `get()` hands back that exact instance.
-    #[cfg(test)]
     pub(crate) fn detector_compiled(src: impl Into<Arc<str>>, compiled: Arc<Regex>) -> Self {
         Self::new(src, true, true, std::sync::OnceLock::from(compiled))
     }
@@ -363,14 +380,18 @@ impl LazyRegex {
         crlf: bool,
         cell: std::sync::OnceLock<Arc<Regex>>,
     ) -> Self {
+        let mut initial_flags = 0u8;
+        if case_insensitive {
+            initial_flags |= LAZY_REGEX_FLAG_CASE_INSENSITIVE;
+        }
+        if crlf {
+            initial_flags |= LAZY_REGEX_FLAG_CRLF;
+        }
         Self {
             state: Arc::new(LazyRegexState {
                 src: src.into(),
-                case_insensitive,
-                crlf,
                 cell,
-                has_literal_prefix: std::sync::OnceLock::new(),
-                has_distinctive_inner_literal: std::sync::OnceLock::new(),
+                flags: std::sync::atomic::AtomicU8::new(initial_flags),
             }),
         }
     }
@@ -402,9 +423,25 @@ impl LazyRegex {
     /// Pure function of the regex SOURCE, cached on first touch.
     #[must_use]
     pub(crate) fn has_literal_prefix(&self) -> bool {
-        *self.state.has_literal_prefix.get_or_init(|| {
-            !crate::compiler::compiler_prefix::extract_literal_prefixes(&self.state.src).is_empty()
-        })
+        let current = self.state.flags.load(std::sync::atomic::Ordering::Acquire);
+        let prefix_state = current & LAZY_REGEX_PREFIX_STATE_MASK;
+        if prefix_state == LAZY_REGEX_PREFIX_STATE_TRUE {
+            return true;
+        }
+        if prefix_state == LAZY_REGEX_PREFIX_STATE_FALSE {
+            return false;
+        }
+        let has_prefix =
+            !crate::compiler::compiler_prefix::extract_literal_prefixes(&self.state.src).is_empty();
+        let to_set = if has_prefix {
+            LAZY_REGEX_PREFIX_STATE_TRUE
+        } else {
+            LAZY_REGEX_PREFIX_STATE_FALSE
+        };
+        self.state
+            .flags
+            .fetch_or(to_set, std::sync::atomic::Ordering::Release);
+        has_prefix
     }
 
     /// Whether every match of this pattern necessarily contains a distinctive
@@ -416,12 +453,27 @@ impl LazyRegex {
     /// touch.
     #[must_use]
     pub(crate) fn has_distinctive_inner_literal(&self) -> bool {
-        *self.state.has_distinctive_inner_literal.get_or_init(|| {
-            crate::compiler::compiler_prefix::regex_has_required_literal_run(
-                &self.state.src,
-                crate::compiler::compiler_prefix::MIN_DISTINCTIVE_INFIX_CHARS,
-            )
-        })
+        let current = self.state.flags.load(std::sync::atomic::Ordering::Acquire);
+        let infix_state = current & LAZY_REGEX_INFIX_STATE_MASK;
+        if infix_state == LAZY_REGEX_INFIX_STATE_TRUE {
+            return true;
+        }
+        if infix_state == LAZY_REGEX_INFIX_STATE_FALSE {
+            return false;
+        }
+        let has_infix = crate::compiler::compiler_prefix::regex_has_required_literal_run(
+            &self.state.src,
+            crate::compiler::compiler_prefix::MIN_DISTINCTIVE_INFIX_CHARS,
+        );
+        let to_set = if has_infix {
+            LAZY_REGEX_INFIX_STATE_TRUE
+        } else {
+            LAZY_REGEX_INFIX_STATE_FALSE
+        };
+        self.state
+            .flags
+            .fetch_or(to_set, std::sync::atomic::Ordering::Release);
+        has_infix
     }
 
     /// Whether this pattern compiles with the case-insensitive + CRLF-aware
@@ -430,7 +482,9 @@ impl LazyRegex {
     /// equivalent combined matcher (e.g. the always-active phase-2 RegexSet
     /// prefilter) must replicate these flags exactly to stay match-equivalent.
     pub(crate) fn is_case_insensitive(&self) -> bool {
-        self.state.case_insensitive
+        (self.state.flags.load(std::sync::atomic::Ordering::Relaxed)
+            & LAZY_REGEX_FLAG_CASE_INSENSITIVE)
+            != 0
     }
 
     /// Return the compiled regex seeded during scanner construction. Test-only
@@ -445,10 +499,11 @@ impl LazyRegex {
                 // Cold-cache miss: this `LazyRegex` is compiling for the first
                 // time. Record it so the zero-recompile gate can prove that the
                 // scan hot path triggers none of these after warm-up.
-                LAZY_REGEX_COMPILE_EVENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                let built = if self.state.case_insensitive {
+                record_lazy_regex_compile();
+                let flags = self.state.flags.load(std::sync::atomic::Ordering::Relaxed);
+                let built = if (flags & LAZY_REGEX_FLAG_CASE_INSENSITIVE) != 0 {
                     crate::compiler::compiler_compile::shared_regex(&self.state.src)
-                } else if self.state.crlf {
+                } else if (flags & LAZY_REGEX_FLAG_CRLF) != 0 {
                     crate::compiler::compiler_compile::companion_regex(&self.state.src)
                 } else {
                     Regex::new(&self.state.src).map(Arc::new)

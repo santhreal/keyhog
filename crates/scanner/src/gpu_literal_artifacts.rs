@@ -13,7 +13,10 @@ use crate::engine::{phase2_anchor, phase2_generic, scan_postprocess};
 use crate::error::{Result, ScanError};
 use crate::gpu_matcher_cache as gpu_cache;
 use crate::scanner_config::ScannerTuningConfig;
-use keyhog_core::DetectorSpec;
+use keyhog_core::{CompiledArtifactClass, DetectorSpec};
+
+/// The compiled artifact class for GPU literal match sets.
+pub const ARTIFACT_CLASS: CompiledArtifactClass = CompiledArtifactClass::GpuLiteralSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use vyre::scan::GpuLiteralSet;
@@ -44,6 +47,16 @@ pub struct GpuLiteralArtifact {
     pub wire_version: u32,
 }
 
+impl GpuLiteralArtifact {
+    /// The compiled artifact class for this artifact.
+    pub const ARTIFACT_CLASS: CompiledArtifactClass = CompiledArtifactClass::GpuLiteralSet;
+
+    /// The compiled artifact class for this artifact.
+    pub const fn artifact_class(&self) -> CompiledArtifactClass {
+        CompiledArtifactClass::GpuLiteralSet
+    }
+}
+
 /// The runtime GPU presence matcher artifacts derivable without a GPU device.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GpuLiteralArtifacts {
@@ -61,6 +74,7 @@ pub(crate) fn install_compiled_gpu_literal_artifact(
     matcher_bytes: &[u8],
 ) -> Result<InstalledGpuLiteralArtifact> {
     INSTALL_COMPILED_INVOCATIONS.fetch_add(1, Ordering::Relaxed);
+    keyhog_profile::add_counter(keyhog_profile::CounterId::GpuCompileCalls, 1);
     if !cache_key.starts_with("lit-ci-") {
         return Err(ScanError::Gpu(format!(
             "packed GPU matcher cache key {cache_key:?} is not a fused case-insensitive matcher key"
@@ -97,6 +111,7 @@ pub(crate) fn install_compiled_gpu_literal_artifact(
                 "packed VYRE GPU matcher {cache_key} contains no valid literal lengths; reinstall and recalibrate"
             ))
         })?;
+    keyhog_profile::record_compile_surface_load(keyhog_profile::CompileSurfaceId::GpuLiterals);
     Ok(InstalledGpuLiteralArtifact {
         matcher,
         cache_key: cache_key.into(),
@@ -107,6 +122,10 @@ pub(crate) fn install_compiled_gpu_literal_artifact(
 
 pub(crate) fn record_runtime_gpu_literal_compiler_invocation() {
     RUNTIME_COMPILER_INVOCATIONS.fetch_add(1, Ordering::Relaxed);
+    keyhog_profile::add_counter(keyhog_profile::CounterId::GpuCompileCalls, 1);
+    keyhog_profile::record_compile_surface_invocation(
+        keyhog_profile::CompileSurfaceId::GpuLiterals,
+    );
 }
 
 #[doc(hidden)]
@@ -155,6 +174,9 @@ pub fn compile_gpu_literal_artifacts(
 /// decisions the runtime scanner makes. Hyperscan capability does not alter the
 /// canonical GPU literal plan.
 fn compile_gpu_literal_artifact_plan(detectors: &[DetectorSpec]) -> Result<GpuLiteralArtifacts> {
+    keyhog_profile::record_compile_surface_invocation(
+        keyhog_profile::CompileSurfaceId::GpuLiterals,
+    );
     let state = build_compile_state(detectors)?;
     validate_compiled_pattern_detector_indices(
         &state.ac_map,

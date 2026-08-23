@@ -106,7 +106,8 @@ jobs:
           if printf 'API_KEY="%s_%s"\n' "$prefix" "$body" \
             | ./target/release-fast/keyhog scan --stdin --no-config \
                 --backend cpu --daemon=off --min-confidence 0.0 \
-                --evidence-policy paranoid --no-suppress-test-fixtures; then
+                --evidence-policy paranoid --no-suppress-test-fixtures \
+                --developer-compile-embedded-detectors; then
             dogfood_status=0
           else
             dogfood_status=$?
@@ -189,8 +190,11 @@ jobs:
           --test packed_simd_phase2_shards
           --test perf_alloc_evidence_relations
           --test scan_backend_parity_proptest
-      - name: RawMatch total-order gate
-        run: cargo test -p keyhog-core --test new_core_finding_dedup --profile ci-test
+      - name: RawMatch total-order gate and durable-write owner
+        run: >
+          cargo test -p keyhog-core --no-fail-fast --profile ci-test
+          --test new_core_finding_dedup
+          --test regression_row_148_single_atomic_write_owner
 
   # All-target sources tests remain serial inside their own test processes:
   # several assert process-global skip counters and cannot be co-scheduled.
@@ -252,10 +256,13 @@ jobs:
         run: >
           cargo test -p keyhog-scanner --features gpu --profile ci-test
           --test gpu_wiring_contract
+          --test regression_row_118_gpu_dispatch_concurrency_pool
+          --test regression_row_103_gpu_upload_readback_latency
       - name: Require-GPU fails closed on an adapter-free host
         run: >
           cargo test -p keyhog --features gpu --profile ci-test
           --test regression_require_gpu_fails_closed
+          --test regression_row_156_gpu_route_explanation_parity
 
   library-surface:
     name: Library surface
@@ -351,6 +358,7 @@ jobs:
           --test stress_all
           --test tool_contract
           --test triage_cli
+          --test regression_row_107_queue_depth_and_blocked_waits
       - name: cli audit suites
         run: >
           cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test --no-fail-fast
@@ -413,6 +421,47 @@ jobs:
           --test regression_uninstall_surfaces_cache
           --test regression_vendored_minified_finding_reachable
           --test regression_zip64_duplicate_scan_gap_visible
+      # Install, guard, and artifact-identity suites that no other step names.
+      # `scripts/gates/tests_wired.py` reports a top-level test file no CI step
+      # runs; these fifteen were orphans, and the routing and pack-identity
+      # defects they cover reached the integration branch because of it.
+      - name: cli install, guard, and artifact identity suites
+        run: >
+          cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test --no-fail-fast
+          --test cache_kinds_eviction_parity
+          --test compiled_artifact_classes_parity
+          --test regression_daemon_panic_isolation
+          --test regression_row_130_clean_install_zero_compiles
+          --test regression_row_140_guard_offline_status
+          --test regression_row_141_guard_watcher_exclusions
+          --test regression_row_142_guard_policy_identity_digests
+          --test regression_row_144_clean_pass_no_internal_warnings
+          --test regression_row_145_hook_zero_compilation
+          --test regression_row_146_guard_transition_feed
+          --test regression_row_147_product_benchmarks_wiring
+          --test regression_row_155_install_bench_config_parity
+          --test regression_row_158_startup_footprint_pack_install
+          --test regression_row_163_fail_closed_scan_document_status
+          --test regression_window_overlap_validation
+
+  integration-e2e:
+    name: Integration (e2e binary suite)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    # The whole `e2e_all` target. `action-e2e.yml` runs it filtered to `action_`,
+    # so every other test in it was CI-invisible and a large group of them had
+    # drifted from the shipped evidence model before anyone ran the suite.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: ./.github/actions/setup-vectorscan
+      - name: cli e2e_all
+        run: >
+          cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test
+          --no-fail-fast --test e2e_all
 
   integration-detector-contracts:
     name: Integration (detector + recall contracts)
@@ -457,6 +506,19 @@ jobs:
           --test structured_config_source_roles
           --test source_code_roles
           --test documentation_command_roles
+      # Scanner suites no other step names: `tests_wired.py` reported all seven
+      # as CI-orphans, so their counter, recall, and timing contracts never ran.
+      - name: scanner counter, recall, and timing contracts
+        run: >
+          cargo test -p keyhog-scanner --no-fail-fast
+          --no-default-features --features ci-lean --profile ci-test
+          --test perf_scan_path_counting_instrument
+          --test regression_competitor_recall_parity
+          --test regression_row_150_anchored_regex_compile_counter
+          --test regression_row_152_detector_validators
+          --test regression_row_153_startup_memory_floor
+          --test regression_row_154_bpe_entropy_recall
+          --test regression_row_159_postprocess_timing
 
   # Preserve the established required-check name while making it an explicit
   # fail-closed aggregate of the five independent integration lanes.
@@ -652,6 +714,7 @@ jobs:
       - focused-integration
       - integration-sources
       - integration-cli
+      - integration-e2e
       - integration-detector-contracts
       - security-fast
       - feature-matrix
@@ -673,7 +736,7 @@ jobs:
           jq -e \
             --argjson release_lane "$KEYHOG_RELEASE_LANE" \
             --argjson release_lane_jobs "$KEYHOG_RELEASE_LANE_JOBS" '
-            length == 12 and
+            length == 13 and
             all(to_entries[];
               if ($release_lane | not) and (.key | IN($release_lane_jobs[]))
               then .value.result == "skipped"

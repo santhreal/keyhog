@@ -306,16 +306,13 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
         hw.physical_cores, hw.logical_cores
     );
     println!("  simd           {simd}");
-    let gpu = if !hw.gpu_available {
-        if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
-            format!("{dim}not detected (binary built without --features gpu){reset}")
-        } else {
-            format!("{dim}not detected (CPU/SIMD path){reset}")
-        }
+    let gpu_raw = keyhog_scanner::hw_probe::format_gpu_status(&hw);
+    let gpu = if hw.gpu_available && !hw.gpu_is_software {
+        format!("{green}{gpu_raw}{reset}")
     } else if hw.gpu_is_software {
-        format!("{yellow}software renderer (disabled for scans){reset}")
+        format!("{yellow}{gpu_raw}{reset}")
     } else {
-        format!("{green}{}{reset}", hw.gpu_name.as_deref().unwrap_or("yes")) // LAW10: absent name/label => display default; reporting-only, recall-safe
+        format!("{dim}{gpu_raw}{reset}")
     };
     println!("  gpu            {gpu}");
     println!(
@@ -529,7 +526,7 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
         execution_pack_dir.display()
     );
     let installed_pack_binding = if execution_pack_dir.exists() {
-        match crate::execution_pack_install::load_authenticated_binding(&execution_pack_dir) {
+        match crate::execution_pack_install::load_authenticated_binding(&execution_pack_dir, None) {
             Ok(binding) => {
                 println!(
                     "  pack state     {green}AUTHENTICATED{reset}  {dim}{} policy/backend pack(s), manifest {}{reset}",

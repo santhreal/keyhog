@@ -90,6 +90,7 @@ fn is_entropy_candidate_byte(b: u8) -> bool {
                 | b'^'
                 | b'&'
                 | b'*'
+                | b'~'
         )
 }
 

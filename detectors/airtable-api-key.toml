@@ -16,6 +16,11 @@ keywords = ["pat", "airtable", "AIRTABLE_API_KEY"]
 regex = 'pat[A-Za-z0-9]{14}\.[a-f0-9]{64}'
 description = "Airtable personal access token (pat...)"
 
+[[detector.patterns]]
+regex = "(?i)(?:airtable[a-z0-9_.-]*)[=:\\s\"'\\t]+(key[a-zA-Z0-9]{14})(?:[^a-zA-Z0-9]|$)"
+description = "Airtable legacy API key (key...)"
+group = 1
+
 [detector.verify]
 method = "GET"
 url = "https://api.airtable.com/v0/meta/bases"

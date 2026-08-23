@@ -411,3 +411,27 @@ fn decompiler_output_symlink_is_rejected_by_safe_open() {
 
     assert!(matches!(error, keyhog_core::SourceError::Io(_)));
 }
+
+#[test]
+fn ghidra_version_probing_parses_application_properties() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let ghidra_home = temp.path().join("ghidra_11.1.2_PUBLIC");
+    let support_dir = ghidra_home.join("support");
+    let app_dir = ghidra_home.join("Ghidra");
+    std::fs::create_dir_all(&support_dir).expect("create support dir");
+    std::fs::create_dir_all(&app_dir).expect("create Ghidra dir");
+
+    let headless = support_dir.join("analyzeHeadless");
+    std::fs::write(&headless, "#!/bin/sh\n").expect("write headless");
+
+    let props = app_dir.join("application.properties");
+    let props_content =
+        "application.name=Ghidra\napplication.version=11.1.2\napplication.release.name=PUBLIC\n";
+    std::fs::write(&props, props_content).expect("write props");
+
+    let version = ghidra::probe_ghidra_version(&headless);
+    assert_eq!(version.as_deref(), Some("11.1.2 PUBLIC"));
+
+    let analyzer = GhidraAnalyzer::new(&headless);
+    assert_eq!(analyzer.version(), Some("11.1.2 PUBLIC"));
+}

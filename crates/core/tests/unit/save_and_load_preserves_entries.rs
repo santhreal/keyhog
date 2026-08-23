@@ -16,6 +16,7 @@ fn save_and_load_preserves_entries() {
         &idx,
         p.clone(),
         12345,
+        12345 + 100,
         11,
         h,
     );
@@ -38,5 +39,5 @@ fn save_and_load_preserves_entries() {
         &p,
         &h
     ));
-    assert!(loaded.metadata_unchanged(&p, 12345, 11));
+    assert!(loaded.metadata_unchanged(&p, 12345, 12345 + 100, 11));
 }

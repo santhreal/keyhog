@@ -6,19 +6,23 @@ use super::HardwareCaps;
 
 /// Format a one-line startup banner summarizing detected hardware.
 pub fn startup_banner(caps: &HardwareCaps, detector_count: usize, pattern_count: usize) -> String {
-    let gpu = if let Some(name) = &caps.gpu_name {
+    let gpu = if caps.gpu_available {
+        let name = caps.gpu_name.as_deref().unwrap_or("available"); // LAW10: display-only label for an unnamed adapter
         if caps.gpu_is_software {
-            // Software-only adapters (llvmpipe, lavapipe, swiftshader) get
-            // detected and probed, but `select_backend` rejects them
-            // because dispatching the literal-set pipeline through CPU-
-            // emulated GL/Vulkan is slower than just running the SIMD
-            // path directly. Surface this in the banner so users on
-            // headless boxes (CI runners, containers) understand why
-            // their scan is using SIMD even though `keyhog backend`
-            // shows a "GPU" line.
             format!("GPU: {name} (software, ignored)")
         } else {
             format!("GPU: {name}")
+        }
+    } else if let Some(name) = &caps.gpu_name {
+        if caps.gpu_is_software {
+            format!("GPU: {name} (software, ignored)")
+        } else if !super::gpu_backend_compiled() {
+            format!(
+                "GPU: {name} ({})",
+                super::uncompiled_gpu_backend_explanation()
+            )
+        } else {
+            format!("GPU: {name} (not active)")
         }
     } else {
         "GPU: none".to_string()

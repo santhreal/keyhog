@@ -55,7 +55,7 @@ fn ready_warm_backend(detector_rules_digest: &str) -> WarmBackendStatus {
 /// with the given wire + keyhog version, then closes. Returns once the listener
 /// is bound so the client connect cannot race ahead of it.
 async fn spawn_mock_daemon(socket: PathBuf, wire_version: u32, keyhog_version: String) {
-    let detector_rules_digest = keyhog_core::detector_digest().to_owned();
+    let detector_rules_digest = crate::daemon::embedded_detector_rules_digest().to_owned();
     spawn_mock_daemon_identity(
         socket,
         wire_version,
@@ -122,7 +122,7 @@ async fn spawn_mock_daemon_response(socket: PathBuf, response: Response) {
 }
 
 async fn spawn_mock_daemon_backend_policy(socket: PathBuf, backend_policy: &str) {
-    let detector_rules_digest = keyhog_core::detector_digest().to_owned();
+    let detector_rules_digest = crate::daemon::embedded_detector_rules_digest().to_owned();
     spawn_mock_daemon_response(
         socket,
         Response::Hello {

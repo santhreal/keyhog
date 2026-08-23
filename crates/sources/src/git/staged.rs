@@ -437,6 +437,7 @@ impl Iterator for StagedChunkIter {
                     author: None,
                     date: None,
                     mtime_ns: None,
+                    ctime_ns: None,
                     size_bytes: Some(object_len as u64),
                     decoded_span: None,
                 },

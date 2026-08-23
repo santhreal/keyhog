@@ -79,16 +79,32 @@ fn powershell_finalize_restores_or_removes_after_failed_health_check() {
     let script = include_str!("../../../install.ps1");
     let finalize_install = ps_function(script, "Finalize-Install");
     let restore_install = ps_function(script, "Restore-PreviousInstallOrRemove");
+    let calibrate_and_verify = ps_function(script, "Invoke-CalibrateAndVerify");
 
+    // Finalize owns exactly one decision: any note returned by verification is
+    // a rollback, and success is reported only after the backup is dropped.
     assert_in_order(
         finalize_install,
         &[
-            "if (-not (Invoke-AutorouteCalibration -BinPath $BinPath))",
-            "Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote \"Removed the uncalibrated binary; no working keyhog was overwritten.\"",
+            "Invoke-PostInstallHealthAndCalibration -BinPath $BinPath",
+            "if ($failureNote)",
+            "Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote $failureNote",
             "return $false",
             "if ($Script:InstallBackup) { Remove-Item -Force $Script:InstallBackup",
             "return $true",
             "Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote \"Removed the non-runnable download; no working keyhog was overwritten.\"",
+            "return $false",
+        ],
+    );
+    // A failed calibration must produce a rollback note, not a warning.
+    assert_in_order(
+        calibrate_and_verify,
+        &[
+            "if (-not (Invoke-AutorouteCalibration -BinPath $BinPath))",
+            "return \"Removed the uncalibrated binary; no working keyhog was overwritten.\"",
+            "if (-not (Test-AutorouteServesAScan -BinPath $BinPath))",
+            "return \"Removed the binary whose calibrated cache could not serve a scan; no working keyhog was overwritten.\"",
+            "return \"\"",
         ],
     );
     assert_in_order(
@@ -263,7 +279,9 @@ fn powershell_installer_verifies_and_seeds_the_local_gpu_literal_sidecar() {
         cache_backup.contains("Copy-Item -Recurse -Force -Path $programsDir")
             && cache_backup.contains("$Script:GpuProgramsCacheWasMissing = $true")
             && cache_restore.contains("Remove-Item -Recurse -Force $programsDir")
-            && cache_restore.contains("Move-Item -Force -Path (Join-Path $Script:GpuProgramsCacheBackupPath 'programs')")
+            && cache_restore.contains(
+                "Move-Item -Force -Path (Join-Path $Script:GpuProgramsCacheBackupPath 'programs')"
+            )
             && cache_restore.contains("Clear-GpuProgramsCacheBackup"),
         "PowerShell installer must be able to roll back GPU literal cache state when final verification fails"
     );

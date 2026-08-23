@@ -46,21 +46,8 @@ pub(super) fn print_backend_report(args: &BackendArgs) -> Result<()> {
         "  simd:              {}",
         simd_label(hw.has_avx512, hw.has_avx2, hw.has_neon)
     );
-    println!(
-        "  gpu:               {} {}",
-        if hw.gpu_available {
-            hw.gpu_name.as_deref().unwrap_or("yes") // LAW10: absent name/label => display default; reporting-only, recall-safe
-        } else if !keyhog_scanner::hw_probe::gpu_backend_compiled() {
-            "not detected (binary built without --features gpu)"
-        } else {
-            "not detected"
-        },
-        if hw.gpu_is_software {
-            "(software renderer: disabled)"
-        } else {
-            ""
-        }
-    );
+    let gpu_display = keyhog_scanner::hw_probe::format_gpu_status(hw);
+    println!("  gpu:               {gpu_display}");
     if let Some(buf) = hw.gpu_vram_mb {
         // `gpu_vram_mb` is actually `wgpu::Limits::max_buffer_size`,
         // not VRAM (wgpu has no portable VRAM query). Display under
@@ -183,8 +170,7 @@ fn effective_pattern_count(args: &BackendArgs) -> Result<usize> {
     if let Some(patterns) = args.patterns {
         return Ok(patterns);
     }
-    let detectors = keyhog_core::load_embedded_detectors_or_fail()
-        .map_err(|error| anyhow::anyhow!("backend: load embedded detectors: {error}"))?;
+    let detectors = keyhog_core::embedded_detector_specs().to_vec();
     let scanner = keyhog_scanner::CompiledScanner::compile(detectors)
         .map_err(|error| anyhow::anyhow!("backend: compile embedded scanner: {error}"))?;
     Ok(scanner.runtime_status().pattern_count)

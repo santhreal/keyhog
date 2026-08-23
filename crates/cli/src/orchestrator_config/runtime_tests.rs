@@ -89,11 +89,12 @@ fn fused_default_allows_only_active_and_blocked_send_batches() {
 
 #[cfg(test)]
 #[test]
-fn fused_cpu_waves_retain_at_most_four_batches() {
+fn fused_cpu_waves_scale_with_worker_threads() {
     assert_eq!(fused_cpu_wave_width(0), 1);
     assert_eq!(fused_cpu_wave_width(1), 1);
     assert_eq!(fused_cpu_wave_width(4), 4);
     assert_eq!(fused_cpu_wave_width(32), 4);
+    assert_eq!(fused_cpu_wave_width(512), 4);
 }
 
 #[cfg(test)]

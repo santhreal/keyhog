@@ -140,7 +140,6 @@ path:crates/cli/data/suppressions/test-fixtures.toml; reason="the file's purpose
 # the exact fixture value, which keeps the surrounding file scanned and fails the
 # lane on any second credential planted in it.
 hash:e51274cf409418544734e68fef141a841ca58b82a4d7e61f41b2ed638abfd902; reason="GPU ML-scorer warm sample; vendor example token used only to touch the feature extractor; measured entropy-api-key at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/scanner/src/gpu/backend/execution.rs:755; surfaced by preset(s) decode,deep,nodecode,noexcl"; approved_by="keyhog-maintainers"
-hash:5cb35e896767fc86473c803ec5915fe272b73dcb274743e520c660d719d52ece; reason="benchmark smoke fixture; measured stripe-secret-key at crates/cli/src/benchmark.rs:115, fabricated vendor-docs shape"; approved_by="keyhog-maintainers"
 hash:94ba8206be4dd790b4d3243a600904b91e210b7a3940f285559631d2079f0145; reason="shape-classifier accept fixture; measured entropy-token at crates/scanner/src/suppression/shape/canonical.rs:273 under --deep only"; approved_by="keyhog-maintainers"
 
 # --- Reviewed fixtures, provenance generated from measurement -----------------
@@ -177,8 +176,7 @@ hash:d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71; reason="c
 
 hash:c51a2994c021a49f77b06842b74fd2ed8daa15d312eb93e99049552be6b8b6e0; reason="measured entropy-api-key at docs/src/guides/authoring-detectors.md:222; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
 hash:ee6a6a13bdbb26b6abb597b4264c22db93ad166a6b80196a8592596e50bf3b96; reason="measured entropy-api-key at docs/src/guides/authoring-detectors.md:50; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
-hash:fa32f1cd6753305dfd9b8052f8d46205d634e1f6decc3b73f4b60a157a1a5716; reason="measured entropy-api-key at crates/cli/src/benchmark.rs:120; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
-hash:0162f1fca53724b167da8a28c1d76e25eb4ff6f46c36c0b93d42cf5e9a994fb6; reason="measured entropy-token at docs/src/workflows/github-action.md:266; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
+hash:bd952ccd2d22f82ace35c4f149144d14834e00c71572a462ea8db3cf99da7aed; reason="measured entropy-token at docs/src/workflows/github-action.md:266; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
 hash:024f2c7cb0a2a85c66624d342ee6575a91e1454c892207fa1d232e49a546daf6; reason="measured entropy-token at .github/PULL_REQUEST_TEMPLATE/integration.md:103; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
 hash:05ef1b47ccd2faaf0f7ceaec0e18f6ab5b09c86f713637ed060da0adc8abb2c0; reason="measured entropy-token at benchmarks/README.md:270; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
 hash:0b1dc4b085965f63891b7d7aaab2a2b980c9988b618a9d0f53a5c231491819d8; reason="measured entropy-token at docs/src/reference/env.md:115; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
@@ -237,7 +235,7 @@ hash:c8dd2f89f4777084ad0bef0087a1dbcfd20576cf84a164f955e623a14494fb6e; reason="m
 hash:dfa4628f0d0475b7209644850dbe6a84e9aa3771d986f3daf0870051e1f775f6; reason="measured entropy-token at benchmarks/bench/workload_fixtures.py:368; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
 hash:3dadd105baf8cf41097f50bf39aa464f52eafe23940c3368e85053c5ff49b246; reason="measured entropy-token at docs/src/guides/triage-feedback.md:81; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
 hash:c5123af85e3a7d4b6b28fe69fc3936ce4d72cba1d0c33c101f45bccb875917f8; reason="measured entropy-token at docs/src/guides/triage-feedback.md:83; reviewed documentation or fixture example"; approved_by="keyhog-maintainers"
-hash:eb7cfba5ea52088616ef749817d0fc142c2b1ec2ac79a6d129279418839d0550; reason="measured entropy-token at docs/src/workflows/github-action.md:266; reviewed documentation fixture"; approved_by="keyhog-maintainers"
+hash:bd952ccd2d22f82ace35c4f149144d14834e00c71572a462ea8db3cf99da7aed; reason="measured entropy-token at docs/src/workflows/github-action.md:266; reviewed documentation fixture"; approved_by="keyhog-maintainers"
 
 # --- Retained but unproven on this build --------------------------------------
 # These suppressed nothing under the seven presets measured on the release-fast

@@ -69,7 +69,7 @@ mod tmp_hygiene;
 
 pub use storage::{default_cache_path, merkle_default_cache_path};
 
-const SCHEMA_VERSION: u32 = 4;
+const SCHEMA_VERSION: u32 = 5;
 
 /// Shard count: spreads concurrent `record` / `unchanged` calls across
 /// independent locks so tiny-file storms don't serialize all rayon workers.
@@ -251,6 +251,10 @@ impl Equivalent<CacheKey> for CacheKeyRef<'_> {
 #[derive(Debug, Clone, Copy)]
 struct CacheEntry {
     mtime_ns: u64,
+    /// Inode change time. `0` means "unknown" (legacy v4 entry or a platform
+    /// with no change time); such entries are never trusted by the read-free
+    /// fast-path skip.
+    ctime_ns: u64,
     size: u64,
     last_seen_order: u64,
     hash: [u8; 32],
@@ -303,8 +307,13 @@ pub struct MerkleIndex {
 impl MerkleIndex {
     /// Construct a fresh, empty [`MerkleIndex`] with no cached entries and
     /// the default entry cap ([`MERKLE_DEFAULT_MAX_ENTRIES`]).
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         Self::with_max_entries(MERKLE_DEFAULT_MAX_ENTRIES)
+    }
+
+    /// Construct a fresh, empty [`MerkleIndex`].
+    pub fn new() -> Self {
+        Self::empty()
     }
 
     /// Construct a fresh, empty [`MerkleIndex`] with an explicit entry cap.
@@ -347,6 +356,7 @@ impl MerkleIndex {
         path: PathBuf,
         chunk_offset: u64,
         mtime_ns: u64,
+        ctime_ns: u64,
         size: u64,
         content: &[u8],
     ) -> bool {
@@ -354,6 +364,7 @@ impl MerkleIndex {
             path.as_path(),
             chunk_offset,
             mtime_ns,
+            ctime_ns,
             size,
             content,
         )
@@ -367,6 +378,7 @@ impl MerkleIndex {
         path: &Path,
         chunk_offset: u64,
         mtime_ns: u64,
+        ctime_ns: u64,
         size: u64,
         content: &[u8],
     ) -> bool {
@@ -376,6 +388,7 @@ impl MerkleIndex {
             chunk_offset,
             CacheEntry {
                 mtime_ns,
+                ctime_ns,
                 size,
                 last_seen_order: self.next_access_order(),
                 hash: content_hash,
@@ -401,12 +414,18 @@ impl MerkleIndex {
             .is_some_and(|prev| &prev.hash == content_hash)
     }
 
-    /// Returns `true` when `(path, mtime_ns, size)` exactly matches a
-    /// stored entry. This is the **fast-path skip** - it avoids reading
-    /// the file at all, which is the dominant cost on cold-cache disk.
-    /// A `false` return means "either we've never seen this path, or
-    /// metadata differs - caller must read + hash to decide."
-    pub fn metadata_unchanged(&self, path: &Path, mtime_ns: u64, size: u64) -> bool {
+    /// Returns `true` when the stored entry for `path` carries exactly this
+    /// `(mtime_ns, ctime_ns, size)` identity. This is the **fast-path skip** -
+    /// it avoids reading the file at all, which is the dominant cost on
+    /// cold-cache disk. A `false` return means "either we've never seen this
+    /// path, or metadata differs - caller must read + hash to decide."
+    ///
+    /// The change time is part of the identity: a userspace tamper can restore
+    /// mtime and size over modified content, but the kernel-owned inode change
+    /// time moves on any write and cannot be set back. An entry recorded
+    /// without one (`0`: legacy v4 cache row, or a platform whose stat has no
+    /// change time) is never trusted here.
+    pub fn metadata_unchanged(&self, path: &Path, mtime_ns: u64, ctime_ns: u64, size: u64) -> bool {
         let _profile = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
         // perf: this is the per-file fast-path skip (dominant cold-cache cost);
         // borrow the path via CacheKeyRef so it never allocates a PathBuf.
@@ -417,7 +436,12 @@ impl MerkleIndex {
                 path,
                 chunk_offset: 0,
             })
-            .is_some_and(|prev| prev.mtime_ns == mtime_ns && prev.size == size)
+            .is_some_and(|prev| {
+                prev.mtime_ns == mtime_ns
+                    && prev.size == size
+                    && prev.ctime_ns != 0
+                    && prev.ctime_ns == ctime_ns
+            })
     }
 
     /// Returns the stored `(mtime_ns, size, content_hash)` for `path`,
@@ -436,17 +460,11 @@ impl MerkleIndex {
             })
             .map(|e| (e.mtime_ns, e.size, e.hash))
     }
-
-    /// Seed a file's metadata + content hash for the public test facade.
-    /// Production ingestion uses the chunk-aware record-and-compare path.
-    /// Overwrites any prior
-    /// entry at the same path. The path-shard mutex is held for the
-    /// duration of the insert only; concurrent recordings against
-    /// different shards never contend.
     pub(crate) fn seed_for_testing(
         &self,
         path: PathBuf,
         mtime_ns: u64,
+        ctime_ns: u64,
         size: u64,
         content_hash: [u8; 32],
     ) {
@@ -454,6 +472,7 @@ impl MerkleIndex {
             CacheKey::file(path),
             CacheEntry {
                 mtime_ns,
+                ctime_ns,
                 size,
                 last_seen_order: self.next_access_order(),
                 hash: content_hash,
@@ -465,7 +484,7 @@ impl MerkleIndex {
         let previous =
             match self
                 .access_order
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
                     Some(current.saturating_add(1))
                 }) {
                 Ok(previous) => previous,
@@ -477,7 +496,7 @@ impl MerkleIndex {
     fn observe_loaded_access_order(&self, loaded_order: u64) {
         if let Err(current) =
             self.access_order
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
                     (loaded_order > current).then_some(loaded_order)
                 })
         {

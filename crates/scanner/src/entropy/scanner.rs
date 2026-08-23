@@ -644,8 +644,8 @@ fn scan_keyword_contexts(
 /// 256-byte lookup table for fast byte classification in the entropy scan.
 /// Each byte is classified with bit flags:
 /// - bit 0 (1): ASCII whitespace (space, tab, newline, CR)
-/// - bit 1 (2): entropy candidate byte (alphanumeric + -_+/=.:!@#$%^&*)
-/// - bit 2 (4): trigger byte (=, :, ", ', <), required by `extract_candidates`
+/// - bit 1 (2): entropy candidate byte (alphanumeric + -_+/=.:!@#$%^&*~)
+/// - bit 2 (4): trigger byte (=, :, ", ', `, <), required by `extract_candidates`
 ///
 /// Using a lookup table replaces several classifications per byte with one
 /// table lookup on the entropy hot path.
@@ -658,13 +658,14 @@ pub(super) const BYTE_CLASS: [u8; 256] = {
     t[b'\r' as usize] |= 1;
     t[0x0b] |= 1; // vertical tab
     t[0x0c] |= 1; // form feed
-                  // Trigger bytes: =, :, ", ', <
+                  // Trigger bytes: =, :, ", ', `, <
     t[b'=' as usize] |= 4;
     t[b':' as usize] |= 4;
     t[b'"' as usize] |= 4;
     t[b'\'' as usize] |= 4;
+    t[b'`' as usize] |= 4;
     t[b'<' as usize] |= 4;
-    // Entropy candidate bytes: alphanumeric + -_+/=.:!@#$%^&*
+    // Entropy candidate bytes: alphanumeric + -_+/=.:!@#$%^&*~
     // Digits 0-9
     let mut i = b'0' as usize;
     while i <= b'9' as usize {
@@ -699,9 +700,9 @@ pub(super) const BYTE_CLASS: [u8; 256] = {
     t[b'^' as usize] |= 2;
     t[b'&' as usize] |= 2;
     t[b'*' as usize] |= 2;
+    t[b'~' as usize] |= 2;
     t
 };
-
 fn scan_keyword_free_candidates(
     lines: &impl EntropyLines,
     keyword_line_ids: &[usize],
@@ -785,7 +786,7 @@ fn scan_keyword_free_candidates(
         }
         // Single-pass byte scan using a 256-entry lookup table for fast
         // classification. Tracks three necessary conditions simultaneously:
-        // 1. has_trigger: line contains '=', ':', '"', '\'', or '<'
+        // 1. has_trigger: line contains '=', ':', '"', '\'', '`', or '<'
         // 2. max_entropy_run: longest run of consecutive entropy candidate bytes
         // 3. max_nonws_run: longest non-whitespace run
         let bytes = line.as_bytes();

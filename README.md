@@ -25,7 +25,7 @@ containers, cloud storage, browser assets, collaboration content, and running
 systems.**
 
 Most secret scanners stop at CPU regex matches in a repository checkout.
-KeyHog combines **926 service-specific detectors**, decode-through for concealed
+KeyHog combines **934 service-specific detectors**, decode-through for concealed
 credentials, context-aware evidence and suppression, live provider verification,
 and first-class **CUDA, Metal, and WGPU execution through
 [Vyre](https://github.com/santhreal/vyre)**. Calibration measures every eligible
@@ -75,6 +75,12 @@ on a clean Rust host. Enable the three GPU peers without acquiring Hyperscan:
 cargo install --locked keyhog --no-default-features --features portable,gpu
 ```
 
+Enable the Hyperscan or Vectorscan SIMD regex peer:
+
+```sh
+cargo install --locked keyhog --no-default-features --features portable,simd
+```
+
 Run the production backend diagnostic, then inspect the measured route:
 
 ```sh
@@ -95,7 +101,7 @@ The two commands above install the latest crates.io release and scan the current
 tree with the portable pure-Rust route.
 
 Pin a CI environment to one exact release with
-`cargo install --locked --version '=0.5.80' keyhog`. KeyHog requires Rust 1.89
+`cargo install --locked --version '=0.5.81' keyhog`. KeyHog requires Rust 1.89
 or newer. See the [installation guide](https://santhreal.github.io/keyhog/install.html)
 for GPU, Hyperscan, CI, portable, and source-build profiles.
 
@@ -529,7 +535,7 @@ contracts.
 
 ## How KeyHog works
 
-KeyHog compiles its 926 detectors into a shared trigger and extraction plan,
+KeyHog compiles its 934 detectors into a shared trigger and extraction plan,
 decodes nested encodings before matching, and applies per-detector scoring,
 evidence, and suppression. Pure-Rust CPU (`cpu-fallback`) is always available.
 The Hyperscan route (`simd-regex`) uses Hyperscan when that feature is present;
@@ -580,7 +586,7 @@ dependencies.
 
 ## What it catches
 
-926 embedded detectors with detector-owned offline validation and companions:
+934 embedded detectors with detector-owned offline validation and companions:
 
 - **Cloud providers:** AWS (access key + secret + STS verification),
   Azure (subscription key, storage account key, SAS), GCP (service account,
@@ -675,7 +681,8 @@ hand.
 ### Detection leaderboard
 
 <!-- BENCH:leaderboard:start -->
-Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner scored identically (SecretBench overlap rule); the answer-key manifest is excluded from the scan tree.
+#### Synthetic SecretBench-shape mirror corpus
+Corpus: **mirror** - 15000 fixtures, 3000 labeled positives, 2,431,242 bytes. Every scanner scored identically (SecretBench overlap rule); the answer-key manifest is excluded from the scan tree.
 
 | Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |
 |---|---|---|---|---|---|---|---|
@@ -686,6 +693,17 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 | 5 | Nosey Parker | 0.4186 | 0.3511 | 0.5183 | 4529 | 0.82s | 285 MB |
 | 6 | Betterleaks | 0.3498 | 0.2241 | 0.7970 | 11113 | 0.74s | 198 MB |
 
+#### Competitor homefield / home-turf rule corpus
+Corpus: **homefield** - 2399 fixtures harvested from competitor ground-truth rule suites (Betterleaks and Kingfisher rules; 1,057 labeled positives, 1,342 negatives, 772,974 bytes). Cross-tool evaluation on competitor ground truth.
+
+| Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |
+|---|---|---|---|---|---|---|---|
+| 1 | **KeyHog** | **0.9214** | 0.9582 | 0.8874 | 979 | 0.72s | 384 MB |
+| 2 | Betterleaks | 0.9056 | 0.9130 | 0.8984 | 1040 | 0.58s | 192 MB |
+| 3 | Kingfisher | 0.8842 | 0.9250 | 0.8468 | 968 | 2.14s | 390 MB |
+| 4 | TruffleHog | 0.4812 | 0.9850 | 0.3226 | 345 | 1.22s | 280 MB |
+| 5 | Titus | 0.4635 | 0.3810 | 0.5913 | 1640 | 2.15s | 110 MB |
+| 6 | Nosey Parker | 0.4520 | 0.3950 | 0.5280 | 1412 | 0.68s | 265 MB |
 ### Result provenance
 
 | Scanner | Scanner version / executable digest | Corpus identity | Host identity | Run date |
@@ -701,6 +719,8 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 ### Speed & memory
 
 <!-- BENCH:perf:start -->
+#### Synthetic SecretBench-shape mirror corpus
+
 | Scanner | Config | Corpus | Wall | Throughput | Peak RSS |
 |---|---|---|---|---|---|
 | Betterleaks | `default-nocache-nodaemon-no-validate` | mirror | 0.74s | 3.1 MB/s | 198 MB |
@@ -709,6 +729,17 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 | TruffleHog | `default-nocache-nodaemon-no-verify` | mirror | 1.59s | 1.5 MB/s | 300 MB |
 | Titus | `default-nocache-nodaemon-no-validate` | mirror | 2.86s | 0.8 MB/s | 115 MB |
 | Kingfisher | `default-nocache-nodaemon-low-no-validate` | mirror | 4.81s | 0.5 MB/s | 402 MB |
+
+#### Competitor homefield / home-turf rule corpus
+
+| Scanner | Config | Corpus | Wall | Throughput | Peak RSS |
+|---|---|---|---|---|---|
+| Betterleaks | `default-nocache-nodaemon-no-validate` | homefield | 0.58s | 1.3 MB/s | 192 MB |
+| Nosey Parker | `default-nocache-nodaemon-no-git-history` | homefield | 0.68s | 1.1 MB/s | 265 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | homefield | 0.72s | 1.1 MB/s | 384 MB |
+| TruffleHog | `default-nocache-nodaemon-no-verify` | homefield | 1.22s | 0.6 MB/s | 280 MB |
+| Titus | `default-nocache-nodaemon-no-validate` | homefield | 2.15s | 0.4 MB/s | 110 MB |
+| Kingfisher | `default-nocache-nodaemon-low-no-validate` | homefield | 2.14s | 0.4 MB/s | 390 MB |
 <!-- BENCH:perf:end -->
 
 ### Per-category recall comparison

@@ -24,10 +24,10 @@ use crate::execution_pack::{CanonicalDetectorExecutionIr, ExecutionPackBackend};
 use crate::hw_probe::ScanBackend;
 use crate::types::ScannerTuningConfig;
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 /// Cache format version. Bump when the envelope layout changes.
 pub use keyhog_core::MATCHER_ARTIFACT_FORMAT_VERSION as MATCHER_ARTIFACT_VERSION;
@@ -35,25 +35,48 @@ pub use keyhog_core::MATCHER_ARTIFACT_FORMAT_VERSION as MATCHER_ARTIFACT_VERSION
 pub use keyhog_core::MATCHER_ARTIFACT_MAGIC;
 /// Filename suffix for MatcherArtifact cache files.
 pub use keyhog_core::MATCHER_ARTIFACT_SUFFIX;
+/// The compiled artifact class for persistent matcher artifacts.
+pub const ARTIFACT_CLASS: keyhog_core::CompiledArtifactClass =
+    keyhog_core::CompiledArtifactClass::MatcherArtifact;
 /// Hard cap for one MatcherArtifact cache file, including header.
 pub const MATCHER_ARTIFACT_FILE_BYTES: u64 = 256 * 1024 * 1024;
-
-static CONFIGURED_CACHE_DIR: OnceLock<parking_lot::RwLock<Option<PathBuf>>> = OnceLock::new();
-fn configured_cache_dir_cell() -> &'static parking_lot::RwLock<Option<PathBuf>> {
-    CONFIGURED_CACHE_DIR.get_or_init(|| parking_lot::RwLock::new(None))
-}
+/// Default maximum retained matcher artifacts in cache directory.
+pub const MATCHER_ARTIFACT_MAX_ENTRIES: usize = keyhog_core::CacheKind::MatcherArtifacts
+    .default_policy()
+    .max_entries;
+static CONFIGURED_CACHE_DIR: std::sync::LazyLock<parking_lot::RwLock<Option<PathBuf>>> =
+    std::sync::LazyLock::new(|| parking_lot::RwLock::new(None));
+static CONFIGURED_DISABLE_REASON: std::sync::LazyLock<
+    parking_lot::RwLock<MatcherArtifactCacheDisableReason>,
+> = std::sync::LazyLock::new(|| {
+    parking_lot::RwLock::new(MatcherArtifactCacheDisableReason::ConfiguredOff)
+});
 
 /// Configure the MatcherArtifact cache directory for this process.
 ///
 /// `Some(path)` enables persistence at that absolute directory. `None` disables
 /// the cache for subsequent compiles in this process.
 pub fn set_matcher_artifact_cache_dir(path: Option<PathBuf>) {
-    *configured_cache_dir_cell().write() = path;
+    set_matcher_artifact_cache_state(path, MatcherArtifactCacheDisableReason::ConfiguredOff);
+}
+
+/// Configure the MatcherArtifact cache directory and explicit disable reason for this process.
+pub fn set_matcher_artifact_cache_state(
+    path: Option<PathBuf>,
+    disable_reason: MatcherArtifactCacheDisableReason,
+) {
+    *CONFIGURED_CACHE_DIR.write() = path;
+    *CONFIGURED_DISABLE_REASON.write() = disable_reason;
 }
 
 /// Currently configured MatcherArtifact cache directory, if enabled.
 pub fn configured_matcher_artifact_cache_dir() -> Option<PathBuf> {
-    configured_cache_dir_cell().read().clone()
+    CONFIGURED_CACHE_DIR.read().clone()
+}
+
+/// Currently configured MatcherArtifact cache disable reason, if disabled.
+pub fn configured_matcher_artifact_cache_disable_reason() -> MatcherArtifactCacheDisableReason {
+    *CONFIGURED_DISABLE_REASON.read()
 }
 
 /// Default MatcherArtifact cache directory under the platform user cache root.
@@ -75,6 +98,16 @@ pub fn default_matcher_artifact_cache_dir_from_base(
 
 /// Validate an explicit MatcherArtifact cache directory.
 pub fn validate_matcher_artifact_cache_dir(path: &Path) -> std::result::Result<(), String> {
+    validate_and_tighten_matcher_artifact_cache_dir(path, false)
+}
+
+/// Validate a MatcherArtifact cache directory with optional auto-tightening for default locations.
+pub fn validate_and_tighten_matcher_artifact_cache_dir(
+    path: &Path,
+    auto_tighten: bool,
+) -> std::result::Result<(), String> {
+    #[cfg(not(unix))]
+    let _ = auto_tighten; // LAW10: unused-binding outside unix; no runtime effect
     if !path.is_absolute() {
         return Err(format!(
             "matcher-artifact cache dir '{}' must be absolute",
@@ -85,9 +118,13 @@ pub fn validate_matcher_artifact_cache_dir(path: &Path) -> std::result::Result<(
     let uid = current_uid();
     let temp_root = std::env::temp_dir();
     let tmp_user_dir = temp_root.join(format!("keyhog-cache-{uid}"));
-    if !(path.starts_with(&home) || path.starts_with(&tmp_user_dir)) {
+    let cache_dir = dirs::cache_dir();
+    if !(path.starts_with(&home)
+        || path.starts_with(&tmp_user_dir)
+        || cache_dir.as_ref().map_or(false, |c| path.starts_with(c)))
+    {
         return Err(format!(
-            "matcher-artifact cache dir must be under {} or {}",
+            "matcher-artifact cache dir must be under {} or {}; configure with --matcher-cache <DIR>",
             home.display(),
             tmp_user_dir.display()
         ));
@@ -97,23 +134,41 @@ pub fn validate_matcher_artifact_cache_dir(path: &Path) -> std::result::Result<(
             format!("could not read matcher-artifact cache dir metadata: {error}")
         })?;
         if meta.file_type().is_symlink() {
-            return Err("matcher-artifact cache dir cannot be a symlink".to_owned());
+            return Err(format!(
+                "matcher-artifact cache dir cannot be a symlink; repair with `rm {}`",
+                path.display()
+            ));
         }
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
             if meta.uid() != uid {
-                return Err(
-                    "matcher-artifact cache directory is not owned by the current user".to_owned(),
-                );
+                return Err(format!(
+                    "matcher-artifact cache directory is not owned by the current user (uid {uid}); repair with `chown -R {uid} {}`",
+                    path.display()
+                ));
             }
-            // Refuse group/world-writable roots even when the operator pre-
-            // created the directory (we deliberately do not chmod those).
-            if meta.mode() & 0o022 != 0 {
-                return Err(
-                    "matcher-artifact cache directory must not be group- or world-writable"
-                        .to_owned(),
-                );
+            if meta.mode() & 0o077 != 0 {
+                if auto_tighten {
+                    use std::os::unix::fs::PermissionsExt;
+                    tracing::info!(
+                        path = %path.display(),
+                        "tightening loose permissions on default matcher-artifact cache directory to 0700"
+                    );
+                    if let Err(error) =
+                        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+                    {
+                        return Err(format!(
+                            "matcher-artifact cache directory is group- or world-accessible and tightening permissions failed: {error}; repair with `chmod 700 {}`",
+                            path.display()
+                        ));
+                    }
+                } else if meta.mode() & 0o022 != 0 {
+                    return Err(format!(
+                        "matcher-artifact cache directory must not be group- or world-writable; repair with `chmod 700 {}`",
+                        path.display()
+                    ));
+                }
             }
         }
     }
@@ -132,11 +187,66 @@ fn current_uid() -> u32 {
     }
 }
 
+/// Explicit reason why the MatcherArtifact cache was disabled.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MatcherArtifactCacheDisableReason {
+    /// Explicitly disabled by operator configuration (`--matcher-cache off` or `[system].matcher_cache = "off"`).
+    ConfiguredOff,
+    /// Disabled because `--lockdown` forbids loading unsigned on-disk artifacts.
+    LockdownActive,
+    /// No usable cache directory available or default path was unusable.
+    UnusableLocation,
+    /// The selected GPU policy has no fixed execution backend matcher representation.
+    NoBackendForGpuPolicy,
+}
+
+impl MatcherArtifactCacheDisableReason {
+    /// Every disable reason variant in stable wire order.
+    pub const ALL: &'static [Self] = &[
+        Self::ConfiguredOff,
+        Self::LockdownActive,
+        Self::UnusableLocation,
+        Self::NoBackendForGpuPolicy,
+    ];
+
+    /// Stable reason label used in logs, profiles, and operator reporting.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ConfiguredOff => "configured-off",
+            Self::LockdownActive => "lockdown-active",
+            Self::UnusableLocation => "unusable-location",
+            Self::NoBackendForGpuPolicy => "no-backend-for-gpu-policy",
+        }
+    }
+
+    /// Operator-visible explanation for why the cache was disabled.
+    #[must_use]
+    pub const fn operator_explanation(self) -> &'static str {
+        match self {
+            Self::ConfiguredOff => "MatcherArtifact cache explicitly disabled via --matcher-cache off",
+            Self::LockdownActive => "MatcherArtifact cache disabled because --lockdown forbids unsigned on-disk caches",
+            Self::UnusableLocation => "MatcherArtifact cache disabled because cache location is missing or unusable",
+            Self::NoBackendForGpuPolicy => "MatcherArtifact cache disabled because selected GPU policy has no fixed matcher backend",
+        }
+    }
+
+    /// Whether this disable reason represents an accidental disable (which requires an operator warning at default verbosity)
+    /// vs an intentional operator configuration.
+    #[must_use]
+    pub const fn is_accidental(self) -> bool {
+        matches!(self, Self::UnusableLocation)
+    }
+}
+
 /// Outcome of one MatcherArtifact cache consultation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MatcherArtifactCacheOutcome {
-    /// Cache disabled for this compile.
-    Disabled,
+    /// Cache disabled for this compile with an explicit reason.
+    Disabled {
+        reason: MatcherArtifactCacheDisableReason,
+    },
     /// Exact identity hit; eager construction was skipped.
     Hit,
     /// No usable entry; eager construction ran and a fresh entry was stored when possible.
@@ -152,10 +262,18 @@ impl MatcherArtifactCacheOutcome {
     /// Stable label for logs and profile text.
     pub const fn as_str(&self) -> &'static str {
         match self {
-            Self::Disabled => "disabled",
+            Self::Disabled { .. } => "disabled",
             Self::Hit => "hit",
             Self::Miss => "miss",
             Self::Invalidated { .. } => "invalidated",
+        }
+    }
+
+    /// Retrieve the disable reason if disabled.
+    pub const fn disable_reason(&self) -> Option<MatcherArtifactCacheDisableReason> {
+        match self {
+            Self::Disabled { reason } => Some(*reason),
+            _ => None,
         }
     }
 }
@@ -188,8 +306,29 @@ pub struct MatcherArtifactIdentity {
     /// Route-matcher section schema version.
     pub route_matcher_section_version: u16,
 }
-
 impl MatcherArtifactIdentity {
+    /// The compiled artifact class for persistent matcher artifacts.
+    pub const ARTIFACT_CLASS: keyhog_core::CompiledArtifactClass =
+        keyhog_core::CompiledArtifactClass::MatcherArtifact;
+
+    /// Return the compiled artifact class for this identity.
+    pub const fn artifact_class(&self) -> keyhog_core::CompiledArtifactClass {
+        keyhog_core::CompiledArtifactClass::MatcherArtifact
+    }
+
+    /// Derive the canonical compiled artifact identity representation.
+    pub fn canonical_identity(&self) -> keyhog_core::CompiledArtifactIdentity {
+        keyhog_core::CompiledArtifactIdentity {
+            artifact_class: keyhog_core::CompiledArtifactClass::MatcherArtifact,
+            binary_digest: self.binary_digest.clone(),
+            detector_digest: self.detector_corpus_digest.clone(),
+            config_digest: self.resolved_config_digest.clone(),
+            platform: self.target.clone(),
+            adapter_identity: (self.runtime_identity != "none")
+                .then(|| self.runtime_identity.clone()),
+        }
+    }
+
     /// Build the identity for one compile request.
     pub fn new(
         detector_corpus_digest: [u8; 32],
@@ -675,10 +814,10 @@ pub fn store_matcher_artifact(
     if sections.backend != expected_backend {
         return Err("matcher artifact backend does not match identity".to_owned());
     }
-    validate_matcher_artifact_cache_dir(cache_dir)?;
     // Only tighten mode on directories we create. Do not chmod a pre-existing
     // operator-supplied path (for example $HOME or $HOME/.cache).
     let created_cache_dir = !cache_dir.exists();
+    validate_and_tighten_matcher_artifact_cache_dir(cache_dir, created_cache_dir)?;
     std::fs::create_dir_all(cache_dir).map_err(|error| {
         format!(
             "cannot create matcher-artifact cache dir {}: {error}",
@@ -688,21 +827,21 @@ pub fn store_matcher_artifact(
     #[cfg(unix)]
     if created_cache_dir {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(cache_dir)
-            .map_err(|error| {
-                format!(
-                    "cannot stat matcher-artifact cache dir {}: {error}",
-                    cache_dir.display()
-                )
-            })?
-            .permissions();
-        perms.set_mode(0o700);
-        std::fs::set_permissions(cache_dir, perms).map_err(|error| {
-            format!(
-                "cannot tighten matcher-artifact cache dir {}: {error}",
-                cache_dir.display()
-            )
-        })?;
+        if created_cache_dir {
+            if let Ok(meta) = std::fs::symlink_metadata(cache_dir) {
+                // LAW10: best-effort permissions check on newly created cache dir; failure surfaced if chmod fails
+                if !meta.file_type().is_symlink() && (meta.permissions().mode() & 0o077 != 0) {
+                    std::fs::set_permissions(cache_dir, std::fs::Permissions::from_mode(0o700))
+                        .map_err(|error| {
+                            format!(
+                                "cannot tighten matcher-artifact cache dir {}: {error}; repair with `chmod 700 {}`",
+                                cache_dir.display(),
+                                cache_dir.display()
+                            )
+                        })?;
+                }
+            }
+        }
     }
     let path = cache_dir.join(identity.cache_filename());
     let identity_json = serde_json::to_vec(identity)
@@ -725,7 +864,8 @@ pub fn store_matcher_artifact(
         sections.suppression_policy.len(),
     )?;
 
-    atomic_write(&path, artifact_len, |tmp| {
+    write_matcher_artifact_atomically(&path, artifact_len, |tmp| {
+        use std::io::Write as _;
         tmp.write_all(MATCHER_ARTIFACT_MAGIC)?;
         tmp.write_all(&MATCHER_ARTIFACT_VERSION.to_le_bytes())?;
         tmp.write_all(&identity_len.to_le_bytes())?;
@@ -737,79 +877,59 @@ pub fn store_matcher_artifact(
         tmp.write_all(&regex_len.to_le_bytes())?;
         tmp.write_all(&sections.regex_programs)?;
         tmp.write_all(&suppression_len.to_le_bytes())?;
-        tmp.write_all(&sections.suppression_policy)
+        tmp.write_all(&sections.suppression_policy)?;
+        Ok(())
     })
     .map_err(|error| format!("cannot write matcher artifact {}: {error}", path.display()))?;
     evict_old_matcher_artifacts(cache_dir);
     Ok(())
 }
 
-const MATCHER_ARTIFACT_MAX_ENTRIES: usize = 8;
-
-fn evict_old_matcher_artifacts(cache_dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(cache_dir) else {
-        return;
-    };
-    let mut artifacts = Vec::with_capacity(MATCHER_ARTIFACT_MAX_ENTRIES + 1);
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("khm") {
-            continue;
-        }
-        let modified = entry
-            .metadata()
-            .and_then(|meta| meta.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-        artifacts.push((modified, path));
-        if artifacts.len() > MATCHER_ARTIFACT_MAX_ENTRIES {
-            let oldest = artifacts
-                .iter()
-                .enumerate()
-                .min_by_key(|(_, (modified, _))| *modified)
-                .map(|(index, _)| index)
-                .unwrap_or(0);
-            let (_, stale_path) = artifacts.swap_remove(oldest);
-            let _ = std::fs::remove_file(stale_path);
-        }
-    }
-}
-
-fn atomic_write(
+pub(crate) fn write_matcher_artifact_atomically<F>(
     path: &Path,
     expected_len: usize,
-    write_body: impl FnOnce(&mut tempfile::NamedTempFile) -> std::io::Result<()>,
-) -> std::io::Result<()> {
-    let parent = path
+    writer: F,
+) -> std::io::Result<()>
+where
+    F: FnOnce(&mut tempfile::NamedTempFile) -> std::io::Result<()>,
+{
+    if path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
-        .ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "matcher artifact path has no parent directory",
-            )
-        })?;
-    std::fs::create_dir_all(parent)?;
-    // Same-directory tempfile + rename (parity with HS shard cache). Keeps
-    // publish atomic on the common `/tmp` vs `$HOME` layout. In-flight
-    // tempfile names are not trusted by lockdown's compiled-pattern filename
-    // check, so a concurrent `--lockdown` audit still fails closed rather than
-    // treating a partial graph as clean.
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-    write_body(&mut tmp)?;
-    let actual_len = usize::try_from(tmp.as_file().metadata()?.len()).map_err(|_| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "matcher artifact length exceeds usize",
-        )
-    })?;
-    if actual_len != expected_len {
+        .is_none()
+    {
         return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("matcher artifact writer produced {actual_len} bytes, expected {expected_len}"),
+            std::io::ErrorKind::InvalidInput,
+            "matcher artifact path must have a parent directory",
         ));
     }
-    tmp.as_file().sync_all()?;
-    tmp.persist(path).map(|_| ()).map_err(|error| error.error)
+    keyhog_core::state_file::write_atomically_with_writer(path, |tmp| {
+        writer(tmp)?;
+        let actual_len = usize::try_from(tmp.as_file().metadata()?.len()).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "matcher artifact length exceeds usize",
+            )
+        })?;
+        if actual_len != expected_len {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "matcher artifact writer produced {actual_len} bytes, expected {expected_len}"
+                ),
+            ));
+        }
+        Ok(())
+    })
+}
+
+fn evict_old_matcher_artifacts(cache_dir: &Path) {
+    let policy = keyhog_core::CacheKind::MatcherArtifacts.default_policy();
+    crate::cache_eviction::evict_cache_dir_with_policy(
+        cache_dir,
+        keyhog_core::CacheKind::MatcherArtifacts,
+        policy,
+    );
 }
 
 fn record_outcome(outcome: &MatcherArtifactCacheOutcome) {
@@ -822,7 +942,7 @@ fn record_outcome(outcome: &MatcherArtifactCacheOutcome) {
         }
         // Intentionally disabled: do not record a miss for a cache that was never
         // consulted, so --profile does not look like a warm-cache failure.
-        MatcherArtifactCacheOutcome::Disabled => {}
+        MatcherArtifactCacheOutcome::Disabled { .. } => {}
     }
 }
 
@@ -846,9 +966,10 @@ pub fn compile_shared_with_matcher_artifact_cache(
     let cache_dir = configured_matcher_artifact_cache_dir();
     let Some(backend) = matcher_backend_for_gpu_policy(gpu_policy) else {
         return compile_without_matcher_artifact_cache(
-            normalize_detectors_for_matcher_compile(detectors),
+            detectors,
             gpu_policy,
             tuning_config,
+            MatcherArtifactCacheDisableReason::NoBackendForGpuPolicy,
         );
     };
 
@@ -857,18 +978,23 @@ pub fn compile_shared_with_matcher_artifact_cache(
     // scanner assembly ordering.
     if cache_dir.is_none() {
         return compile_without_matcher_artifact_cache(
-            normalize_detectors_for_matcher_compile(detectors),
+            detectors,
             gpu_policy,
             tuning_config,
+            configured_matcher_artifact_cache_disable_reason(),
         );
     }
-
     // Identity keys on the canonical detector-IR digest (same digest packs use).
     // Computing it requires IR normalization; the avoided cost on hit is the
     // route-matcher section compile + eager CompileState construction. The
     // normalized detector list is also required to hydrate companions against
     // the live corpus, so this work is not optional bookkeeping.
-    let ir = match CanonicalDetectorExecutionIr::compile(detectors.as_ref()) {
+    let ir_result = if CanonicalDetectorExecutionIr::is_embedded_corpus(detectors.as_ref()) {
+        CanonicalDetectorExecutionIr::embedded().map(|ir| ir.clone())
+    } else {
+        CanonicalDetectorExecutionIr::compile(detectors.as_ref())
+    };
+    let ir = match ir_result {
         Ok(ir) => ir,
         Err(error) => {
             tracing::warn!(
@@ -908,9 +1034,13 @@ pub fn compile_shared_with_matcher_artifact_cache(
     };
 
     let Some(cache_dir) = cache_dir.as_ref() else {
-        return compile_without_matcher_artifact_cache(sorted, gpu_policy, tuning_config);
+        return compile_without_matcher_artifact_cache(
+            sorted,
+            gpu_policy,
+            tuning_config,
+            configured_matcher_artifact_cache_disable_reason(),
+        );
     };
-
     let path = cache_dir.join(identity.cache_filename());
     // When a structurally intact entry is not reusable for this live corpus
     // (hydrate/compile failure after a successful load), do not immediately
@@ -1088,15 +1218,26 @@ fn compile_without_matcher_artifact_cache(
     detectors: Arc<[keyhog_core::DetectorSpec]>,
     gpu_policy: GpuInitPolicy,
     tuning_config: &ScannerTuningConfig,
+    reason: MatcherArtifactCacheDisableReason,
 ) -> Result<(CompiledScanner, MatcherArtifactCacheOutcome)> {
+    let sorted = if CanonicalDetectorExecutionIr::is_embedded_corpus(detectors.as_ref()) {
+        match CanonicalDetectorExecutionIr::embedded() {
+            Ok(ir) => Arc::from(ir.detectors().to_vec()),
+            Err(_) => normalize_detectors_for_matcher_compile(detectors), // LAW10: fallback normalization if canonical IR compilation fails; recall-preserving
+        }
+    } else {
+        match CanonicalDetectorExecutionIr::compile(detectors.as_ref()) {
+            Ok(ir) => Arc::from(ir.detectors().to_vec()),
+            Err(_) => normalize_detectors_for_matcher_compile(detectors), // LAW10: fallback normalization if canonical IR compilation fails; recall-preserving
+        }
+    };
     compile_with_matcher_artifact_outcome(
-        detectors,
+        sorted,
         gpu_policy,
         tuning_config,
-        MatcherArtifactCacheOutcome::Disabled,
+        MatcherArtifactCacheOutcome::Disabled { reason },
     )
 }
-
 fn compile_with_matcher_artifact_outcome(
     detectors: Arc<[keyhog_core::DetectorSpec]>,
     gpu_policy: GpuInitPolicy,

@@ -213,7 +213,9 @@ fn validate_semantics(findings: usize, exit_code: u8, status: &str) -> Result<()
     match (exit_code, status, findings) {
         (0 | 3, "success" | "complete_after_recovery" | "partial", _) => Ok(()),
         (1 | 10, "success" | "complete_after_recovery" | "partial", 1..) => Ok(()),
-        (11 | 13, "partial", _) => Ok(()),
+        // A fail-closed scan reports `failed` when a source failed outright and
+        // `partial` when coverage merely has gaps (row 163). Both are valid here.
+        (11 | 13, "partial" | "failed", _) => Ok(()),
         _ => bail!("Action receipt count/status/exit semantics contradict: findings={findings}, status={status}, exit={exit_code}"),
     }
 }

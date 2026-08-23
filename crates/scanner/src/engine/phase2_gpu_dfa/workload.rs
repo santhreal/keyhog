@@ -16,6 +16,7 @@ pub(crate) struct Phase2GpuDfaAdmission {
     pub(crate) candidate_phase2_indices: Vec<u32>,
 }
 
+#[derive(Clone, Debug)]
 pub(in crate::engine) enum Phase2GpuAdmissionWorkload<'a> {
     Empty,
     Full {
@@ -26,6 +27,12 @@ pub(in crate::engine) enum Phase2GpuAdmissionWorkload<'a> {
         chunks: Vec<&'a keyhog_core::Chunk>,
         full_len: usize,
     },
+}
+impl<'a> Phase2GpuAdmissionWorkload<'a> {
+    #[inline]
+    pub(in crate::engine) fn is_empty(&self) -> bool {
+        matches!(self, Self::Empty)
+    }
 }
 
 pub(in crate::engine) fn validate_phase2_gpu_trigger_rows(

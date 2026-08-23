@@ -1473,6 +1473,48 @@ positive_fixture!(
     r#"ansible-tower-token.txt"#
 );
 contract_schema!(
+    anthropic_admin_api_key_schema,
+    "anthropic-admin-api-key",
+    "anthropic",
+    "critical",
+    None
+);
+positive_fixture!(
+    anthropic_admin_api_key_positive_0,
+    "anthropic-admin-api-key",
+    r#"sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6wW8kL2mP4nQ6rT8yAA"#,
+    r#"sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6wW8kL2mP4nQ6rT8yAA"#,
+    r#"anthropic-admin-api-key.txt"#
+);
+positive_fixture!(
+    anthropic_admin_api_key_positive_1,
+    "anthropic-admin-api-key",
+    r#"ANTHROPIC_ADMIN_KEY="sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6wW8kL2mP4nQ6rT8yAA""#,
+    r#"sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6wW8kL2mP4nQ6rT8yAA"#,
+    r#"anthropic-admin-api-key.txt"#
+);
+negative_fixture!(
+    anthropic_admin_api_key_negative_0,
+    "anthropic-admin-api-key",
+    r#"sk-ant-admin01-short"#,
+    r#"anthropic-admin-api-key.txt"#,
+    false
+);
+negative_fixture!(
+    anthropic_admin_api_key_negative_1,
+    "anthropic-admin-api-key",
+    r#"sk-ant-admin01-abc123xyz-456de-klMnopqrstuvwx-3456yza789bcde-1234fghijklmnopAA"#,
+    r#"anthropic-admin-api-key.txt"#,
+    false
+);
+positive_fixture!(
+    anthropic_admin_api_key_evasion_0,
+    "anthropic-admin-api-key",
+    r#"x-api-key: sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6wW8kL2mP4nQ6rT8yAA"#,
+    r#"sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6wW8kL2mP4nQ6rT8yAA"#,
+    r#"anthropic-admin-api-key.txt"#
+);
+contract_schema!(
     anthropic_api_key_schema,
     "anthropic-api-key",
     "anthropic",
@@ -2549,6 +2591,13 @@ positive_fixture!(
     "aws-bedrock-api-key",
     r#"AWS_BEARER_TOKEN_BEDROCK="ABSKQmVkcm9ja0FQSUtleSy2J0fajDUXD1efoRCtqKODGGBi8UWr7UJsq2tkhFhx8ZEDEd9hnKHivse0YHShMdeCAbPEOXOxyhkg5cqNGHA1grwAyKC3Y8HDD62wLdl37iKN""#,
     r#"ABSKQmVkcm9ja0FQSUtleSy2J0fajDUXD1efoRCtqKODGGBi8UWr7UJsq2tkhFhx8ZEDEd9hnKHivse0YHShMdeCAbPEOXOxyhkg5cqNGHA1grwAyKC3Y8HDD62wLdl37iKN"#,
+    r#"aws-bedrock-api-key.txt"#
+);
+positive_fixture!(
+    aws_bedrock_api_key_positive_2,
+    "aws-bedrock-api-key",
+    r#"ABSKh7ZsBnijAk9geoCGCQwuW0fF3cSLpXjdsv3plhdpxN9h8BvwE49uyiah+iO+Mkyi0zZDD6Msw7UqIiburZMMV71mI+vrHrwB6Bg6nYuBt8LvlxpdqsF/eg=="#,
+    r#"ABSKh7ZsBnijAk9geoCGCQwuW0fF3cSLpXjdsv3plhdpxN9h8BvwE49uyiah+iO+Mkyi0zZDD6Msw7UqIiburZMMV71mI+vrHrwB6Bg6nYuBt8LvlxpdqsF/eg=="#,
     r#"aws-bedrock-api-key.txt"#
 );
 negative_fixture!(
@@ -4126,6 +4175,48 @@ positive_fixture!(
     r#"BITBUCKET_API_TOKEN: "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5""#,
     r#"Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"#,
     r#"bitbucket-pipeline-variable.txt"#
+);
+contract_schema!(
+    bitly_access_token_schema,
+    "bitly-access-token",
+    "bitly",
+    "high",
+    None
+);
+positive_fixture!(
+    bitly_access_token_positive_0,
+    "bitly-access-token",
+    r#"bitly_token = "20e9817b9c5ddde1b0cec7622bfc557dbc823791""#,
+    r#"20e9817b9c5ddde1b0cec7622bfc557dbc823791"#,
+    r#"bitly-access-token.txt"#
+);
+positive_fixture!(
+    bitly_access_token_positive_1,
+    "bitly-access-token",
+    r#"BITLY_ACCESS_TOKEN=20e9817b9c5ddde1b0cec7622bfc557dbc823791"#,
+    r#"20e9817b9c5ddde1b0cec7622bfc557dbc823791"#,
+    r#"bitly-access-token.txt"#
+);
+negative_fixture!(
+    bitly_access_token_negative_0,
+    "bitly-access-token",
+    r#"bitly_token = "short""#,
+    r#"bitly-access-token.txt"#,
+    false
+);
+negative_fixture!(
+    bitly_access_token_negative_1,
+    "bitly-access-token",
+    r#"bitly_token = "YOUR_BITLY_TOKEN_HERE""#,
+    r#"bitly-access-token.txt"#,
+    false
+);
+positive_fixture!(
+    bitly_access_token_evasion_0,
+    "bitly-access-token",
+    r##"# bitly_token = 20e9817b9c5ddde1b0cec7622bfc557dbc823791"##,
+    r#"20e9817b9c5ddde1b0cec7622bfc557dbc823791"#,
+    r#"bitly-access-token.txt"#
 );
 contract_schema!(
     bitquery_api_key_schema,
@@ -6959,6 +7050,48 @@ positive_fixture!(
     r#"comet-ml-api-key.txt"#
 );
 contract_schema!(
+    configcat_sdk_key_schema,
+    "configcat-sdk-key",
+    "configcat",
+    "high",
+    None
+);
+positive_fixture!(
+    configcat_sdk_key_positive_0,
+    "configcat-sdk-key",
+    r#"CONFIGCAT_SDK_KEY="Aa1Bb2Cc3Dd4Ee5Ff6Gg7H/aA1bB2cC3dD4eE5fF6gG7h""#,
+    r#"Aa1Bb2Cc3Dd4Ee5Ff6Gg7H/aA1bB2cC3dD4eE5fF6gG7h"#,
+    r#"configcat-sdk-key.txt"#
+);
+positive_fixture!(
+    configcat_sdk_key_positive_1,
+    "configcat-sdk-key",
+    r#"configcat-sdk-1/Aa1Bb2Cc3Dd4Ee5Ff6Gg7H/aA1bB2cC3dD4eE5fF6gG7h"#,
+    r#"configcat-sdk-1/Aa1Bb2Cc3Dd4Ee5Ff6Gg7H/aA1bB2cC3dD4eE5fF6gG7h"#,
+    r#"configcat-sdk-key.txt"#
+);
+negative_fixture!(
+    configcat_sdk_key_negative_0,
+    "configcat-sdk-key",
+    r#"CONFIGCAT_SDK_KEY=short"#,
+    r#"configcat-sdk-key.txt"#,
+    false
+);
+negative_fixture!(
+    configcat_sdk_key_negative_1,
+    "configcat-sdk-key",
+    r#"CONFIGCAT_SDK_KEY=YOUR_CONFIGCAT_SDK_KEY_HERE"#,
+    r#"configcat-sdk-key.txt"#,
+    false
+);
+positive_fixture!(
+    configcat_sdk_key_evasion_0,
+    "configcat-sdk-key",
+    r##"# CONFIGCAT_SDK_KEY=Aa1Bb2Cc3Dd4Ee5Ff6Gg7H/aA1bB2cC3dD4eE5fF6gG7h"##,
+    r#"Aa1Bb2Cc3Dd4Ee5Ff6Gg7H/aA1bB2cC3dD4eE5fF6gG7h"#,
+    r#"configcat-sdk-key.txt"#
+);
+contract_schema!(
     confluent_cloud_api_key_schema,
     "confluent-cloud-api-key",
     "confluent-cloud",
@@ -7588,6 +7721,48 @@ positive_fixture!(
     r#"cryptocompare_api_key="I0KlQV3zt8j3ItZqVtLrUbpqepvgWw1r""#,
     r#"I0KlQV3zt8j3ItZqVtLrUbpqepvgWw1r"#,
     r#"cryptocompare-api-key.txt"#
+);
+contract_schema!(
+    curl_auth_user_schema,
+    "curl-auth-user",
+    "curl",
+    "high",
+    None
+);
+positive_fixture!(
+    curl_auth_user_positive_0,
+    "curl-auth-user",
+    r#"curl -sw '%{http_code}' -X POST --user 'johns:h0pk1ns~21s' $GItHUB_API_URL/$GIT_COMMIT --data"#,
+    r#"johns:h0pk1ns~21s"#,
+    r#"curl-auth-user.txt"#
+);
+positive_fixture!(
+    curl_auth_user_positive_1,
+    "curl-auth-user",
+    r##"curl -s -v --user "j.smith:dB2yF6@qL9vZm1P#4J" "https://api.contoso.org/user/me""##,
+    r##"j.smith:dB2yF6@qL9vZm1P#4J"##,
+    r#"curl-auth-user.txt"#
+);
+negative_fixture!(
+    curl_auth_user_negative_0,
+    "curl-auth-user",
+    r#"curl -i -u 'test:test'"#,
+    r#"curl-auth-user.txt"#,
+    false
+);
+negative_fixture!(
+    curl_auth_user_negative_1,
+    "curl-auth-user",
+    r#"curl -u "$USER:$PASSWORD""#,
+    r#"curl-auth-user.txt"#,
+    false
+);
+positive_fixture!(
+    curl_auth_user_evasion_0,
+    "curl-auth-user",
+    r##"# curl -u 'deployer:k3yH0gP@ssw0rd!2026' https://api.example.com"##,
+    r#"deployer:k3yH0gP@ssw0rd!2026"#,
+    r#"curl-auth-user.txt"#
 );
 contract_schema!(
     cursor_api_key_schema,
@@ -8695,6 +8870,48 @@ positive_fixture!(
     r#"https://discord.com/api/webhooks/12345678901234567/IO0l8rdbq6tdAdwgnLsh3gU6UBHE5IxcSHBos0IwhMeZvisjRREI6Flk1z6yxaxa"#,
     r#"https://discord.com/api/webhooks/12345678901234567/IO0l8rdbq6tdAdwgnLsh3gU6UBHE5IxcSHBos0IwhMeZvisjRREI6Flk1z6yxaxa"#,
     r#"discord-webhook-credentials.txt"#
+);
+contract_schema!(
+    disqus_api_key_schema,
+    "disqus-api-key",
+    "disqus",
+    "high",
+    None
+);
+positive_fixture!(
+    disqus_api_key_positive_0,
+    "disqus-api-key",
+    r#"disqus_secret_key = "jK5HbxY2QrPn7vMNL8tADcF3mWg4kXqR9sBdZyE1hVuT6fGwJpC0nI9vUxY2aM3K""#,
+    r#"jK5HbxY2QrPn7vMNL8tADcF3mWg4kXqR9sBdZyE1hVuT6fGwJpC0nI9vUxY2aM3K"#,
+    r#"disqus-api-key.txt"#
+);
+positive_fixture!(
+    disqus_api_key_positive_1,
+    "disqus-api-key",
+    r#"DISQUS_PRIVATE_TOKEN=Nh7vRf3mKp9wXc5tJq2YbL8sAg4dB6TzWeUx1nGQjCkPyDHVME0aI1FSx2Z5vY3n"#,
+    r#"Nh7vRf3mKp9wXc5tJq2YbL8sAg4dB6TzWeUx1nGQjCkPyDHVME0aI1FSx2Z5vY3n"#,
+    r#"disqus-api-key.txt"#
+);
+negative_fixture!(
+    disqus_api_key_negative_0,
+    "disqus-api-key",
+    r#"disqus_secret_key=short"#,
+    r#"disqus-api-key.txt"#,
+    false
+);
+negative_fixture!(
+    disqus_api_key_negative_1,
+    "disqus-api-key",
+    r#"disqus_secret_key=YOUR_DISQUS_SECRET_KEY_HERE"#,
+    r#"disqus-api-key.txt"#,
+    false
+);
+positive_fixture!(
+    disqus_api_key_evasion_0,
+    "disqus-api-key",
+    r##"# disqus_secret_key = jK5HbxY2QrPn7vMNL8tADcF3mWg4kXqR9sBdZyE1hVuT6fGwJpC0nI9vUxY2aM3K"##,
+    r#"jK5HbxY2QrPn7vMNL8tADcF3mWg4kXqR9sBdZyE1hVuT6fGwJpC0nI9vUxY2aM3K"#,
+    r#"disqus-api-key.txt"#
 );
 contract_schema!(
     dnsimple_api_token_schema,
@@ -11298,6 +11515,41 @@ positive_fixture!(
     r#"x-api-key: "ufnlbbavawsdeecn""#,
     r#"ufnlbbavawsdeecn"#,
     r#"generic-api-key.txt"#
+);
+contract_schema!(
+    generic_high_entropy_string_schema,
+    "generic-high-entropy-string",
+    "generic",
+    "medium",
+    None
+);
+positive_fixture!(
+    generic_high_entropy_string_positive_0,
+    "generic-high-entropy-string",
+    r#"api_secret=ufnlbbavawsdeecn"#,
+    r#"ufnlbbavawsdeecn"#,
+    r#"generic-high-entropy-string.txt"#
+);
+positive_fixture!(
+    generic_high_entropy_string_positive_1,
+    "generic-high-entropy-string",
+    r#"auth_secret = "kdheufnzbwqmaslr""#,
+    r#"kdheufnzbwqmaslr"#,
+    r#"generic-high-entropy-string.txt"#
+);
+negative_fixture!(
+    generic_high_entropy_string_negative_0,
+    "generic-high-entropy-string",
+    r#"api_secret=example"#,
+    r#"generic-high-entropy-string.txt"#,
+    false
+);
+positive_fixture!(
+    generic_high_entropy_string_evasion_0,
+    "generic-high-entropy-string",
+    r#"master_secret: "ufnlbbavawsdeecn""#,
+    r#"ufnlbbavawsdeecn"#,
+    r#"generic-high-entropy-string.txt"#
 );
 contract_schema!(
     generic_keyword_secret_schema,
@@ -16585,6 +16837,48 @@ positive_fixture!(
     r#"{"jumio_api_token":"H_ZM9TBrKrmGsNmjQ8mT"}"#,
     r#"H_ZM9TBrKrmGsNmjQ8mT"#,
     r#"jumio-api-credentials.txt"#
+);
+contract_schema!(
+    jumpcloud_api_key_schema,
+    "jumpcloud-api-key",
+    "jumpcloud",
+    "critical",
+    None
+);
+positive_fixture!(
+    jumpcloud_api_key_positive_0,
+    "jumpcloud-api-key",
+    r#"jumpcloud_api_key = "1a2b3c4d5e6f7g8h9i0j1a2b3c4d5e6f7g8h9i0j""#,
+    r#"1a2b3c4d5e6f7g8h9i0j1a2b3c4d5e6f7g8h9i0j"#,
+    r#"jumpcloud-api-key.txt"#
+);
+positive_fixture!(
+    jumpcloud_api_key_positive_1,
+    "jumpcloud-api-key",
+    r#"JUMPCLOUD_SECRET=k9l8m7n6o5p4q3r2s1t0k9l8m7n6o5p4q3r2s1t0"#,
+    r#"k9l8m7n6o5p4q3r2s1t0k9l8m7n6o5p4q3r2s1t0"#,
+    r#"jumpcloud-api-key.txt"#
+);
+negative_fixture!(
+    jumpcloud_api_key_negative_0,
+    "jumpcloud-api-key",
+    r#"jumpcloud_api_key=short"#,
+    r#"jumpcloud-api-key.txt"#,
+    false
+);
+negative_fixture!(
+    jumpcloud_api_key_negative_1,
+    "jumpcloud-api-key",
+    r#"jumpcloud_api_key=YOUR_JUMPCLOUD_API_KEY_HERE"#,
+    r#"jumpcloud-api-key.txt"#,
+    false
+);
+positive_fixture!(
+    jumpcloud_api_key_evasion_0,
+    "jumpcloud-api-key",
+    r##"# jumpcloud_api_key=1a2b3c4d5e6f7g8h9i0j1a2b3c4d5e6f7g8h9i0j"##,
+    r#"1a2b3c4d5e6f7g8h9i0j1a2b3c4d5e6f7g8h9i0j"#,
+    r#"jumpcloud-api-key.txt"#
 );
 contract_schema!(
     jw_player_api_credentials_schema,
@@ -29322,6 +29616,48 @@ positive_fixture!(
     r#"shutterstock-api-key.txt"#
 );
 contract_schema!(
+    sidekiq_secret_schema,
+    "sidekiq-secret",
+    "sidekiq",
+    "high",
+    None
+);
+positive_fixture!(
+    sidekiq_secret_positive_0,
+    "sidekiq-secret",
+    r#"export BUNDLE_ENTERPRISE__CONTRIBSYS__COM=cafebabe:deadbeef"#,
+    r#"cafebabe:deadbeef"#,
+    r#"sidekiq-secret.txt"#
+);
+positive_fixture!(
+    sidekiq_secret_positive_1,
+    "sidekiq-secret",
+    r#"BUNDLE_GEMS__CONTRIBSYS__COM: "cafebabe:deadbeef""#,
+    r#"cafebabe:deadbeef"#,
+    r#"sidekiq-secret.txt"#
+);
+negative_fixture!(
+    sidekiq_secret_negative_0,
+    "sidekiq-secret",
+    r#"export BUNDLE_ENTERPRISE__CONTRIBSYS__COM=short"#,
+    r#"sidekiq-secret.txt"#,
+    false
+);
+negative_fixture!(
+    sidekiq_secret_negative_1,
+    "sidekiq-secret",
+    r#"BUNDLE_ENTERPRISE__CONTRIBSYS__COM=YOUR_KEY_HERE"#,
+    r#"sidekiq-secret.txt"#,
+    false
+);
+positive_fixture!(
+    sidekiq_secret_evasion_0,
+    "sidekiq-secret",
+    r##"# export BUNDLE_ENTERPRISE__CONTRIBSYS__COM=cafebabe:deadbeef"##,
+    r#"cafebabe:deadbeef"#,
+    r#"sidekiq-secret.txt"#
+);
+contract_schema!(
     sigfox_api_credentials_schema,
     "sigfox-api-credentials",
     "sigfox",
@@ -32050,15 +32386,15 @@ contract_schema!(
 positive_fixture!(
     supabase_anon_key_positive_0,
     "supabase-anon-key",
-    r#"SUPABASE_ANON_KEY=eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"#,
-    r#"eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"#,
+    r#"SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
+    r#"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
     r#"supabase-anon-key.txt"#
 );
 positive_fixture!(
     supabase_anon_key_positive_1,
     "supabase-anon-key",
-    r#"SUPABASE_ANON_KEY="eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ""#,
-    r#"eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"#,
+    r#"SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU""#,
+    r#"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
     r#"supabase-anon-key.txt"#
 );
 negative_fixture!(
@@ -32078,8 +32414,8 @@ negative_fixture!(
 positive_fixture!(
     supabase_anon_key_evasion_0,
     "supabase-anon-key",
-    r#"{"secret":"eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"}"#,
-    r#"eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ"#,
+    r#"{"anon key":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"}"#,
+    r#"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MDAwMDAwMDB9.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
     r#"supabase-anon-key.txt"#
 );
 contract_schema!(
@@ -32239,15 +32575,15 @@ contract_schema!(
 positive_fixture!(
     supabase_service_key_positive_0,
     "supabase-service-key",
-    r#"SUPABASE_SERVICE_KEY=eyJ4pWJ7Z0IaxtZTdfU2cFSSw5znAxWtf3-HfoXJeFD0bcc5zE1smwbmdPqpQ1gPjHsI7kOxEA5WbH8PikNzX8o0Re5vz1Cq4.eyJZc7Ao-7s5EiTMGSg_pwIMw4eX40ezGTXRM5kVCfTRD27wyWR53Gr2l.xpT0SzBM-TakzTkMmGBf31e6nc03sD7OX0-GwVjAshVQ_HJGhkFUMSAN3Aa8SRX"#,
-    r#"eyJ4pWJ7Z0IaxtZTdfU2cFSSw5znAxWtf3-HfoXJeFD0bcc5zE1smwbmdPqpQ1gPjHsI7kOxEA5WbH8PikNzX8o0Re5vz1Cq4.eyJZc7Ao-7s5EiTMGSg_pwIMw4eX40ezGTXRM5kVCfTRD27wyWR53Gr2l.xpT0SzBM-TakzTkMmGBf31e6nc03sD7OX0-GwVjAshVQ_HJGhkFUMSAN3Aa8SRX"#,
+    r#"SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE2MDAwMDAwMDAsImV4cCI6MTkwMDAwMDAwMH0.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
+    r#"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE2MDAwMDAwMDAsImV4cCI6MTkwMDAwMDAwMH0.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
     r#"supabase-service-key.txt"#
 );
 positive_fixture!(
     supabase_service_key_positive_1,
     "supabase-service-key",
-    r#"SUPABASE_SERVICE_KEY="eyJ4pWJ7Z0IaxtZTdfU2cFSSw5znAxWtf3-HfoXJeFD0bcc5zE1smwbmdPqpQ1gPjHsI7kOxEA5WbH8PikNzX8o0Re5vz1Cq4.eyJZc7Ao-7s5EiTMGSg_pwIMw4eX40ezGTXRM5kVCfTRD27wyWR53Gr2l.xpT0SzBM-TakzTkMmGBf31e6nc03sD7OX0-GwVjAshVQ_HJGhkFUMSAN3Aa8SRX""#,
-    r#"eyJ4pWJ7Z0IaxtZTdfU2cFSSw5znAxWtf3-HfoXJeFD0bcc5zE1smwbmdPqpQ1gPjHsI7kOxEA5WbH8PikNzX8o0Re5vz1Cq4.eyJZc7Ao-7s5EiTMGSg_pwIMw4eX40ezGTXRM5kVCfTRD27wyWR53Gr2l.xpT0SzBM-TakzTkMmGBf31e6nc03sD7OX0-GwVjAshVQ_HJGhkFUMSAN3Aa8SRX"#,
+    r#"SUPABASE_SERVICE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE2MDAwMDAwMDAsImV4cCI6MTkwMDAwMDAwMH0.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU""#,
+    r#"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE2MDAwMDAwMDAsImV4cCI6MTkwMDAwMDAwMH0.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
     r#"supabase-service-key.txt"#
 );
 negative_fixture!(
@@ -32267,8 +32603,8 @@ negative_fixture!(
 positive_fixture!(
     supabase_service_key_evasion_0,
     "supabase-service-key",
-    r#"export SUPABASE_SERVICE_KEY=eyJ4pWJ7Z0IaxtZTdfU2cFSSw5znAxWtf3-HfoXJeFD0bcc5zE1smwbmdPqpQ1gPjHsI7kOxEA5WbH8PikNzX8o0Re5vz1Cq4.eyJZc7Ao-7s5EiTMGSg_pwIMw4eX40ezGTXRM5kVCfTRD27wyWR53Gr2l.xpT0SzBM-TakzTkMmGBf31e6nc03sD7OX0-GwVjAshVQ_HJGhkFUMSAN3Aa8SRX"#,
-    r#"eyJ4pWJ7Z0IaxtZTdfU2cFSSw5znAxWtf3-HfoXJeFD0bcc5zE1smwbmdPqpQ1gPjHsI7kOxEA5WbH8PikNzX8o0Re5vz1Cq4.eyJZc7Ao-7s5EiTMGSg_pwIMw4eX40ezGTXRM5kVCfTRD27wyWR53Gr2l.xpT0SzBM-TakzTkMmGBf31e6nc03sD7OX0-GwVjAshVQ_HJGhkFUMSAN3Aa8SRX"#,
+    r#"export SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE2MDAwMDAwMDAsImV4cCI6MTkwMDAwMDAwMH0.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
+    r#"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE2MDAwMDAwMDAsImV4cCI6MTkwMDAwMDAwMH0.djFfc2lnbmF0dXJlX2hhc2hfYnl0ZXNfZm9yX3Rlc3RpbmdfcHVycG9zZXNfMTIzNDU"#,
     r#"supabase-service-key.txt"#
 );
 contract_schema!(

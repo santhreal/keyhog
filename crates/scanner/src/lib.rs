@@ -79,12 +79,14 @@ pub(crate) mod assignment_keywords;
 pub mod aws;
 /// Secret-safe candidate producer and pattern provenance.
 pub(crate) mod candidate_provenance;
+/// Detector compilation into high-performance matching structures.
+pub mod capability_ledger;
 /// Service-specific credential checksum validation (GitHub, npm, Slack, etc.).
 pub mod checksum;
 /// Candidate-bounded source-code semantic roles.
 pub(crate) mod code_semantics;
 /// Compiled scanner construction and lifecycle implementation.
-mod compiled_scanner;
+pub mod compiled_scanner;
 /// Detector compilation into high-performance matching structures.
 pub(crate) mod compiler;
 /// Heuristic and ML-based confidence scoring for candidate matches.
@@ -114,7 +116,7 @@ pub(crate) mod detector_plan;
 /// Candidate-bounded documentation, roff, and shell semantic roles.
 pub(crate) mod documentation_semantics;
 /// Core scan execution engine.
-pub(crate) mod engine;
+pub mod engine;
 /// Shannon entropy analysis for secret detection.
 pub mod entropy;
 /// Tier-B per-family generic-detector entropy-floor calibration table.
@@ -133,7 +135,7 @@ pub mod gpu;
 /// Scanner GPU batch input policy.
 pub(crate) mod gpu_input_budget;
 /// GPU literal artifact compilation from the typed detector plan.
-pub(crate) mod gpu_literal_artifacts;
+pub mod gpu_literal_artifacts;
 /// Persistent GPU matcher artifact cache.
 pub(crate) mod gpu_matcher_cache;
 /// Hardware capability detection and backend selection.
@@ -170,7 +172,7 @@ pub(crate) mod segment_attribution;
 /// strings (file paths, commit SHAs).
 pub(crate) mod static_intern;
 /// Shared types for the scanner engine.
-pub(crate) mod types;
+pub mod types;
 
 // Internal modules.
 pub(crate) mod adjudicate;
@@ -191,7 +193,7 @@ pub(crate) mod homoglyph;
 /// JWT structural validation and anomaly detection.
 pub mod jwt;
 /// Internal scan pipeline orchestration.
-pub(crate) mod pipeline;
+pub mod pipeline;
 /// Prefix trie for efficient keyword propagation.
 pub(crate) mod prefix_trie;
 pub(crate) mod probabilistic_gate;
@@ -261,6 +263,7 @@ pub(crate) mod simd;
 #[cfg(feature = "simdsieve")]
 mod simdsieve_prefilter;
 
+pub mod cache_eviction;
 pub(crate) mod shared_regexes;
 
 pub use api::*;
@@ -291,11 +294,32 @@ pub fn set_matcher_artifact_cache_dir(path: Option<std::path::PathBuf>) {
     matcher_artifact_cache::set_matcher_artifact_cache_dir(path);
 }
 
+/// Configure the MatcherArtifact cache directory and explicit disable reason for this process.
+pub fn set_matcher_artifact_cache_state(
+    path: Option<std::path::PathBuf>,
+    disable_reason: MatcherArtifactCacheDisableReason,
+) {
+    matcher_artifact_cache::set_matcher_artifact_cache_state(path, disable_reason);
+}
+
 /// Validate an explicit MatcherArtifact cache directory without compiling.
 pub fn validate_matcher_artifact_cache_dir(
     path: &std::path::Path,
 ) -> std::result::Result<(), String> {
     matcher_artifact_cache::validate_matcher_artifact_cache_dir(path)
+}
+pub use cache_eviction::{
+    collect_stale_lock_files, evict_cache_dir_with_policy, reconcile_all_cache_kinds,
+    EvictionReport,
+};
+pub use matcher_artifact_cache::MATCHER_ARTIFACT_MAX_ENTRIES;
+
+/// Validate a MatcherArtifact cache directory with optional auto-tightening for default locations.
+pub fn validate_and_tighten_matcher_artifact_cache_dir(
+    path: &std::path::Path,
+    auto_tighten: bool,
+) -> std::result::Result<(), String> {
+    matcher_artifact_cache::validate_and_tighten_matcher_artifact_cache_dir(path, auto_tighten)
 }
 
 /// True when `detector_id` names the pure-entropy fallback family (`"entropy"`

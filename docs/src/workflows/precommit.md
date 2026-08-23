@@ -54,7 +54,7 @@ rather than once per commit. See
 ### Fast pre-commit scanning with Perpetual Guard
 
 For fast pre-commit gating with the **full default policy**
-(including complete decoding, entropy analysis, and all 926 detectors), use the
+(including complete decoding, entropy analysis, and all 934 detectors), use the
 perpetual KeyHog daemon:
 
 1. Ensure the guard daemon is active in the background:
@@ -90,7 +90,7 @@ Add the following to `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/santhreal/keyhog
-    rev: v0.5.80
+    rev: v0.5.81
     hooks:
       - id: keyhog
         stages: [pre-commit]

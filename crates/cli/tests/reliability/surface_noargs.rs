@@ -1,8 +1,8 @@
 //! Invariant: every non-blocking subcommand, invoked with NO arguments,
 //! terminates cleanly with a documented exit code and no panic, under every
 //! profile. Scan, scan-system, watch, and daemon would scan or run indefinitely.
-//! Update and repair can perform network I/O. Dedicated bounded tests cover
-//! those commands.
+//! Install compiles and publishes a real execution generation into the host
+//! cache. Dedicated bounded tests cover those commands.
 //!
 //! This is the "does the command even start on a weird box" sweep. 13 x 16 =
 //! 208 distinct tests.

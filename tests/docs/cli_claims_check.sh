@@ -11,8 +11,6 @@
 #                                             control is --detectors <dir>
 #   --insecure-tls                            the real flag is --insecure
 #   --source-type                             the real flag is --source
-#   --quiet (on `keyhog scan`)                no such flag; the machine output
-#                                             formats are already findings-only
 #
 # This guard covers PROSE, where a flag is often named in order to say it does
 # not exist. It is a precise denylist rather than a regex sweep because prose
@@ -35,8 +33,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DOCS=("$ROOT/README.md" "$ROOT/docs/src")
 fail=0
 
-# Confirmed-nonexistent CLI surface. `keyhog scan --quiet` (not bare --quiet,
-# which collides with other tools' flags in prose) is matched specifically.
+# Confirmed-nonexistent CLI surface.
 DENY_FLAGS=(
   "--disable-detectors"
   "--enable-detectors"
@@ -54,13 +51,6 @@ for bad in "${DENY_FLAGS[@]}"; do
   fi
 done
 
-# `--quiet` only as a keyhog scan flag (avoid matching unrelated prose).
-qhits=$(grep -rn 'keyhog scan[^`<]*--quiet' "${DOCS[@]}" 2>/dev/null | grep -vEi "$absence_re")
-if [ -n "$qhits" ]; then
-  echo "FAIL: 'keyhog scan --quiet' is documented but no --quiet flag exists (machine formats are findings-only):"
-  printf '%s\n' "$qhits" | sed 's/^/    /'
-  fail=1
-fi
 
 if [ "$fail" -eq 0 ]; then
   echo "docs CLI-claim gate: PASS (no nonexistent CLI surface claimed in docs)"

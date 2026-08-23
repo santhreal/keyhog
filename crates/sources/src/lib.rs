@@ -94,7 +94,10 @@ mod strings;
 mod web;
 
 pub use api::*;
-pub use filesystem::DiscoveryCounts;
+pub use filesystem::{
+    is_default_excluded_dir_name, is_default_excluded_path, is_default_excluded_path_bytes,
+    is_default_skip_extension, DiscoveryCounts,
+};
 #[cfg(feature = "git")]
 pub use git::{
     parse_git_index_sizes, read_staged_blob, verify_staged_fingerprint, StagedEntryKind,

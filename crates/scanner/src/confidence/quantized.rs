@@ -369,16 +369,7 @@ pub fn score_batch(
             candidates: rows.len(),
             maximum: MAX_CANDIDATES_PER_BATCH,
         })?;
-    if rows.len() < crate::ml_scorer::ML_PARALLEL_BATCH_THRESHOLD {
-        scores.extend(rows.iter().map(|row| model.score(row)));
-    } else {
-        scores.resize(rows.len(), QuantizedScore(0));
-        use rayon::prelude::*;
-        scores
-            .par_iter_mut()
-            .zip(rows.par_iter())
-            .for_each(|(score, row)| *score = model.score(row));
-    }
+    scores.extend(rows.iter().map(|row| model.score(row)));
     Ok(scores)
 }
 

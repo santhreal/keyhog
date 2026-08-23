@@ -249,7 +249,7 @@ pub(crate) struct CompiledRequiredDetectorLengthPolicy {
 }
 
 impl CompiledDetectorLengthPolicy {
-    pub(crate) const fn compile(detector: &DetectorSpec) -> Self {
+    pub(crate) fn compile(detector: &DetectorSpec) -> Self {
         Self {
             min_len: detector.min_len,
             max_len: detector.max_len,
@@ -298,6 +298,9 @@ pub(crate) struct CompiledDetectorExecutionPolicy {
 
 impl CompiledDetectorExecutionPolicy {
     pub(crate) fn compile(detector: &DetectorSpec) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::DetectorExecutionPolicy,
+        );
         Ok(Self {
             // Service is reporting taxonomy, not execution semantics. Anchored
             // HTTP/SQL/URL detectors legitimately report service = "generic"
@@ -329,6 +332,9 @@ impl CompiledDetectorExecutionPolicy {
         keywords: &[String],
         public_identifier_assignment_markers: &[String],
     ) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_load(
+            keyhog_profile::CompileSurfaceId::DetectorExecutionPolicy,
+        );
         Ok(Self {
             is_generic,
             length: CompiledDetectorLengthPolicy { min_len, max_len },

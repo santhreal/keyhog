@@ -483,7 +483,8 @@ fn unknown_backend_value_is_rejected_by_the_cli_parser_exit_2() {
 fn auto_backend_without_calibration_leaves_input_unscanned() {
     // `--backend auto` routes through the persisted autoroute cache. With the
     // cache disabled (`--autoroute-cache off`) there is no authenticated
-    // decision, so auto must select no backend and report incomplete coverage.
+    // decision, so auto must select no backend, scan nothing, and exit 2 with
+    // the calibration repair path.
     let home = cache_home();
     let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
@@ -497,8 +498,13 @@ fn auto_backend_without_calibration_leaves_input_unscanned() {
     let (_c, out_cpu, _) = scan(home.path(), &path, Some("cpu"), &[]);
     assert_eq!(
         code,
-        Some(13),
-        "uncalibrated auto must report incomplete coverage; stdout={out} stderr={err}"
+        Some(2),
+        // The source read fine; the ROUTE was missing, which is a user error the
+        // operator repairs by calibrating, not a source failure (13).
+        // `e2e_gpu_autoroute_optin.rs` and
+        // `e2e/scan_autoroute_missing_calibration_fails_closed.rs` pin the same
+        // fail-closed path.
+        "uncalibrated auto must fail closed with repair context; stdout={out} stderr={err}"
     );
     assert!(
         err.contains("autoroute calibration required")
@@ -508,8 +514,9 @@ fn auto_backend_without_calibration_leaves_input_unscanned() {
         "failure must be operator-visible with repair context; stderr={err}"
     );
     assert!(
-        ordered_findings(&out).is_empty(),
-        "unrouted input must not produce findings"
+        out.trim().is_empty(),
+        "a run that never routed emits no report document at all, not an empty \
+         array; stdout={out}"
     );
     assert!(
         !ordered_findings(&out_cpu).is_empty(),
@@ -553,6 +560,9 @@ fn calibrated_auto_backend_surfaces_the_same_finding_set_as_cpu() {
         String::from_utf8_lossy(&calibrate.stderr)
     );
 
+    // The scanned fixture's byte band need not be one of the probed bands: a
+    // route family pools the bands that share this workload's decode state and
+    // source classes, and the bounded plan probes two bands of each state.
     let (_d, path) = fixture(".env.leak", &format!("GITHUB_TOKEN={GHP}\n"));
 
     let (code_auto, out_auto, err_auto) = scan(home.path(), &path, Some("auto"), &[]);

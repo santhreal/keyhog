@@ -279,9 +279,8 @@ impl ScanOrchestrator {
     }
 
     /// Fused bounded read+scan: a dedicated reader emits 1 MiB batches.
-    /// Explicit CPU and SIMD routes let Rayon workers retire independent
-    /// batches concurrently; automatic and GPU-capable routing keeps one active
-    /// batch so resident accelerator state is never oversubscribed.
+    /// Non-calibrating scans retire independent batches concurrently in parallel waves;
+    /// autoroute calibration runs serially so backend timing measurements remain uncontended.
     pub(super) fn scan_sources_fused(
         &self,
         sources: Vec<Box<dyn Source>>,
@@ -292,9 +291,7 @@ impl ScanOrchestrator {
         use rayon::prelude::*;
         use std::sync::atomic::{AtomicUsize, Ordering};
 
-        keyhog_sources::reset_skipped_over_max_size();
-        #[cfg(feature = "binary")]
-        keyhog_sources::reset_binary_counters();
+        keyhog_sources::reset_for_scan();
 
         let progress_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let progress_handle = if show_progress && !self.args.stream {
@@ -385,8 +382,14 @@ impl ScanOrchestrator {
                     {
                         let send_result = {
                             let _profile_span =
-                                keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
-                            tx.send(std::mem::take(&mut batch))
+                                keyhog_profile::blocked(keyhog_profile::Stage::SourceQueueWait);
+                            let res = tx.send(std::mem::take(&mut batch));
+                            if res.is_ok() {
+                                keyhog_profile::record_queue_depth_enqueue(
+                                    keyhog_profile::QueueId::ScannerWork,
+                                );
+                            }
+                            res
                         };
                         route_state.clear();
                         batch_bytes = 0;
@@ -401,8 +404,14 @@ impl ScanOrchestrator {
                     if batch.len() >= fused_batch || batch_bytes >= fused_batch_bytes {
                         let send_result = {
                             let _profile_span =
-                                keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
-                            tx.send(std::mem::take(&mut batch))
+                                keyhog_profile::blocked(keyhog_profile::Stage::SourceQueueWait);
+                            let res = tx.send(std::mem::take(&mut batch));
+                            if res.is_ok() {
+                                keyhog_profile::record_queue_depth_enqueue(
+                                    keyhog_profile::QueueId::ScannerWork,
+                                );
+                            }
+                            res
                         };
                         route_state.clear();
                         batch_bytes = 0;
@@ -431,12 +440,19 @@ impl ScanOrchestrator {
                 }
             }
             if !batch.is_empty() {
-                let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
-                let _ = tx.send(batch); // LAW10: unused-binding marker; no runtime effect, not a fallback
+                let _profile_span = keyhog_profile::blocked(keyhog_profile::Stage::SourceQueueWait);
+                let res = tx.send(batch); // LAW10: unused-binding marker; no runtime effect, not a fallback
+                if res.is_ok() {
+                    keyhog_profile::record_queue_depth_enqueue(
+                        keyhog_profile::QueueId::ScannerWork,
+                    );
+                }
             }
         });
 
-        let mut batches = rx.into_iter();
+        let mut batches = super::TimedBatches {
+            batches: rx.into_iter(),
+        };
         let Some(first_batch) = batches.next() else {
             if drain.join().is_err() {
                 tracing::error!("fused source drain thread panicked before producing scanner work");
@@ -516,11 +532,19 @@ impl ScanOrchestrator {
                             std::path::Path::new(path_str),
                             c.metadata.base_offset as u64,
                             c.metadata.mtime_ns.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
+                            c.metadata.ctime_ns.unwrap_or(0), // LAW10: absent change time is never trusted by the read-free skip
                             c.metadata.size_bytes.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
                             c.data.as_bytes(),
                         );
                         if unchanged {
+                            keyhog_profile::record_cache_hit(
+                                keyhog_profile::CacheId::IncrementalUnchanged,
+                            );
                             skipped_ref.fetch_add(1, Ordering::Relaxed);
+                        } else {
+                            keyhog_profile::record_cache_miss(
+                                keyhog_profile::CacheId::IncrementalUnchanged,
+                            );
                         }
                         !unchanged
                     })
@@ -675,13 +699,10 @@ impl ScanOrchestrator {
             };
             out
         };
-        let findings: Vec<RawMatch> = if matches!(
-            explicit_backend,
-            Some(
-                keyhog_scanner::hw_probe::ScanBackend::CpuFallback
-                    | keyhog_scanner::hw_probe::ScanBackend::SimdCpu
-            )
-        ) {
+        let findings: Vec<RawMatch> = if calibration_mode {
+            // Calibration requires quiet measurement without concurrent scan wave contention.
+            batches.flat_map(scan_batch).collect()
+        } else {
             let lane_width =
                 crate::orchestrator_config::fused_cpu_wave_width(rayon::current_num_threads());
             let mut batches = batches;
@@ -765,8 +786,6 @@ impl ScanOrchestrator {
                 findings.extend(wave_findings.into_iter().flatten().flatten());
             }
             findings
-        } else {
-            batches.flat_map(scan_batch).collect()
         };
 
         // Drain thread owns source iteration for the fused path. A panic here

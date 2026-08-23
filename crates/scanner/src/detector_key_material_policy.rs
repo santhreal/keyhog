@@ -52,7 +52,10 @@ pub(crate) struct CompiledDetectorKeyMaterialPolicy {
 
 impl CompiledDetectorKeyMaterialPolicy {
     pub(crate) fn compile(detector: &DetectorSpec) -> Result<Self, String> {
-        Self::hydrate(
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::DetectorKeyMaterialPolicy,
+        );
+        Self::hydrate_parts(
             &detector.id,
             detector.kind,
             &detector.decoded_hex_key_material_lengths,
@@ -61,6 +64,23 @@ impl CompiledDetectorKeyMaterialPolicy {
     }
 
     pub(crate) fn hydrate(
+        detector_id: &str,
+        kind: keyhog_core::DetectorKind,
+        decoded_hex_key_material_lengths: &[usize],
+        canonical_hex_key_material: &[CanonicalHexKeyMaterialSpec],
+    ) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_load(
+            keyhog_profile::CompileSurfaceId::DetectorKeyMaterialPolicy,
+        );
+        Self::hydrate_parts(
+            detector_id,
+            kind,
+            decoded_hex_key_material_lengths,
+            canonical_hex_key_material,
+        )
+    }
+
+    fn hydrate_parts(
         detector_id: &str,
         kind: keyhog_core::DetectorKind,
         decoded_hex_key_material_lengths: &[usize],

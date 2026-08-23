@@ -4,6 +4,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 
+static EMBEDDED_CANONICAL_IR: std::sync::LazyLock<
+    Result<CanonicalDetectorExecutionIr, ExecutionPackError>,
+> = std::sync::LazyLock::new(|| {
+    let specs = keyhog_core::embedded_detector_specs();
+    CanonicalDetectorExecutionIr::compile(specs)
+});
+
 pub const DETECTOR_EXECUTION_IR_VERSION: u16 = 1;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -61,11 +68,38 @@ pub struct DecodedDetectorExecutionIr {
 
 impl CanonicalDetectorExecutionIr {
     pub fn compile(detectors: &[DetectorSpec]) -> Result<Self, ExecutionPackError> {
+        // A pack with no detectors is not installable, so the envelope refuses
+        // one here. Normalization itself has no opinion: an empty corpus has a
+        // canonical form, and `canonical_spec_hash` must give a scanner
+        // compiled from zero detectors the identity of that corpus.
         if detectors.is_empty() {
             return Err(ExecutionPackError::InvalidCompilerInput(
                 "detector execution IR has no detectors".to_owned(),
             ));
         }
+        let normalized = Self::normalized_detectors(detectors)?;
+        let metadata = normalize_metadata(&normalized)?;
+        let envelope = DetectorExecutionIrEnvelope {
+            version: DETECTOR_EXECUTION_IR_VERSION,
+            metadata,
+            detectors: normalized,
+        };
+        Self::from_envelope(envelope)
+    }
+
+    /// The corpus spec hash every route agrees on. A pack carries a plan digest
+    /// derived from the normalized IR detectors, so a scanner compiled from raw
+    /// specs must hash the same normalized form or the same corpus would carry
+    /// two identities depending on how the scanner was materialized.
+    pub fn canonical_spec_hash(detectors: &[DetectorSpec]) -> Result<[u8; 32], ExecutionPackError> {
+        Ok(keyhog_core::compute_spec_hash(&Self::normalized_detectors(
+            detectors,
+        )?))
+    }
+
+    fn normalized_detectors(
+        detectors: &[DetectorSpec],
+    ) -> Result<Vec<DetectorSpec>, ExecutionPackError> {
         let mut normalized = detectors.to_vec();
         normalized.sort_unstable_by(|left, right| left.id.cmp(&right.id));
         let mut ids = BTreeSet::new();
@@ -83,13 +117,22 @@ impl CanonicalDetectorExecutionIr {
             }
             detector.tests.clear();
         }
-        let metadata = normalize_metadata(&normalized)?;
-        let envelope = DetectorExecutionIrEnvelope {
-            version: DETECTOR_EXECUTION_IR_VERSION,
-            metadata,
-            detectors: normalized,
-        };
-        Self::from_envelope(envelope)
+        Ok(normalized)
+    }
+    /// Return the canonical execution IR compiled from the embedded detector corpus.
+    ///
+    /// Parsed and compiled at most once across the entire process lifetime.
+    pub fn embedded() -> Result<&'static Self, ExecutionPackError> {
+        EMBEDDED_CANONICAL_IR.as_ref().map_err(|err| err.clone())
+    }
+
+    /// Return the exact 32-byte BLAKE3 digest of the canonical embedded detector execution IR.
+    pub fn embedded_digest() -> Result<[u8; 32], ExecutionPackError> {
+        Self::embedded().map(|ir| ir.digest())
+    }
+
+    pub fn is_embedded_corpus(detectors: &[DetectorSpec]) -> bool {
+        std::ptr::eq(detectors, keyhog_core::embedded_detector_specs())
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, ExecutionPackError> {

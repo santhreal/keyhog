@@ -133,6 +133,88 @@ pub enum MetricId {
     BackendAcquire,
     BackendInit,
     Teardown,
+    ScanPipeline,
+    ScannerCompile,
+    FilesScanned,
+    BytesScanned,
+    SkippedFiles,
+    MatchesFound,
+    StructuredParseFailures,
+    StructuredOversizeSkips,
+    DecodeTruncations,
+    DecodeOversizeSkips,
+    InvalidPatternIndexSkips,
+    BoundaryResultCardinalityMismatches,
+    BoundarySeamTruncations,
+    LineOffsetMappingMismatches,
+    ChunkDeadlineAborts,
+    BinaryStringsNamedExclusions,
+    SkippedOverMaxSize,
+    SkippedBinary,
+    SkippedExcluded,
+    SkippedUnreadable,
+    GitObjectUnreadable,
+    SkippedArchiveTruncated,
+    BinarySectionNameUnresolved,
+    SourceTruncated,
+    StructuredSourceParseFailures,
+    ArchiveDuplicateScanUnavailable,
+    GitLfsPointer,
+    VendoredPathSuppressions,
+    ExampleSuppressions,
+    BinaryGhidraDegradedToStrings,
+    BinaryUnreadable,
+    GitBufferedBlobChunks,
+    GpuMatcherNs,
+    GpuCoalesceNs,
+    GpuDispatchNs,
+    GpuDeriveNs,
+    GpuRecallFloorNs,
+    Phase2GpuAdmissionNs,
+    GpuCoalescedBytes,
+    GpuMaxDispatchBytes,
+    GpuPresenceBits,
+    GpuUnderfireRecovered,
+    GpuTriggerBits,
+    Phase2GpuAdmitted,
+    Phase2GpuEvidenceBits,
+    Phase2GpuHaystackUploads,
+    Phase2GpuCompleteChunks,
+    Phase2GpuCompleteRows,
+    Phase2GpuExcludedOversized,
+    Phase2GpuExcludedNonAscii,
+    Phase2AlwaysAnchorChunks,
+    Phase2AlwaysAnchorCandidateRows,
+    Phase2AlwaysAnchorCandidateCount,
+    ConfirmedAnchorCandidateRows,
+    ConfirmedAnchorCandidateCount,
+    GenericKeywordCandidateRows,
+    GenericKeywordCandidateCount,
+    ConfirmedSuffixGateNs,
+    ConfirmedSuffixGateCalls,
+    ConfirmedSuffixGateSkips,
+    ConfirmedCompanionGateNs,
+    ConfirmedCompanionGateCalls,
+    ConfirmedCompanionGateDenials,
+    ConfirmedAnchorCollectNs,
+    ConfirmedAnchorCollectCalls,
+    ConfirmedExtractNs,
+    ConfirmedExtractCalls,
+    ConfirmedAnchoredMatches,
+    ConfirmedWholeChunkMatches,
+    ConfirmedHotDirectFilterSkips,
+    PostprocessFragmentsNs,
+    PostprocessFragmentsCalls,
+    PostprocessFragmentsCandidates,
+    PostprocessFragmentsMatches,
+    PostprocessDedupNs,
+    PostprocessDedupCalls,
+    Phase2AnchorCollectNs,
+    Phase2AnchorCollectCalls,
+    Phase2AnchoredVerifyCandidates,
+    Phase2AnchoredVerifyMatches,
+    Phase2WholeChunkPatterns,
+    Phase2WholeChunkMatches,
 }
 
 /// Stable identifier for a top-level production pipeline stage.
@@ -252,10 +334,88 @@ pub enum CounterId {
     PageCacheColdObservations,
     PageCacheWarmObservations,
     PageCacheDirectObservations,
+    FilesScanned,
+    BytesScanned,
+    SkippedFiles,
+    MatchesFound,
+    StructuredParseFailures,
+    StructuredOversizeSkips,
+    DecodeTruncations,
+    DecodeOversizeSkips,
+    InvalidPatternIndexSkips,
+    BoundaryResultCardinalityMismatches,
+    BoundarySeamTruncations,
+    LineOffsetMappingMismatches,
+    ChunkDeadlineAborts,
+    BinaryStringsNamedExclusions,
+    SkippedOverMaxSize,
+    SkippedBinary,
+    SkippedExcluded,
+    SkippedUnreadable,
+    GitObjectUnreadable,
+    SkippedArchiveTruncated,
+    BinarySectionNameUnresolved,
+    SourceTruncated,
+    StructuredSourceParseFailures,
+    ArchiveDuplicateScanUnavailable,
+    GitLfsPointer,
+    VendoredPathSuppressions,
+    ExampleSuppressions,
+    BinaryGhidraDegradedToStrings,
+    BinaryUnreadable,
+    GpuMatcherNs,
+    GpuCoalesceNs,
+    GpuDispatchNs,
+    GpuDeriveNs,
+    GpuRecallFloorNs,
+    Phase2GpuAdmissionNs,
+    GpuCoalescedBytes,
+    GpuMaxDispatchBytes,
+    GpuPresenceBits,
+    GpuUnderfireRecovered,
+    GpuTriggerBits,
+    Phase2GpuAdmitted,
+    Phase2GpuEvidenceBits,
+    Phase2GpuHaystackUploads,
+    Phase2GpuCompleteChunks,
+    Phase2GpuCompleteRows,
+    Phase2GpuExcludedOversized,
+    Phase2GpuExcludedNonAscii,
+    Phase2AlwaysAnchorChunks,
+    Phase2AlwaysAnchorCandidateRows,
+    Phase2AlwaysAnchorCandidateCount,
+    ConfirmedAnchorCandidateRows,
+    ConfirmedAnchorCandidateCount,
+    GenericKeywordCandidateRows,
+    GenericKeywordCandidateCount,
+    ConfirmedSuffixGateNs,
+    ConfirmedSuffixGateCalls,
+    ConfirmedSuffixGateSkips,
+    ConfirmedCompanionGateNs,
+    ConfirmedCompanionGateCalls,
+    ConfirmedCompanionGateDenials,
+    ConfirmedAnchorCollectNs,
+    ConfirmedAnchorCollectCalls,
+    ConfirmedExtractNs,
+    ConfirmedExtractCalls,
+    ConfirmedAnchoredMatches,
+    ConfirmedWholeChunkMatches,
+    ConfirmedHotDirectFilterSkips,
+    PostprocessFragmentsNs,
+    PostprocessFragmentsCalls,
+    PostprocessFragmentsCandidates,
+    PostprocessFragmentsMatches,
+    PostprocessDedupNs,
+    PostprocessDedupCalls,
+    Phase2AnchorCollectNs,
+    Phase2AnchorCollectCalls,
+    Phase2AnchoredVerifyCandidates,
+    Phase2AnchoredVerifyMatches,
+    Phase2WholeChunkPatterns,
+    Phase2WholeChunkMatches,
 }
-
 impl CounterId {
-    pub const ALL: [Self; 78] = [
+    pub const ALL: [Self; 157] = [
         Self::InputBytes,
         Self::InputUnits,
         Self::ProcessCpuTime,
@@ -334,6 +494,85 @@ impl CounterId {
         Self::PageCacheColdObservations,
         Self::PageCacheWarmObservations,
         Self::PageCacheDirectObservations,
+        Self::FilesScanned,
+        Self::BytesScanned,
+        Self::SkippedFiles,
+        Self::MatchesFound,
+        Self::StructuredParseFailures,
+        Self::StructuredOversizeSkips,
+        Self::DecodeTruncations,
+        Self::DecodeOversizeSkips,
+        Self::InvalidPatternIndexSkips,
+        Self::BoundaryResultCardinalityMismatches,
+        Self::BoundarySeamTruncations,
+        Self::LineOffsetMappingMismatches,
+        Self::ChunkDeadlineAborts,
+        Self::BinaryStringsNamedExclusions,
+        Self::SkippedOverMaxSize,
+        Self::SkippedBinary,
+        Self::SkippedExcluded,
+        Self::SkippedUnreadable,
+        Self::GitObjectUnreadable,
+        Self::SkippedArchiveTruncated,
+        Self::BinarySectionNameUnresolved,
+        Self::SourceTruncated,
+        Self::StructuredSourceParseFailures,
+        Self::ArchiveDuplicateScanUnavailable,
+        Self::GitLfsPointer,
+        Self::VendoredPathSuppressions,
+        Self::ExampleSuppressions,
+        Self::BinaryGhidraDegradedToStrings,
+        Self::BinaryUnreadable,
+        Self::GpuMatcherNs,
+        Self::GpuCoalesceNs,
+        Self::GpuDispatchNs,
+        Self::GpuDeriveNs,
+        Self::GpuRecallFloorNs,
+        Self::Phase2GpuAdmissionNs,
+        Self::GpuCoalescedBytes,
+        Self::GpuMaxDispatchBytes,
+        Self::GpuPresenceBits,
+        Self::GpuUnderfireRecovered,
+        Self::GpuTriggerBits,
+        Self::Phase2GpuAdmitted,
+        Self::Phase2GpuEvidenceBits,
+        Self::Phase2GpuHaystackUploads,
+        Self::Phase2GpuCompleteChunks,
+        Self::Phase2GpuCompleteRows,
+        Self::Phase2GpuExcludedOversized,
+        Self::Phase2GpuExcludedNonAscii,
+        Self::Phase2AlwaysAnchorChunks,
+        Self::Phase2AlwaysAnchorCandidateRows,
+        Self::Phase2AlwaysAnchorCandidateCount,
+        Self::ConfirmedAnchorCandidateRows,
+        Self::ConfirmedAnchorCandidateCount,
+        Self::GenericKeywordCandidateRows,
+        Self::GenericKeywordCandidateCount,
+        Self::ConfirmedSuffixGateNs,
+        Self::ConfirmedSuffixGateCalls,
+        Self::ConfirmedSuffixGateSkips,
+        Self::ConfirmedCompanionGateNs,
+        Self::ConfirmedCompanionGateCalls,
+        Self::ConfirmedCompanionGateDenials,
+        Self::ConfirmedAnchorCollectNs,
+        Self::ConfirmedAnchorCollectCalls,
+        Self::ConfirmedExtractNs,
+        Self::ConfirmedExtractCalls,
+        Self::ConfirmedAnchoredMatches,
+        Self::ConfirmedWholeChunkMatches,
+        Self::ConfirmedHotDirectFilterSkips,
+        Self::PostprocessFragmentsNs,
+        Self::PostprocessFragmentsCalls,
+        Self::PostprocessFragmentsCandidates,
+        Self::PostprocessFragmentsMatches,
+        Self::PostprocessDedupNs,
+        Self::PostprocessDedupCalls,
+        Self::Phase2AnchorCollectNs,
+        Self::Phase2AnchorCollectCalls,
+        Self::Phase2AnchoredVerifyCandidates,
+        Self::Phase2AnchoredVerifyMatches,
+        Self::Phase2WholeChunkPatterns,
+        Self::Phase2WholeChunkMatches,
     ];
 
     pub const fn metric_id(self) -> MetricId {
@@ -418,6 +657,87 @@ impl CounterId {
             Self::PageCacheColdObservations => MetricId::PageCacheColdObservations,
             Self::PageCacheWarmObservations => MetricId::PageCacheWarmObservations,
             Self::PageCacheDirectObservations => MetricId::PageCacheDirectObservations,
+            Self::FilesScanned => MetricId::FilesScanned,
+            Self::BytesScanned => MetricId::BytesScanned,
+            Self::SkippedFiles => MetricId::SkippedFiles,
+            Self::MatchesFound => MetricId::MatchesFound,
+            Self::StructuredParseFailures => MetricId::StructuredParseFailures,
+            Self::StructuredOversizeSkips => MetricId::StructuredOversizeSkips,
+            Self::DecodeTruncations => MetricId::DecodeTruncations,
+            Self::DecodeOversizeSkips => MetricId::DecodeOversizeSkips,
+            Self::InvalidPatternIndexSkips => MetricId::InvalidPatternIndexSkips,
+            Self::BoundaryResultCardinalityMismatches => {
+                MetricId::BoundaryResultCardinalityMismatches
+            }
+            Self::BoundarySeamTruncations => MetricId::BoundarySeamTruncations,
+            Self::LineOffsetMappingMismatches => MetricId::LineOffsetMappingMismatches,
+            Self::ChunkDeadlineAborts => MetricId::ChunkDeadlineAborts,
+            Self::BinaryStringsNamedExclusions => MetricId::BinaryStringsNamedExclusions,
+            Self::SkippedOverMaxSize => MetricId::SkippedOverMaxSize,
+            Self::SkippedBinary => MetricId::SkippedBinary,
+            Self::SkippedExcluded => MetricId::SkippedExcluded,
+            Self::SkippedUnreadable => MetricId::SkippedUnreadable,
+            Self::GitObjectUnreadable => MetricId::GitObjectUnreadable,
+            Self::SkippedArchiveTruncated => MetricId::SkippedArchiveTruncated,
+            Self::BinarySectionNameUnresolved => MetricId::BinarySectionNameUnresolved,
+            Self::SourceTruncated => MetricId::SourceTruncated,
+            Self::StructuredSourceParseFailures => MetricId::StructuredSourceParseFailures,
+            Self::ArchiveDuplicateScanUnavailable => MetricId::ArchiveDuplicateScanUnavailable,
+            Self::GitLfsPointer => MetricId::GitLfsPointer,
+            Self::VendoredPathSuppressions => MetricId::VendoredPathSuppressions,
+            Self::ExampleSuppressions => MetricId::ExampleSuppressions,
+            Self::BinaryGhidraDegradedToStrings => MetricId::BinaryGhidraDegradedToStrings,
+            Self::BinaryUnreadable => MetricId::BinaryUnreadable,
+            Self::GpuMatcherNs => MetricId::GpuMatcherNs,
+            Self::GpuCoalesceNs => MetricId::GpuCoalesceNs,
+            Self::GpuDispatchNs => MetricId::GpuDispatchNs,
+            Self::GpuDeriveNs => MetricId::GpuDeriveNs,
+            Self::GpuRecallFloorNs => MetricId::GpuRecallFloorNs,
+            Self::Phase2GpuAdmissionNs => MetricId::Phase2GpuAdmissionNs,
+            Self::GpuCoalescedBytes => MetricId::GpuCoalescedBytes,
+            Self::GpuMaxDispatchBytes => MetricId::GpuMaxDispatchBytes,
+            Self::GpuPresenceBits => MetricId::GpuPresenceBits,
+            Self::GpuUnderfireRecovered => MetricId::GpuUnderfireRecovered,
+            Self::GpuTriggerBits => MetricId::GpuTriggerBits,
+            Self::Phase2GpuAdmitted => MetricId::Phase2GpuAdmitted,
+            Self::Phase2GpuEvidenceBits => MetricId::Phase2GpuEvidenceBits,
+            Self::Phase2GpuHaystackUploads => MetricId::Phase2GpuHaystackUploads,
+            Self::Phase2GpuCompleteChunks => MetricId::Phase2GpuCompleteChunks,
+            Self::Phase2GpuCompleteRows => MetricId::Phase2GpuCompleteRows,
+            Self::Phase2GpuExcludedOversized => MetricId::Phase2GpuExcludedOversized,
+            Self::Phase2GpuExcludedNonAscii => MetricId::Phase2GpuExcludedNonAscii,
+            Self::Phase2AlwaysAnchorChunks => MetricId::Phase2AlwaysAnchorChunks,
+            Self::Phase2AlwaysAnchorCandidateRows => MetricId::Phase2AlwaysAnchorCandidateRows,
+            Self::Phase2AlwaysAnchorCandidateCount => MetricId::Phase2AlwaysAnchorCandidateCount,
+            Self::ConfirmedAnchorCandidateRows => MetricId::ConfirmedAnchorCandidateRows,
+            Self::ConfirmedAnchorCandidateCount => MetricId::ConfirmedAnchorCandidateCount,
+            Self::GenericKeywordCandidateRows => MetricId::GenericKeywordCandidateRows,
+            Self::GenericKeywordCandidateCount => MetricId::GenericKeywordCandidateCount,
+            Self::ConfirmedSuffixGateNs => MetricId::ConfirmedSuffixGateNs,
+            Self::ConfirmedSuffixGateCalls => MetricId::ConfirmedSuffixGateCalls,
+            Self::ConfirmedSuffixGateSkips => MetricId::ConfirmedSuffixGateSkips,
+            Self::ConfirmedCompanionGateNs => MetricId::ConfirmedCompanionGateNs,
+            Self::ConfirmedCompanionGateCalls => MetricId::ConfirmedCompanionGateCalls,
+            Self::ConfirmedCompanionGateDenials => MetricId::ConfirmedCompanionGateDenials,
+            Self::ConfirmedAnchorCollectNs => MetricId::ConfirmedAnchorCollectNs,
+            Self::ConfirmedAnchorCollectCalls => MetricId::ConfirmedAnchorCollectCalls,
+            Self::ConfirmedExtractNs => MetricId::ConfirmedExtractNs,
+            Self::ConfirmedExtractCalls => MetricId::ConfirmedExtractCalls,
+            Self::ConfirmedAnchoredMatches => MetricId::ConfirmedAnchoredMatches,
+            Self::ConfirmedWholeChunkMatches => MetricId::ConfirmedWholeChunkMatches,
+            Self::ConfirmedHotDirectFilterSkips => MetricId::ConfirmedHotDirectFilterSkips,
+            Self::PostprocessFragmentsNs => MetricId::PostprocessFragmentsNs,
+            Self::PostprocessFragmentsCalls => MetricId::PostprocessFragmentsCalls,
+            Self::PostprocessFragmentsCandidates => MetricId::PostprocessFragmentsCandidates,
+            Self::PostprocessFragmentsMatches => MetricId::PostprocessFragmentsMatches,
+            Self::PostprocessDedupNs => MetricId::PostprocessDedupNs,
+            Self::PostprocessDedupCalls => MetricId::PostprocessDedupCalls,
+            Self::Phase2AnchorCollectNs => MetricId::Phase2AnchorCollectNs,
+            Self::Phase2AnchorCollectCalls => MetricId::Phase2AnchorCollectCalls,
+            Self::Phase2AnchoredVerifyCandidates => MetricId::Phase2AnchoredVerifyCandidates,
+            Self::Phase2AnchoredVerifyMatches => MetricId::Phase2AnchoredVerifyMatches,
+            Self::Phase2WholeChunkPatterns => MetricId::Phase2WholeChunkPatterns,
+            Self::Phase2WholeChunkMatches => MetricId::Phase2WholeChunkMatches,
         }
     }
 }
@@ -437,10 +757,11 @@ pub enum GaugeId {
     ResidentHighWaterBytes,
     RetainedBufferBytes,
     RetainedBufferPeakBytes,
+    GitBufferedBlobChunks,
 }
 
 impl GaugeId {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::ResidentMemory,
         Self::VirtualMemory,
         Self::ProcessThreads,
@@ -451,6 +772,7 @@ impl GaugeId {
         Self::ResidentHighWaterBytes,
         Self::RetainedBufferBytes,
         Self::RetainedBufferPeakBytes,
+        Self::GitBufferedBlobChunks,
     ];
 
     pub const fn metric_id(self) -> MetricId {
@@ -465,6 +787,7 @@ impl GaugeId {
             Self::ResidentHighWaterBytes => MetricId::ResidentHighWaterBytes,
             Self::RetainedBufferBytes => MetricId::RetainedBufferBytes,
             Self::RetainedBufferPeakBytes => MetricId::RetainedBufferPeakBytes,
+            Self::GitBufferedBlobChunks => MetricId::GitBufferedBlobChunks,
         }
     }
 }
@@ -521,6 +844,18 @@ impl QueueId {
     pub const fn index(self) -> usize {
         self as usize
     }
+
+    /// Stable text label used by profiles and operator reports.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SourceWork => "source-work",
+            Self::ScannerWork => "scanner-work",
+            Self::DecoderWork => "decoder-work",
+            Self::BackendBatch => "backend-batch",
+            Self::LiveVerification => "live-verification",
+            Self::ResultMerge => "result-merge",
+        }
+    }
 }
 
 /// A reuse cache the profiler reports hit and miss counts for.
@@ -551,6 +886,12 @@ pub enum CacheId {
     /// Credential verification result reused instead of re-requested. A miss
     /// costs a network round trip, so this rate is also a rate-limit story.
     VerifierResult,
+    /// Hyperscan compiled regex shard database reused from disk cache.
+    HyperscanShard,
+    /// Compiled GPU literal-set binary matcher reused from disk cache.
+    GpuProgram,
+    /// Pre-parsed detector JSON execution plan reused from cache.
+    DetectorPlan,
 }
 
 impl CacheId {
@@ -561,10 +902,13 @@ impl CacheId {
         Self::IncrementalUnchanged,
         Self::MatcherArtifact,
         Self::VerifierResult,
+        Self::HyperscanShard,
+        Self::GpuProgram,
+        Self::DetectorPlan,
     ];
 
     /// Number of variants, and the length of the profiler's counter arrays.
-    pub const COUNT: usize = 5;
+    pub const COUNT: usize = 8;
 
     /// Dense index into the profiler's per-shard counter arrays.
     pub const fn index(self) -> usize {
@@ -579,6 +923,185 @@ impl CacheId {
             Self::IncrementalUnchanged => "incremental-unchanged",
             Self::MatcherArtifact => "matcher-artifact",
             Self::VerifierResult => "verifier-result",
+            Self::HyperscanShard => "hyperscan-shard",
+            Self::GpuProgram => "gpu-program",
+            Self::DetectorPlan => "detector-plan",
+        }
+    }
+}
+/// A compiler surface / artifact class that compiles matcher, plan, or execution policy data.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[repr(u8)]
+pub enum CompileSurfaceId {
+    /// Detector execution plans compiled from detector definitions.
+    DetectorPlan = 0,
+    /// Entropy policy tables compiled for detector thresholds.
+    EntropyPolicy,
+    /// Assignment keyword index compiled from secret and policy keywords.
+    AssignmentKeywordMatcher,
+    /// GPU literal matchers compiled from detector patterns.
+    GpuLiterals,
+    /// SIMD / Hyperscan regex database compiled from detector patterns.
+    SimdProgram,
+    /// Intermediate compile state and companion compilation.
+    CompileState,
+    /// Decode transformation policy compiled from detector specs.
+    DecodePolicy,
+    /// Checksum validator catalog and index compiled from validator specs.
+    ValidatorCatalog,
+    /// Match confidence policy compiled from detector specs.
+    ConfidencePolicy,
+    /// Credential shape rules compiled from detector specs.
+    CredentialShapes,
+    /// Detector execution policy compiled from detector specs.
+    DetectorExecutionPolicy,
+    /// Canonical hex key material policy compiled from detector specs.
+    DetectorKeyMaterialPolicy,
+    /// Detector ML policy compiled from detector specs.
+    DetectorMlPolicy,
+}
+
+impl CompileSurfaceId {
+    /// Number of distinct compile surface classes.
+    pub const COUNT: usize = 13;
+
+    /// Every compile surface in stable wire order.
+    pub const ALL: [Self; Self::COUNT] = [
+        Self::DetectorPlan,
+        Self::EntropyPolicy,
+        Self::AssignmentKeywordMatcher,
+        Self::GpuLiterals,
+        Self::SimdProgram,
+        Self::CompileState,
+        Self::DecodePolicy,
+        Self::ValidatorCatalog,
+        Self::ConfidencePolicy,
+        Self::CredentialShapes,
+        Self::DetectorExecutionPolicy,
+        Self::DetectorKeyMaterialPolicy,
+        Self::DetectorMlPolicy,
+    ];
+
+    /// Dense index into the profiler's compile-surface arrays.
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Stable text label used by profiles and operator reports.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DetectorPlan => "detector-plan",
+            Self::EntropyPolicy => "entropy-policy",
+            Self::AssignmentKeywordMatcher => "assignment-keyword-matcher",
+            Self::GpuLiterals => "gpu-literals",
+            Self::SimdProgram => "simd-program",
+            Self::CompileState => "compile-state",
+            Self::DecodePolicy => "decode-policy",
+            Self::ValidatorCatalog => "validator-catalog",
+            Self::ConfidencePolicy => "confidence-policy",
+            Self::CredentialShapes => "credential-shapes",
+            Self::DetectorExecutionPolicy => "detector-execution-policy",
+            Self::DetectorKeyMaterialPolicy => "detector-key-material-policy",
+            Self::DetectorMlPolicy => "detector-ml-policy",
+        }
+    }
+
+    /// Canonical compile entry-point symbols for this surface class.
+    pub const fn entry_points(self) -> &'static [&'static str] {
+        match self {
+            Self::DetectorPlan => &[
+                "keyhog_scanner::detector_plan::CompiledDetectorPlans::compile",
+                "keyhog_scanner::detector_plan::CompiledDetectorPlans::compile_with_decoder_plan",
+                "keyhog_scanner::detector_plan::compile_detector_plan",
+                "keyhog_scanner::detector_plan::compile_metadata",
+                "keyhog_scanner::detector_plan::DetectorResolutionIndex::compile",
+                "keyhog_scanner::detector_plan::CompiledDetectorRelationIndex::compile",
+            ],
+            Self::EntropyPolicy => &[
+                "keyhog_scanner::entropy::policy::compile_entropy_policy",
+                "keyhog_scanner::entropy::policy::compile_entropy_policy_with_length",
+                "keyhog_scanner::entropy::policy::CompiledEntropyPolicy::compile",
+                "keyhog_scanner::entropy::policy::CompiledEntropyPolicy::compile_with_length",
+                "keyhog_scanner::entropy::policy::CompiledEntropyFloorPolicy::compile",
+            ],
+            Self::AssignmentKeywordMatcher => &[
+                "keyhog_scanner::assignment_keyword_matcher::AssignmentKeywordMatcher::compile",
+            ],
+            Self::GpuLiterals => &[
+                "keyhog_scanner::gpu_literal_artifacts::compile_gpu_literal_artifacts",
+                "keyhog_scanner::gpu_literal_artifacts::compile_gpu_literal_artifact_plan",
+                "keyhog_scanner::engine::gpu_lazy_helpers::compile_gpu_literals",
+            ],
+            Self::SimdProgram => &[
+                "keyhog_scanner::simd::backend::HsScanner::compile_with_opts",
+            ],
+            Self::CompileState => &[
+                "keyhog_scanner::compiler::compiler_build::build_compile_state",
+                "keyhog_scanner::compiler::compiler_compile::compile_companion",
+                "keyhog_scanner::compiler::compiler_compile::compile_detector_companions",
+                "keyhog_scanner::compiler::compiler_compile::compile_pattern",
+            ],
+            Self::DecodePolicy => &[
+                "keyhog_scanner::decode::policy::CompiledDecodeTransformPolicy::compile",
+            ],
+            Self::ValidatorCatalog => &[
+                "keyhog_scanner::checksum::compiled::CompiledValidatorCatalog::compile",
+                "keyhog_scanner::checksum::compiled::CompiledDetectorValidators::compile",
+            ],
+            Self::ConfidencePolicy => &[
+                "keyhog_scanner::confidence::policy::CompiledMatchConfidencePolicy::compile",
+            ],
+            Self::CredentialShapes => &[
+                "keyhog_scanner::credential_shapes::compile_detector_shape_rule",
+            ],
+            Self::DetectorExecutionPolicy => &[
+                "keyhog_scanner::detector_execution_policy::CompiledDetectorExecutionPolicy::compile",
+            ],
+            Self::DetectorKeyMaterialPolicy => &[
+                "keyhog_scanner::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::compile",
+            ],
+            Self::DetectorMlPolicy => &[
+                "keyhog_scanner::detector_ml_policy::CompiledDetectorMlPolicy::compile",
+            ],
+        }
+    }
+}
+
+/// Execution phase during which compilation occurred.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[repr(u8)]
+pub enum CompilePhase {
+    /// Compilation during installer generation (`keyhog install` or compile-execution-packs).
+    Install = 0,
+    /// Compilation while generating packs for a candidate binary.
+    Update,
+    /// In-process compilation during scan execution.
+    Scan,
+    /// In-process compilation under explicit developer escape flag.
+    Developer,
+}
+
+impl CompilePhase {
+    /// Number of distinct compile phases.
+    pub const COUNT: usize = 4;
+
+    /// Every compile phase in stable wire order.
+    pub const ALL: [Self; Self::COUNT] = [Self::Install, Self::Update, Self::Scan, Self::Developer];
+
+    /// Dense index into compile phase arrays.
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Stable text label used by profiles and operator reports.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Install => "install",
+            Self::Update => "update",
+            Self::Scan => "scan",
+            Self::Developer => "developer",
         }
     }
 }
@@ -740,6 +1263,8 @@ impl From<crate::Stage> for MetricId {
             crate::Stage::BackendAcquire => Self::BackendAcquire,
             crate::Stage::BackendInit => Self::BackendInit,
             crate::Stage::Teardown => Self::Teardown,
+            crate::Stage::ScanPipeline => Self::ScanPipeline,
+            crate::Stage::ScannerCompile => Self::ScannerCompile,
         }
     }
 }
@@ -1555,12 +2080,502 @@ pub static METRICS: [MetricDescriptor; MetricId::COUNT] = [
         MetricKind::Duration,
         MetricUnit::Nanoseconds,
     ),
+    metric(
+        MetricId::ScanPipeline,
+        "scan-pipeline",
+        MetricKind::Duration,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::ScannerCompile,
+        "scanner-compile",
+        MetricKind::Duration,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::FilesScanned,
+        "files-scanned",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::BytesScanned,
+        "bytes-scanned",
+        MetricKind::Counter,
+        MetricUnit::Bytes,
+    ),
+    metric(
+        MetricId::SkippedFiles,
+        "skipped-files",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::MatchesFound,
+        "matches-found",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::StructuredParseFailures,
+        "structured-parse-failures",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::StructuredOversizeSkips,
+        "structured-oversize-skips",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::DecodeTruncations,
+        "decode-truncations",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::DecodeOversizeSkips,
+        "decode-oversize-skips",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::InvalidPatternIndexSkips,
+        "invalid-pattern-index-skips",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::BoundaryResultCardinalityMismatches,
+        "boundary-result-cardinality-mismatches",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::BoundarySeamTruncations,
+        "boundary-seam-truncations",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::LineOffsetMappingMismatches,
+        "line-offset-mapping-mismatches",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ChunkDeadlineAborts,
+        "chunk-deadline-aborts",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::BinaryStringsNamedExclusions,
+        "binary-strings-named-exclusions",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::SkippedOverMaxSize,
+        "skipped-over-max-size",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::SkippedBinary,
+        "skipped-binary",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::SkippedExcluded,
+        "skipped-excluded",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::SkippedUnreadable,
+        "skipped-unreadable",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::GitObjectUnreadable,
+        "git-object-unreadable",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::SkippedArchiveTruncated,
+        "skipped-archive-truncated",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::BinarySectionNameUnresolved,
+        "binary-section-name-unresolved",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::SourceTruncated,
+        "source-truncated",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::StructuredSourceParseFailures,
+        "structured-source-parse-failures",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ArchiveDuplicateScanUnavailable,
+        "archive-duplicate-scan-unavailable",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::GitLfsPointer,
+        "git-lfs-pointer",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::VendoredPathSuppressions,
+        "vendored-path-suppressions",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ExampleSuppressions,
+        "example-suppressions",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::BinaryGhidraDegradedToStrings,
+        "binary-ghidra-degraded-to-strings",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::BinaryUnreadable,
+        "binary-unreadable",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::GitBufferedBlobChunks,
+        "git-buffered-blob-chunks",
+        MetricKind::Gauge,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::GpuMatcherNs,
+        "gpu-matcher-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::GpuCoalesceNs,
+        "gpu-coalesce-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::GpuDispatchNs,
+        "gpu-dispatch-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::GpuDeriveNs,
+        "gpu-derive-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::GpuRecallFloorNs,
+        "gpu-recall-floor-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::Phase2GpuAdmissionNs,
+        "phase2-gpu-admission-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::GpuCoalescedBytes,
+        "gpu-coalesced-bytes",
+        MetricKind::Counter,
+        MetricUnit::Bytes,
+    ),
+    metric(
+        MetricId::GpuMaxDispatchBytes,
+        "gpu-max-dispatch-bytes",
+        MetricKind::Counter,
+        MetricUnit::Bytes,
+    ),
+    metric(
+        MetricId::GpuPresenceBits,
+        "gpu-presence-bits",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::GpuUnderfireRecovered,
+        "gpu-underfire-recovered",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::GpuTriggerBits,
+        "gpu-trigger-bits",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2GpuAdmitted,
+        "phase2-gpu-admitted",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2GpuEvidenceBits,
+        "phase2-gpu-evidence-bits",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2GpuHaystackUploads,
+        "phase2-gpu-haystack-uploads",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2GpuCompleteChunks,
+        "phase2-gpu-complete-chunks",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2GpuCompleteRows,
+        "phase2-gpu-complete-rows",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2GpuExcludedOversized,
+        "phase2-gpu-excluded-oversized",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2GpuExcludedNonAscii,
+        "phase2-gpu-excluded-non-ascii",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2AlwaysAnchorChunks,
+        "phase2-always-anchor-chunks",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2AlwaysAnchorCandidateRows,
+        "phase2-always-anchor-candidate-rows",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2AlwaysAnchorCandidateCount,
+        "phase2-always-anchor-candidate-count",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ConfirmedAnchorCandidateRows,
+        "confirmed-anchor-candidate-rows",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ConfirmedAnchorCandidateCount,
+        "confirmed-anchor-candidate-count",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::GenericKeywordCandidateRows,
+        "generic-keyword-candidate-rows",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::GenericKeywordCandidateCount,
+        "generic-keyword-candidate-count",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ConfirmedSuffixGateNs,
+        "confirmed-suffix-gate-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::ConfirmedSuffixGateCalls,
+        "confirmed-suffix-gate-calls",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ConfirmedSuffixGateSkips,
+        "confirmed-suffix-gate-skips",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ConfirmedCompanionGateNs,
+        "confirmed-companion-gate-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::ConfirmedCompanionGateCalls,
+        "confirmed-companion-gate-calls",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ConfirmedCompanionGateDenials,
+        "confirmed-companion-gate-denials",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ConfirmedAnchorCollectNs,
+        "confirmed-anchor-collect-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::ConfirmedAnchorCollectCalls,
+        "confirmed-anchor-collect-calls",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ConfirmedExtractNs,
+        "confirmed-extract-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::ConfirmedExtractCalls,
+        "confirmed-extract-calls",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ConfirmedAnchoredMatches,
+        "confirmed-anchored-matches",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ConfirmedWholeChunkMatches,
+        "confirmed-whole-chunk-matches",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::ConfirmedHotDirectFilterSkips,
+        "confirmed-hot-direct-filter-skips",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::PostprocessFragmentsNs,
+        "postprocess-fragments-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::PostprocessFragmentsCalls,
+        "postprocess-fragments-calls",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::PostprocessFragmentsCandidates,
+        "postprocess-fragments-candidates",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::PostprocessFragmentsMatches,
+        "postprocess-fragments-matches",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::PostprocessDedupNs,
+        "postprocess-dedup-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::PostprocessDedupCalls,
+        "postprocess-dedup-calls",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2AnchorCollectNs,
+        "phase2-anchor-collect-ns",
+        MetricKind::Counter,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::Phase2AnchorCollectCalls,
+        "phase2-anchor-collect-calls",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2AnchoredVerifyCandidates,
+        "phase2-anchored-verify-candidates",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2AnchoredVerifyMatches,
+        "phase2-anchored-verify-matches",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2WholeChunkPatterns,
+        "phase2-whole-chunk-patterns",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
+    metric(
+        MetricId::Phase2WholeChunkMatches,
+        "phase2-whole-chunk-matches",
+        MetricKind::Counter,
+        MetricUnit::Count,
+    ),
 ];
 
 impl MetricId {
-    pub const COUNT: usize = 128;
-
-    /// Return static metadata with no lookup allocation or hashing.
+    pub const COUNT: usize = 210;
     #[inline]
     pub const fn descriptor(self) -> &'static MetricDescriptor {
         &METRICS[self as usize]
@@ -1571,4 +2586,31 @@ impl MetricId {
     pub const fn as_str(self) -> &'static str {
         self.descriptor().name
     }
+}
+
+/// Named GPU region dispatch phase timing counters.
+pub const GPU_DISPATCH_PHASE_COUNTERS: [CounterId; 6] = [
+    CounterId::GpuMatcherNs,
+    CounterId::GpuCoalesceNs,
+    CounterId::GpuDispatchNs,
+    CounterId::GpuDeriveNs,
+    CounterId::GpuRecallFloorNs,
+    CounterId::Phase2GpuAdmissionNs,
+];
+
+/// Named GPU region dispatch decomposition counters whose sum composes the enclosing dispatch duration.
+pub const GPU_DISPATCH_DECOMPOSITION_COUNTERS: [CounterId; 3] = [
+    CounterId::GpuCoalesceNs,
+    CounterId::GpuDispatchNs,
+    CounterId::GpuDeriveNs,
+];
+
+/// Slice of all GPU dispatch phase timing counters.
+pub fn gpu_dispatch_phase_counters() -> &'static [CounterId] {
+    &GPU_DISPATCH_PHASE_COUNTERS
+}
+
+/// Slice of GPU dispatch decomposition timing counters.
+pub fn gpu_dispatch_decomposition_counters() -> &'static [CounterId] {
+    &GPU_DISPATCH_DECOMPOSITION_COUNTERS
 }

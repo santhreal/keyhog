@@ -306,7 +306,7 @@ fn extract_candidates_internal(
         push_candidate(&line[sep_pos + 1..], false, true);
     }
 
-    for quote in ['"', '\''] {
+    for quote in ['"', '\'', '`'] {
         let mut start = None;
         for (index, ch) in line.char_indices() {
             if ch == quote {
@@ -611,14 +611,29 @@ fn compact_normalized_keyword_ends_with(normalized: &str, suffix: &[u8]) -> bool
 }
 
 fn clean_candidate_value(raw: &str) -> &str {
-    let trimmed = raw
-        .trim()
-        .trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == ';' || c == ',');
-    let end = match trimmed.find(|c: char| c.is_whitespace() || c == '&' || c == '<') {
+    let trimmed = raw.trim();
+    if let Some(quote) = trimmed
+        .chars()
+        .next()
+        .filter(|&c| c == '"' || c == '\'' || c == '`')
+    {
+        let inside = &trimmed[quote.len_utf8()..];
+        if let Some(end_quote) = inside.find(quote) {
+            return &inside[..end_quote];
+        }
+    }
+    let trimmed =
+        if trimmed.starts_with('(') && trimmed.ends_with(')') && !trimmed.starts_with("(?") {
+            &trimmed[1..trimmed.len() - 1].trim()
+        } else {
+            trimmed
+        };
+    let unquoted = trimmed.trim_matches(|c: char| matches!(c, '"' | '\'' | '`' | ';' | ','));
+    let end = match unquoted.find(|c: char| c.is_whitespace() || c == '<') {
         Some(index) => index,
-        None => trimmed.len(),
+        None => unquoted.len(),
     };
-    trimmed[..end].trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == ';' || c == ',')
+    unquoted[..end].trim_matches(|c: char| matches!(c, '"' | '\'' | '`' | ';' | ','))
 }
 
 pub(crate) fn authorization_header_value(line: &str) -> Option<&str> {
@@ -710,24 +725,26 @@ fn find_xml_close_tag(haystack: &str, tag: &str) -> Option<usize> {
 
 pub(crate) fn is_likely_concatenation_fragment(line: &str) -> bool {
     let trimmed = line.trim();
-    if trimmed.starts_with('"') || trimmed.starts_with('\'') {
+    if trimmed.starts_with('"') || trimmed.starts_with('\'') || trimmed.starts_with('`') {
         let double_quotes = trimmed.matches('"').count();
         let single_quotes = trimmed.matches('\'').count();
-        if (double_quotes == 2 && single_quotes == 0) || (single_quotes == 2 && double_quotes == 0)
+        let backticks = trimmed.matches('`').count();
+        if (double_quotes == 2 && single_quotes == 0 && backticks == 0)
+            || (single_quotes == 2 && double_quotes == 0 && backticks == 0)
+            || (backticks == 2 && double_quotes == 0 && single_quotes == 0)
         {
-            let after_quote = if double_quotes == 2 {
-                trimmed
-                    .rfind('"')
-                    .map(|index| &trimmed[index + 1..])
-                    .unwrap_or("") // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
-                    .trim()
+            let quote_char = if double_quotes == 2 {
+                '"'
+            } else if single_quotes == 2 {
+                '\''
             } else {
-                trimmed
-                    .rfind('\'')
-                    .map(|index| &trimmed[index + 1..])
-                    .unwrap_or("") // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
-                    .trim()
+                '`'
             };
+            let after_quote = trimmed
+                .rfind(quote_char)
+                .map(|index| &trimmed[index + 1..])
+                .unwrap_or("") // LAW10: no text after the quote is an empty suffix; scan findings are unchanged
+                .trim();
             let is_fragment_suffix = after_quote.is_empty()
                 || after_quote == "+"
                 || after_quote == "\\"

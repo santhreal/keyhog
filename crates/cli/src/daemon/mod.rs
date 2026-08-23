@@ -41,6 +41,7 @@ mod frame_incremental_tests;
 #[cfg(test)]
 #[path = "frame_streaming_tests.rs"]
 mod frame_streaming_tests;
+pub(crate) mod fs_probe;
 #[cfg(feature = "git")]
 pub(crate) mod guard_commit;
 pub(crate) mod guard_runtime;
@@ -65,3 +66,19 @@ mod warm_identity_tests;
 mod wire_tests;
 
 pub use server::default_socket_path;
+
+/// The daemon rules identity is a property of the detector rule set, never of
+/// the route that loaded it: a `--detectors` corpus byte-identical to the
+/// embedded one must produce the same identity on both endpoints. Both the
+/// daemon and every client compute it here, so the two sides can never disagree
+/// by formula.
+pub(crate) fn detector_rules_digest(detectors: &[keyhog_core::DetectorSpec]) -> String {
+    keyhog_core::hex_encode(keyhog_core::compute_spec_hash(detectors))
+}
+
+/// Rules identity of the embedded corpus, hashed once per process.
+pub(crate) fn embedded_detector_rules_digest() -> &'static str {
+    static DIGEST: std::sync::LazyLock<String> =
+        std::sync::LazyLock::new(|| detector_rules_digest(keyhog_core::embedded_detector_specs()));
+    DIGEST.as_str()
+}

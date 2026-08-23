@@ -208,6 +208,8 @@ pub(crate) fn reset_scan_runtime_state() {
     AUTOROUTE_PERSIST_ERRORS.store(0, Ordering::Relaxed);
     BATCHES_NOT_ROUTED.store(0, Ordering::Relaxed);
     SCANNER_PANICKED.store(false, Ordering::Relaxed);
+    crate::orchestrator::set_test_scanner_thread_panic_injection(false);
+    keyhog_scanner::gpu::set_force_gpu_unavailable_for_test(false);
     keyhog_scanner::telemetry::reset_for_scan();
 }
 
@@ -471,7 +473,18 @@ pub async fn cli_main() -> ExitCode {
         Some(args::Command::ActionReport(args)) => match args.command {
             args::ActionReportCommand::Verify(args) => action_report::verify(args),
         },
-        Some(args::Command::Hook { command }) => subcommands::hook::run(command),
+        Some(args::Command::Hook { command }) => {
+            let profile_requested = match &command {
+                args::HookCommand::Run(args) => args.profile,
+                _ => false,
+            };
+            set_operator_profile_active(profile_requested);
+            let outcome = subcommands::hook::run(command).await;
+            if profile_requested {
+                set_operator_profile_active(false);
+            }
+            outcome
+        }
         Some(args::Command::Detectors(args)) => subcommands::detectors::run(args),
         Some(args::Command::Explain(args)) => {
             subcommands::explain::run(args).map(|()| ExitCode::SUCCESS)
@@ -494,6 +507,7 @@ pub async fn cli_main() -> ExitCode {
         Some(args::Command::Backend(args)) => subcommands::backend::run(args),
         Some(args::Command::Doctor(args)) => subcommands::doctor::run(args),
         Some(args::Command::BloomDiagnostic(args)) => bloom_diagnostic::run(args),
+        Some(args::Command::Install(args)) => subcommands::install::run(args),
         Some(args::Command::Uninstall(args)) => subcommands::uninstall::run(args),
         Some(args::Command::ScanSystem(args)) => subcommands::scan_system::run(args),
         #[cfg(unix)]
@@ -627,10 +641,10 @@ fn print_version_info(full: bool) {
         return;
     }
     let hw = keyhog_scanner::hw_probe::probe_hardware();
-    if hw.gpu_available {
+    if hw.gpu_available && !hw.gpu_is_software {
         println!(
             "GPU Acceleration: {}{}",
-            hw.gpu_name.as_deref().unwrap_or("available"), // LAW10: absent name/label => display default; reporting-only, recall-safe
+            hw.gpu_name.as_deref().unwrap_or("yes"), // LAW10: absent name/label => display default; reporting-only, recall-safe
             hw.gpu_vram_mb
                 .map(|mb| {
                     if mb >= 1024 {
@@ -642,7 +656,10 @@ fn print_version_info(full: bool) {
                 .unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
         );
     } else {
-        println!("GPU Acceleration: not detected");
+        println!(
+            "GPU Acceleration: {}",
+            keyhog_scanner::hw_probe::format_gpu_status(&hw)
+        );
     }
     if hw.hyperscan_available {
         println!("SIMD Regex:       vectorscan/hyperscan (active)");

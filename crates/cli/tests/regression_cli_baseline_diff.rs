@@ -208,7 +208,8 @@ fn create_baseline_with_live_verification_writes_snapshot_and_exits_ten() {
         "baseline creation returns before reporting findings; got {stdout:?}"
     );
     let value = read_baseline(&baseline);
-    assert_eq!(value["version"].as_u64(), Some(1), "baseline={value}");
+    // Every created baseline is schema 2, verification path included.
+    assert_eq!(value["version"].as_u64(), Some(2), "baseline={value}");
     assert_eq!(
         baseline_detectors(&value),
         vec!["baseline-script-verifier".to_string()],
@@ -414,7 +415,9 @@ fn baseline_suppresses_pat_but_surfaces_new_aws_exit_one() {
 
     // Now introduce a NEW AWS key and re-scan the whole tree against the baseline.
     let aws_file = dir.path().join("b.env");
-    std::fs::write(&aws_file, format!("{AWS}\n")).expect("write aws");
+    // Assignment-shaped: an AWS key id has no checksum to lift it, so a bare
+    // token in a dotenv file stays `review` tier and would not block.
+    std::fs::write(&aws_file, format!("AWS_ACCESS_KEY_ID={AWS}\n")).expect("write aws");
 
     let (code, out, err) = scan(
         dir.path(),
@@ -532,7 +535,9 @@ fn update_baseline_grows_and_preserves_existing() {
     );
 
     let aws_file = dir.path().join("b.env");
-    std::fs::write(&aws_file, format!("{AWS}\n")).expect("write aws");
+    // Assignment-shaped for the same reason as above: only a blocking tier
+    // proves the new entry changed the exit code.
+    std::fs::write(&aws_file, format!("AWS_ACCESS_KEY_ID={AWS}\n")).expect("write aws");
 
     let (c2, _o2, e2) = scan(dir.path(), &["--update-baseline", base.to_str().unwrap()]);
     assert_eq!(
@@ -594,8 +599,8 @@ fn baseline_unsupported_version_fails_closed_exit_two() {
         "an unsupported baseline version is a user error → exit 2; stderr={err}"
     );
     assert!(
-        err.contains("unsupported baseline version 999") && err.contains("expected 1"),
-        "the error must state seen version 999 and expected 1; got {err}"
+        err.contains("unsupported baseline version 999") && err.contains("expected 2"),
+        "the error must state seen version 999 and the supported version 2; got {err}"
     );
 }
 

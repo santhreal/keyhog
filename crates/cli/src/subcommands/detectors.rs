@@ -168,9 +168,22 @@ fn print_detectors_json(detectors: &[&DetectorSpec]) -> Result<()> {
     Ok(())
 }
 
+/// The audit exists to REPORT the issues in a corpus the load-time quality gate
+/// refuses, so it must not reuse the gated loader: that path fails closed with
+/// a user error and the operator never sees which detector is wrong. A missing
+/// or non-directory path still falls back to the embedded corpus.
+fn load_detector_corpus_for_audit(path: &Path) -> Result<Vec<DetectorSpec>> {
+    let _load_span = keyhog_profile::span(keyhog_profile::Stage::BackendSelect);
+    if path.is_dir() {
+        return keyhog_core::load_detectors_with_gate(path, false)
+            .with_context(|| format!("reading detector corpus from {}", path.display()));
+    }
+    load_detector_corpus(path)
+}
+
 fn run_audit(args: &DetectorArgs) -> Result<ExitCode> {
     let palette = style::for_stdout();
-    let detectors = load_detector_corpus(&args.detectors)?;
+    let detectors = load_detector_corpus_for_audit(&args.detectors)?;
 
     let mut total_errors = 0usize;
     let mut total_warnings = 0usize;
@@ -290,6 +303,19 @@ fn run_fix(args: &DetectorArgs) -> Result<ExitCode> {
             crate::atomic_file::write_bytes(&entry, rewritten.as_bytes())
                 .with_context(|| format!("atomically writing fixed {}", entry.display()))?;
             println!("fixed {}: {} rewrite(s)", entry.display(), count);
+        }
+    }
+
+    if files_changed > 0 && !args.dry_run {
+        if let Err(error) = crate::execution_pack_install::invalidate_installed_artifacts(
+            "detector definitions updated by keyhog detectors --fix",
+        ) {
+            tracing::warn!(
+                error = %error,
+                "failed to invalidate stale execution packs after detector fix"
+            );
+        } else {
+            eprintln!("info: invalidated installed execution packs; run `keyhog install` to regenerate packs with updated detector definitions");
         }
     }
 

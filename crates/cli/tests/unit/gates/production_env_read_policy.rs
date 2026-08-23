@@ -109,12 +109,15 @@ fn allowed_env_read(rel: &str, name: &str) -> bool {
                 | "crates/cli/src/orchestrator/run.rs"
         ),
         "XDG_RUNTIME_DIR" => rel == "crates/cli/src/daemon/server.rs",
-        // HOME: refuse scanning the operator home root / credential stores, and
-        // expand `~` in daemon state paths.
+        // HOME: refuse scanning the operator home root / credential stores
+        // (daemon server), and expand `~` in daemon state paths (config owns
+        // the single expansion). `USERPROFILE` is the Windows fallback of the
+        // same expansion and is scoped to that one owner.
         "HOME" => matches!(
             rel,
-            "crates/cli/src/daemon/server.rs" | "crates/cli/src/subcommands/daemon.rs"
+            "crates/cli/src/daemon/server.rs" | "crates/cli/src/config.rs"
         ),
+        "USERPROFILE" => rel == "crates/cli/src/config.rs",
         "AWS_ACCESS_KEY_ID"
         | "AWS_SECRET_ACCESS_KEY"
         | "AWS_REGION"
@@ -125,6 +128,7 @@ fn allowed_env_read(rel: &str, name: &str) -> bool {
         | "KEYHOG_GITLAB_TOKEN"
         | "KEYHOG_BITBUCKET_USERNAME"
         | "KEYHOG_BITBUCKET_TOKEN" => rel == "crates/cli/src/sources.rs",
+        "GHIDRA_INSTALL_DIR" => rel == "crates/sources/src/binary/analyzers/ghidra.rs",
         _ => false,
     }
 }

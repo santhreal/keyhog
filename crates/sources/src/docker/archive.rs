@@ -60,7 +60,7 @@ impl DockerUnpackBudget {
     fn charge(&self, bytes: u64) -> bool {
         use std::sync::atomic::Ordering;
         self.remaining
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |left| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |left| {
                 left.checked_sub(bytes)
             })
             .is_ok()
@@ -368,8 +368,8 @@ fn stream_layer_tar_reader(
         // Large plain members: stream ~1 MiB windows from the tar entry instead
         // of buffering up to the 100 MiB member-scan cap (restores near-window
         // peak RSS vs the prior unpack+mmap path).
-        let window_size = 1024 * 1024; // matches filesystem::reader::DEFAULT_WINDOW_SIZE
-        let window_overlap = 128 * 1024; // matches filesystem::reader::DEFAULT_WINDOW_OVERLAP
+        let window_size = keyhog_core::DEFAULT_WINDOW_SIZE_BYTES;
+        let window_overlap = keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES;
 
         // Extensionless: sniff a bounded prefix first (process_entry parity) so a
         // large ELF/Mach-O/PE is not buffered up to the 100 MiB scan cap only to

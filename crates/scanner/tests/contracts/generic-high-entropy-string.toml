@@ -1,0 +1,36 @@
+schema_version = 1
+detector_id = "generic-high-entropy-string"
+service = "generic"
+severity = "medium"
+
+# Generic high-entropy string detector contract.
+
+[[positive]]
+text = "api_secret=ufnlbbavawsdeecn"
+credential = "ufnlbbavawsdeecn"
+reason = "api_secret anchor + 16-char high-entropy body clears the len<=24 floor (2.8)."
+
+[[positive]]
+text = "auth_secret = \"kdheufnzbwqmaslr\""
+credential = "kdheufnzbwqmaslr"
+reason = "auth_secret keyword + quoted high-entropy body."
+
+[[negative]]
+text = "api_secret=example"
+reason = "Dictionary body 'example' (entropy ~2.5 below the 2.8 len-bucket floor)."
+
+[[evasion]]
+text = "master_secret: \"ufnlbbavawsdeecn\""
+credential = "ufnlbbavawsdeecn"
+reason = "master_secret keyword + colon-quoted body (whitespace-separated form)."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted generic high-entropy secret."

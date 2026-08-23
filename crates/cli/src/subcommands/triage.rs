@@ -82,8 +82,7 @@ pub(crate) fn run(args: TriageArgs) -> Result<ExitCode> {
 
 #[cfg(unix)]
 fn active_detector_digest() -> Result<String> {
-    let detectors = keyhog_core::load_embedded_detectors_or_fail()
-        .map_err(|_| anyhow!("active detector corpus could not be loaded"))?;
+    let detectors = keyhog_core::embedded_detector_specs().to_vec();
     let scanner = keyhog_scanner::CompiledScanner::compile_with_gpu_policy(
         detectors,
         keyhog_scanner::GpuInitPolicy::ForceDisabled,
@@ -114,6 +113,7 @@ pub(crate) struct PrivateOutput {
 #[cfg(unix)]
 impl PrivateOutput {
     fn cleanup(self) {
+        // SAFETY: directory is a valid open directory descriptor and final_name is NUL-terminated.
         unsafe {
             libc::unlinkat(
                 self.parent.directory.as_raw_fd(),
@@ -252,6 +252,7 @@ fn open_parent_with_hook(path: &Path, hook: impl FnOnce()) -> Result<HeldParent>
 #[cfg(unix)]
 fn open_directory(path: &OsStr) -> std::io::Result<OwnedFd> {
     let name = c_string_io(path)?;
+    // SAFETY: name is a valid null-terminated C string.
     let descriptor = unsafe {
         libc::open(
             name.as_ptr(),
@@ -272,6 +273,7 @@ fn openat(
     flags: libc::c_int,
     mode: libc::mode_t,
 ) -> std::io::Result<OwnedFd> {
+    // SAFETY: directory is a valid fd or AT_FDCWD, and name is a null-terminated C string.
     let descriptor = unsafe { libc::openat(directory, name.as_ptr(), flags, mode as libc::c_uint) };
     owned_fd(descriptor)
 }
@@ -281,6 +283,7 @@ fn owned_fd(descriptor: libc::c_int) -> std::io::Result<OwnedFd> {
     if descriptor < 0 {
         Err(std::io::Error::last_os_error())
     } else {
+        // SAFETY: descriptor is verified non-negative and newly opened.
         Ok(unsafe { OwnedFd::from_raw_fd(descriptor) })
     }
 }
@@ -288,9 +291,11 @@ fn owned_fd(descriptor: libc::c_int) -> std::io::Result<OwnedFd> {
 #[cfg(unix)]
 fn descriptor_metadata(descriptor: libc::c_int) -> std::io::Result<libc::stat> {
     let mut metadata = std::mem::MaybeUninit::<libc::stat>::uninit();
+    // SAFETY: metadata pointer is valid uninitialized memory for libc::stat.
     if unsafe { libc::fstat(descriptor, metadata.as_mut_ptr()) } != 0 {
         return Err(std::io::Error::last_os_error());
     }
+    // SAFETY: fstat succeeded with return code 0, fully initializing metadata.
     Ok(unsafe { metadata.assume_init() })
 }
 

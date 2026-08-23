@@ -81,6 +81,7 @@ pub(super) fn extract(
     kind: ImageKind,
     file_size: u64,
     mtime_ns: Option<u64>,
+    ctime_ns: Option<u64>,
     max_size: u64,
 ) -> Result<Extraction, SourceError> {
     let mut file = read::open_file_safe(path).map_err(|error| {
@@ -100,6 +101,7 @@ pub(super) fn extract(
         chunks: Vec::new(),
         path: display_path(path),
         mtime_ns,
+        ctime_ns,
         file_size,
         remaining: budget,
     };
@@ -135,6 +137,7 @@ pub(super) fn extract_from_bytes(
         chunks: Vec::new(),
         path: display.to_string(),
         mtime_ns: None,
+        ctime_ns: None,
         file_size,
         remaining: budget,
     };
@@ -167,6 +170,7 @@ struct Collector {
     chunks: Vec<Chunk>,
     path: String,
     mtime_ns: Option<u64>,
+    ctime_ns: Option<u64>,
     file_size: u64,
     remaining: usize,
 }
@@ -193,6 +197,7 @@ impl Collector {
                 base_offset,
                 mtime_ns: self.mtime_ns,
                 size_bytes: Some(self.file_size),
+                ctime_ns: self.ctime_ns,
                 ..Default::default()
             },
         });

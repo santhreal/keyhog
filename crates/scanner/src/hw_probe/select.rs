@@ -87,6 +87,8 @@ pub enum BackendRoutingReason {
     GpuBatchNotDominant,
     GpuThresholdNotMet,
     GpuSelected,
+    CompiledWithoutGpu,
+    SingleCompiledBackend,
 }
 
 impl BackendRoutingReason {
@@ -101,6 +103,8 @@ impl BackendRoutingReason {
             Self::GpuBatchNotDominant => "gpu_batch_not_dominant",
             Self::GpuThresholdNotMet => "gpu_threshold_not_met",
             Self::GpuSelected => "gpu_selected",
+            Self::CompiledWithoutGpu => "compiled_without_gpu_backend",
+            Self::SingleCompiledBackend => "single_compiled_backend",
         }
     }
 }
@@ -187,6 +191,12 @@ impl BackendRoutingVerdict {
                 self.pattern_count,
                 self.gpu_pattern_breakeven
             ),
+            BackendRoutingReason::CompiledWithoutGpu => {
+                "compiled without GPU backend".to_string()
+            }
+            BackendRoutingReason::SingleCompiledBackend => {
+                "compiled without GPU backend / single compiled backend".to_string()
+            }
         }
     }
 }
@@ -227,12 +237,16 @@ fn select_backend_for_workload(
     }
 
     if !caps.gpu_available {
-        return BackendRoutingVerdict::new(
-            caps,
-            workload,
-            cpu_backend,
-            BackendRoutingReason::GpuProbeMiss,
-        );
+        let reason = if caps.gpu_name.is_some() && !super::gpu_backend_compiled() {
+            if !super::multiple_backends_compiled() {
+                BackendRoutingReason::SingleCompiledBackend
+            } else {
+                BackendRoutingReason::CompiledWithoutGpu
+            }
+        } else {
+            BackendRoutingReason::GpuProbeMiss
+        };
+        return BackendRoutingVerdict::new(caps, workload, cpu_backend, reason);
     }
 
     if !workload.gpu_dominates_dispatch_cost() {

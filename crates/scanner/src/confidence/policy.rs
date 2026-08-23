@@ -15,7 +15,10 @@ pub(crate) struct CompiledMatchConfidencePolicy {
 
 impl CompiledMatchConfidencePolicy {
     pub(crate) fn compile(detector: &keyhog_core::DetectorSpec) -> Result<Self, String> {
-        Self::hydrate(
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::ConfidencePolicy,
+        );
+        Self::hydrate_parts(
             &detector.id,
             detector.owns_entropy_policy(),
             detector.match_confidence,
@@ -23,6 +26,17 @@ impl CompiledMatchConfidencePolicy {
     }
 
     pub(crate) fn hydrate(
+        detector_id: &str,
+        owns_entropy_policy: bool,
+        spec: Option<keyhog_core::DetectorMatchConfidenceSpec>,
+    ) -> Result<Self, String> {
+        keyhog_profile::record_compile_surface_load(
+            keyhog_profile::CompileSurfaceId::ConfidencePolicy,
+        );
+        Self::hydrate_parts(detector_id, owns_entropy_policy, spec)
+    }
+
+    fn hydrate_parts(
         detector_id: &str,
         owns_entropy_policy: bool,
         spec: Option<keyhog_core::DetectorMatchConfidenceSpec>,
@@ -169,25 +183,33 @@ pub(crate) fn checksum_policy_for(credential: &str) -> CredentialChecksumPolicy 
 
 #[inline]
 pub(crate) fn apply_checksum_confidence(confidence: f64, credential: &str) -> Option<f64> {
-    apply_checksum_decision_confidence(confidence, checksum_policy_for(credential))
+    apply_checksum_decision_confidence(confidence, checksum_policy_for(credential), false)
 }
 
+/// `body_is_documentation_sample` is true when the body is a placeholder word,
+/// a placeholder inside a decoded envelope, or a degenerate identical-character
+/// run. Such a body keeps the penalties that pushed it down unless the validator
+/// verified a digest computed over the body itself: a length, charset, UUID, JWT
+/// or single-check-digit test over `0000…` proves the shape, not the credential.
 #[inline]
 pub(crate) fn apply_checksum_decision_confidence(
     confidence: f64,
     decision: CredentialChecksumPolicy,
+    body_is_documentation_sample: bool,
 ) -> Option<f64> {
+    let floor_lifts = !body_is_documentation_sample || decision.proves_body_provenance();
     match decision.result() {
         crate::checksum::ChecksumResult::Invalid => None,
-        crate::checksum::ChecksumResult::Valid => Some(
+        crate::checksum::ChecksumResult::Valid if floor_lifts => Some(
             confidence.max(
                 decision
                     .valid_confidence_floor()
                     .unwrap_or(crate::checksum::CHECKSUM_VALID_FLOOR), // LAW10: canonical default for the compatibility API; compiled detector decisions carry their TOML floor
             ),
         ),
-        crate::checksum::ChecksumResult::StructurallyValid => Some(confidence),
-        crate::checksum::ChecksumResult::NotApplicable => Some(confidence),
+        crate::checksum::ChecksumResult::Valid
+        | crate::checksum::ChecksumResult::StructurallyValid
+        | crate::checksum::ChecksumResult::NotApplicable => Some(confidence),
     }
 }
 
@@ -463,7 +485,11 @@ pub(crate) fn finalize_report_confidence(
         policy.detector_id,
         policy.calibration,
     );
-    apply_checksum_decision_confidence(confidence, policy.checksum)
+    let body_is_documentation_sample = crate::confidence::penalties::is_documentation_sample_body(
+        policy.credential,
+        policy.post_match.degenerate_run_min_length,
+    );
+    apply_checksum_decision_confidence(confidence, policy.checksum, body_is_documentation_sample)
 }
 
 pub(crate) fn canonical_report_confidence(confidence: f64) -> f64 {

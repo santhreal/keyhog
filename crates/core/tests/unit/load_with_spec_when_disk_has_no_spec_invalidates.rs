@@ -16,6 +16,7 @@ fn load_with_spec_when_disk_has_no_spec_invalidates() {
         &idx,
         PathBuf::from("/tmp/x"),
         1,
+        1 + 100,
         1,
         sample_hash(b"x"),
     );

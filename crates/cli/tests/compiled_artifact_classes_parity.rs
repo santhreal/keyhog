@@ -1,0 +1,184 @@
+//! WHY THIS TEST EXISTS:
+//! Row 68 / Compiled artifact class enumeration and identity totality contract:
+//! Proves that all compiled artifact classes (GPU literal set, phase-2 GPU DFA catalog,
+//! Hyperscan database, detector plan, execution pack, matcher artifact) are enumerated
+//! from source at run time, each registers a compile owner, and cache directory auto-tightening
+//! repairs loose default directory permissions.
+//!
+//! WHAT IT DOES NOT CATCH:
+//! Dynamic kernel driver crashes during GPU execution.
+
+use keyhog_core::{CompiledArtifactClass, CompiledArtifactIdentity};
+use std::collections::BTreeSet;
+
+#[test]
+fn compiled_artifact_classes_are_enumerable_and_have_compile_owners() {
+    let classes = CompiledArtifactClass::ALL;
+    assert_eq!(
+        classes.len(),
+        6,
+        "Exactly 6 compiled artifact classes must be registered in the workspace"
+    );
+
+    let mut seen_labels = BTreeSet::new();
+    for class in classes {
+        let label = class.label();
+        assert!(!label.is_empty(), "Class label must not be empty");
+        assert!(
+            seen_labels.insert(label),
+            "Duplicate compiled artifact label: {label}"
+        );
+
+        let owner = class.compile_owner();
+        assert!(
+            !owner.is_empty(),
+            "Compiled artifact class {label} must declare a compile owner"
+        );
+        assert!(
+            owner.starts_with("keyhog-scanner::"),
+            "Compiled artifact class {label} compile owner must reside in keyhog-scanner"
+        );
+    }
+
+    // Direct producer alignment assertions
+    assert_eq!(
+        keyhog_scanner::gpu_literal_artifacts::ARTIFACT_CLASS,
+        CompiledArtifactClass::GpuLiteralSet
+    );
+    assert_eq!(
+        keyhog_scanner::gpu_literal_artifacts::GpuLiteralArtifact::ARTIFACT_CLASS,
+        CompiledArtifactClass::GpuLiteralSet
+    );
+    assert_eq!(
+        keyhog_scanner::compiled_scanner::ARTIFACT_CLASS,
+        CompiledArtifactClass::DetectorPlan
+    );
+    assert_eq!(
+        keyhog_scanner::execution_pack::ARTIFACT_CLASS,
+        CompiledArtifactClass::ExecutionPack
+    );
+    assert_eq!(
+        keyhog_scanner::execution_pack::ExecutionPackIdentity::ARTIFACT_CLASS,
+        CompiledArtifactClass::ExecutionPack
+    );
+    assert_eq!(
+        keyhog_scanner::matcher_artifact_cache::ARTIFACT_CLASS,
+        CompiledArtifactClass::MatcherArtifact
+    );
+    assert_eq!(
+        keyhog_scanner::MatcherArtifactIdentity::ARTIFACT_CLASS,
+        CompiledArtifactClass::MatcherArtifact
+    );
+}
+
+#[test]
+fn compiled_artifact_identity_round_trips_canonical_serialization() {
+    let identity = CompiledArtifactIdentity {
+        artifact_class: CompiledArtifactClass::MatcherArtifact,
+        binary_digest: "a".repeat(64),
+        detector_digest: "b".repeat(64),
+        config_digest: "c".repeat(64),
+        platform: "linux-x86_64".to_string(),
+        adapter_identity: Some("cuda-device-0".to_string()),
+    };
+
+    let serialized = serde_json::to_string(&identity).expect("serialize identity");
+    let deserialized: CompiledArtifactIdentity =
+        serde_json::from_str(&serialized).expect("deserialize identity");
+
+    assert_eq!(identity, deserialized);
+    assert_eq!(
+        deserialized.artifact_class,
+        CompiledArtifactClass::MatcherArtifact
+    );
+
+    let matcher_identity = keyhog_scanner::MatcherArtifactIdentity {
+        version: keyhog_scanner::MATCHER_ARTIFACT_VERSION,
+        binary_digest: "a".repeat(64),
+        binary_version: "0.5.80".to_string(),
+        git_hash: "0123456789abcdef".to_string(),
+        target: "x86_64-linux".to_string(),
+        features: "default".to_string(),
+        detector_corpus_digest: "b".repeat(64),
+        resolved_config_digest: "c".repeat(64),
+        pack_generation: "none".to_string(),
+        backend: "Cpu".to_string(),
+        runtime_identity: "none".to_string(),
+        route_matcher_section_version: 1,
+    };
+
+    assert_eq!(
+        matcher_identity.artifact_class(),
+        CompiledArtifactClass::MatcherArtifact
+    );
+    let canonical = matcher_identity.canonical_identity();
+    assert_eq!(
+        canonical.artifact_class,
+        CompiledArtifactClass::MatcherArtifact
+    );
+    assert_eq!(canonical.binary_digest, "a".repeat(64));
+    assert_eq!(canonical.detector_digest, "b".repeat(64));
+    assert_eq!(canonical.config_digest, "c".repeat(64));
+    assert_eq!(canonical.platform, "x86_64-linux");
+    assert_eq!(canonical.adapter_identity, None);
+}
+#[cfg(unix)]
+fn allowlisted_tempdir() -> tempfile::TempDir {
+    let uid = unsafe { libc::geteuid() };
+    let root = std::env::temp_dir().join(format!("keyhog-cache-{uid}"));
+    if let Ok(meta) = std::fs::symlink_metadata(&root) {
+        assert!(
+            !meta.file_type().is_symlink(),
+            "allowlisted root must not be a symlink"
+        );
+    }
+    let _ = std::fs::create_dir(&root);
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700));
+    tempfile::Builder::new()
+        .prefix("matcher-tighten-")
+        .tempdir_in(&root)
+        .expect("tempdir in allowlisted root")
+}
+
+#[test]
+#[cfg(unix)]
+fn default_matcher_cache_path_tightens_permissions_when_loose() {
+    let temp = allowlisted_tempdir();
+    let cache_dir = temp.path().join("keyhog-matcher-artifacts");
+    std::fs::create_dir(&cache_dir).expect("create cache dir");
+
+    use std::os::unix::fs::PermissionsExt;
+    // Set mode 775 (group-writable)
+    std::fs::set_permissions(&cache_dir, std::fs::Permissions::from_mode(0o775))
+        .expect("set mode 775");
+
+    // Explicit validation should reject group-writable directory
+    let explicit_err = keyhog_scanner::validate_matcher_artifact_cache_dir(&cache_dir);
+    assert!(
+        explicit_err.is_err(),
+        "Explicit validation must refuse group-writable directory"
+    );
+    assert!(
+        explicit_err
+            .unwrap_err()
+            .contains("group- or world-writable"),
+        "Error must specifically name group- or world-writable refusal"
+    );
+
+    // Validation with auto_tighten should tighten to 700 and succeed
+    let tighten_res =
+        keyhog_scanner::validate_and_tighten_matcher_artifact_cache_dir(&cache_dir, true);
+    assert!(
+        tighten_res.is_ok(),
+        "Auto-tightening validation must succeed on loose default directory: {:?}",
+        tighten_res.err()
+    );
+
+    let meta = std::fs::metadata(&cache_dir).expect("read metadata");
+    assert_eq!(
+        meta.permissions().mode() & 0o777,
+        0o700,
+        "Directory permissions must be tightened to 0700"
+    );
+}

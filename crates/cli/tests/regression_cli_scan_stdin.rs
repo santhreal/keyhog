@@ -1,13 +1,14 @@
 //! Regression: `keyhog scan --stdin` (and the bare-`-` alias) drive the REAL
 //! shipped binary over a piped stdin, the pre-commit / editor-save fast path.
 //!
-//! One secret is piped over stdin: a Slack **bot** token
+//! One secret is piped over stdin as an assignment line: a Slack **bot** token
 //! (`xoxb-` + two numeric groups + a 24-char secret), which fires the
 //! `slack-bot-token` detector (severity `critical`, service `slack`, name
 //! "Slack Bot Token"). This token is used instead of a GitHub PAT because the
 //! bot-token detector surfaces on the no-filename stdin chunk (`path: None`)
 //! deterministically, whereas filename-context-sensitive detectors can score
-//! differently without a path.
+//! differently without a path. The assignment key supplies the source-role
+//! evidence that puts the finding in a blocking tier.
 //!
 //! Every format must surface THAT detector id off stdin:
 //!   * json  -> a JSON ARRAY whose [0].detector_id is the id, with the exact
@@ -48,6 +49,19 @@ const TOKEN_SHA256: &str = "a8dd917042994f6c6f183c6f0718ab4241065165b299050b5130
 const REDACTED: &str = "xoxb...uvwx";
 /// The exact 22-field CSV header the reporter writes (from `CsvReporter::new`).
 const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,evidence_tier,evidence_reason_code,evidence_score,entropy,remediation,metadata,additional_locations";
+
+/// The piped payload: an assignment line, the shape a pre-commit hook or an
+/// editor save actually pipes. A bare token with no assignment and no filename
+/// carries no source-role evidence, so the classifier reports it in the `review`
+/// tier and the scan exits 0. That contract has its own coverage in
+/// `regression_cli_stdin_scan.rs`; this file pins the blocking path.
+fn piped_assignment() -> String {
+    format!("SLACK_BOT_TOKEN=\"{TOKEN}\"\n")
+}
+
+/// Byte offset of the token inside `piped_assignment()`: `SLACK_BOT_TOKEN="` is
+/// 17 bytes.
+const TOKEN_OFFSET: u64 = 17;
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
@@ -132,7 +146,7 @@ const CLEAN_INPUT: &[u8] = b"just ordinary prose with plain everyday words here\
 /// whose single element carries the exact detector id.
 #[test]
 fn stdin_json_finding_surfaces_with_exact_detector_id_and_exit_1() {
-    let input = format!("{TOKEN}\n");
+    let input = piped_assignment();
     let (code, out, err) = run_stdin(input.as_bytes(), "json");
     assert_eq!(
         code,
@@ -157,10 +171,11 @@ fn stdin_json_finding_surfaces_with_exact_detector_id_and_exit_1() {
 }
 
 /// json off stdin: the finding's identity and stdin-specific location fields are
-/// exact (source `stdin`, NO file path, line 1, offset 0, verification skipped).
+/// exact (source `stdin`, NO file path, line 1, the token's byte offset,
+/// verification skipped).
 #[test]
 fn stdin_json_exact_identity_and_location_fields() {
-    let input = format!("{TOKEN}\n");
+    let input = piped_assignment();
     let (_code, out, _err) = run_stdin(input.as_bytes(), "json");
     let v: serde_json::Value = serde_json::from_str(&out).expect("stdin json parse");
     let obj = &v.as_array().expect("array")[0];
@@ -197,8 +212,8 @@ fn stdin_json_exact_identity_and_location_fields() {
     );
     assert_eq!(
         obj.pointer("/location/offset").and_then(|x| x.as_u64()),
-        Some(0),
-        "the token starts at byte offset 0 of the piped chunk"
+        Some(TOKEN_OFFSET),
+        "the token starts right after the assignment key and opening quote"
     );
     assert_eq!(
         obj.get("verification").and_then(|x| x.as_str()),
@@ -212,7 +227,7 @@ fn stdin_json_exact_identity_and_location_fields() {
 /// hashed, not a truncated/salted variant.
 #[test]
 fn stdin_json_redacts_credential_and_hashes_exact_bytes() {
-    let input = format!("{TOKEN}\n");
+    let input = piped_assignment();
     let (_code, out, _err) = run_stdin(input.as_bytes(), "json");
     let v: serde_json::Value = serde_json::from_str(&out).expect("stdin json parse");
     let obj = &v.as_array().expect("array")[0];
@@ -236,8 +251,8 @@ fn stdin_json_redacts_credential_and_hashes_exact_bytes() {
     );
     assert_eq!(
         obj.get("evidence_score").and_then(|x| x.as_f64()),
-        Some(1.0),
-        "the literal-anchored Slack bot token reports evidence score 1.0 over stdin"
+        Some(0.854),
+        "the detector's own weights score this token at 0.854 in assignment context"
     );
 }
 
@@ -287,7 +302,7 @@ fn stdin_json_empty_input_exits_partial_with_empty_array() {
 /// `error` (critical maps to error), and there is exactly one result.
 #[test]
 fn stdin_sarif_ruleid_error_level_single_result() {
-    let input = format!("{TOKEN}\n");
+    let input = piped_assignment();
     let (code, out, err) = run_stdin(input.as_bytes(), "sarif");
     assert_eq!(
         code,
@@ -339,7 +354,7 @@ fn stdin_sarif_clean_has_zero_results_exit_0() {
 /// detector, and the `stdin` location.
 #[test]
 fn stdin_text_summary_labels_and_stdin_location() {
-    let input = format!("{TOKEN}\n");
+    let input = piped_assignment();
     let (code, out, err) = run_stdin(input.as_bytes(), "text");
     assert_eq!(
         code,
@@ -392,7 +407,7 @@ fn stdin_text_clean_honest_no_secrets_line_exit_0() {
 /// in order, with exactly 22 fields.
 #[test]
 fn stdin_csv_header_and_single_data_row_exact_cells() {
-    let input = format!("{TOKEN}\n");
+    let input = piped_assignment();
     let (code, out, err) = run_stdin(input.as_bytes(), "csv");
     assert_eq!(
         code,
@@ -420,7 +435,7 @@ fn stdin_csv_header_and_single_data_row_exact_cells() {
     let row = data[0];
     // id,name,service,severity,redacted,hash,source(stdin),file_path(empty)...
     let expected_prefix = format!(
-        "{DETECTOR_ID},{DETECTOR_NAME},slack,critical,{REDACTED},{TOKEN_SHA256},{{}},stdin,,1,0,"
+        "{DETECTOR_ID},{DETECTOR_NAME},slack,critical,{REDACTED},{TOKEN_SHA256},{{}},stdin,,1,{TOKEN_OFFSET},"
     );
     assert!(
         row.starts_with(&expected_prefix),
@@ -470,7 +485,7 @@ fn stdin_csv_clean_is_header_only_exit_0() {
 /// exit 1.
 #[test]
 fn stdin_bare_dash_positional_aliases_to_stdin() {
-    let input = format!("{TOKEN}\n");
+    let input = piped_assignment();
     let (code, out, err) = run_stdin_args(
         input.as_bytes(),
         &[
@@ -507,7 +522,7 @@ fn stdin_bare_dash_positional_aliases_to_stdin() {
 /// all exit 1. A serializer dropping the finding on one path would break this.
 #[test]
 fn stdin_exit_codes_match_across_formats_with_finding() {
-    let input = format!("{TOKEN}\n");
+    let input = piped_assignment();
     let codes: Vec<Option<i32>> = ["json", "sarif", "text", "csv"]
         .iter()
         .map(|f| run_stdin(input.as_bytes(), f).0)
@@ -537,7 +552,7 @@ fn stdin_exit_codes_match_across_formats_when_clean() {
 /// the one piped secret (a per-format recall hole this catches).
 #[test]
 fn stdin_all_structured_formats_surface_same_detector_id() {
-    let input = format!("{TOKEN}\n");
+    let input = piped_assignment();
 
     let (_c1, json_out, _e1) = run_stdin(input.as_bytes(), "json");
     let jv: serde_json::Value = serde_json::from_str(&json_out).expect("json parse");

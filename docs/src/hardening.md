@@ -91,7 +91,8 @@ KeyHog has no self-update path. There is no signed binary-asset release
 channel: automatic releases publish crates.io packages only, and no workflow
 builds, signs, or uploads release binaries.
 
-Update with `cargo install --locked --force keyhog`; see
+Update with `cargo install --locked --force keyhog`, then run `keyhog doctor`
+to verify the replacement before you rely on it; see
 [Install](./install.md). `install.sh` and `install.ps1` install a bundle you
 already hold, with `--from-file`, and never fetch one.
 

@@ -36,6 +36,7 @@ pub(crate) fn gpu_adapter_probe() -> Option<&'static GpuAdapterProbe> {
 }
 
 fn probe() -> Option<GpuAdapterProbe> {
+    super::evidence::record_gpu_api_initialized(super::evidence::GpuApiKind::Wgpu);
     let instance = wgpu::Instance::default();
     let mut adapters = instance
         .enumerate_adapters(wgpu::Backends::all())
@@ -84,6 +85,7 @@ fn probe() -> Option<GpuAdapterProbe> {
 
 pub(crate) fn probe_wgpu_device_exposures(
 ) -> Result<Vec<super::device_set::GpuDeviceExposure>, String> {
+    super::evidence::record_gpu_api_initialized(super::evidence::GpuApiKind::Wgpu);
     let instance = wgpu::Instance::default();
     let mut adapters = instance
         .enumerate_adapters(wgpu::Backends::all())
@@ -324,6 +326,18 @@ pub(crate) fn linux_nvidia_pci_identity(pci_bus_id: &str) -> Option<(String, Str
 fn read_hex_u32(path: std::path::PathBuf) -> Option<u32> {
     let value = std::fs::read_to_string(path).ok()?;
     u32::from_str_radix(value.trim().trim_start_matches("0x"), 16).ok()
+}
+
+#[cfg(all(target_os = "linux", feature = "gpu"))]
+pub(crate) fn linux_cuda_runtime_identity() -> std::result::Result<String, String> {
+    let version = std::fs::read_to_string("/proc/driver/nvidia/version")
+        .map_err(|error| format!("cannot read /proc/driver/nvidia/version: {error}"))?;
+    let version = version.split_whitespace().collect::<Vec<_>>().join(" ");
+    if version.is_empty() {
+        Err("/proc/driver/nvidia/version contains no runtime identity".to_owned())
+    } else {
+        Ok(format!("nvidia-kernel:{version}"))
+    }
 }
 
 pub(crate) fn gpu_adapter_device_identity(

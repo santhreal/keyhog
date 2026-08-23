@@ -1,0 +1,3 @@
+category = "Added"
+summary = "Single authoritative structural gate architecture consolidating no_inline_tests_in_src and no_cwd_relative_source_reads workspace-wide and eliminating redundant per-crate gap tests."
+crates = []

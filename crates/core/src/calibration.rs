@@ -240,7 +240,7 @@ impl Calibration {
         };
         let serialized = serde_json::to_vec_pretty(&on_disk)
             .map_err(|e| std::io::Error::other(format!("calibration encode: {e}")))?;
-        state_file::write_atomically(path, CALIBRATION_TMP_PREFIX, &serialized)
+        state_file::write_atomically_with_prefix(path, CALIBRATION_TMP_PREFIX, &serialized)
     }
 
     /// Record an operator-confirmed outcome for `detector_id`.

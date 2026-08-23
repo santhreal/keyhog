@@ -57,7 +57,7 @@ fn binary() -> PathBuf {
 /// A file containing ONLY the critical GitHub PAT (line 1).
 fn crit_only_fixture() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("crit.txt");
+    let path = dir.path().join("crit.env");
     std::fs::write(&path, format!("{GH_PAT}\n")).expect("write crit fixture");
     (dir, path)
 }
@@ -65,7 +65,7 @@ fn crit_only_fixture() -> (TempDir, PathBuf) {
 /// A file containing ONLY the low rome2rio secret (line 1).
 fn low_only_fixture() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("low.txt");
+    let path = dir.path().join("low.env");
     std::fs::write(&path, format!("rome2rio={ROME_VALUE}\n")).expect("write low fixture");
     (dir, path)
 }
@@ -73,7 +73,7 @@ fn low_only_fixture() -> (TempDir, PathBuf) {
 /// A file with the critical PAT on line 1 and the low secret on line 2.
 fn combined_fixture() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("both.txt");
+    let path = dir.path().join("both.env");
     std::fs::write(&path, format!("{GH_PAT}\nrome2rio={ROME_VALUE}\n"))
         .expect("write combined fixture");
     (dir, path)

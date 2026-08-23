@@ -588,12 +588,14 @@ bounded detail list, and `detail_events_dropped` when that list fills:
 Capture stderr to inspect it:
 
 ```sh
-keyhog scan . --dogfood 2>&1 >/dev/null | jq '.dogfood.events[]'
+keyhog scan . --dogfood --quiet 2>&1 >/dev/null | jq '.dogfood.events[]'
 ```
 
 `2>&1 >/dev/null` sends the dogfood object (stderr) to `jq` while discarding
-the normal report (stdout). `--dogfood` is independent of `--format`, so the
-report format does not matter here.
+the normal report (stdout). `--quiet` is required for a parseable stream:
+without it, materialization, cache, and autoroute status lines share stderr and
+precede the object. `--dogfood` is independent of `--format`, so the report
+format does not matter here.
 
 Suppression events carry the path, redacted credential, and rule that fired.
 `static_recovery_rejected` events carry the decoder, reason, path, and absolute

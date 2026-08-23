@@ -191,6 +191,7 @@ pub(crate) struct ScanRuntimeInput {
     pub(crate) reader_threads: Option<usize>,
     pub(crate) fused_batch: usize,
     pub(crate) fused_depth: Option<usize>,
+    pub(crate) window_overlap: usize,
     pub(crate) gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy,
     pub(crate) autoroute_gpu: bool,
     pub(crate) autoroute_calibration: bool,
@@ -219,6 +220,9 @@ impl ScanRuntimeInput {
             reader_threads: args.reader_threads,
             fused_batch: args.fused_batch.unwrap_or(FUSED_BATCH_DEFAULT), // LAW10: absent fused-batch config => documented compiled throughput default; no recall path changes and the value is printed/hashes into autoroute identity
             fused_depth: args.fused_depth,
+            window_overlap: args
+                .window_overlap
+                .unwrap_or(keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES), // LAW10: absent window-overlap config => canonical window overlap default; printed in effective config
             gpu_runtime_policy: gpu_runtime_policy_from_args(args),
             autoroute_gpu: args.autoroute_gpu && !args.no_autoroute_gpu,
             autoroute_calibration: args.autoroute_calibrate,
@@ -388,13 +392,16 @@ pub(crate) fn configure_hyperscan_cache_dir(cache_dir: Option<PathBuf>) -> Resul
     Ok(())
 }
 
-pub(crate) fn configure_matcher_artifact_cache_dir(cache_dir: Option<PathBuf>) -> Result<()> {
+pub(crate) fn configure_matcher_artifact_cache_dir(
+    cache_dir: Option<PathBuf>,
+    disable_reason: keyhog_scanner::MatcherArtifactCacheDisableReason,
+) -> Result<()> {
     if let Some(path) = cache_dir.as_ref() {
         keyhog_scanner::validate_matcher_artifact_cache_dir(path).map_err(|error| {
             anyhow::anyhow!("{error}. Configure with --matcher-cache or [system].matcher_cache")
         })?;
     }
-    keyhog_scanner::set_matcher_artifact_cache_dir(cache_dir);
+    keyhog_scanner::set_matcher_artifact_cache_state(cache_dir, disable_reason);
     Ok(())
 }
 

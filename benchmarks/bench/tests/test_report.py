@@ -853,3 +853,22 @@ def test_recall_gap_reports_no_measured_gap_neutrally():
     assert "No measured competitor exceeds KeyHog recall" in text
     assert "KeyHog" in text
     assert "matches or beats" not in text
+
+
+def test_multi_corpus_provenance_emits_exact_row_per_corpus_measurement():
+    """Provenance table must show exact binary digest and run date for each corpus."""
+    keyhog_mirror = _result("keyhog", 5, 20.0)
+    keyhog_mirror.scanner.executable_sha256 = "a" * 64
+    keyhog_homefield = _result("keyhog", 4, 15.0)
+    keyhog_homefield.corpus.name = "homefield"
+    keyhog_homefield.corpus.fixture_count = 2399
+    keyhog_homefield.corpus.labeled_positives = 1057
+    keyhog_homefield.corpus.bytes = 772974
+    keyhog_homefield.scanner.executable_sha256 = "b" * 64
+
+    text = report.render_leaderboard([keyhog_mirror, keyhog_homefield], "mirror")
+    assert "#### Synthetic SecretBench-shape mirror corpus" in text
+    assert "#### Competitor homefield / home-turf rule corpus" in text
+    provenance_section = text.split("### Result provenance")[1]
+    assert "mirror; 10 fixtures; 5 labeled positives; 100 bytes" in provenance_section
+    assert "homefield; 2,399 fixtures; 1,057 labeled positives; 772,974 bytes" in provenance_section

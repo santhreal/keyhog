@@ -47,6 +47,9 @@ pub(crate) struct BackendBenchmark {
 /// GPU throughput row.
 pub(crate) fn format_gpu_summary() -> String {
     let hw = probe_hardware();
+    if !hw.gpu_available || hw.gpu_is_software {
+        return "unavailable".to_string();
+    }
     match (&hw.gpu_name, hw.gpu_vram_mb) {
         (Some(name), Some(vram_mb)) => format!("{} ({}GB)", name, (vram_mb / 1024).max(1)),
         (Some(name), None) => name.clone(),
@@ -98,46 +101,54 @@ pub(crate) fn run_benchmark(orchestrator: &ScanOrchestrator) -> Result<Vec<Backe
     Ok(results)
 }
 
-fn build_benchmark_corpus() -> Vec<Chunk> {
+pub(crate) fn build_benchmark_chunk(index: usize) -> Chunk {
+    let mut data = String::with_capacity(BENCHMARK_CHUNK_BYTES + 512);
+    // Realistic source-code shape: short tokens, natural language
+    // comments, low-entropy variable names. The previous fixture
+    // used 36-char alphanumeric filler which triggered the entropy
+    // detector on every line, making the benchmark dominated by
+    // per-chunk extraction cost rather than the
+    // literal-set-vs-Hyperscan crossover this is meant to measure.
+    // The ~70-char average line below mirrors the line-length
+    // distribution of typical TypeScript/Go/Rust source.
+    let template = BENCHMARK_SOURCE_TEMPLATE;
+    while data.len() < BENCHMARK_CHUNK_BYTES {
+        data.push_str(template);
+    }
+
+    let gh_token = format!("ghp_{}{}", "ABCDEF1234567890", "ABCDEF1234567890ABCD");
+    let stripe_secret = format!("sk_live_{}{}", "1234567890", "abcdefghijklmnopqrstuv");
+    let aws_key = format!("AKIA{}{}", "Q7XR2M4P", "LZ9WVB3T");
+    let suffix = format!(
+        "// configuration constants\n\
+         export const GITHUB_TOKEN_{index} = \"{gh_token}\";\n\
+         export const STRIPE_SECRET_{index} = \"{stripe_secret}\";\n\
+         export const AWS_KEY_{index} = \"{aws_key}\";\n"
+    );
+    data.push_str(&suffix);
+
+    Chunk {
+        data: data.into(),
+        metadata: ChunkMetadata {
+            base_offset: 0,
+            base_line: 0,
+            source_type: "benchmark".into(),
+            ctime_ns: None,
+            path: Some(format!("benchmark/corpus-{index}.txt").into()),
+            commit: None,
+            author: None,
+            date: None,
+            mtime_ns: None,
+            size_bytes: None,
+            decoded_span: None,
+        },
+    }
+}
+
+pub(crate) fn build_benchmark_corpus() -> Vec<Chunk> {
     let mut chunks = Vec::with_capacity(BENCHMARK_CHUNKS);
     for index in 0..BENCHMARK_CHUNKS {
-        let mut data = String::with_capacity(BENCHMARK_CHUNK_BYTES + 512);
-        // Realistic source-code shape: short tokens, natural language
-        // comments, low-entropy variable names. The previous fixture
-        // used 36-char alphanumeric filler which triggered the entropy
-        // detector on every line, making the benchmark dominated by
-        // per-chunk extraction cost rather than the
-        // literal-set-vs-Hyperscan crossover this is meant to measure.
-        // The ~70-char average line below mirrors the line-length
-        // distribution of typical TypeScript/Go/Rust source.
-        let template = BENCHMARK_SOURCE_TEMPLATE;
-        while data.len() < BENCHMARK_CHUNK_BYTES {
-            data.push_str(template);
-        }
-
-        let suffix = format!(
-            "// configuration constants\n\
-             export const GITHUB_TOKEN_{index} = \"ghp_ABCDEF1234567890ABCDEF1234567890AB\";\n\
-             export const STRIPE_SECRET_{index} = \"sk_live_1234567890abcdefghijklmnopqrstuv\";\n\
-             export const AWS_KEY_{index} = \"AKIA1234567890ABCD\";\n"
-        );
-        data.push_str(&suffix);
-
-        chunks.push(Chunk {
-            data: data.into(),
-            metadata: ChunkMetadata {
-                base_offset: 0,
-                base_line: 0,
-                source_type: "benchmark".into(),
-                path: Some(format!("benchmark/corpus-{index}.txt").into()),
-                commit: None,
-                author: None,
-                date: None,
-                mtime_ns: None,
-                size_bytes: None,
-                decoded_span: None,
-            },
-        });
+        chunks.push(build_benchmark_chunk(index));
     }
     chunks
 }

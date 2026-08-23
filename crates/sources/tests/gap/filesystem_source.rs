@@ -216,6 +216,7 @@ fn merkle_skip_does_not_mask_symlink_refusal() {
         &idx,
         link.clone(),
         link_mtime_ns,
+        link_mtime_ns + 100,
         link_size,
         [0u8; 32],
     );

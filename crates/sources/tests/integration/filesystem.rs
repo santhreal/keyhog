@@ -14,6 +14,20 @@ fn mtime_ns(path: &std::path::Path) -> u64 {
         .unwrap_or(u64::MAX)
 }
 
+fn ctime_ns(path: &std::path::Path) -> u64 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let m = fs::metadata(path).unwrap();
+        u64::try_from(i128::from(m.ctime()) * 1_000_000_000 + i128::from(m.ctime_nsec()))
+            .unwrap_or(u64::MAX)
+    }
+    #[cfg(not(unix))]
+    {
+        0
+    }
+}
+
 #[test]
 fn scan_temp_directory() {
     let dir = tempfile::tempdir().unwrap();
@@ -336,6 +350,7 @@ fn merkle_skip_avoids_reading_unchanged_files() {
         &idx,
         canonical.clone(),
         m,
+        ctime_ns(&canonical),
         size,
         [0u8; 32],
     );
@@ -364,8 +379,9 @@ fn merkle_skip_does_not_fire_when_size_drifts() {
     core_testing::CoreTestApi::merkle_record_with_metadata(
         &core_testing::TestApi,
         &idx,
-        canonical,
+        canonical.clone(),
         m,
+        ctime_ns(&canonical),
         /*size=*/ 1,
         [0u8; 32],
     );
@@ -427,7 +443,10 @@ fn default_windowing_splits_multimegabyte_source_files() {
         .iter()
         .all(|chunk| chunk.metadata.source_type.as_ref() == "filesystem/windowed"));
     assert_eq!(chunks[0].metadata.base_offset, 0);
-    assert_eq!(chunks[1].metadata.base_offset, 1024 * 1024 - 128 * 1024);
+    assert_eq!(
+        chunks[1].metadata.base_offset,
+        keyhog_core::DEFAULT_WINDOW_SIZE_BYTES - keyhog_core::DEFAULT_WINDOW_OVERLAP_BYTES
+    );
 }
 
 #[test]

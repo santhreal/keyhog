@@ -10,6 +10,9 @@
 //! Hyperscan trigger floor is not part of the default fast path; it is enabled
 //! only for explicit parity/debug runs.
 
+pub mod pool;
+pub use pool::{GpuResidentExecutionPermit, GpuResidentExecutionPool};
+
 use super::gpu_region_batch::{
     for_each_region_presence_batch, for_each_region_presence_window,
     region_presence_batch_byte_limit, region_presence_batch_byte_limit_for_depth, set_trigger_bit,
@@ -20,11 +23,11 @@ use super::gpu_region_batch::{
 use super::gpu_region_dispatch_helpers::record_test_window_reduction_allocation;
 #[cfg(test)]
 pub(super) use super::gpu_region_dispatch_helpers::{
-    append_phase2_gpu_admission, reset_test_window_reduction_allocations,
+    append_phase2_gpu_admission, mib_per_second, reset_test_window_reduction_allocations,
     test_window_reduction_allocations,
 };
 use super::gpu_region_dispatch_helpers::{
-    mib_per_second, scan_phase2_gpu_chunks_sharded, scan_phase2_gpu_refs_sharded,
+    scan_phase2_gpu_chunks_sharded, scan_phase2_gpu_refs_sharded,
 };
 #[cfg(test)]
 use super::phase2_gpu_dfa::{build_phase2_gpu_admission_workload, Phase2GpuDfaAdmission};
@@ -89,12 +92,9 @@ impl CompiledScanner {
                 gpu_recovery_receipts: 0,
             });
         }
-        let _direct_dispatch_guard = if device.is_none() {
-            Some(self.direct_gpu_resident_dispatch.lock().map_err(|_| {
-                super::gpu_forced::SelectedGpuDispatchError::new(
-                    "direct GPU resident dispatch lock is unavailable after an internal panic",
-                )
-            })?)
+        let _permit = self.gpu_resident_execution_pool.acquire()?;
+        let _direct_guard = if device.is_none() {
+            Some(self.direct_gpu_resident_dispatch.lock())
         } else {
             None
         };
@@ -102,7 +102,7 @@ impl CompiledScanner {
         let dispatch_failure =
             |reason: String| Err(super::gpu_forced::SelectedGpuDispatchError::new(reason));
 
-        let kh = super::profile::diagnostic();
+        let kh = super::profile::enabled();
         let t_matcher = kh.then(std::time::Instant::now);
         let Some(matcher) = self.gpu_matcher() else {
             return dispatch_failure(
@@ -110,6 +110,10 @@ impl CompiledScanner {
             );
         };
         let matcher_s = t_matcher.map_or(std::time::Duration::ZERO, |t| t.elapsed());
+        keyhog_profile::add_counter(
+            keyhog_profile::CounterId::GpuMatcherNs,
+            matcher_s.as_nanos() as u64,
+        );
         let backend = match device {
             Some((backend, _, _, _)) => backend,
             None => {
@@ -185,7 +189,7 @@ impl CompiledScanner {
         let words = self.ac_map.len().div_ceil(64).max(1);
         let gpu_literal_count = self.gpu_literal_count();
         let presence_words = gpu_literal_count.div_ceil(32).max(1);
-        let region_source_bytes = chunks.iter().try_fold(0usize, |total, chunk| {
+        let _region_source_bytes = chunks.iter().try_fold(0usize, |total, chunk| {
             total.checked_add(chunk.data.len()).ok_or_else(|| {
                 super::gpu_forced::SelectedGpuDispatchError::new(
                     "GPU region-presence source-byte accounting overflows host usize".to_string(),
@@ -778,6 +782,18 @@ impl CompiledScanner {
             .saturating_sub(dis_s)
             .saturating_sub(derive_s_total);
         drop(region_dispatch_profile);
+        keyhog_profile::add_counter(
+            keyhog_profile::CounterId::GpuCoalesceNs,
+            co_s.as_nanos() as u64,
+        );
+        keyhog_profile::add_counter(
+            keyhog_profile::CounterId::GpuDispatchNs,
+            dis_s.as_nanos() as u64,
+        );
+        keyhog_profile::add_counter(
+            keyhog_profile::CounterId::GpuDeriveNs,
+            derive_s_total.as_nanos() as u64,
+        );
         let t_floor = kh.then(std::time::Instant::now);
         let full_recall_floor = self.tuning.gpu_recall_floor_enabled();
         #[cfg(feature = "simd")]
@@ -860,6 +876,12 @@ impl CompiledScanner {
             }
         }
         let floor_s = t_floor.map_or(std::time::Duration::ZERO, |t| t.elapsed());
+        if full_recall_floor {
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::GpuRecallFloorNs,
+                floor_s.as_nanos() as u64,
+            );
+        }
 
         // Surface a GPU under-fire LOUDLY: the GPU DFA missed a real
         // detector match the CPU floor recovered. This is a VYRE literal-set
@@ -903,18 +925,13 @@ impl CompiledScanner {
                 phase2_gpu_row_needed.push(false);
                 continue;
             }
-            // The GPU catalog's proof is ASCII-specific. Raw non-ASCII
-            // rows may normalize before phase 2 and therefore remain under
-            // the canonical CPU admission owner.
+            // GPU catalog proof is ASCII-specific; non-ASCII rows stay under CPU admission.
             if !chunk.data.is_ascii() {
                 phase2_gpu_excluded_non_ascii += 1;
                 phase2_gpu_row_needed.push(false);
                 continue;
             }
-            // Encoded-only rows that CPU admission would route straight to
-            // decode-only recovery do not need the prefixless phase-2 GPU
-            // DFA. The shared phase-2 tail still runs decode-only on those
-            // rows; this just avoids a redundant GPU admission dispatch.
+            // Encoded-only rows route straight to decode recovery; avoid redundant GPU dispatch.
             let decode_only_row = self.chunk_needs_decode_postprocess(chunk)
                 && !self.should_scan_no_hit_chunk(chunk, execution_route);
             phase2_gpu_row_needed.push(row_has_trigger || !decode_only_row);
@@ -926,20 +943,30 @@ impl CompiledScanner {
         } else {
             Phase2GpuAdmissionWorkload::Empty
         };
-        let phase2_dispatch_profile = super::profile::span(keyhog_profile::Stage::BackendDispatch);
+        let catalog_opt = if phase2_gpu_workload.is_empty() {
+            None
+        } else {
+            self.phase2_gpu_dfa_catalog(Some(backend.id()))
+        };
+        let has_shards = catalog_opt.as_ref().map_or(false, |c| c.has_shards());
+        let phase2_dispatch_profile =
+            has_shards.then(|| super::profile::span(keyhog_profile::Stage::BackendDispatch));
         let t_phase2_gpu = kh.then(std::time::Instant::now);
         let mut phase2_gpu_empty_complete = false;
-        let mut phase2_gpu_coverage = None;
+        let mut _phase2_gpu_coverage = None;
         let mut phase2_gpu_haystack_uploads = 0usize;
         let phase2_gpu_admission = match phase2_gpu_workload {
             Phase2GpuAdmissionWorkload::Empty => {
                 phase2_gpu_empty_complete = chunks.is_empty();
                 None
             }
-            Phase2GpuAdmissionWorkload::Full { chunks: gpu_chunks } => {
-                match self.phase2_gpu_dfa_catalog(Some(backend.id())) {
-                    Some(catalog) => {
-                        phase2_gpu_coverage = Some(catalog.coverage());
+            Phase2GpuAdmissionWorkload::Full { chunks: gpu_chunks } => match catalog_opt {
+                Some(catalog) => {
+                    _phase2_gpu_coverage = Some(catalog.coverage());
+                    if !catalog.has_shards() {
+                        phase2_gpu_empty_complete = true;
+                        None
+                    } else {
                         match scan_phase2_gpu_chunks_sharded(
                             catalog,
                             backend,
@@ -973,48 +1000,57 @@ impl CompiledScanner {
                             }
                         }
                     }
-                    None => None,
                 }
-            }
+                None => None,
+            },
             Phase2GpuAdmissionWorkload::Subset {
                 indices,
                 chunks: gpu_chunks,
                 full_len,
-            } => match self.phase2_gpu_dfa_catalog(Some(backend.id())) {
+            } => match catalog_opt {
                 Some(catalog) => {
-                    phase2_gpu_coverage = Some(catalog.coverage());
-                    match scan_phase2_gpu_refs_sharded(
-                        catalog,
-                        backend,
-                        gpu_chunks.as_slice(),
-                        recover_dispatch_faults,
-                    ) {
-                        Ok(outcome) => {
-                            phase2_gpu_haystack_uploads = outcome.haystack_uploads;
-                            if let Some(fault) = outcome.fault.as_ref() {
-                                if gpu_dispatch_fault.is_none() {
-                                    gpu_dispatch_fault = Some(format!(
-                                        "phase-2 GPU admission dispatch failed: {fault}"
-                                    ));
-                                }
-                                for recovered in &outcome.recovered_rows {
-                                    for subset_index in recovered.clone() {
-                                        let chunk_index = indices[subset_index];
-                                        recovery_ranges.push(super::RecoveredInputRange::new(
-                                            chunk_index,
-                                            0,
-                                            chunks[chunk_index].data.len(),
+                    _phase2_gpu_coverage = Some(catalog.coverage());
+                    if !catalog.has_shards() {
+                        phase2_gpu_empty_complete = true;
+                        None
+                    } else {
+                        match scan_phase2_gpu_refs_sharded(
+                            catalog,
+                            backend,
+                            gpu_chunks.as_slice(),
+                            recover_dispatch_faults,
+                        ) {
+                            Ok(outcome) => {
+                                phase2_gpu_haystack_uploads = outcome.haystack_uploads;
+                                if let Some(fault) = outcome.fault.as_ref() {
+                                    if gpu_dispatch_fault.is_none() {
+                                        gpu_dispatch_fault = Some(format!(
+                                            "phase-2 GPU admission dispatch failed: {fault}"
                                         ));
                                     }
+                                    for recovered in &outcome.recovered_rows {
+                                        for subset_index in recovered.clone() {
+                                            let chunk_index = indices[subset_index];
+                                            recovery_ranges.push(super::RecoveredInputRange::new(
+                                                chunk_index,
+                                                0,
+                                                chunks[chunk_index].data.len(),
+                                            ));
+                                        }
+                                    }
                                 }
+                                let admission = expand_phase2_gpu_admission(
+                                    outcome.admission,
+                                    &indices,
+                                    full_len,
+                                );
+                                Some(admission)
                             }
-                            let admission =
-                                expand_phase2_gpu_admission(outcome.admission, &indices, full_len);
-                            Some(admission)
-                        }
-                        Err(error) => {
-                            let reason = format!("phase-2 GPU admission dispatch failed: {error}");
-                            return dispatch_failure(reason);
+                            Err(error) => {
+                                let reason =
+                                    format!("phase-2 GPU admission dispatch failed: {error}");
+                                return dispatch_failure(reason);
+                            }
                         }
                     }
                 }
@@ -1023,6 +1059,10 @@ impl CompiledScanner {
         };
         let phase2_gpu_s = t_phase2_gpu.map_or(std::time::Duration::ZERO, |t| t.elapsed());
         drop(phase2_dispatch_profile);
+        keyhog_profile::add_counter(
+            keyhog_profile::CounterId::Phase2GpuAdmissionNs,
+            phase2_gpu_s.as_nanos() as u64,
+        );
 
         let trigger_bits: usize = triggers
             .iter()
@@ -1030,7 +1070,6 @@ impl CompiledScanner {
             .map(|w| w.iter().map(|x| x.count_ones() as usize).sum::<usize>())
             .sum();
 
-        let t_p2 = kh.then(std::time::Instant::now);
         let phase2_gpu_admitted = phase2_gpu_admission.as_ref().map_or(0usize, |admission| {
             admission.admitted.iter().filter(|&&v| v).count()
         });
@@ -1092,8 +1131,7 @@ impl CompiledScanner {
             let phase2_always_anchor_candidate_count = phase2_always_anchor_literal_matches
                 .as_ref()
                 .map_or(0usize, |rows| rows.iter().map(Vec::len).sum());
-            let phase2_always_anchor_positions_complete =
-                phase2_always_anchor_literal_matches.is_some();
+
             let confirmed_anchor_candidate_rows = confirmed_anchor_literal_matches
                 .as_ref()
                 .map_or(0usize, |rows| {
@@ -1102,7 +1140,7 @@ impl CompiledScanner {
             let confirmed_anchor_candidate_count = confirmed_anchor_literal_matches
                 .as_ref()
                 .map_or(0usize, |rows| rows.iter().map(Vec::len).sum());
-            let confirmed_anchor_gpu_complete = confirmed_anchor_literal_matches.is_some();
+
             let generic_keyword_candidate_rows =
                 generic_keyword_positions.as_ref().map_or(0usize, |rows| {
                     rows.iter().filter(|row| !row.is_empty()).count()
@@ -1110,52 +1148,83 @@ impl CompiledScanner {
             let generic_keyword_candidate_count = generic_keyword_positions
                 .as_ref()
                 .map_or(0usize, |rows| rows.iter().map(Vec::len).sum());
-            let generic_keyword_gpu_complete = generic_keyword_positions.is_some();
-            eprintln!(
-                    "perf-trace {}: chunks={} source_bytes={} coalesced_bytes={} max_dispatch_bytes={} dispatches={} recovered_dispatches={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s derive={:.6}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_evidence_bits={} phase2_gpu_haystack_uploads={} phase2_gpu_complete={} phase2_gpu_complete_rows={} phase2_gpu_excluded_oversized={} phase2_gpu_excluded_non_ascii={} phase2_gpu_ascii_patterns={} phase2_gpu_uncovered_ascii_patterns={} phase2_gpu_excluded_redundant_patterns={} phase2_gpu_shards={} phase2_always_anchor_chunks={} phase2_always_anchor_positions_complete={} phase2_always_anchor_candidate_rows={} phase2_always_anchor_candidates={} confirmed_anchor_gpu_complete={} confirmed_anchor_candidate_rows={} confirmed_anchor_candidates={} generic_keyword_gpu_complete={} generic_keyword_candidate_rows={} generic_keyword_candidates={} full_recall_floor={}",
-                    route.label(),
-                    chunks.len(),
-                    region_source_bytes,
-                    region_coalesced_bytes,
-                    region_max_dispatch_bytes,
-                    region_dispatches,
-                    recovered_dispatches,
-                    region_batch_mode.label(),
-                    matcher_s.as_secs_f64(),
-                    co_s.as_secs_f64(),
-                    mib_per_second(region_source_bytes, co_s),
-                    dis_s.as_secs_f64(),
-                    derive_s_total.as_secs_f64(),
-                    floor_s.as_secs_f64(),
-                    phase2_gpu_s.as_secs_f64(),
-                    t_p2.map_or(0.0, |t| t.elapsed().as_secs_f64()),
-                    gpu_presence_bits,
-                    gpu_underfire_recovered,
-                    trigger_bits,
-                    phase2_gpu_admitted,
-                    phase2_gpu_evidence_bits,
-                    phase2_gpu_haystack_uploads,
-                    phase2_gpu_complete,
-                    phase2_gpu_complete_rows,
-                    phase2_gpu_excluded_oversized,
-                    phase2_gpu_excluded_non_ascii,
-                    phase2_gpu_coverage.map_or(0, |coverage| coverage.covered_ascii_patterns),
-                    phase2_gpu_coverage.map_or(0, |coverage| coverage.uncovered_ascii_patterns),
-                    phase2_gpu_coverage
-                        .map_or(0, |coverage| coverage.excluded_ascii_redundant_patterns),
-                    phase2_gpu_coverage.map_or(0, |coverage| coverage.shards),
-                    phase2_always_anchor_chunks,
-                    phase2_always_anchor_positions_complete,
-                    phase2_always_anchor_candidate_rows,
-                    phase2_always_anchor_candidate_count,
-                    confirmed_anchor_gpu_complete,
-                    confirmed_anchor_candidate_rows,
-                    confirmed_anchor_candidate_count,
-                    generic_keyword_gpu_complete,
-                    generic_keyword_candidate_rows,
-                    generic_keyword_candidate_count,
-                    full_recall_floor,
-                );
+
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::GpuCoalescedBytes,
+                region_coalesced_bytes as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::GpuMaxDispatchBytes,
+                region_max_dispatch_bytes as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::GpuPresenceBits,
+                gpu_presence_bits as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::GpuUnderfireRecovered,
+                gpu_underfire_recovered as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::GpuTriggerBits,
+                trigger_bits as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::Phase2GpuAdmitted,
+                phase2_gpu_admitted as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::Phase2GpuEvidenceBits,
+                phase2_gpu_evidence_bits as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::Phase2GpuHaystackUploads,
+                phase2_gpu_haystack_uploads as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::Phase2GpuCompleteChunks,
+                if phase2_gpu_complete { 1 } else { 0 },
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::Phase2GpuCompleteRows,
+                phase2_gpu_complete_rows as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::Phase2GpuExcludedOversized,
+                phase2_gpu_excluded_oversized as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::Phase2GpuExcludedNonAscii,
+                phase2_gpu_excluded_non_ascii as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::Phase2AlwaysAnchorChunks,
+                phase2_always_anchor_chunks as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::Phase2AlwaysAnchorCandidateRows,
+                phase2_always_anchor_candidate_rows as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::Phase2AlwaysAnchorCandidateCount,
+                phase2_always_anchor_candidate_count as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::ConfirmedAnchorCandidateRows,
+                confirmed_anchor_candidate_rows as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::ConfirmedAnchorCandidateCount,
+                confirmed_anchor_candidate_count as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::GenericKeywordCandidateRows,
+                generic_keyword_candidate_rows as u64,
+            );
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::GenericKeywordCandidateCount,
+                generic_keyword_candidate_count as u64,
+            );
         }
         let recovery = gpu_dispatch_fault.map(|reason| {
             self.record_gpu_runtime_fault(format!(

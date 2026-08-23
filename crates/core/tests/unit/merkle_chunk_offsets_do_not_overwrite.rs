@@ -10,7 +10,15 @@ fn record_chunk(
     offset: u64,
     content: &[u8],
 ) -> bool {
-    TestApi.merkle_record_chunk_at_offset_and_check_unchanged(index, path, offset, 7, 2048, content)
+    TestApi.merkle_record_chunk_at_offset_and_check_unchanged(
+        index,
+        path,
+        offset,
+        7,
+        7 + 100,
+        2048,
+        content,
+    )
 }
 
 #[test]
@@ -70,7 +78,7 @@ fn save_and_load_preserves_multiple_offsets_for_one_path() {
 #[test]
 fn merkle_chunk_offset_source_contract_is_on_production_path() {
     let root_source = keyhog_core::testing::read_crate_source("src/merkle_index.rs");
-    assert!(root_source.contains("const SCHEMA_VERSION: u32 = 4"));
+    assert!(root_source.contains("const SCHEMA_VERSION: u32 = 5"));
     assert!(root_source.contains("struct CacheKey"));
     assert!(root_source.contains("struct CacheKeyRef<'a>"));
     assert!(root_source.contains("chunk_offset: u64"));

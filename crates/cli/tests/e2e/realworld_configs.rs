@@ -4,14 +4,29 @@
 //! found". These are the shapes that, if keyhog missed them, would leak a
 //! live credential in a real repo. Detector ids/lines were verified against
 //! the binary before being written here.
+//!
+//! Each fixture carries the file name of the shape it stands for, because the
+//! name decides the source role. A `.env`, YAML, JSON, INI or TOML value, a
+//! shell command argument, and a JS string literal are all credential-bearing
+//! roles: the evidence is `likely`/`vendor-pattern` and blocks the default
+//! policy. A bare token in an inert text file has no role at all: the detector
+//! still fires, the evidence is `review`/`unsupported-context`, and only
+//! `--evidence-policy paranoid` blocks. Both halves are asserted, so a
+//! regression in either direction goes red.
 
-use crate::e2e::support::scan_text_file;
+use crate::e2e::support::{scan_path, write_temp_file};
 
-/// (detector_id, line) pairs from a JSON scan of `content`, sorted.
-fn findings(content: &str) -> (Vec<(String, u64)>, Option<i32>) {
-    let (stdout, _stderr, code) = scan_text_file(content, &[]);
-    let v: serde_json::Value =
-        serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("stdout not JSON: {e}\n{stdout}"));
+/// (detector_id, line) pairs from a JSON scan of `content` written as `name`.
+fn findings(name: &str, content: &str, extra: &[&str]) -> (Vec<(String, u64)>, Option<i32>) {
+    let (_dir, path) = write_temp_file(name, content);
+    let output = scan_path(&path, extra);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
+        panic!(
+            "stdout not JSON: {e}\n{stdout}\nstderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
     let mut out: Vec<(String, u64)> = v
         .as_array()
         .expect("findings is a JSON array")
@@ -24,16 +39,17 @@ fn findings(content: &str) -> (Vec<(String, u64)>, Option<i32>) {
         })
         .collect();
     out.sort();
-    (out, code)
+    (out, output.status.code())
 }
 
-/// Assert `content` yields a finding from `det` at `line`, exit code 1.
-fn assert_finds(content: &str, det: &str, line: u64) {
-    let (got, code) = findings(content);
+/// Assert `content`, written as `name`, yields `det` at `line` and blocks the
+/// default policy. For a file syntax the classifier parses.
+fn assert_finds(name: &str, content: &str, det: &str, line: u64) {
+    let (got, code) = findings(name, content, &[]);
     assert_eq!(
         code,
         Some(1),
-        "a credential-bearing file must exit 1; got {got:?}"
+        "a credential-bearing {name} must exit 1; got {got:?}"
     );
     assert!(
         got.iter().any(|(d, l)| d == det && *l == line),
@@ -41,11 +57,36 @@ fn assert_finds(content: &str, det: &str, line: u64) {
     );
 }
 
-/// Assert `content` yields zero findings, exit 0.
-fn assert_clean(content: &str) {
-    let (got, code) = findings(content);
-    assert!(got.is_empty(), "expected zero findings; got {got:?}");
-    assert_eq!(code, Some(0), "a clean file must exit 0");
+/// Assert `content`, written as `name`, yields `det` at `line` in a source the
+/// classifier has no parser for: visible and exit 0 by default, blocking under
+/// paranoid.
+fn assert_finds_review(name: &str, content: &str, det: &str, line: u64) {
+    let (got, code) = findings(name, content, &[]);
+    assert!(
+        got.iter().any(|(d, l)| d == det && *l == line),
+        "expected detector '{det}' at line {line} in {name}; got {got:?}"
+    );
+    assert_eq!(
+        code,
+        Some(0),
+        "an unparsed source role is review evidence and must not block the default policy in {name}; got {got:?}"
+    );
+    let (paranoid_got, paranoid_code) = findings(name, content, &["--evidence-policy", "paranoid"]);
+    assert_eq!(
+        paranoid_code,
+        Some(1),
+        "paranoid must block the same review finding in {name}; got {paranoid_got:?}"
+    );
+}
+
+/// Assert `content`, written as `name`, yields zero findings, exit 0.
+fn assert_clean(name: &str, content: &str) {
+    let (got, code) = findings(name, content, &[]);
+    assert!(
+        got.is_empty(),
+        "expected zero findings in {name}; got {got:?}"
+    );
+    assert_eq!(code, Some(0), "a clean {name} must exit 0");
 }
 
 /// Build a Slack bot-token-shaped string at runtime so the complete `xoxb-...`
@@ -65,14 +106,14 @@ fn slack_bot_token() -> String {
 fn dotenv_aws_access_key() {
     let f =
         "# production env\nDB_HOST=db.internal\nAWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\nLOG=info\n";
-    assert_finds(f, "aws-access-key", 3);
+    assert_finds(".env", f, "aws-access-key", 3);
 }
 
 #[test]
 fn git_config_token_in_remote_url() {
     // The classic: a PAT baked into a remote URL in .git/config.
     let f = "[remote \"origin\"]\n\turl = https://oauth2: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@github.com/acme/app.git\n";
-    assert_finds(f, "github-classic-pat", 2);
+    assert_finds("config", f, "github-classic-pat", 2);
 }
 
 #[test]
@@ -81,57 +122,59 @@ fn npmrc_github_packages_token() {
     // shape (the npm_ entropy-token form is threshold-based and not suited to a
     // stable assertion).
     let f = "//npm.pkg.github.com/:_authToken=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\n";
-    assert_finds(f, "github-classic-pat", 1);
+    // A `ghp_` PAT carries a checksum, so its evidence is confirmed and blocks
+    // even though `.npmrc` has no source-role parser.
+    assert_finds(".npmrc", f, "github-classic-pat", 1);
 }
 
 #[test]
 fn slack_bot_token_in_yaml() {
     let f = format!("slack:\n  bot_token: {}\n", slack_bot_token());
-    assert_finds(&f, "slack-bot-token", 2);
+    assert_finds("config.yaml", &f, "slack-bot-token", 2);
 }
 
 #[test]
 fn google_api_key_in_js_config() {
     let f =
         "const firebaseConfig = {\n  apiKey: \"AIzaSyA1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q\",\n};\n";
-    assert_finds(f, "google-api-key", 2);
+    assert_finds("firebase.js", f, "google-api-key", 2);
 }
 
 #[test]
 fn postgres_url_with_password() {
     let f = "DATABASE_URL=postgres://admin:S3cr3tP4ssw0rd@db.example.com:5432/prod\n";
-    assert_finds(f, "postgresql-connection-string", 1);
+    assert_finds(".env", f, "postgresql-connection-string", 1);
 }
 
 #[test]
 fn docker_compose_env_aws_key() {
     let f = "services:\n  web:\n    image: acme/web\n    environment:\n      AWS_ACCESS_KEY_ID: AKIAQYLPMN5HFIQR7XYA\n";
-    assert_finds(f, "aws-access-key", 5);
+    assert_finds("docker-compose.yml", f, "aws-access-key", 5);
 }
 
 #[test]
 fn dockerfile_env_aws_key() {
     let f = "FROM debian:bookworm\nENV AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\nRUN echo build\n";
-    assert_finds(f, "aws-access-key", 2);
+    assert_finds("Dockerfile", f, "aws-access-key", 2);
 }
 
 #[test]
 fn github_actions_hardcoded_aws_key() {
     let f = "name: deploy\njobs:\n  deploy:\n    steps:\n      - run: echo done\n        env:\n          AWS_ACCESS_KEY_ID: AKIAQYLPMN5HFIQR7XYA\n";
-    assert_finds(f, "aws-access-key", 7);
+    assert_finds("deploy.yml", f, "aws-access-key", 7);
 }
 
 #[test]
 fn shell_script_export_aws_key() {
     let f = "#!/bin/sh\nset -e\nexport AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\naws s3 ls\n";
-    assert_finds(f, "aws-access-key", 3);
+    assert_finds("deploy.sh", f, "aws-access-key", 3);
 }
 
 #[test]
 fn slack_token_at_first_line() {
     // Boundary: credential as the very first bytes of the file.
     let f = format!("{}\n", slack_bot_token());
-    assert_finds(&f, "slack-bot-token", 1);
+    assert_finds_review("token.txt", &f, "slack-bot-token", 1);
 }
 
 // ── Negative: real-world files that must NOT fire ─────────────────────────
@@ -139,29 +182,29 @@ fn slack_token_at_first_line() {
 #[test]
 fn placeholder_env_is_clean() {
     let f = "AWS_ACCESS_KEY_ID=YOUR_ACCESS_KEY_HERE\nAWS_SECRET_ACCESS_KEY=<your-secret-here>\nTOKEN=${TOKEN}\n";
-    assert_clean(f);
+    assert_clean(".env", f);
 }
 
 #[test]
 fn example_dotenv_is_clean() {
     let f = "# .env.example - copy to .env and fill in\nSTRIPE_KEY=sk_test_EXAMPLE\nGITHUB_TOKEN=ghp_example_token_replace_me\n";
-    assert_clean(f);
+    assert_clean(".env.example", f);
 }
 
 #[test]
 fn git_commit_sha_is_not_a_secret() {
     let f = "commit 9fceb02d0ae598e95dc970b74767f19372d61af8\nAuthor: dev\n";
-    assert_clean(f);
+    assert_clean("git-log.txt", f);
 }
 
 #[test]
 fn uuid_is_not_a_secret() {
     let f = "request_id = 550e8400-e29b-41d4-a716-446655440000\n";
-    assert_clean(f);
+    assert_clean("app.toml", f);
 }
 
 #[test]
 fn prose_readme_is_clean() {
     let f = "# keyhog\nA fast secret scanner. Configure via environment variables.\nSee the docs for the full list of options.\n";
-    assert_clean(f);
+    assert_clean("README.md", f);
 }

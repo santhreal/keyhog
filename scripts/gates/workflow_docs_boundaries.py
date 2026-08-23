@@ -196,9 +196,29 @@ def published_crates() -> tuple[str, ...]:
     return tuple(publish_match.group(1).split()) if publish_match else ()
 
 
-def boundary_issues(texts: dict[str, str]) -> list[str]:
+def validate_paths(repo: pathlib.Path = REPO) -> list[str]:
+    """Validate that every path in PATHS and PUBLISH_SCRIPT exists on disk."""
+    errors: list[str] = []
+    for name, path in PATHS.items():
+        if not path.is_file():
+            errors.append(f"required workflow document missing on disk: {path.relative_to(repo)}")
+    if not PUBLISH_SCRIPT.is_file():
+        errors.append(f"publish script missing on disk: {PUBLISH_SCRIPT.relative_to(repo)}")
+    for key in REQUIRED_TEXT:
+        if key not in PATHS:
+            errors.append(f"REQUIRED_TEXT specifies unknown document key: {key}")
+    for key in FORBIDDEN_HEADINGS:
+        if key not in PATHS:
+            errors.append(f"FORBIDDEN_HEADINGS specifies unknown document key: {key}")
+    for key in FORBIDDEN_TEXT:
+        if key not in PATHS:
+            errors.append(f"FORBIDDEN_TEXT specifies unknown document key: {key}")
+    return errors
+
+
+def boundary_issues(texts: dict[str, str], repo: pathlib.Path = REPO) -> list[str]:
     """Return missing use-case routes and headings that cross workflow boundaries."""
-    issues: list[str] = []
+    issues: list[str] = validate_paths(repo)
     for name, required in REQUIRED_TEXT.items():
         text = " ".join(texts.get(name, "").split())
         for needle in required:

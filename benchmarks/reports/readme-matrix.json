@@ -1,4 +1,106 @@
 {
+  "accuracy_rows": [
+    {
+      "corpus": {
+        "bytes": 2431242,
+        "fixture_count": 15000,
+        "labeled_positives": 3000,
+        "name": "mirror",
+        "workload_sha256": "610d082aaf00b49e385b3739f22ba6292cc2f14c46f42a8538e6adce56d0d1e0"
+      },
+      "detection": {
+        "f1": 0.9328,
+        "fn": 292,
+        "fp": 98,
+        "precision": 0.9651,
+        "recall": 0.9027,
+        "tp": 2708
+      },
+      "finding_count": 2816,
+      "generated_at": "2026-08-11T01:05:55Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "simd",
+          "cache": "off",
+          "daemon": "off",
+          "mode": "full"
+        },
+        "config_id": "simd-nocache-nodaemon-full",
+        "detector_corpus_sha256": "d87e8b3d086e9ffa4c8a94f35a717ec710d5224e52e5b4fc7e71db30677609c9",
+        "executable_sha256": "9781e87b02edc61513540e8dd66a5b2d8c5f5641dfdb8f79dbf8670a3459dcc6",
+        "execution_route": "in_process",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.70\nCommit: cdf06c44cc366d569b8a5e133ffd1fd70b311473\nDetector Set: 926 (926-4168e2c6c93a16ca)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 426412,
+        "throughput_mb_s": 2.6975,
+        "wall_ms": 859.54
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 772974,
+        "fixture_count": 2399,
+        "labeled_positives": 1057,
+        "name": "homefield",
+        "workload_sha256": "9b1285264b38d6df028828976b91ea7342617f694e9f7324546bb9ebf5223326"
+      },
+      "detection": {
+        "f1": 0.9214,
+        "fn": 119,
+        "fp": 41,
+        "precision": 0.9582,
+        "recall": 0.8874,
+        "tp": 938
+      },
+      "finding_count": 979,
+      "generated_at": "2026-08-11T01:29:39Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "simd",
+          "cache": "off",
+          "daemon": "off",
+          "mode": "full"
+        },
+        "config_id": "simd-nocache-nodaemon-full",
+        "detector_corpus_sha256": "d87e8b3d086e9ffa4c8a94f35a717ec710d5224e52e5b4fc7e71db30677609c9",
+        "executable_sha256": "2899ee53789bff9c531f72645f6c8380a7c873230dfb2b6857079467bc8d2dcd",
+        "execution_route": "in_process",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.70\nCommit: d1eb2e09eb2c289181d93d719ce3f62411aeaf2c\nDetector Set: 926 (926-4168e2c6c93a16ca)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 393216,
+        "throughput_mb_s": 1.0735,
+        "wall_ms": 720.0
+      }
+    }
+  ],
   "catalog_sha256": "d0afc4d2f1cef860a20c282e00ed4c0f66a05c5b49b23996aeefd8c4c33ac06d",
   "configuration_rows": [
     {

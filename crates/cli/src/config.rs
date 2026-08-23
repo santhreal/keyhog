@@ -4,13 +4,16 @@ use crate::args::ScanArgs;
 use std::path::PathBuf;
 
 mod limits;
+pub mod operational;
 mod policy;
 mod scan;
 pub(crate) mod schema;
 mod sections;
+pub use operational::{OperationalKnob, OperationalUnit};
 
 pub(crate) use policy::ConfigOutcome;
 use policy::{base_config_outcome, config_file_error, resolve_policy_outcome};
+pub(crate) use scan::parse_config_byte_size;
 use scan::{apply_scan_section, apply_top_level_scan_fields, validate_scan_preset_conflicts};
 pub(crate) use schema::ConfigFile;
 use sections::{
@@ -34,6 +37,7 @@ const RETIRED_FLAT_SCAN_KEYS: &[&str] = &[
     "gpu_batch_input_limit",
     "decode_depth",
     "entropy_threshold",
+    "window_overlap",
     "entropy_bpe_max_bytes_per_token",
     "min_secret_len",
     "exclude_paths",
@@ -67,6 +71,43 @@ pub(crate) fn find_config_file(start: Option<&std::path::Path>) -> Option<PathBu
         }
     }
     None
+}
+
+/// Load the configured guard state path from `.keyhog.toml`.
+/// Returns `None` if no config file is found, if `[guard].state_path` is unset,
+/// or if lockdown mode (`[lockdown] require = true`) is enabled.
+pub(crate) fn load_guard_state_path(start: Option<&std::path::Path>) -> Option<PathBuf> {
+    let config_path = find_config_file(start)?;
+    let raw = std::fs::read_to_string(&config_path).ok()?; // LAW10: absent config file yields no guard state path; intended default
+    let config: schema::ConfigFile = toml::from_str(&raw).ok()?; // LAW10: unparseable config file yields no guard state path; intended default
+    if config
+        .lockdown
+        .as_ref()
+        .and_then(|l| l.require)
+        .unwrap_or(false)
+    // LAW10: lockdown requirement is optional; documented default
+    {
+        return None;
+    }
+    let guard = config.guard?;
+    let state_path = guard.state_path.as_deref()?;
+    expand_state_path(state_path)
+}
+
+/// Expand a state path string, resolving `~` to the home directory.
+/// Returns `None` if expansion fails.
+pub(crate) fn expand_state_path(s: &str) -> Option<PathBuf> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if s.starts_with('~') {
+        let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+        let expanded = s.replacen('~', std::path::Path::new(&home).to_str()?, 1);
+        Some(PathBuf::from(expanded))
+    } else {
+        Some(PathBuf::from(s))
+    }
 }
 
 fn discover_config_for_scan_roots(args: &ScanArgs) -> Result<Option<PathBuf>, String> {

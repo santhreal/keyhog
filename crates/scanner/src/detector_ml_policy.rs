@@ -14,7 +14,7 @@ pub(crate) enum ActiveMlMode {
 
 impl ActiveMlMode {
     #[inline]
-    fn compile(mode: DetectorMlMode) -> Option<Self> {
+    const fn from_mode(mode: DetectorMlMode) -> Option<Self> {
         match mode {
             DetectorMlMode::Disabled => None,
             DetectorMlMode::Lift => Some(Self::Lift),
@@ -37,11 +37,14 @@ pub(crate) struct CompiledDetectorMlPolicy {
 
 impl CompiledDetectorMlPolicy {
     pub(crate) fn compile(detector: &DetectorSpec) -> Self {
+        keyhog_profile::record_compile_surface_invocation(
+            keyhog_profile::CompileSurfaceId::DetectorMlPolicy,
+        );
         let policy: DetectorMlPolicySpec = detector.ml;
         Self {
-            match_mode: ActiveMlMode::compile(policy.match_mode),
+            match_mode: ActiveMlMode::from_mode(policy.match_mode),
             #[cfg(feature = "entropy")]
-            entropy_mode: ActiveMlMode::compile(policy.entropy_mode),
+            entropy_mode: ActiveMlMode::from_mode(policy.entropy_mode),
             weight: policy.weight,
             context_radius_lines: policy.context_radius_lines,
             features: CompiledDetectorMlFeatures::compile(detector),
@@ -51,11 +54,14 @@ impl CompiledDetectorMlPolicy {
     pub(crate) fn hydrate(
         detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
     ) -> Self {
+        keyhog_profile::record_compile_surface_load(
+            keyhog_profile::CompileSurfaceId::DetectorMlPolicy,
+        );
         let policy = detector.ml;
         Self {
-            match_mode: ActiveMlMode::compile(policy.match_mode),
+            match_mode: ActiveMlMode::from_mode(policy.match_mode),
             #[cfg(feature = "entropy")]
-            entropy_mode: ActiveMlMode::compile(policy.entropy_mode),
+            entropy_mode: ActiveMlMode::from_mode(policy.entropy_mode),
             weight: policy.weight,
             context_radius_lines: policy.context_radius_lines,
             features: CompiledDetectorMlFeatures::hydrate(detector),

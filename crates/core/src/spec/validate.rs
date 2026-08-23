@@ -267,9 +267,16 @@ fn validate_offline_validators(spec: &DetectorSpec, issues: &mut Vec<QualityIssu
     for (index, validator) in spec.validators.iter().enumerate() {
         let prefixes = validator.prefixes();
         if prefixes.is_empty() {
-            issues.push(QualityIssue::Error(format!(
-                "validators[{index}].prefixes must not be empty"
-            )));
+            match validator {
+                crate::DetectorValidatorSpec::Uuid { .. }
+                | crate::DetectorValidatorSpec::HexHash { .. }
+                | crate::DetectorValidatorSpec::LuhnChecksum { .. } => {}
+                _ => {
+                    issues.push(QualityIssue::Error(format!(
+                        "validators[{index}].prefixes must not be empty"
+                    )));
+                }
+            }
         }
         for prefix in prefixes {
             if prefix.is_empty() || !prefix.is_ascii() {
@@ -335,6 +342,24 @@ fn validate_offline_validators(spec: &DetectorSpec, issues: &mut Vec<QualityIssu
                 if spec.patterns.is_empty() {
                     issues.push(QualityIssue::Error(format!(
                         "validators[{index}] pattern-shape requires at least one detector pattern"
+                    )));
+                }
+            }
+            crate::DetectorValidatorSpec::Jwt { .. } => {}
+            crate::DetectorValidatorSpec::Uuid { .. } => {}
+            crate::DetectorValidatorSpec::HexHash { expected_len, .. } => {
+                if *expected_len == 0 {
+                    issues.push(QualityIssue::Error(format!(
+                        "validators[{index}] HexHash expected_len must be greater than zero"
+                    )));
+                }
+            }
+            crate::DetectorValidatorSpec::LuhnChecksum {
+                min_len, max_len, ..
+            } => {
+                if *min_len == 0 || *max_len < *min_len {
+                    issues.push(QualityIssue::Error(format!(
+                        "validators[{index}] LuhnChecksum requires 0 < min_len <= max_len"
                     )));
                 }
             }

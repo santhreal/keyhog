@@ -41,10 +41,18 @@ pub const DIAGNOSTIC_BACKEND_ROUTE: &str = "simd-regex";
 pub const DIAGNOSTIC_BACKEND_ROUTE: &str = "cpu-fallback";
 
 pub fn apply_default_scan_backend(cmd: &mut Command, args: &[&str]) {
-    if args.first() == Some(&"scan") && !args.iter().any(|arg| *arg == "--backend") {
-        cmd.arg("scan")
-            .args(["--backend", DIAGNOSTIC_BACKEND])
-            .args(&args[1..]);
+    if args.first() == Some(&"scan") {
+        cmd.arg("scan");
+        if !args.iter().any(|arg| *arg == "--backend") {
+            cmd.args(["--backend", DIAGNOSTIC_BACKEND]);
+        }
+        if !args
+            .iter()
+            .any(|arg| *arg == "--developer-compile-embedded-detectors")
+        {
+            cmd.arg("--developer-compile-embedded-detectors");
+        }
+        cmd.args(&args[1..]);
     } else {
         cmd.args(args);
     }
@@ -61,10 +69,18 @@ pub fn workspace_detectors() -> PathBuf {
         .expect("workspace detectors dir")
 }
 
-/// Write `content` to a temp file, scan with `--format json`, return output.
-pub fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option<i32>) {
+/// Write `content` to a temp file named `name`, scan with `--format json`,
+/// return output. The name is load-bearing: the evidence classifier reads the
+/// source role from the file syntax, so an assignment in an inert `.txt` is
+/// `review`/`unsupported-context` and exits 0, while the same assignment in a
+/// `.env` is `likely`/`vendor-pattern` and exits 1.
+pub fn scan_named_file(
+    name: &str,
+    content: &str,
+    extra_args: &[&str],
+) -> (String, String, Option<i32>) {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("planted.txt");
+    let path = dir.path().join(name);
     std::fs::write(&path, content).expect("write fixture");
 
     let mut cmd_args: Vec<String> = vec![
@@ -74,6 +90,7 @@ pub fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Op
         "json".into(),
         "--backend".into(),
         DIAGNOSTIC_BACKEND.into(),
+        "--developer-compile-embedded-detectors".into(),
     ];
     for arg in extra_args {
         cmd_args.push((*arg).into());
@@ -92,6 +109,11 @@ pub fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Op
     )
 }
 
+/// `scan_named_file` with the inert `planted.txt` fixture name.
+pub fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option<i32>) {
+    scan_named_file("planted.txt", content, extra_args)
+}
+
 pub fn write_temp_file(name: &str, content: &str) -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join(name);
@@ -106,7 +128,8 @@ pub fn scan_path(path: &Path, extra_args: &[&str]) -> Output {
         "--format",
         "json",
         "--backend",
-        "simd",
+        DIAGNOSTIC_BACKEND,
+        "--developer-compile-embedded-detectors",
     ];
     args.extend(extra_args);
     args.push(path.to_str().expect("utf-8 path"));

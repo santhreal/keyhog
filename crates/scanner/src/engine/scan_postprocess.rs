@@ -29,6 +29,10 @@ pub(crate) fn register_literal(
 
 // Re-export the post-processing satellites through their established engine paths.
 // Scanner tuning owns enablement; the suffix-gate satellite only builds the gate.
+pub use super::scan_postprocess_profile::{
+    confirmed_postprocess_profile_from_typed, format_confirmed_postprocess_profile,
+    ConfirmedPostprocessProfile,
+};
 #[cfg(feature = "decode")]
 pub(crate) use super::scan_postprocess_profile::{
     decode_recursion_from_typed, format_decode_recursion,
@@ -56,7 +60,7 @@ impl CompiledScanner {
         matches: &mut Vec<RawMatch>,
         deadline: Option<std::time::Instant>,
         route: crate::ScanExecutionRoute,
-        #[cfg_attr(not(feature = "decode"), allow(unused_variables))] decoder_absence: bool,
+        _decoder_absence: bool,
     ) -> crate::error::Result<()> {
         if crate::deadline::expired(deadline) {
             return Ok(());
@@ -182,6 +186,12 @@ impl CompiledScanner {
                     if decoded_candidates.is_empty() {
                         return Ok(());
                     }
+                    keyhog_profile::add_counter(
+                        keyhog_profile::CounterId::PostprocessDedupCalls,
+                        1,
+                    );
+                    let _dedup_span =
+                        keyhog_profile::counter_span(keyhog_profile::CounterId::PostprocessDedupNs);
                     // Decoding is monotonic: keep raw findings and union resolved decoded evidence.
                     let raw_findings = matches.clone();
 
@@ -208,11 +218,12 @@ impl CompiledScanner {
                 Ok(())
             };
             if chunk.data.len() <= self.config.max_decode_bytes
-                && self.chunk_needs_decode_postprocess_with_absence(chunk, decoder_absence)
+                && self.chunk_needs_decode_postprocess_with_absence(chunk, _decoder_absence)
             {
                 decode_parent(chunk, matches)?;
             } else if self.chunk_uses_bounded_decode_windows(chunk) {
-                decode::decode_source_windows(self.config.max_decode_bytes, chunk, |w| {
+                let overlap = self.decode_window_overlap_bytes();
+                decode::decode_source_windows(self.config.max_decode_bytes, chunk, overlap, |w| {
                     self.chunk_needs_decode_postprocess(w)
                         .then(|| decode_parent(w, matches))
                         .unwrap_or(Ok(()))

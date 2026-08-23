@@ -21,26 +21,20 @@ fn repo_root() -> PathBuf {
 /// All valid guard root state labels from the state machine.
 fn guard_state_labels() -> BTreeSet<String> {
     use keyhog_core::guard_state::GuardRootState;
-    let mut labels = BTreeSet::new();
-    labels.insert(GuardRootState::Indexing.label().to_string());
-    labels.insert(GuardRootState::Current.label().to_string());
-    labels.insert(GuardRootState::Dirty.label().to_string());
-    labels.insert(GuardRootState::Blocked.label().to_string());
-    labels.insert(GuardRootState::Degraded.label().to_string());
-    labels.insert(GuardRootState::StalePolicy.label().to_string());
-    labels.insert(GuardRootState::Stopped.label().to_string());
-    labels
+    GuardRootState::all()
+        .iter()
+        .map(|s| s.label().to_string())
+        .collect()
 }
 
 /// All valid guard root mode labels.
 fn guard_mode_labels() -> BTreeSet<String> {
     use keyhog_core::guard_state::GuardRootMode;
-    let mut labels = BTreeSet::new();
-    labels.insert(GuardRootMode::Repo.label().to_string());
-    labels.insert(GuardRootMode::Filesystem.label().to_string());
-    labels
+    GuardRootMode::all()
+        .iter()
+        .map(|m| m.label().to_string())
+        .collect()
 }
-
 /// Valid scanner residency labels.
 fn scanner_residency_labels() -> BTreeSet<String> {
     ["active", "resident", "idle-unload"]

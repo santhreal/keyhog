@@ -179,6 +179,9 @@ impl CompiledScanner {
         }
         self.simd_prefilter
             .get_or_init(|| {
+                // Materializing the Hyperscan database IS the backend runtime
+                // initialization the profiler reports as `backend-init`.
+                let _init_span = keyhog_profile::span(keyhog_profile::Stage::BackendInit);
                 let cold =
                     keyhog_profile::decision_timer(keyhog_profile::Stage::AutorouteCalibration);
                 let plan = self
@@ -367,7 +370,7 @@ impl CompiledScanner {
     ) -> (f64, f64, usize, usize) {
         use super::phase2::ActivePatternsScratch;
         use super::Phase2HsEngine;
-        let all: Vec<usize> = self.phase2_always_active_indices.clone();
+        let all = &self.phase2_always_active_indices;
         let lean_n = all
             .iter()
             .filter(|&&i| !self.phase2_patterns[i].0.homoglyph_variant)
@@ -421,7 +424,7 @@ impl CompiledScanner {
         use super::phase2::ActivePatternsScratch;
         use super::Phase2HsEngine;
         use std::collections::HashSet;
-        let all: Vec<usize> = self.phase2_always_active_indices.clone();
+        let all = &self.phase2_always_active_indices;
         let engine = Phase2HsEngine::build(&self.phase2_patterns, &all)
             .expect("HS engine build")
             .expect("HS engine");
@@ -933,6 +936,16 @@ impl CompiledScanner {
             false,
         )
     }
+    /// Scan a single chunk with concurrent pipeline partitioning across `worker_count` workers.
+    /// Preserves seam safety and finding determinism across chunk partition boundaries.
+    pub fn scan_chunk_partitioned(
+        &self,
+        chunk: &Chunk,
+        backend: crate::hw_probe::ScanBackend,
+        worker_count: usize,
+    ) -> crate::error::Result<Vec<RawMatch>> {
+        crate::pipeline::scan_chunk_partitioned(self, chunk, backend, worker_count)
+    }
 
     /// Scan multiple chunks using exactly the caller-selected backend.
     ///
@@ -1087,6 +1100,14 @@ impl CompiledScanner {
     ) -> crate::error::Result<Vec<RawMatch>> {
         if scan_deadline_expired(deadline) {
             return Ok(Vec::new());
+        }
+        if let Some(materialized) = self.selected_backend() {
+            if materialized != selected_backend {
+                return Err(crate::error::ScanError::BackendPlanMismatch {
+                    materialized: materialized.label(),
+                    requested: selected_backend.label(),
+                });
+            }
         }
         // Direct-match prefilters: skip chunks that carry none of any
         // detector's literal bytes (`AlphabetScreen`) or bigrams (bloom). A
