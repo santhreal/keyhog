@@ -110,7 +110,10 @@ pub(super) fn unpack_tar(
     // Disk unpack keeps validate-before-write so a tar-header bomb cannot create
     // entries before the cap refuses the archive. Production layer scanning uses
     // `stream_layer_archive_chunks` instead and never materializes members.
-    unpack_open_tar(file, destination, limits, false, budget)
+    // The OUTER image archive is only a container: its own blob sizes must not
+    // consume the extracted-content budget, or the guard trips on the container
+    // before any layer content is measured (and names a digest, not an entry).
+    unpack_open_tar(file, destination, limits, false, budget, false)
 }
 
 pub(super) fn unpack_layer_archive(
@@ -124,7 +127,9 @@ pub(super) fn unpack_layer_archive(
     file.rewind().map_err(SourceError::Io)?;
 
     match encoding {
-        LayerArchiveEncoding::RawTar => unpack_open_tar(file, destination, limits, true, budget),
+        LayerArchiveEncoding::RawTar => {
+            unpack_open_tar(file, destination, limits, true, budget, true)
+        }
         LayerArchiveEncoding::GzipTar => {
             validate_tar_reader(
                 flate2::read::MultiGzDecoder::new(&mut file),
@@ -226,6 +231,7 @@ fn unpack_open_tar(
     limits: crate::SourceLimits,
     enforce_per_file_cap: bool,
     budget: &DockerUnpackBudget,
+    charge_image_budget: bool,
 ) -> Result<DockerExtractReport, SourceError> {
     let mut validation_archive = tar::Archive::new(&mut file);
     validate_docker_archive_plan(
@@ -233,6 +239,7 @@ fn unpack_open_tar(
         limits,
         enforce_per_file_cap,
         budget,
+        charge_image_budget,
     )?;
 
     file.rewind().map_err(SourceError::Io)?;
@@ -246,7 +253,7 @@ fn validate_tar_reader(
     budget: &DockerUnpackBudget,
 ) -> Result<(), SourceError> {
     let mut archive = tar::Archive::new(reader);
-    validate_docker_archive_plan(&mut archive, limits, enforce_per_file_cap, budget)
+    validate_docker_archive_plan(&mut archive, limits, enforce_per_file_cap, budget, true)
 }
 
 fn unpack_tar_reader(
@@ -878,6 +885,7 @@ fn validate_docker_archive_plan<R: Read>(
     limits: crate::SourceLimits,
     enforce_per_file_cap: bool,
     budget: &DockerUnpackBudget,
+    charge_image_budget: bool,
 ) -> Result<(), SourceError> {
     let mut cumulative_bytes: u64 = 0;
     for (entry_index, entry) in archive.entries().map_err(SourceError::Io)?.enumerate() {
@@ -890,14 +898,16 @@ fn validate_docker_archive_plan<R: Read>(
         let file_type = entry.header().entry_type();
         validate_docker_archive_entry(&path, file_type)?;
 
-        cumulative_bytes = cumulative_bytes.saturating_add(size);
-        if cumulative_bytes > budget.remaining() {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
-            return Err(SourceError::Other(format!(
-                "docker archive cumulative size exceeds {} bytes at entry '{}' (likely zip-bomb)",
-                limits.docker_tar_total_bytes,
-                path.display(),
-            )));
+        if charge_image_budget {
+            cumulative_bytes = cumulative_bytes.saturating_add(size);
+            if cumulative_bytes > budget.remaining() {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+                return Err(SourceError::Other(format!(
+                    "docker archive cumulative size exceeds {} bytes at entry '{}' (likely zip-bomb)",
+                    limits.docker_tar_total_bytes,
+                    path.display(),
+                )));
+            }
         }
 
         if enforce_per_file_cap && docker_archive_entry_exceeds_scan_cap(file_type, size, limits) {
