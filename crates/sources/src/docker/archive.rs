@@ -144,6 +144,7 @@ pub(super) fn unpack_layer_archive(
                 limits,
                 true,
                 budget,
+                true,
             )
         }
         LayerArchiveEncoding::ZstdTar => {
@@ -164,7 +165,7 @@ pub(super) fn unpack_layer_archive(
                     limits.docker_tar_total_bytes,
                 ))
                 .map_err(SourceError::Io)?;
-            unpack_tar_reader(extract_reader, destination, limits, true, budget)
+            unpack_tar_reader(extract_reader, destination, limits, true, budget, true)
         }
     }
 }
@@ -243,7 +244,14 @@ fn unpack_open_tar(
     )?;
 
     file.rewind().map_err(SourceError::Io)?;
-    unpack_tar_reader(&mut file, destination, limits, enforce_per_file_cap, budget)
+    unpack_tar_reader(
+        &mut file,
+        destination,
+        limits,
+        enforce_per_file_cap,
+        budget,
+        charge_image_budget,
+    )
 }
 
 fn validate_tar_reader(
@@ -262,6 +270,7 @@ fn unpack_tar_reader(
     limits: crate::SourceLimits,
     enforce_per_file_cap: bool,
     budget: &DockerUnpackBudget,
+    charge_image_budget: bool,
 ) -> Result<DockerExtractReport, SourceError> {
     let mut archive = tar::Archive::new(reader);
     extract_docker_archive_entries(
@@ -270,6 +279,7 @@ fn unpack_tar_reader(
         limits,
         enforce_per_file_cap,
         budget,
+        charge_image_budget,
     )
 }
 
@@ -924,6 +934,7 @@ fn extract_docker_archive_entries<R: Read>(
     limits: crate::SourceLimits,
     enforce_per_file_cap: bool,
     budget: &DockerUnpackBudget,
+    charge_image_budget: bool,
 ) -> Result<DockerExtractReport, SourceError> {
     let mut report = DockerExtractReport::default();
     for (entry_index, entry) in archive.entries().map_err(SourceError::Io)?.enumerate() {
@@ -937,7 +948,14 @@ fn extract_docker_archive_entries<R: Read>(
 
         // The one site that SPENDS the image budget for disk unpack. Streaming
         // layer scans charge through `stream_layer_tar_reader` instead.
-        if !budget.charge(size) {
+        // In the outer container pass, blob payloads under `blobs/` are NOT
+        // charged here: a layer blob is re-read and accounted through its
+        // extracted entries, so charging its packaged size would trip the
+        // guard before any layer content is measured (and name a digest,
+        // not an entry). Metadata such as `manifest.json` IS scanned input
+        // and counts.
+        let spends_budget = charge_image_budget || !path.starts_with("blobs/");
+        if spends_budget && !budget.charge(size) {
             return Err(docker_image_budget_error(
                 &path,
                 limits.docker_tar_total_bytes,
