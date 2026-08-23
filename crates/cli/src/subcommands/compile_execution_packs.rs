@@ -516,13 +516,14 @@ fn write_sync(path: &Path, bytes: &[u8]) -> Result<()> {
 fn sync_directory(path: &Path) -> Result<()> {
     #[cfg(target_os = "windows")]
     use std::os::windows::fs::OpenOptionsExt;
-    // FlushFileBuffers on a directory handle requires a write-mode handle,
-    // which Windows only grants with FILE_FLAG_BACKUP_SEMANTICS. A plain
-    // read-mode open syncs files but fails on directories with
+    // FlushFileBuffers requires GENERIC_WRITE on the handle, and Windows only
+    // grants a directory handle that access when it is opened with
+    // FILE_FLAG_BACKUP_SEMANTICS. Read mode alone fails sync_all with
     // "Access is denied" (os error 5).
     #[cfg(target_os = "windows")]
     let file = std::fs::OpenOptions::new()
         .read(true)
+        .write(true)
         .custom_flags(0x0200_0000)
         .open(path)
         .with_context(|| format!("opening directory {} for sync", path.display()))?;
