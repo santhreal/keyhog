@@ -890,6 +890,32 @@ fn validate_extracted_tree_with_limits<R: Read>(
     Ok(())
 }
 
+/// Normalize a tar entry path so a `./` or repeated-curdir prefix cannot dodge
+/// prefix matching.
+fn normalize_entry_path(path: &Path) -> std::path::PathBuf {
+    path.components()
+        .filter(|component| !matches!(component, std::path::Component::CurDir))
+        .collect()
+}
+
+/// Whether an OUTER container entry is itself a layer payload that the scan
+/// re-reads and accounts through its extracted inner entries. Charging its
+/// packaged size in the outer pass would trip the image-wide guard before any
+/// layer content is measured, naming a digest instead of the entry that
+/// actually exceeded the budget. Covers the OCI layout (`blobs/sha256/<digest>`)
+/// and legacy `docker save` layouts (`<layer-id>/layer.tar`). Everything else,
+/// including `manifest.json` and per-layer metadata files, is scanned input and
+/// counts.
+fn outer_entry_is_layer_payload(path: &Path) -> bool {
+    let normalized = normalize_entry_path(path);
+    if normalized.starts_with("blobs") && normalized.components().count() >= 2 {
+        return true;
+    }
+    normalized
+        .file_name()
+        .is_some_and(|name| name == "layer.tar")
+}
+
 fn validate_docker_archive_plan<R: Read>(
     archive: &mut tar::Archive<R>,
     limits: crate::SourceLimits,
@@ -908,7 +934,10 @@ fn validate_docker_archive_plan<R: Read>(
         let file_type = entry.header().entry_type();
         validate_docker_archive_entry(&path, file_type)?;
 
-        if charge_image_budget {
+        // Same spend rule as `extract_docker_archive_entries`, so the
+        // validate-before-write guarantee covers exactly the entries that
+        // extraction will charge.
+        if charge_image_budget || !outer_entry_is_layer_payload(&path) {
             cumulative_bytes = cumulative_bytes.saturating_add(size);
             if cumulative_bytes > budget.remaining() {
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
@@ -947,14 +976,11 @@ fn extract_docker_archive_entries<R: Read>(
         validate_docker_archive_entry(&path, entry.header().entry_type())?;
 
         // The one site that SPENDS the image budget for disk unpack. Streaming
-        // layer scans charge through `stream_layer_tar_reader` instead.
-        // In the outer container pass, blob payloads under `blobs/` are NOT
-        // charged here: a layer blob is re-read and accounted through its
-        // extracted entries, so charging its packaged size would trip the
-        // guard before any layer content is measured (and name a digest,
-        // not an entry). Metadata such as `manifest.json` IS scanned input
-        // and counts.
-        let spends_budget = charge_image_budget || !path.starts_with("blobs/");
+        // layer scans charge through `stream_layer_tar_reader` instead. In the
+        // outer container pass, layer payloads (see
+        // `outer_entry_is_layer_payload`) are NOT charged here; metadata such
+        // as `manifest.json` IS scanned input and counts.
+        let spends_budget = charge_image_budget || !outer_entry_is_layer_payload(&path);
         if spends_budget && !budget.charge(size) {
             return Err(docker_image_budget_error(
                 &path,
