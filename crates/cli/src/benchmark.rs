@@ -133,6 +133,7 @@ pub(crate) fn build_benchmark_chunk(index: usize) -> Chunk {
             base_offset: 0,
             base_line: 0,
             source_type: "benchmark".into(),
+            ctime_ns: None,
             path: Some(format!("benchmark/corpus-{index}.txt").into()),
             commit: None,
             author: None,

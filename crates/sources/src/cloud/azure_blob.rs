@@ -404,6 +404,7 @@ fn fetch_azure_blob_chunk(
             author: None,
             date: None,
             mtime_ns: None,
+            ctime_ns: None,
             size_bytes: listed_size,
             decoded_span: None,
         },

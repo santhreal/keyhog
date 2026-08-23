@@ -33,12 +33,12 @@ fn merkle_lookup_mutation_forget_record_mapped_stages() {
     let index = keyhog_core::MerkleIndex::default();
     let measurements = measure(|| {
         let first =
-            index.record_chunk_at_offset_and_check_unchanged("a.txt".into(), 0, 10, 3, b"abc");
+            index.record_chunk_at_offset_and_check_unchanged("a.txt".into(), 0, 10, 11, 3, b"abc");
         assert!(!first, "first record of a path cannot be unchanged");
         let second =
-            index.record_chunk_at_offset_and_check_unchanged("a.txt".into(), 0, 10, 3, b"abc");
+            index.record_chunk_at_offset_and_check_unchanged("a.txt".into(), 0, 10, 11, 3, b"abc");
         assert!(second, "identical re-record must report unchanged");
-        assert!(index.metadata_unchanged(std::path::Path::new("a.txt"), 10, 3));
+        assert!(index.metadata_unchanged(std::path::Path::new("a.txt"), 10, 11, 3));
         index.forget(std::path::Path::new("a.txt"));
     });
     assert_eq!(
@@ -64,7 +64,7 @@ fn merkle_save_and_load_record_mapped_stages() {
     let index = keyhog_core::MerkleIndex::default();
     let loaded_status = std::cell::Cell::new(false);
     let measurements = measure(|| {
-        index.record_chunk_at_offset_and_check_unchanged("b.txt".into(), 0, 20, 4, b"data");
+        index.record_chunk_at_offset_and_check_unchanged("b.txt".into(), 0, 20, 21, 4, b"data");
         index
             .save_with_spec(&cache_path, &spec_hash)
             .expect("save fresh cache");
@@ -98,8 +98,8 @@ fn merkle_save_and_load_record_mapped_stages() {
 fn merkle_paths_are_silent_without_active_runtime() {
     keyhog_profile::reset();
     let index = keyhog_core::MerkleIndex::default();
-    index.record_chunk_at_offset_and_check_unchanged("c.txt".into(), 0, 1, 1, b"x");
-    index.metadata_unchanged(std::path::Path::new("c.txt"), 1, 1);
+    index.record_chunk_at_offset_and_check_unchanged("c.txt".into(), 0, 1, 2, 1, b"x");
+    index.metadata_unchanged(std::path::Path::new("c.txt"), 1, 2, 1);
     index.forget(std::path::Path::new("c.txt"));
     let measurements = keyhog_profile::take_stage_measurements();
     keyhog_profile::reset();

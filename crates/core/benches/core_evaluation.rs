@@ -215,6 +215,7 @@ fn bench_merkle_index_operations(c: &mut Criterion) {
                 black_box(&sample_path),
                 black_box(0),
                 black_box(1_700_000_000_000_000_000),
+                black_box(1_700_000_000_100_000_000),
                 black_box(1024),
                 black_box(content_hash.as_bytes()),
             );
@@ -227,6 +228,7 @@ fn bench_merkle_index_operations(c: &mut Criterion) {
             let unchanged = index.metadata_unchanged(
                 black_box(&sample_path),
                 black_box(1_700_000_000_000_000_000),
+                black_box(1_700_000_000_100_000_000),
                 black_box(1024),
             );
             black_box(unchanged);

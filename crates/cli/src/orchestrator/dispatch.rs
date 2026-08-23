@@ -1111,6 +1111,7 @@ impl CoalescedBatchProducer {
             std::path::Path::new(path_str),
             c.metadata.base_offset as u64,
             c.metadata.mtime_ns.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
+            c.metadata.ctime_ns.unwrap_or(0), // LAW10: absent change time is never trusted by the read-free skip
             c.metadata.size_bytes.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
             c.data.as_bytes(),
         );

@@ -428,6 +428,7 @@ fn rewrite_normalizes_nested_path_under_digest_label_and_clears_git_fields() {
         data: "STRIPE=sk_live_x\n".into(),
         metadata: keyhog_core::ChunkMetadata {
             source_type: "filesystem/windowed".into(),
+            ctime_ns: None,
             path: Some(file.display().to_string().into()),
             base_offset: 8192,
             base_line: 64,

@@ -616,6 +616,7 @@ pub(crate) fn try_emit_pdf_member(
                 entry_name,
                 bytes,
                 None,
+                None,
                 file_size,
                 keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
                 counted,
@@ -763,6 +764,7 @@ const MMAP_THRESHOLD: u64 = 1024 * 1024;
 #[derive(Clone, Copy)]
 struct FileLiveMetadata {
     mtime_ns: Option<u64>,
+    ctime_ns: Option<u64>,
     size_bytes: u64,
     is_symlink: bool,
     is_sparse: bool,
@@ -818,6 +820,7 @@ pub(super) fn process_entry(
     let file_size = live_metadata.map_or(entry.size, |meta| meta.size_bytes);
     let live_mtime_ns = live_metadata.and_then(|meta| meta.mtime_ns);
     let mut ext = path.extension().and_then(|e| e.to_str()).unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+    let live_ctime_ns = live_metadata.and_then(|meta| meta.ctime_ns);
 
     let image_kind = match image_metadata::probe_kind(&path, ext) {
         Ok(kind) => kind,
@@ -871,8 +874,8 @@ pub(super) fn process_entry(
 
     if let (Some(idx), Some(meta)) = (merkle.as_ref(), live_metadata) {
         if !meta.is_symlink {
-            if let Some(mtime_ns) = meta.mtime_ns {
-                if idx.metadata_unchanged(&path, mtime_ns, meta.size_bytes) {
+            if let (Some(mtime_ns), Some(ctime_ns)) = (meta.mtime_ns, meta.ctime_ns) {
+                if idx.metadata_unchanged(&path, mtime_ns, ctime_ns, meta.size_bytes) {
                     skipped.fetch_add(1, Ordering::Relaxed);
                     return;
                 }
@@ -923,7 +926,14 @@ pub(super) fn process_entry(
     }
 
     if let Some(kind) = image_kind {
-        match image_metadata::extract(&path, kind, file_size, live_mtime_ns, max_size) {
+        match image_metadata::extract(
+            &path,
+            kind,
+            file_size,
+            live_mtime_ns,
+            live_ctime_ns,
+            max_size,
+        ) {
             Ok(extraction) => {
                 for chunk in extraction.chunks {
                     if !emit(Ok(chunk)) {
@@ -948,7 +958,16 @@ pub(super) fn process_entry(
 
     if ext.eq_ignore_ascii_case("pdf") {
         run_derived_extractor(
-            |counted| pdf::extract_pdf_chunks(&path, file_size, live_mtime_ns, max_size, counted),
+            |counted| {
+                pdf::extract_pdf_chunks(
+                    &path,
+                    file_size,
+                    live_mtime_ns,
+                    live_ctime_ns,
+                    max_size,
+                    counted,
+                )
+            },
             emit,
         );
         return;
@@ -1186,6 +1205,7 @@ pub(super) fn process_entry(
                             base_offset: w.offset,
                             base_line: w.base_line,
                             mtime_ns: live_mtime_ns,
+                            ctime_ns: live_ctime_ns,
                             size_bytes: Some(file_size),
                             decoded_span: None,
                             ..Default::default()
@@ -1319,6 +1339,7 @@ pub(super) fn process_entry(
                             base_offset: current_offset,
                             base_line: current_base_line,
                             mtime_ns: live_mtime_ns,
+                            ctime_ns: live_ctime_ns,
                             size_bytes: Some(file_size),
                             decoded_span: None,
                             ..Default::default()
@@ -1422,6 +1443,7 @@ pub(super) fn process_entry(
             source_type: intern_source_type(source_type),
             path: Some(path_arc),
             mtime_ns: live_mtime_ns,
+            ctime_ns: live_ctime_ns,
             size_bytes: Some(file_size),
             decoded_span: None,
             ..Default::default()
@@ -1454,8 +1476,23 @@ fn file_live_metadata(path: &Path) -> Option<FileLiveMetadata> {
     };
     #[cfg(not(unix))]
     let is_sparse = false;
+    #[cfg(unix)]
+    let ctime_ns = {
+        use std::os::unix::fs::MetadataExt;
+        // st_ctime is the kernel-owned inode change time: any write moves it,
+        // and userspace cannot set it back, which is what makes it the trust
+        // anchor for the incremental read-free skip. Pre-epoch or failed
+        // reads disable only that skip; the scan still proceeds.
+        let secs = meta.ctime();
+        let nanos = meta.ctime_nsec();
+        u64::try_from(i128::from(secs) * 1_000_000_000 + i128::from(nanos)).ok()
+        // LAW10: out-of-range ctime disables only the Merkle fast-path
+    };
+    #[cfg(not(unix))]
+    let ctime_ns: Option<u64> = None;
     Some(FileLiveMetadata {
         mtime_ns,
+        ctime_ns,
         size_bytes: meta.len(),
         is_symlink: file_type.is_symlink(),
         is_sparse,

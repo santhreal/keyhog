@@ -189,15 +189,33 @@ fn incremental_cache_persist_failure_with_findings_keeps_finding_exit_and_warnin
 // The Four Adversarial Change Kinds (Row 90)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Row 90 adversarial kind 1: a content change that preserves BOTH size and
+/// mtime.
+///
+/// The incremental index's read-free skip requires the stored
+/// `(mtime, ctime, size)` identity to match live stat (`MerkleIndex::
+/// metadata_unchanged`). `set_times` restores mtime over modified content,
+/// but the kernel-owned inode change time moves on the rewrite and cannot be
+/// set back from userspace, so the skip refuses: the file is re-read,
+/// re-hashed, and the planted credential is reported. The racy-clean guard
+/// closes the sibling window (entries whose mtime shares the index-write
+/// second are dropped on load). Both halves are pinned because a silent
+/// change in either direction is a recall or a performance regression.
 #[test]
 fn adversarial_1_size_and_mtime_preserving_content_change_detected() {
     let dir = TempDir::new().expect("tempdir");
     let target = dir.path().join("config.env");
 
-    // Clean payload of exact length 48 bytes
-    let clean_bytes = b"DATABASE_URL=postgres://user:pass@localhost:5432\n";
+    // Clean payload of exact length 49 bytes. It must carry no credential at
+    // all: a `postgres://user:pass@` URL is a `postgresql-connection-string`
+    // finding in a `.env`, which is what this test's cold run must not have.
+    let clean_bytes = b"LOG_LEVEL=info\nAPP_NAME=keyhog\nREGION=us-east-1a\n";
     assert_eq!(clean_bytes.len(), 49);
     std::fs::write(&target, clean_bytes).expect("write clean target");
+    // Leave the racy-clean window before the index is written: an entry whose
+    // mtime shares the index-write second is dropped on load, which would
+    // re-read the file and make this boundary non-deterministic.
+    std::thread::sleep(std::time::Duration::from_millis(1_100));
 
     let cache = dir.path().join("merkle.idx");
     let cache_arg = cache.to_str().unwrap();
@@ -211,9 +229,8 @@ fn adversarial_1_size_and_mtime_preserving_content_change_detected() {
     let metadata = std::fs::metadata(&target).expect("get metadata");
     let mtime = metadata.modified().expect("get mtime");
 
-    // Replace with a secret payload of the EXACT same byte length (49 bytes)
-    // "TOKEN=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\n" is 48 bytes + 1 byte padding
-    let dirty_bytes = b"TOKEN=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 #\n";
+    // Replace with a secret payload of the EXACT same byte length (49 bytes).
+    let dirty_bytes = b"TOKEN_A=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\n";
     assert_eq!(dirty_bytes.len(), 49);
     std::fs::write(&target, dirty_bytes).expect("write dirty target");
 
@@ -223,16 +240,33 @@ fn adversarial_1_size_and_mtime_preserving_content_change_detected() {
     file.set_times(times).expect("restore exact mtime");
     drop(file);
 
-    // Rescan: the content hash has changed, so the scanner MUST re-read and report the secret
+    // mtime and size match the indexed entry exactly, but the rewrite moved
+    // the inode ctime, so the read-free skip must refuse and the rescan must
+    // report the planted credential.
     let second = scan_path(dir.path(), &args);
     assert_eq!(
         second.status.code(),
         Some(1),
-        "size- and mtime-preserving content change must STILL be detected; stdout={}",
+        "a size- and mtime-preserving content change must be detected via ctime; stdout={}",
         String::from_utf8_lossy(&second.stdout)
     );
     assert!(
         String::from_utf8_lossy(&second.stdout).contains("github-classic-pat"),
+        "tampered secret must be reported"
+    );
+
+    // Same tamper, mtime NOT restored: the stat pair differs, the file is
+    // re-read, and the credential must be reported.
+    std::fs::write(&target, dirty_bytes).expect("rewrite dirty target");
+    let third = scan_path(dir.path(), &args);
+    assert_eq!(
+        third.status.code(),
+        Some(1),
+        "a content change with a live mtime must be detected; stdout={}",
+        String::from_utf8_lossy(&third.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&third.stdout).contains("github-classic-pat"),
         "tampered secret must be reported"
     );
 }

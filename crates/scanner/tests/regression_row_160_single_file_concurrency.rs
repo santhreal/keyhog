@@ -34,6 +34,7 @@ fn row_160_large_chunk_subdivision_preserves_metadata_and_lines() {
         metadata: ChunkMetadata {
             path: Some("src/large_file.txt".into()),
             source_type: "filesystem/windowed".into(),
+            ctime_ns: None,
             base_offset,
             base_line,
             commit: None,
@@ -124,6 +125,7 @@ fn row_160_seam_straddling_secret_detected_across_boundaries() {
         metadata: ChunkMetadata {
             path: Some("config/secrets.env".into()),
             source_type: "filesystem/windowed".into(),
+            ctime_ns: None,
             base_offset: 0,
             base_line: 1,
             commit: None,
@@ -198,6 +200,7 @@ fn row_160_parallel_scan_parity_and_determinism() {
         metadata: ChunkMetadata {
             path: Some("src/services/auth.rs".into()),
             source_type: "filesystem/windowed".into(),
+            ctime_ns: None,
             base_offset: 2048,
             base_line: 10,
             commit: None,
@@ -356,6 +359,7 @@ fn row_160_subchunk_metadata_clears_decoded_span_and_updates_size() {
         metadata: ChunkMetadata {
             path: Some("file.bin".into()),
             source_type: "filesystem".into(),
+            ctime_ns: None,
             base_offset: 1000,
             base_line: 50,
             commit: None,

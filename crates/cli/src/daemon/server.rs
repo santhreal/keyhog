@@ -1468,6 +1468,7 @@ fn spawn_mass_filesystem_source(
                         std::path::Path::new(path),
                         chunk.metadata.base_offset as u64,
                         chunk.metadata.mtime_ns.unwrap_or(0),
+                        chunk.metadata.ctime_ns.unwrap_or(0), // LAW10: absent change time records an untrusted row; the next read-free skip refuses it and the file is re-read
                         chunk.metadata.size_bytes.unwrap_or(0),
                         chunk.data.as_bytes(),
                     ) {

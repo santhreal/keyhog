@@ -104,6 +104,7 @@ fn merkle_index_public_api_reachable_after_storage_split() {
         &idx,
         path.clone(),
         42,
+        43,
         7,
         h,
     );
@@ -117,8 +118,12 @@ fn merkle_index_public_api_reachable_after_storage_split() {
         &path,
         &h
     ));
-    assert!(idx.metadata_unchanged(&path, 42, 7));
-    assert!(!idx.metadata_unchanged(&path, 42, 8));
+    assert!(idx.metadata_unchanged(&path, 42, 43, 7));
+    assert!(
+        !idx.metadata_unchanged(&path, 42, 44, 7),
+        "ctime drift => false"
+    );
+    assert!(!idx.metadata_unchanged(&path, 42, 43, 8));
     assert_eq!(
         keyhog_core::testing::CoreTestApi::merkle_lookup(
             &keyhog_core::testing::TestApi,
@@ -162,6 +167,7 @@ fn merkle_index_save_load_roundtrip_and_tmp_sweep_after_split() {
         &idx,
         std::path::PathBuf::from("src/persisted.rs"),
         100,
+        101,
         9,
         h,
     );

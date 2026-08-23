@@ -239,13 +239,20 @@ fn autoroute_calibration_leaves_incremental_cache_bytes_unchanged() {
     let dir = tempfile::tempdir().expect("tempdir");
     let cache = dir.path().join("incremental.json");
     let index = Arc::new(keyhog_core::MerkleIndex::default());
-    assert!(!index.record_chunk_at_offset_and_check_unchanged("seed.rs".into(), 0, 1, 4, b"seed",));
+    assert!(!index.record_chunk_at_offset_and_check_unchanged(
+        "seed.rs".into(),
+        0,
+        1,
+        2,
+        4,
+        b"seed",
+    ));
     index
         .save_with_spec(&cache, &orchestrator.detector_spec_hash)
         .expect("seed incremental cache");
     let seeded_bytes = std::fs::read(&cache).expect("read seeded cache");
 
-    assert!(!index.record_chunk_at_offset_and_check_unchanged("new.rs".into(), 0, 2, 3, b"new",));
+    assert!(!index.record_chunk_at_offset_and_check_unchanged("new.rs".into(), 0, 2, 3, 3, b"new",));
     orchestrator.effective_config.autoroute_calibration = true;
     orchestrator.finalize_incremental(Some(&index), Some(&cache), 0, &[]);
     assert_eq!(
@@ -264,7 +271,14 @@ fn autoroute_calibration_leaves_incremental_cache_bytes_unchanged() {
     let reloaded =
         keyhog_core::MerkleIndex::load_with_spec_report(&cache, &orchestrator.detector_spec_hash)
             .into_index();
-    assert!(reloaded.record_chunk_at_offset_and_check_unchanged("new.rs".into(), 0, 2, 3, b"new",));
+    assert!(reloaded.record_chunk_at_offset_and_check_unchanged(
+        "new.rs".into(),
+        0,
+        2,
+        3,
+        3,
+        b"new",
+    ));
 }
 
 /// Regression for KH-1409: admission identity recovery must drive the same

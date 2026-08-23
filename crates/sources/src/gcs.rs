@@ -420,6 +420,7 @@ fn fetch_gcs_object_chunk(
             author: None,
             date: None,
             mtime_ns: None,
+            ctime_ns: None,
             size_bytes: listed_size,
             decoded_span: None,
         },

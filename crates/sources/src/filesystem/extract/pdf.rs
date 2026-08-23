@@ -29,6 +29,7 @@ pub(super) fn extract_pdf_chunks(
     path: &Path,
     file_size: u64,
     live_mtime_ns: Option<u64>,
+    live_ctime_ns: Option<u64>,
     max_size: u64,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
@@ -64,6 +65,7 @@ pub(super) fn extract_pdf_chunks(
         &display_path(path),
         bytes,
         live_mtime_ns,
+        live_ctime_ns,
         file_size,
         max_size,
         emit,
@@ -77,6 +79,7 @@ pub(super) fn extract_pdf_chunks_from_bytes(
     path_display: &str,
     bytes: Vec<u8>,
     live_mtime_ns: Option<u64>,
+    live_ctime_ns: Option<u64>,
     file_size: u64,
     max_size: u64,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
@@ -86,6 +89,7 @@ pub(super) fn extract_pdf_chunks_from_bytes(
             bytes,
             path_display.to_owned(),
             live_mtime_ns,
+            live_ctime_ns,
             file_size,
             emit,
         );
@@ -130,6 +134,7 @@ pub(super) fn extract_pdf_chunks_from_bytes(
             source_type: keyhog_core::intern_source_type("filesystem/pdf"),
             path: Some(path_display.to_owned().into()),
             mtime_ns: live_mtime_ns,
+            ctime_ns: live_ctime_ns,
             size_bytes: Some(file_size),
             decoded_span: None,
             ..Default::default()
@@ -172,6 +177,7 @@ fn emit_non_pdf_extension_fallback(
     bytes: Vec<u8>,
     path_display: String,
     live_mtime_ns: Option<u64>,
+    live_ctime_ns: Option<u64>,
     file_size: u64,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
@@ -199,6 +205,7 @@ fn emit_non_pdf_extension_fallback(
             source_type: keyhog_core::intern_source_type(source_type),
             path: Some(path_display.into()),
             mtime_ns: live_mtime_ns,
+            ctime_ns: live_ctime_ns,
             size_bytes: Some(file_size),
             decoded_span: None,
             ..Default::default()

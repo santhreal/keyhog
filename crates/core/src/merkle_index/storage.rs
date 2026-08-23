@@ -36,6 +36,11 @@ struct EntryV4 {
     /// ext4/NTFS sub-second precision; older filesystems just round-trip their
     /// rounded value.
     mtime_ns: u64,
+    /// Inode change time in nanoseconds since UNIX epoch. `0` (the serde
+    /// default for rows written before this field existed) means "unknown",
+    /// and an unknown change time is never trusted by the read-free skip.
+    #[serde(default)]
+    ctime_ns: u64,
     /// File size in bytes from `fs::metadata`.
     size: u64,
     /// Monotonic recency marker. Older v4 caches default to `0` and are evicted
@@ -286,6 +291,7 @@ impl MerkleIndex {
             let key = CacheKey::chunk(PathBuf::from(entry.path), entry.chunk_offset);
             let entry = CacheEntry {
                 mtime_ns: entry.mtime_ns,
+                ctime_ns: entry.ctime_ns,
                 size: entry.size,
                 last_seen_order: entry.last_seen_order,
                 hash,
@@ -481,9 +487,10 @@ fn encode_entries(entries: &HashMap<CacheKey, CacheEntry>) -> Vec<EntryV4> {
     ordered
         .into_iter()
         .map(|(key, entry)| EntryV4 {
-            path: key.path.display().to_string(),
             chunk_offset: key.chunk_offset,
+            path: key.path.display().to_string(),
             mtime_ns: entry.mtime_ns,
+            ctime_ns: entry.ctime_ns,
             size: entry.size,
             last_seen_order: entry.last_seen_order,
             hash: hex_encode(entry.hash),

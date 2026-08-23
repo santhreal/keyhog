@@ -87,6 +87,7 @@ pub(super) fn config_chunks(
                 author: None,
                 date: None,
                 mtime_ns: None,
+                ctime_ns: None,
                 size_bytes: Some(data.len() as u64),
                 decoded_span: None,
             },

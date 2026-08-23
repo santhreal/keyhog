@@ -557,8 +557,8 @@ pub(crate) fn subtract_excluded(delta: usize) {
         return;
     }
     let t = current_source_telemetry();
-    // LAW10: Infallible atomic subtraction for telemetry counter; fetch_update closure unconditionally returns Some.
-    let _ = t.counters[2].fetch_update(Relaxed, Relaxed, |current| {
+    // LAW10: Infallible atomic subtraction for telemetry counter; try_update closure unconditionally returns Some.
+    let _ = t.counters[2].try_update(Relaxed, Relaxed, |current| {
         Some(current.saturating_sub(delta))
     });
 }

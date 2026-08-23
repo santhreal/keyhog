@@ -490,6 +490,7 @@ credential_hash = "{suppressed_hash_hex}"
         &sample_path,
         0,
         1_700_000_000,
+        1_700_000_100,
         1024,
         content_hash.as_bytes(),
     );
@@ -499,6 +500,7 @@ credential_hash = "{suppressed_hash_hex}"
         &sample_path,
         0,
         1_700_000_000,
+        1_700_000_100,
         1024,
         content_hash.as_bytes(),
     );
@@ -507,8 +509,9 @@ credential_hash = "{suppressed_hash_hex}"
         "second encounter with identical metadata must be unchanged"
     );
 
-    assert!(index.metadata_unchanged(&sample_path, 1_700_000_000, 1024));
-    assert!(!index.metadata_unchanged(&sample_path, 1_700_000_001, 1024));
+    assert!(index.metadata_unchanged(&sample_path, 1_700_000_000, 1_700_000_100, 1024));
+    assert!(!index.metadata_unchanged(&sample_path, 1_700_000_000, 1_700_000_101, 1024));
+    assert!(!index.metadata_unchanged(&sample_path, 1_700_000_001, 1_700_000_100, 1024));
 
     // 4. Dedup matches and correlate
     let raw_1 = RawMatch {

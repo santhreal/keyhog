@@ -27,7 +27,7 @@ fn schema_version_mismatch_treated_as_cold_start() {
         MerkleLoadStatus::SchemaMismatch {
             path,
             version: 99,
-            expected: 4,
+            expected: 5,
         } if path == &cache_path
     ));
     let loaded = report.into_index();

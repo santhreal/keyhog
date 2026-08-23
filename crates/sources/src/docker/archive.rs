@@ -60,7 +60,7 @@ impl DockerUnpackBudget {
     fn charge(&self, bytes: u64) -> bool {
         use std::sync::atomic::Ordering;
         self.remaining
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |left| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |left| {
                 left.checked_sub(bytes)
             })
             .is_ok()

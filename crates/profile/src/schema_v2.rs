@@ -570,9 +570,14 @@ pub struct BlockedWaitRecordV2 {
 }
 pub const COMPILE_SURFACE_RECORD_V2_VERSION: u16 = 1;
 
+const fn legacy_component_version() -> u16 {
+    1
+}
+
 /// Compilation and load metrics recorded for one compile surface class.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CompileSurfaceRecordV2 {
+    #[serde(default = "legacy_component_version")]
     pub version: u16,
     pub surface: crate::CompileSurfaceId,
     pub name: String,

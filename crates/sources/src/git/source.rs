@@ -942,6 +942,7 @@ impl GitBlobChunkDecoder<'_> {
                 author: author.map(Into::into),
                 date: None,
                 mtime_ns: None,
+                ctime_ns: None,
                 size_bytes: Some(decoded_blob.size_bytes),
                 decoded_span: None,
             },

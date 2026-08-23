@@ -12,6 +12,7 @@ fn merkle_load_with_spec_rejects_legacy_save_without_spec() {
         &idx,
         PathBuf::from("/tmp/x"),
         1,
+        1 + 100,
         1,
         keyhog_core::testing::CoreTestApi::merkle_hash_content(
             &keyhog_core::testing::TestApi,

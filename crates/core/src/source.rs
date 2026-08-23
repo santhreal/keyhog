@@ -140,6 +140,13 @@ pub struct ChunkMetadata {
     /// Same shape and rationale as `mtime_ns`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<u64>,
+    /// Inode change time in nanoseconds since UNIX epoch, when the platform
+    /// exposes one (unix `st_ctime`). Unlike `mtime_ns` this cannot be forged
+    /// by userspace (`utimensat` / `set_times`), so the incremental index
+    /// requires it to agree before trusting its read-free fast-path skip.
+    /// `None` on platforms without a change time, which disables that skip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ctime_ns: Option<u64>,
     /// For DECODE sub-chunks only: the `[start, end)` byte range of the freshly
     /// decoded text within `data`. A decode sub-chunk is a small window of
     /// already-scanned parent context with the decoded blob spliced in at this

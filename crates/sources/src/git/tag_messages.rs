@@ -236,6 +236,7 @@ fn decode_tag_message(
             author: author.map(Into::into),
             date: None,
             mtime_ns: None,
+            ctime_ns: None,
             size_bytes: Some(message_bytes.len() as u64),
             decoded_span: None,
         },
