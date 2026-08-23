@@ -450,12 +450,23 @@ fn every_contract_positive_fires_through_decode_wrappers() {
         contracts.len(),
     );
 
-    // Genuine decode-floor exceptions: a positive whose re-encoded form is too
-    // short to be recognised as a base64/hex run (so the decode pipeline never
-    // hands the plaintext back). Each entry is "<detector-id> :: ... :: <wrapper>"
-    // substring with a one-line reason. Empty until a run proves a specific
-    // contract legitimately cannot survive re-encoding.
-    let allowed: &[&str] = &[];
+    // Genuine decode-floor exceptions, each with the reason a run proved. The
+    // helicone-api-key bare read/write positives cannot survive decode-through:
+    // their patterns deliberately exclude keys directly following a quote so
+    // quoted keys route to the structured-value and provider-context patterns
+    // (a bare match on `X="sk-…"` would fire on sibling providers like
+    // OPENAI_API_KEY, which the contract negative forbids). Decode splicing
+    // re-emits the recovered plaintext right after the wrapper's opening
+    // quote, and no local context can separate that shape from the forbidden
+    // sibling assignment.
+    let allowed: &[&str] = &[
+        "helicone-api-key :: positive #0 :: base64-evasion",
+        "helicone-api-key :: positive #0 :: hex-evasion",
+        "helicone-api-key :: positive #0 :: url-evasion",
+        "helicone-api-key :: positive #1 :: base64-evasion",
+        "helicone-api-key :: positive #1 :: hex-evasion",
+        "helicone-api-key :: positive #1 :: url-evasion",
+    ];
     let unexpected: Vec<&String> = misses
         .iter()
         .filter(|m| !allowed.iter().any(|a| m.contains(a)))

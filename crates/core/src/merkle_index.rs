@@ -481,27 +481,13 @@ impl MerkleIndex {
     }
 
     fn next_access_order(&self) -> u64 {
-        let previous =
-            match self
-                .access_order
-                .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                    Some(current.saturating_add(1))
-                }) {
-                Ok(previous) => previous,
-                Err(current) => current, // LAW10: closure always returns Some; Err is unreachable, and preserving current keeps the monotonic counter conservative if the API contract changes.
-            };
-        previous.saturating_add(1)
+        self.access_order
+            .fetch_add(1, Ordering::Relaxed)
+            .saturating_add(1)
     }
 
     fn observe_loaded_access_order(&self, loaded_order: u64) {
-        if let Err(current) =
-            self.access_order
-                .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                    (loaded_order > current).then_some(loaded_order)
-                })
-        {
-            debug_assert!(current >= loaded_order);
-        }
+        self.access_order.fetch_max(loaded_order, Ordering::Relaxed);
     }
 
     fn record_key_with_metadata(&self, key: CacheKey, entry: CacheEntry) {

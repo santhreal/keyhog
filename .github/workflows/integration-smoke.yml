@@ -51,6 +51,12 @@ jobs:
         shell: bash
         run: keyhog --version
 
+      - name: Calibrate autoroute
+        shell: bash
+        # Auto routing fails closed with exit 2 until this runner has a
+        # persisted calibration table; measure it once before any scan.
+        run: keyhog calibrate-autoroute
+
       - name: Seed fixture
         shell: bash
         # The seeded credentials live as a single base64 blob so the

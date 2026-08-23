@@ -557,10 +557,15 @@ pub(crate) fn subtract_excluded(delta: usize) {
         return;
     }
     let t = current_source_telemetry();
-    // LAW10: Infallible atomic subtraction for telemetry counter; try_update closure unconditionally returns Some.
-    let _ = t.counters[2].try_update(Relaxed, Relaxed, |current| {
-        Some(current.saturating_sub(delta))
-    });
+    // LAW10: Infallible atomic subtraction for telemetry counter; the loop floors at zero.
+    let mut current = t.counters[2].load(Relaxed);
+    loop {
+        let next = current.saturating_sub(delta);
+        match t.counters[2].compare_exchange_weak(current, next, Relaxed, Relaxed) {
+            Ok(_) => break,
+            Err(observed) => current = observed,
+        }
+    }
 }
 
 pub(crate) fn store_skip_counts(counts: SkipCounts) {

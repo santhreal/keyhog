@@ -80,6 +80,14 @@ jobs:
           echo "using checked-out keyhog $(git rev-parse HEAD)"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: calibrate autoroute for this runner
+        # The smoke scan below uses the default auto route. Auto routing fails
+        # closed with exit 2 when no calibration table exists, so measure and
+        # persist it before any scan runs.
+        run: |
+          set -euo pipefail
+          keyhog calibrate-autoroute
+
       - name: install benchmark dependencies
         run: |
           set -euo pipefail
