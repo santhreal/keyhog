@@ -1,6 +1,10 @@
 # Changelog
 
 
+## Unreleased
+
+- test(scanner): the decode-through adversarial gate records the proven `helicone-api-key` floor. The bare read/write key patterns exclude keys directly following a quote, so quoted keys route to the structured-value and provider-context patterns and a sibling assignment such as an OpenAI-shaped key stays unclaimed; base64/hex/url decode splicing re-emits the recovered key right after the wrapper quote, a shape no local context can separate from that forbidden sibling case. The six variants are documented in the gate's allowlist with this reason.
+
 ## 0.5.81 - 2026-08-20
 
 - fix(scanner): decode-union dedup keeps the stronger evidence. `union_unique_matches` dropped every later `(detector, credential)` twin, and the decoded twin is often the only one whose source role is parseable, so a base64 Kubernetes `Secret` value that decodes to `AWS_ACCESS_KEY_ID=...` reported at `review` with no assignment role. The survivor keeps the raw coordinate and unions the verdict.
