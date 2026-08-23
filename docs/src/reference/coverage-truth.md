@@ -99,7 +99,7 @@ jq '{status: .scan_status, gaps: .coverage_gap_summary}' keyhog.json
       "count": 1
     },
     {
-      "reason": "default exclusion policy (lock files, minified/bundled assets, vendored and build-output trees). User `.keyhogignore` / --exclude-paths removals are not counted here",
+      "reason": "exclusion policy (default excludes such as lock files, minified/bundled assets, vendored and build-output trees; --git-staged also counts repository `.keyhogignore` matches here)",
       "count": 6690
     }
   ]

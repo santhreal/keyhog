@@ -148,7 +148,7 @@ two gap rows and exits `13`:
   "scan_status": "partial",
   "coverage_gap_summary": [
     {"reason": "scan covered nothing (zero source bytes read; every candidate was skipped by exclusion or skip policy, so nothing was examined)", "count": 1},
-    {"reason": "default exclusion policy (lock files, minified/bundled assets, vendored and build-output trees). User `.keyhogignore` / --exclude-paths removals are not counted here", "count": 1}
+    {"reason": "exclusion policy (default excludes such as lock files, minified/bundled assets, vendored and build-output trees; --git-staged also counts repository `.keyhogignore` matches here)", "count": 1}
   ]
 }
 ```

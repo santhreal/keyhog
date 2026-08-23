@@ -33,7 +33,7 @@ A directory scan skips some files before detection starts. Put a credential in
 ```
 
 ```text
-WARN 1 path(s) skipped by the DEFAULT exclusion policy (lock files, minified/bundled assets, vendored and build-output trees). Default-excluded directories are pruned during discovery and counted once each; nested files under them are not enumerated. Pass `--no-default-excludes` to scan them.
+WARN 1 path(s) skipped by the exclusion policy (default excludes such as lock files, minified/bundled assets, vendored and build-output trees). Default-excluded directories are pruned during discovery and counted once each; nested files under them are not enumerated. Pass `--no-default-excludes` to scan them. A `--git-staged` scan also counts staged paths removed by the repository's `.keyhogignore` here.
 ```
 
 The warning goes to stderr and the exit code stays `0`, so a CI job that reads

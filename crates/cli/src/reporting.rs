@@ -999,7 +999,7 @@ impl CoverageGapKind {
             }
             Self::Binary => "binary (extension or content sniff)",
             Self::Excluded => {
-                "default exclusion policy (lock files, minified/bundled assets, vendored and build-output trees). User `.keyhogignore` / --exclude-paths removals are not counted here"
+                "exclusion policy (default excludes such as lock files, minified/bundled assets, vendored and build-output trees; --git-staged also counts repository `.keyhogignore` matches here)"
             }
             Self::NonBinaryUnreadable => "unreadable (permission denied or I/O error)",
             Self::GitObjectUnreadable => {
@@ -1141,12 +1141,12 @@ impl CoverageGapKind {
                  scanned as text."
             ),
             Self::Excluded => format!(
-                "{n} path(s) skipped by the DEFAULT exclusion policy (lock files, \
-                 minified/bundled assets, vendored and build-output trees). \
+                "{n} path(s) skipped by the exclusion policy (default excludes such as lock \
+                 files, minified/bundled assets, vendored and build-output trees). \
                  Default-excluded directories are pruned during discovery and counted \
                  once each; nested files under them are not enumerated. Pass \
-                 `--no-default-excludes` to scan them. Files removed by your own \
-                 `.keyhogignore` or `--exclude-paths` are not counted in this number."
+                 `--no-default-excludes` to scan them. A `--git-staged` scan also counts \
+                 staged paths removed by the repository's `.keyhogignore` here."
             ),
             Self::NonBinaryUnreadable => format!(
                 "{n} file(s) NOT scanned: unreadable (permission denied or I/O error). These \
