@@ -70,15 +70,22 @@ pub(crate) async fn run(command: HookCommand) -> Result<ExitCode> {
 
 async fn run_hook_scan(mut args: crate::args::ScanArgs) -> Result<ExitCode> {
     let _hook_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
-    if args.input.is_empty()
-        && args.path.is_none()
-        && !args.stdin
-        && args.git_blobs.is_none()
-        && args.git_diff.is_none()
-        && args.git_history.is_none()
-        && !args.git_staged
-    {
-        args.git_staged = true;
+    if args.input.is_empty() && args.path.is_none() && !args.stdin {
+        #[cfg(feature = "git")]
+        {
+            if args.git_blobs.is_none()
+                && args.git_diff.is_none()
+                && args.git_history.is_none()
+                && !args.git_staged
+            {
+                args.git_staged = true;
+            }
+        }
+        #[cfg(not(feature = "git"))]
+        {
+            // Without the git source, there is no staged-index path to
+            // default to; the hook scans the working tree as-is.
+        }
     }
     if !args.deep && !args.precision {
         args.fast = true;
