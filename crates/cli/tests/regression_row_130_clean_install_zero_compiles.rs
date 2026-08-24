@@ -22,7 +22,7 @@ use keyhog::exit_codes::{EXIT_SUCCESS, EXIT_USER_ERROR};
 use keyhog_profile::CompileSurfaceId;
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn create_clean_environment(prefix: &str) -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
@@ -50,6 +50,33 @@ fn create_clean_environment(prefix: &str) -> (tempfile::TempDir, PathBuf, PathBu
     (temp_dir, cache_home, home_dir, isolated_exe)
 }
 
+/// Build an isolated `keyhog install` command. Under `ci-lean` the installer's
+/// internal `calibrate-autoroute` measures the FULL production ladder unless
+/// the fixture sentinels select the bounded one; without them every test here
+/// spends minutes of CPU recalibrating, which blew the CI lane's time budget.
+/// Mirrors the row-135 installation fixture contract.
+fn install_command(exe: &Path) -> Command {
+    let mut cmd = Command::new(exe);
+    cmd.arg("install");
+    #[cfg(feature = "ci-lean")]
+    {
+        cmd.env(
+            "KEYHOG_CI_AUTOROUTE_TIMING_FIXTURE",
+            "confidence-separated-v1",
+        )
+        .env(
+            "KEYHOG_CI_AUTOROUTE_FIXTURE_AUTH",
+            "bench-backend-parity-v1",
+        )
+        .env("KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE", "bounded-e2e-v1")
+        .env(
+            "KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE_AUTH",
+            "core-workload-plan-v1",
+        );
+    }
+    cmd
+}
+
 #[test]
 fn clean_cache_scan_fails_closed_without_installation() {
     let (_temp, cache_home, home_dir, exe) = create_clean_environment("keyhog-row130-uninstalled-");
@@ -75,14 +102,22 @@ fn clean_cache_scan_fails_closed_without_installation() {
     );
 
     let stderr = String::from_utf8_lossy(&scan_output.stderr);
+    // The uninstalled-cache failure is the autoroute fail-closed contract: no
+    // persisted fastest-correct decision exists, the scan names the missing
+    // state, and the remedy names calibration (installers get
+    // `install.sh --calibrate` / `install.ps1 -Calibrate`).
     assert!(
-        stderr.contains("keyhog install"),
-        "stderr must guide user to run `keyhog install`; got:\n{stderr}"
+        stderr.contains("autoroute calibration required"),
+        "stderr must name the missing autoroute calibration; got:\n{stderr}"
     );
     assert!(
-        stderr.contains("in-process compilation is forbidden")
-            || stderr.contains("no usable detector execution pack available"),
-        "stderr must explicitly forbid runtime compilation fallback; got:\n{stderr}"
+        stderr.contains("install.sh --calibrate")
+            && stderr.contains("install.ps1 -Calibrate"),
+        "stderr must guide installers to the calibrated install path; got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("No backend was selected and this batch was not scanned"),
+        "stderr must state that nothing was scanned rather than substituting a backend; got:\n{stderr}"
     );
 }
 
@@ -92,8 +127,7 @@ fn clean_install_generates_all_artifact_classes_and_enables_zero_compile_scans()
         create_clean_environment("keyhog-row130-clean-install-");
 
     // 1. Run `keyhog install`
-    let install_output = Command::new(&exe)
-        .arg("install")
+    let install_output = install_command(&exe)
         .env("XDG_CACHE_HOME", &cache_home)
         .env("HOME", &home_dir)
         .output()
@@ -207,8 +241,7 @@ fn clean_install_detects_real_credentials_with_zero_runtime_compiles() {
     let (_temp, cache_home, home_dir, exe) = create_clean_environment("keyhog-row130-cred-scan-");
 
     // 1. Run `keyhog install`
-    let install_output = Command::new(&exe)
-        .arg("install")
+    let install_output = install_command(&exe)
         .env("XDG_CACHE_HOME", &cache_home)
         .env("HOME", &home_dir)
         .output()
@@ -282,8 +315,7 @@ fn artifact_mutation_fails_closed_without_compilation_fallback() {
     let (_temp, cache_home, home_dir, exe) = create_clean_environment("keyhog-row130-mutation-");
 
     // Install first
-    let install_output = Command::new(&exe)
-        .arg("install")
+    let install_output = install_command(&exe)
         .env("XDG_CACHE_HOME", &cache_home)
         .env("HOME", &home_dir)
         .output()
@@ -348,8 +380,7 @@ fn runtime_derived_compile_surface_exhaustiveness() {
     let (_temp, cache_home, home_dir, exe) =
         create_clean_environment("keyhog-row130-exhaustiveness-");
 
-    let install_output = Command::new(&exe)
-        .arg("install")
+    let install_output = install_command(&exe)
         .env("XDG_CACHE_HOME", &cache_home)
         .env("HOME", &home_dir)
         .output()
