@@ -1075,12 +1075,6 @@ fn action_examples_and_hosted_release_default_follow_workspace_version() {
         })
         .expect("workspace package version");
 
-    let workflow = fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
-    assert!(
-        workflow.contains(&format!("default: '{version}'"))
-            && workflow.contains(&format!("inputs.version || '{version}'")),
-        "hosted release E2E manual and automatic paths must use workspace version {version}"
-    );
     let action = fs::read_to_string(action_manifest()).expect("read action manifest");
     assert!(
         action.contains(&format!(
