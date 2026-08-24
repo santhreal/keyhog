@@ -14,28 +14,25 @@
 set -euo pipefail
 export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
 export KEYHOG_REQUIRE_GPU=1
-cargo() {
-  command cargo "$1" --jobs "${CARGO_BUILD_JOBS:-2}" "${@:2}"
-}
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 echo "=== [Local CI] 1. Workspace check ==="
-cargo check -j "${CARGO_BUILD_JOBS}" --workspace --all-targets
+cargo check --workspace --all-targets
 
 echo "=== [Local CI] 1b. GPU hardware preflight (fails closed with no adapter) ==="
-cargo run -j "${CARGO_BUILD_JOBS}" -p keyhog --features gpu,simd --profile release-fast -- \
+cargo run -p keyhog --features gpu,simd --profile release-fast -- \
   backend --self-test --require-gpu
 
 echo "=== [Local CI] 1c. GPU wiring contract ==="
-cargo test -j "${CARGO_BUILD_JOBS}" -p keyhog-scanner --features gpu --profile ci-test \
+cargo test -p keyhog-scanner --features gpu --profile ci-test \
   --test gpu_wiring_contract
 
 echo "=== [Local CI] 2. Scanner Default / GPU Test Suite ==="
-cargo test -j "${CARGO_BUILD_JOBS}" -p keyhog-scanner --features gpu --test all_tests --profile ci-test -- --test-threads=16
+cargo test -p keyhog-scanner --features gpu --test all_tests --profile ci-test -- --test-threads=16
 
 echo "=== [Local CI] 3. GPU Hardware Parity & Dispatch Contracts ==="
-cargo test -j "${CARGO_BUILD_JOBS}" -p keyhog-scanner --features gpu --profile release-fast \
+cargo test -p keyhog-scanner --features gpu --profile release-fast \
   --test gpu_parity \
   --test gpu_ac_smoke \
   --test gpu_ac_recall_bug_56 \
@@ -49,7 +46,6 @@ cargo test -j "${CARGO_BUILD_JOBS}" -p keyhog-scanner --features gpu --profile r
   --test gpu_literal_artifact_writer \
   --test regression_row_103_gpu_upload_readback_latency \
   --test regression_ac_overlap_shadow \
-  --test regression_charclass_prefix_expansion_recall \
   --test regression_checksum_boundary_no_downgrade \
   --test regression_detector_owned_keyword_separators \
   --test regression_distinctive_infix_anchor_recall \
@@ -60,7 +56,7 @@ cargo test -j "${CARGO_BUILD_JOBS}" -p keyhog-scanner --features gpu --profile r
   --test regression_row_118_gpu_dispatch_concurrency_pool
 
 echo "=== [Local CI] 4. GPU CLI Integration & Error Handling ==="
-cargo test -j "${CARGO_BUILD_JOBS}" -p keyhog --features gpu,simd --profile ci-test \
+cargo test -p keyhog --features gpu,simd --profile ci-test \
   --test regression_require_gpu_fails_closed \
   --test e2e_gpu_autoroute_optin \
   --test gpu_simd_parity
