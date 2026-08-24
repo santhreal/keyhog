@@ -589,11 +589,10 @@ fn guard_event_action_with_policy_prioritizes_overflow_and_prevents_duplicate_tr
         guard_event_action_with_policy(Some(GuardRootState::StalePolicy), false, true);
     assert_eq!(action_stale, GuardEventAction::Ignore);
 
-    // Overflow on StalePolicy yields CoverageLost -> Degraded
+    // Overflow on StalePolicy yields Ignore: a stale-policy root is already in
+    // the repair state reconciliation clears, so the overflow adds no
+    // transition. Degraded roots stay the repeat-coverage-loss path.
     let action_stale_overflow =
         guard_event_action_with_policy(Some(GuardRootState::StalePolicy), true, false);
-    assert_eq!(
-        action_stale_overflow,
-        GuardEventAction::Transition(GuardTransition::CoverageLost)
-    );
+    assert_eq!(action_stale_overflow, GuardEventAction::Ignore);
 }

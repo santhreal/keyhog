@@ -377,7 +377,7 @@ fn row_140_guard_status_offline_unregistered_root_fails_gracefully() {
 
     assert_ne!(code, 0, "unregistered root must fail");
     assert!(
-        stderr.contains("not registered in durable store") && stderr.contains("(no daemon active)"),
+        stderr.contains("not registered in durable store") && stderr.contains("no daemon active"),
         "must report not registered in durable store (no daemon active): {stderr}"
     );
     assert!(

@@ -111,8 +111,7 @@ fn clean_cache_scan_fails_closed_without_installation() {
         "stderr must name the missing autoroute calibration; got:\n{stderr}"
     );
     assert!(
-        stderr.contains("install.sh --calibrate")
-            && stderr.contains("install.ps1 -Calibrate"),
+        stderr.contains("install.sh --calibrate") && stderr.contains("install.ps1 -Calibrate"),
         "stderr must guide installers to the calibrated install path; got:\n{stderr}"
     );
     assert!(

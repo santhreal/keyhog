@@ -90,7 +90,46 @@ fn clone_prepared_installation(cache_home: &Path) -> (PathBuf, PathBuf, PathBuf)
     let pack_root = cache_home.join("keyhog/execution-packs");
     copy_dir_all(source_pack_root, &pack_root);
     let output = pack_root.join("current");
+    calibrate_autoroute(&binary, cache_home);
     (binary.clone(), pack_root, output)
+}
+
+// Auto-routed scans fail closed without a persisted fastest-correct backend
+// decision; each cloned cache home needs its own calibrated autoroute.json.
+// The ci-lean fixture sentinels select the bounded calibration ladder instead
+// of the full production measurement.
+fn calibrate_autoroute(binary: &Path, cache_home: &Path) {
+    let mut calibrate = Command::new(binary);
+    calibrate
+        .arg("calibrate-autoroute")
+        .arg("--quiet")
+        .arg("--autoroute-cache")
+        .arg(cache_home.join("keyhog/autoroute.json"))
+        .env("XDG_CACHE_HOME", cache_home)
+        .env("NO_COLOR", "1");
+    #[cfg(feature = "ci-lean")]
+    {
+        calibrate
+            .env(
+                "KEYHOG_CI_AUTOROUTE_TIMING_FIXTURE",
+                "confidence-separated-v1",
+            )
+            .env(
+                "KEYHOG_CI_AUTOROUTE_FIXTURE_AUTH",
+                "bench-backend-parity-v1",
+            )
+            .env("KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE", "bounded-e2e-v1")
+            .env(
+                "KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE_AUTH",
+                "core-workload-plan-v1",
+            );
+    }
+    let result = calibrate.output().expect("run calibrate autoroute");
+    assert!(
+        result.status.success(),
+        "calibrate autoroute failed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
 }
 
 fn assert_no_internal_execution_pack_warnings(stderr: &str) {
@@ -248,9 +287,11 @@ fn mutation_gate_catches_synthetic_warning_pollution() {
 }
 
 #[test]
-fn missing_execution_pack_runs_cleanly_without_noisy_fallback_warnings() {
-    // Contract: When execution packs are not installed, scan falls back to embedded
-    // detectors cleanly with EXIT_SUCCESS (0) and without emitting any noisy WARN logs on stderr.
+fn missing_execution_pack_fails_closed_without_noisy_fallback_warnings() {
+    // Contract: with no installed execution packs and no calibrated autoroute
+    // decision, an auto-routed scan fails closed with EXIT_USER_ERROR (2),
+    // names the calibration remedy, and never emits the retired
+    // embedded-detector fallback warning or any raw tracing lines.
     let temp_dir = safe_tempdir("keyhog-row144-missing-");
     let cache_home = temp_dir.path().join("empty_cache");
     fs::create_dir_all(&cache_home).expect("create empty cache");
@@ -271,13 +312,16 @@ fn missing_execution_pack_runs_cleanly_without_noisy_fallback_warnings() {
     let stderr = String::from_utf8_lossy(&scan_output.stderr);
     assert_eq!(
         scan_output.status.code(),
-        Some(i32::from(EXIT_SUCCESS)),
-        "clean scan without installed packs must succeed with EXIT_SUCCESS (0), stderr: {stderr}"
+        Some(i32::from(EXIT_USER_ERROR)),
+        "scan without installed packs must fail closed with EXIT_USER_ERROR (2), stderr: {stderr}"
     );
-
     assert!(
-        stdout.contains("No secrets detected") || stdout.contains("PASS"),
-        "clean scan stdout must report clean status: {stdout}"
+        stderr.contains("autoroute calibration required"),
+        "fail-closed stderr must name the autoroute calibration remedy: {stderr}"
+    );
+    assert!(
+        !stdout.contains("No secrets detected") && !stdout.contains("PASS"),
+        "a batch that was not scanned must not report a clean pass: {stdout}"
     );
 
     assert_no_internal_execution_pack_warnings(&stderr);
@@ -329,6 +373,8 @@ fn developer_escape_hatch_self_identifies_cleanly() {
     let temp_dir = safe_tempdir("keyhog-row144-dev-");
     let cache_home = temp_dir.path().join("empty_cache");
     fs::create_dir_all(&cache_home).expect("create empty cache");
+    // The escape hatch compiles detectors in-process but does not select a
+    // routing backend, so use an explicit --backend cpu to bypass autoroute.
 
     let clean_file = temp_dir.path().join("clean.txt");
     fs::write(&clean_file, "plain clean text\n").expect("write clean file");
@@ -336,6 +382,8 @@ fn developer_escape_hatch_self_identifies_cleanly() {
     let scan_output = Command::new(env!("CARGO_BIN_EXE_keyhog"))
         .arg("scan")
         .arg("--daemon=off")
+        .arg("--backend")
+        .arg("cpu")
         .arg("--developer-compile-embedded-detectors")
         .arg(&clean_file)
         .env("XDG_CACHE_HOME", &cache_home)
@@ -351,8 +399,8 @@ fn developer_escape_hatch_self_identifies_cleanly() {
 
     let stderr = String::from_utf8_lossy(&scan_output.stderr);
     assert!(
-        stderr.contains("developer mode active: in-process detector compilation"),
-        "stderr must state developer mode is active: {stderr}"
+        stderr.contains("developer escape hatch active"),
+        "stderr must state developer escape hatch is active: {stderr}"
     );
     assert!(
         !stderr.contains("WARN no installed execution-pack generation; parsing embedded detectors"),
