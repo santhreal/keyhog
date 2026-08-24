@@ -113,11 +113,16 @@ full = [
 # multiline + token efficiency. Instant start, smallest binary - the profile CI
 # integrations should use. Git-history / cloud scanning is opt-in on top
 # (`--features ci,git`) or via the fuller `portable` profile.
+# The hook subcommand unconditionally references git-staged ScanArgs fields,
+# and the daemon module uses futures-util SinkExt; both require `git` and
+# `sink` at compile time even in the minimal CI profile.
 ci = [
     "keyhog-scanner/ml",
     "keyhog-scanner/entropy",
     "keyhog-scanner/decode",
     "keyhog-scanner/multiline",
+    "simd",
+    "git",
 ]
 git = ["keyhog-sources/git"]
 github = ["keyhog-sources/github"]
@@ -147,7 +152,7 @@ clap = { workspace = true }
 clap_complete = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-futures-util = { workspace = true }
+futures-util = { workspace = true, features = ["sink"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
