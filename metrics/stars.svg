@@ -1,17 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="320" viewBox="0 0 960 320" role="img" aria-labelledby="title description">
 <title id="title">KeyHog star history</title>
-<desc id="description">KeyHog GitHub stars: 44 on 2026-05-27 to 92 on 2026-08-23</desc>
+<desc id="description">KeyHog GitHub stars: 44 on 2026-05-27 to 93 on 2026-08-24</desc>
 <defs>
   <linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd60a" stop-opacity="0.34"/><stop offset="1" stop-color="#ffd60a" stop-opacity="0.03"/></linearGradient>
   <style>.bg{fill:#0d1017}.grid{stroke:#343844;stroke-width:1}.axis{fill:#aeb4c2;font:12px ui-monospace,SFMono-Regular,Consolas,monospace}.label{fill:#f5f7fa;font:600 15px system-ui,sans-serif}.value{fill:#ffd60a;font:700 27px system-ui,sans-serif}.line{fill:none;stroke:#ffd60a;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}</style>
 </defs>
 <rect class="bg" width="960" height="320" rx="12"/>
 <text x="68" y="34" class="label">Repository star history</text>
-<text x="68" y="65" class="value">92 stars</text>
-<text x="248" y="62" class="axis">+48 since 2026-05-27 · repository-owned history</text>
+<text x="68" y="65" class="value">93 stars</text>
+<text x="248" y="62" class="axis">+49 since 2026-05-27 · repository-owned history</text>
 <line x1="68" y1="266.00" x2="932" y2="266.00" class="grid"/><text x="56" y="270.00" text-anchor="end" class="axis">0</text><line x1="68" y1="220.00" x2="932" y2="220.00" class="grid"/><text x="56" y="224.00" text-anchor="end" class="axis">25</text><line x1="68" y1="174.00" x2="932" y2="174.00" class="grid"/><text x="56" y="178.00" text-anchor="end" class="axis">50</text><line x1="68" y1="128.00" x2="932" y2="128.00" class="grid"/><text x="56" y="132.00" text-anchor="end" class="axis">75</text><line x1="68" y1="82.00" x2="932" y2="82.00" class="grid"/><text x="56" y="86.00" text-anchor="end" class="axis">100</text>
-<path d="M 68,266 L 68.00,185.04 L 77.82,168.48 L 87.64,162.96 L 97.45,150.08 L 107.27,144.56 L 117.09,139.04 L 126.91,135.36 L 136.73,131.68 L 176.00,129.84 L 185.82,126.16 L 195.64,124.32 L 225.09,120.64 L 303.64,118.80 L 342.91,116.96 L 421.45,113.28 L 450.91,111.44 L 470.55,113.28 L 480.36,115.12 L 539.27,113.28 L 598.18,111.44 L 617.82,109.60 L 676.73,105.92 L 774.91,104.08 L 824.00,102.24 L 853.45,104.08 L 863.27,102.24 L 873.09,100.40 L 922.18,98.56 L 932.00,96.72 L 932,266 Z" fill="url(#area)"/>
-<polyline points="68.00,185.04 77.82,168.48 87.64,162.96 97.45,150.08 107.27,144.56 117.09,139.04 126.91,135.36 136.73,131.68 176.00,129.84 185.82,126.16 195.64,124.32 225.09,120.64 303.64,118.80 342.91,116.96 421.45,113.28 450.91,111.44 470.55,113.28 480.36,115.12 539.27,113.28 598.18,111.44 617.82,109.60 676.73,105.92 774.91,104.08 824.00,102.24 853.45,104.08 863.27,102.24 873.09,100.40 922.18,98.56 932.00,96.72" class="line"/>
-<circle cx="932.00" cy="96.72" r="5" fill="#ffd60a"/>
-<text x="68.00" y="297" text-anchor="start" class="axis">2026-05-27</text><text x="421.45" y="297" text-anchor="middle" class="axis">2026-07-02</text><text x="932.00" y="297" text-anchor="end" class="axis">2026-08-23</text>
+<path d="M 68,266 L 68.00,185.04 L 77.71,168.48 L 87.42,162.96 L 97.12,150.08 L 106.83,144.56 L 116.54,139.04 L 126.25,135.36 L 135.96,131.68 L 174.79,129.84 L 184.49,126.16 L 194.20,124.32 L 223.33,120.64 L 300.99,118.80 L 339.82,116.96 L 417.48,113.28 L 446.61,111.44 L 466.02,113.28 L 475.73,115.12 L 533.98,113.28 L 592.22,111.44 L 611.64,109.60 L 669.89,105.92 L 766.97,104.08 L 815.51,102.24 L 844.63,104.08 L 854.34,102.24 L 864.04,100.40 L 912.58,98.56 L 922.29,96.72 L 932.00,94.88 L 932,266 Z" fill="url(#area)"/>
+<polyline points="68.00,185.04 77.71,168.48 87.42,162.96 97.12,150.08 106.83,144.56 116.54,139.04 126.25,135.36 135.96,131.68 174.79,129.84 184.49,126.16 194.20,124.32 223.33,120.64 300.99,118.80 339.82,116.96 417.48,113.28 446.61,111.44 466.02,113.28 475.73,115.12 533.98,113.28 592.22,111.44 611.64,109.60 669.89,105.92 766.97,104.08 815.51,102.24 844.63,104.08 854.34,102.24 864.04,100.40 912.58,98.56 922.29,96.72 932.00,94.88" class="line"/>
+<circle cx="932.00" cy="94.88" r="5" fill="#ffd60a"/>
+<text x="68.00" y="297" text-anchor="start" class="axis">2026-05-27</text><text x="446.61" y="297" text-anchor="middle" class="axis">2026-07-05</text><text x="932.00" y="297" text-anchor="end" class="axis">2026-08-24</text>
 </svg>
