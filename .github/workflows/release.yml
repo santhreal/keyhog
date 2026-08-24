@@ -26,6 +26,7 @@ on:
 permissions:
   contents: write
   id-token: write
+  actions: write
 
 concurrency:
   group: keyhog-auto-release
