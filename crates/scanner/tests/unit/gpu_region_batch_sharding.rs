@@ -149,10 +149,18 @@ fn backend_limits_keep_wgpu_inside_its_portable_grid() {
         CUDA_BYTE_SCAN_DISPATCH_LIMIT.min(crate::gpu_input_budget::gpu_batch_input_limit())
     );
     assert_eq!(WGPU_BYTE_SCAN_DISPATCH_LIMIT, 8_388_480);
+    // The CUDA backend limit (the VYRE scan ceiling) sits ABOVE a 128 MiB
+    // input budget, so an explicit budget below the ceiling is authoritative
+    // and caps the shard; with no binding budget the CUDA limit governs.
     assert_eq!(
         region_presence_batch_byte_limit_for_input_budget("cuda", 128 * 1024 * 1024),
+        128 * 1024 * 1024,
+        "CUDA positioned-match shards are capped by the explicit input budget"
+    );
+    assert_eq!(
+        region_presence_batch_byte_limit_for_input_budget("cuda", usize::MAX),
         CUDA_BYTE_SCAN_DISPATCH_LIMIT,
-        "CUDA positioned-match shards derive from CUDA limits"
+        "without a binding budget, shards derive from CUDA limits"
     );
     assert_eq!(
         region_presence_batch_byte_limit_for_input_budget("wgpu", 128 * 1024 * 1024),

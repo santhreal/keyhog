@@ -66,7 +66,57 @@ fn planted_corpus() -> tempfile::TempDir {
 /// on the same input corpus, preventing unordered map iteration or non-deterministic serialization
 /// from breaking golden testing, CI diffing, and caching.
 ///
+/// The deliberate exceptions are per-scan metadata fields that are volatile BY
+/// DESIGN — the scan id, wall-clock stamps, and measured duration. They are
+/// normalized out before comparison; every other byte of every format must
+/// match.
+///
 /// What it does not catch: interactive TTY-only ANSI escape sequences.
+fn normalize_volatile_fields(stdout: &str) -> String {
+    /// Blank the value of every `"KEY":<value>` occurrence, quoted or numeric.
+    fn blank_field(s: &str, key: &str) -> String {
+        let marker = format!("\"{key}\":");
+        let mut out = String::with_capacity(s.len());
+        let mut rest = s;
+        while let Some(i) = rest.find(&marker) {
+            let after = rest[i + marker.len()..].trim_start();
+            let leading_ws = rest[i + marker.len()..].len() - after.len();
+            if after.starts_with('"') {
+                match after[1..].find('"') {
+                    Some(end) => {
+                        out.push_str(&rest[..i + marker.len() + leading_ws]);
+                        out.push_str("\"<volatile>\"");
+                        rest = &after[end + 2..];
+                    }
+                    None => break,
+                }
+            } else {
+                let digits = after
+                    .find(|c: char| !c.is_ascii_digit() && c != '.')
+                    .unwrap_or(after.len());
+                out.push_str(&rest[..i + marker.len() + leading_ws]);
+                out.push_str("<n>");
+                rest = &after[digits..];
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+    let mut out = stdout.to_owned();
+    for key in [
+        "scan_id",
+        "generated_at",
+        "scan_started_at",
+        "scan_finished_at",
+        "created",
+        "duration_ms",
+        "written_at_ns",
+    ] {
+        out = blank_field(&out, key);
+    }
+    out
+}
+
 #[test]
 fn deterministic_scan_formats_across_all_registered_reporters() {
     use clap::ValueEnum;
@@ -91,15 +141,18 @@ fn deterministic_scan_formats_across_all_registered_reporters() {
             a.code, b.code
         );
         assert_eq!(
-            a.stdout, b.stdout,
+            normalize_volatile_fields(&a.stdout),
+            normalize_volatile_fields(&b.stdout),
             "format `{fmt_str}`: stdout is NOT deterministic across identical runs over planted corpus.\n--- run A ---\n{}\n--- run B ---\n{}",
             a.stdout, b.stdout
         );
     }
 }
 
-/// WHY: baseline creation and incremental Merkle index serialization must be byte-identical
-/// across repeated runs on the same input corpus.
+/// WHY: baseline entries and incremental Merkle index serialization must be
+/// byte-identical across repeated runs on the same input corpus. The baseline
+/// header carries a `created` wall-clock stamp by design; it is normalized out
+/// before comparison, and everything else must match.
 ///
 /// What it does not catch: corrupt filesystems during baseline writes.
 #[test]
@@ -111,15 +164,17 @@ fn deterministic_baseline_and_merkle_index() {
     let baseline_a = temp_out.path().join("baseline_a.json");
     let baseline_b = temp_out.path().join("baseline_b.json");
 
+    // `--create-baseline` WRITES a baseline; `--baseline` is the compare-and-
+    // suppress flag and never writes.
     let args_base_a = [
         "scan",
-        "--baseline-out",
+        "--create-baseline",
         baseline_a.to_str().unwrap(),
         corpus_path,
     ];
     let args_base_b = [
         "scan",
-        "--baseline-out",
+        "--create-baseline",
         baseline_b.to_str().unwrap(),
         corpus_path,
     ];
@@ -129,24 +184,33 @@ fn deterministic_baseline_and_merkle_index() {
     assert_no_panic(&run_a);
     assert_no_panic(&run_b);
 
-    let content_a = std::fs::read(&baseline_a).expect("read baseline a");
-    let content_b = std::fs::read(&baseline_b).expect("read baseline b");
     assert_eq!(
-        content_a, content_b,
-        "baseline files must be byte-identical across runs"
+        normalize_volatile_fields(
+            &String::from_utf8(std::fs::read(&baseline_a).expect("read baseline a"))
+                .expect("baseline is UTF-8")
+        ),
+        normalize_volatile_fields(
+            &String::from_utf8(std::fs::read(&baseline_b).expect("read baseline b"))
+                .expect("baseline is UTF-8")
+        ),
+        "baseline files must be identical apart from the created stamp"
     );
 
     let merkle_a = temp_out.path().join("merkle_a.json");
     let merkle_b = temp_out.path().join("merkle_b.json");
 
+    // `--incremental-cache` only overrides the index location; `--incremental`
+    // is what turns the Merkle index on and makes the scan persist it.
     let args_merkle_a = [
         "scan",
+        "--incremental",
         "--incremental-cache",
         merkle_a.to_str().unwrap(),
         corpus_path,
     ];
     let args_merkle_b = [
         "scan",
+        "--incremental",
         "--incremental-cache",
         merkle_b.to_str().unwrap(),
         corpus_path,
@@ -157,10 +221,12 @@ fn deterministic_baseline_and_merkle_index() {
     assert_no_panic(&run_m_a);
     assert_no_panic(&run_m_b);
 
-    let merkle_content_a = std::fs::read(&merkle_a).expect("read merkle a");
-    let merkle_content_b = std::fs::read(&merkle_b).expect("read merkle b");
+    let normalize = |bytes: Vec<u8>| {
+        normalize_volatile_fields(&String::from_utf8(bytes).expect("index is UTF-8"))
+    };
     assert_eq!(
-        merkle_content_a, merkle_content_b,
-        "merkle index files must be byte-identical across runs"
+        normalize(std::fs::read(&merkle_a).expect("read merkle a")),
+        normalize(std::fs::read(&merkle_b).expect("read merkle b")),
+        "merkle index files must be identical apart from the write stamp"
     );
 }

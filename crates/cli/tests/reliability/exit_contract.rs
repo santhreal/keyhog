@@ -10,9 +10,13 @@ use tempfile::TempDir;
 
 use crate::reliability::harness::binary;
 
-/// A planted AWS key (same shape the e2e suite uses) - a high-confidence,
-/// network-free detection so the verdict is "secret found" without --verify.
-const PLANTED_AWS: &str = "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n";
+/// A planted GitHub classic PAT with a valid embedded checksum. It reaches the
+/// `confirmed` evidence tier, which blocks under the default policy, so the
+/// verdict is "secret found" without --verify. The former AWS-key fixture
+/// (`AKIAQYLPMN5HFIQR7XYA` alone in a text file) now lands at review tier
+/// (unsupported context), and review-tier findings are documented as visible
+/// under exit 0, so it can no longer stand in for a blocking finding.
+const PLANTED_TOKEN: &str = "GITHUB_TOKEN = \"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\"\n";
 
 fn scan_file(content: &str, extra: &[&str]) -> (Option<i32>, String, String) {
     let dir = TempDir::new().unwrap();
@@ -59,7 +63,7 @@ fn clean_file_exits_zero() {
 
 #[test]
 fn planted_secret_exits_one() {
-    let (code, _o, _e) = scan_file(PLANTED_AWS, &["--format", "json"]);
+    let (code, _o, _e) = scan_file(PLANTED_TOKEN, &["--format", "json"]);
     assert_eq!(
         code,
         Some(1),
@@ -86,7 +90,7 @@ fn exit_code_is_independent_of_output_format() {
     // format flag changing the exit code would silently break CI gating.
     let mut codes = vec![];
     for fmt in ["text", "json", "jsonl", "sarif"] {
-        let (code, _o, _e) = scan_file(PLANTED_AWS, &["--format", fmt]);
+        let (code, _o, _e) = scan_file(PLANTED_TOKEN, &["--format", fmt]);
         codes.push((fmt, code));
     }
     for (fmt, code) in &codes {
@@ -129,7 +133,7 @@ fn help_documents_every_exit_code_it_can_return() {
 fn repeated_identical_scans_return_the_same_exit_code() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("planted.txt");
-    std::fs::write(&path, PLANTED_AWS).unwrap();
+    std::fs::write(&path, PLANTED_TOKEN).unwrap();
     let (c1, _, _) = run_scan(&path, &["--format", "json"]);
     let (c2, _, _) = run_scan(&path, &["--format", "json"]);
     let (c3, _, _) = run_scan(&path, &["--format", "json"]);
