@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.82 - 2026-08-24
+
+- Expose default exclude and directory classification helpers unconditionally for watcher and scanner integration.
+
+- Filter out ignored and excluded paths (.git, target, node_modules, ignore_paths, default excludes) in guard filesystem watcher matching scan path semantics.
+
 ## 0.5.80 - 2026-08-17
 
 - style: format guard massive diff test and git sources modules.

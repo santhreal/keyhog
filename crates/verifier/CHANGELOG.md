@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.82 - 2026-08-24
+
+- fix(cli): gate git-staged ScanArgs fields in hook run; enable futures-util sink.
+
 ## 0.5.81 - 2026-08-20
 
 - bench(verifier): add criterion benchmarks for template interpolation, response classification, verification cache operations, SSRF/domain policy checks, and SigV4 canonicalization (Row 147).

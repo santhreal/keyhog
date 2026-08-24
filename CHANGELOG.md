@@ -2,6 +2,37 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.82] - 2026-08-24
+
+### Added
+
+- Fail closed with EXIT_USER_ERROR and actionable repair instructions on stale or mismatched execution-pack artifact identity inputs.
+- Publish honest multi-corpus benchmark data across mirror and competitor corpora with transparent F1, precision, recall, runtime metrics, and drift-prevention gate coverage.
+- Load-only scan execution and zero compilation fallback on prepared artifact caches.
+- Expose default exclude and directory classification helpers unconditionally for watcher and scanner integration.
+- Offline guard status and list inspectability reading durable store from disk with optional root summary.
+- Populate GuardPolicyIdentity digests for ignore files, suppressions, configuration, and source policy, triggering state transition to StalePolicy and attestation invalidation on policy file modifications.
+- Multi-dimensional artifact invalidation and regeneration across detector corpus changes, configuration updates, and calibration changes.
+- Unified installed artifact registry connecting installer production, updater regeneration, and scan loading.
+- Update recommendation parity and complete artifact generation on binary replacement.
+- Enhance pass-gate terminal output craft with structured volume, blob counts, bytes scanned, and execution timing.
+- Instrument runtime compile surface counters across all 13 compiler surfaces and 4 phases.
+- Audit and enforce release binary symbol stripping and zero DWARF debuginfo bloat via Cargo.toml [profile.release] and profile divergence gates.
+- Publish honest multi-corpus benchmark reporting and verification suite across mirror and competitor corpora (Row 151).
+- Install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata.
+- Optimize startup execution path for informational commands with fast zero-allocation dispatch, deferred runtime initialization, and zero detector corpus parsing.
+- Single authoritative structural gate architecture consolidating no_inline_tests_in_src and no_cwd_relative_source_reads workspace-wide and eliminating redundant per-crate gap tests.
+
+### Changed
+
+- Deduplicate dynamic cargo target-dir resolution in keyhog benchmark adapter.
+- fix(cli): gate git-staged ScanArgs fields in hook run; enable futures-util sink.
+
+### Fixed
+
+- Eliminate noisy internal execution-pack fallback warning on clean scan passes and enforce unpolluted structured output.
+- Filter out ignored and excluded paths (.git, target, node_modules, ignore_paths, default excludes) in guard filesystem watcher matching scan path semantics.
+
 ## [0.5.81] - 2026-08-20
 
 ### Added

@@ -1,3 +1,0 @@
-category = "Added"
-summary = "Offline guard status and list inspectability reading durable store from disk with optional root summary."
-crates = ["cli", "core"]

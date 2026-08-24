@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.82 - 2026-08-24
+
+- Offline guard status and list inspectability reading durable store from disk with optional root summary.
+- Populate GuardPolicyIdentity digests for ignore files, suppressions, configuration, and source policy, triggering state transition to StalePolicy and attestation invalidation on policy file modifications.
+
 ## 0.5.81 - 2026-08-20
 
 - fix(core): `--lockdown` starts on machines with installed execution packs. The past-findings gate treated the signed pack store under `<cache>/keyhog/execution-packs` as a findings-bearing cache; a directory with that exact name is now trusted, and any other entry still fails closed.

@@ -1,3 +1,0 @@
-category = "Added"
-summary = "Enhance pass-gate terminal output craft with structured volume, blob counts, bytes scanned, and execution timing."
-crates = ["cli"]

@@ -2,6 +2,10 @@
 
 All notable changes to `keyhog-profile` are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.5.82 - 2026-08-24
+
+- fix(cli): gate git-staged ScanArgs fields in hook run; enable futures-util sink.
+
 ## 0.5.81 - 2026-08-20
 
 - feat(profile): instrument runtime compile surface counters and phases across `CompileSurfaceId` and `CompilePhase` with deterministic `CausalProfileV2` export (Row 125).

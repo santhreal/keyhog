@@ -1,3 +1,0 @@
-category = "Added"
-summary = "Populate GuardPolicyIdentity digests for ignore files, suppressions, configuration, and source policy, triggering state transition to StalePolicy and attestation invalidation on policy file modifications."
-crates = ["cli", "core"]

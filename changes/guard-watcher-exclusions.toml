@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Filter out ignored and excluded paths (.git, target, node_modules, ignore_paths, default excludes) in guard filesystem watcher matching scan path semantics."
-crates = ["cli", "sources"]

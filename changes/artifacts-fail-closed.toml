@@ -1,3 +1,0 @@
-category = "Added"
-summary = "Fail closed with EXIT_USER_ERROR and actionable repair instructions on stale or mismatched execution-pack artifact identity inputs."
-crates = ["cli"]

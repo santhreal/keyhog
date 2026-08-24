@@ -1,3 +1,0 @@
-category = "Added"
-summary = "Unified installed artifact registry connecting installer production, updater regeneration, and scan loading."
-crates = ["cli"]

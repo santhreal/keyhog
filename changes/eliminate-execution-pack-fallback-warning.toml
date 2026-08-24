@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Eliminate noisy internal execution-pack fallback warning on clean scan passes and enforce unpolluted structured output."
-crates = ["cli"]

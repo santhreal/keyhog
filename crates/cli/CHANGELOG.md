@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.82 - 2026-08-24
+
+- Fail closed with EXIT_USER_ERROR and actionable repair instructions on stale or mismatched execution-pack artifact identity inputs.
+- Load-only scan execution and zero compilation fallback on prepared artifact caches.
+- Offline guard status and list inspectability reading durable store from disk with optional root summary.
+- Populate GuardPolicyIdentity digests for ignore files, suppressions, configuration, and source policy, triggering state transition to StalePolicy and attestation invalidation on policy file modifications.
+- Multi-dimensional artifact invalidation and regeneration across detector corpus changes, configuration updates, and calibration changes.
+- Unified installed artifact registry connecting installer production, updater regeneration, and scan loading.
+- Update recommendation parity and complete artifact generation on binary replacement.
+- Enhance pass-gate terminal output craft with structured volume, blob counts, bytes scanned, and execution timing.
+- Instrument runtime compile surface counters across all 13 compiler surfaces and 4 phases.
+- Publish honest multi-corpus benchmark reporting and verification suite across mirror and competitor corpora (Row 151).
+- Install-time compilation and zero scan invocation for small compilers across entropy, assignment keywords, and detector metadata.
+- Optimize startup execution path for informational commands with fast zero-allocation dispatch, deferred runtime initialization, and zero detector corpus parsing.
+
+- Eliminate noisy internal execution-pack fallback warning on clean scan passes and enforce unpolluted structured output.
+- Filter out ignored and excluded paths (.git, target, node_modules, ignore_paths, default excludes) in guard filesystem watcher matching scan path semantics.
+
 ## 0.5.81 - 2026-08-20
 
 - fix(cli): the guard watcher applies `[scan].exclude` changes when `.keyhog.toml` is modified. The reload branch that re-reads exclusions sat inside a filename check that only admitted `.keyhogignore` and `.gitignore`, so an exclusion edit left the old matcher active until the daemon restarted.
