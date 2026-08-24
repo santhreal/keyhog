@@ -353,21 +353,30 @@ fn low_finding_filtered_by_critical_floor_exits_zero_empty() {
     assert_eq!(findings(&out).len(), 0, "zero findings survive the floor");
 }
 
-/// Same fixture under `--severity high` also empties (`low < high`) => exit 0.
-/// Confirms the empty-exit-0 behavior is not special to the top tier.
+/// Same fixture under `--severity high`: the floor drops the low NAMED finding
+/// (`low < high`), but the generic entropy fallback then surfaces
+/// (`entropy-token`, severity `high`, evidence tier `review`) — without the
+/// named match it was deduplicated against there is nothing left to absorb it.
+/// Review-tier findings are non-blocking, so the scan still exits 0; the
+/// floor's contract here is that no named low-severity finding survives.
 #[test]
-fn low_finding_filtered_by_high_floor_exits_zero_empty() {
+fn low_finding_filtered_by_high_floor_drops_named_keeps_entropy_review() {
     let (_d, path) = low_only_fixture();
     let (code, out, err) = scan(&path, &["--format", "json", "--severity", "high"]);
     assert_eq!(
         code,
         Some(0),
-        "empty post-filter report exits 0; stderr={err}"
+        "a surviving review-tier finding does not block; stderr={err}"
     );
     assert_eq!(
-        findings(&out).len(),
+        count_detector(&out, ROME_ID),
         0,
-        "zero findings survive the high floor; got {out}"
+        "the high floor must drop the low rome2rio finding; got {out}"
+    );
+    assert_eq!(
+        severities(&out),
+        vec!["high".to_owned()],
+        "only the high-severity entropy fallback survives the floor; got {out}"
     );
 }
 

@@ -2,6 +2,7 @@
 
 ## 0.5.81 - 2026-08-20
 
+- test(cli): restored regression suites assert the shipped report schema and coverage contract. The config-path baseline pins `evidence_score` (the `confidence` report field was renamed in the evidence-tier change), full-prune exclude globs expect fail-closed exit 13 with `[]` on stdout, the high severity floor test accounts for the non-blocking review-tier entropy fallback, and the staged-renames guard test registers with `--no-hook` because the installed hook requires `keyhog` on PATH.
 - fix(cli): `compile-execution-packs` completes on Windows. The staging directory fsync opened the directory in read mode, and `FlushFileBuffers` on a read-mode directory handle fails with "Access is denied" (os error 5).
 - fix(cli): the Excluded coverage-gap reason and summary warning no longer claim `.keyhogignore` removals are never counted. A `--git-staged` scan records staged paths matched by the repository's `.keyhogignore` under that counter, so the text now says so instead of attributing them to the default exclusion policy.
 - test(cli): concurrent daemon telemetry isolation runs at the daemon's guaranteed eight-connection admission floor, so low-core CI runners exercise isolation without turning the contract into an overload-refusal test.

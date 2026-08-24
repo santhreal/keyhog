@@ -558,7 +558,11 @@ fn guard_staged_diff_edge_cases_staged_renames() {
     let add_out = Command::new(keyhog())
         .current_dir(repo)
         .env("NO_COLOR", "1")
-        .args(["guard", "add", ".", "--socket"])
+        // --no-hook: this test exercises daemon rename handling, not the
+        // pre-commit hook. The installed hook shells out to `keyhog` from
+        // PATH, which does not exist on CI runners, so an unqualified commit
+        // after `guard add` fails with "git commit must succeed".
+        .args(["guard", "add", ".", "--no-hook", "--socket"])
         .arg(&socket)
         .output()
         .expect("guard add");

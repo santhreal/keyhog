@@ -60,6 +60,7 @@ const SEVERITY: &str = "critical";
 const EXIT_SUCCESS: i32 = 0;
 const EXIT_FINDINGS: i32 = 1;
 const EXIT_USER_ERROR: i32 = 2;
+const EXIT_SOURCE_FAILED: i32 = 13;
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
@@ -252,16 +253,17 @@ fn exclude_rs_glob_keeps_only_txt() {
     );
 }
 
-/// Both globs together prune every file: an HONEST empty result, exit 0 and a
-/// literal `[]` JSON array (not a crash, not a usage error).
+/// Both globs together prune every file: zero scanned bytes, so the fail-closed
+/// coverage contract exits EXIT_SOURCE_FAILED while stdout stays a literal `[]`
+/// JSON array (not a crash, not a usage error).
 #[test]
-fn exclude_both_globs_finds_nothing_exit_zero() {
+fn exclude_both_globs_prune_everything_fail_closed() {
     let dir = plant_flat();
     let (code, findings, stdout, stderr) =
         run_json(dir.path(), &["--exclude-paths", "*.rs", "*.txt"]);
     assert_eq!(
-        code, EXIT_SUCCESS,
-        "no findings -> exit 0; stderr:\n{stderr}"
+        code, EXIT_SOURCE_FAILED,
+        "everything excluded -> zero-byte coverage -> exit 13; stderr:\n{stderr}"
     );
     assert_eq!(findings.len(), 0, "everything excluded");
     assert_eq!(
