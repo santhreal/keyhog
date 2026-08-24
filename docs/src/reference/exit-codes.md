@@ -1,6 +1,6 @@
 # Exit codes
 
-The table below is the KeyHog 0.5.84 process contract. The canonical numeric
+The table below is the KeyHog 0.5.85 process contract. The canonical numeric
 definitions live in `crates/cli/src/exit_codes.rs` and are rendered in
 `keyhog --help` and `keyhog scan --help`.
 

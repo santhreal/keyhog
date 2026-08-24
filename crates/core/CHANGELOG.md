@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.85 - 2026-08-24
+
+- fix(ci): increase release runner timeout to 120 minutes.
+
 ## 0.5.84 - 2026-08-24
 
 - fix(ci): increase release runner timeout to 90 minutes.
