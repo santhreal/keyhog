@@ -198,18 +198,30 @@ jobs:
             --tag "$RELEASE_TAG" \
             --changelog CHANGELOG.md \
             --output "$RUNNER_TEMP/release-notes.md"
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" \
-              --title "$RELEASE_TAG" \
-              --notes-file "$RUNNER_TEMP/release-notes.md" \
-              --draft=false \
-              --latest
-          else
-            gh release create "$RELEASE_TAG" \
-              --title "$RELEASE_TAG" \
-              --notes-file "$RUNNER_TEMP/release-notes.md" \
-              --verify-tag \
-              --latest
+          create_or_edit_release() {
+            if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              gh release edit "$RELEASE_TAG" \
+                --title "$RELEASE_TAG" \
+                --notes-file "$RUNNER_TEMP/release-notes.md" \
+                --draft=false \
+                --latest
+            else
+              gh release create "$RELEASE_TAG" \
+                --title "$RELEASE_TAG" \
+                --notes-file "$RUNNER_TEMP/release-notes.md" \
+                --verify-tag \
+                --latest
+            fi
+          }
+          if ! create_or_edit_release 2>/tmp/gh-release-err; then
+            if grep -q "401 Unauthorized" /tmp/gh-release-err; then
+              echo "MARKETPLACE_RELEASE_TOKEN returned 401; falling back to GITHUB_TOKEN"
+              export GH_TOKEN="${{ github.token }}"
+              create_or_edit_release
+            else
+              cat /tmp/gh-release-err
+              exit 1
+            fi
           fi
           major_tag="${RELEASE_TAG%%.*}"
           if [[ -n "$major_tag" && "$major_tag" =~ ^v[0-9]+$ ]]; then
