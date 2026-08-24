@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
+static DAEMON_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
@@ -42,7 +43,7 @@ fn start_daemon(dir: &Path, extra_args: &[&str]) -> (Child, PathBuf) {
         .args(extra_args)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
-    let child = cmd.spawn().expect("spawn daemon");
+    let mut child = cmd.spawn().expect("spawn daemon");
     // Wait for a real listener (connect succeeds), not just file existence.
     let deadline = Instant::now() + Duration::from_secs(30);
     while Instant::now() < deadline {
@@ -51,6 +52,8 @@ fn start_daemon(dir: &Path, extra_args: &[&str]) -> (Child, PathBuf) {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+    let _ = child.kill();
+    let _ = child.wait();
     panic!("daemon did not become ready within 30s");
 }
 
@@ -66,8 +69,9 @@ fn stop_daemon(socket: &Path) -> Option<i32> {
 
 #[test]
 fn daemon_start_status_stop_lifecycle_and_socket_hygiene() {
+    let _daemon_guard = DAEMON_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = TempDir::new().unwrap();
-    let (mut child, socket) = start_daemon(dir.path(), &[]);
+    let (mut child, socket) = start_daemon(dir.path(), &["--backend", "cpu"]);
 
     // Socket mode is one defense-in-depth access control. The production
     // status and scan clients exercised below additionally authenticate the
@@ -134,6 +138,7 @@ fn daemon_start_status_stop_lifecycle_and_socket_hygiene() {
 #[cfg(target_os = "linux")]
 #[test]
 fn explicit_host_daemons_do_not_load_gpu_runtime_libraries() {
+    let _daemon_guard = DAEMON_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let host_backends: Vec<_> = BACKEND_OVERRIDE_VALUES
         .iter()
         .copied()
@@ -184,10 +189,14 @@ fn host_only_identities_do_not_load_gpu_runtime_libraries() {
 
 #[test]
 fn daemon_reclaims_stuck_half_frame_connection() {
+    let _daemon_guard = DAEMON_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = TempDir::new().unwrap();
     // 1-second request timeout so the test is fast. A real client does one
     // round-trip; a connection idle past this is stuck and must be reclaimed.
-    let (mut child, socket) = start_daemon(dir.path(), &["--request-timeout-secs", "1"]);
+    let (mut child, socket) = start_daemon(
+        dir.path(),
+        &["--backend", "cpu", "--request-timeout-secs", "1"],
+    );
 
     // Open a connection, announce a frame length, then send NOTHING, the
     // classic half-frame / slowloris stall that would otherwise hold a
@@ -246,8 +255,9 @@ fn daemon_reclaims_stuck_half_frame_connection() {
 
 #[test]
 fn daemon_rejects_oversized_frame_length_prefix() {
+    let _daemon_guard = DAEMON_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = TempDir::new().unwrap();
-    let (mut child, socket) = start_daemon(dir.path(), &[]);
+    let (mut child, socket) = start_daemon(dir.path(), &["--backend", "cpu"]);
 
     // MAX_FRAME_BYTES is 64 MiB; announce one byte more. The server must refuse
     // to allocate the recv buffer (it drops the connection) rather than OOM.
@@ -308,6 +318,7 @@ fn daemon_rejects_oversized_frame_length_prefix() {
 #[cfg(unix)]
 #[test]
 fn daemon_socket_flag_wires_scan_to_a_fixed_location_daemon() {
+    let _daemon_guard = DAEMON_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     use std::process::Stdio;
 
     let dir = TempDir::new().unwrap();

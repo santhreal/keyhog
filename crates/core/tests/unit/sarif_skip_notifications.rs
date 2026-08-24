@@ -13,7 +13,7 @@ fn sarif_skip_summary_emits_tool_execution_notifications() {
             ("binary (extension or content sniff)".to_string(), 5),
             ("unreadable (permission denied or I/O error)".to_string(), 2),
             (
-                "default exclusion policy (lock files, minified/bundled assets, vendored and build-output trees). User `.keyhogignore` / --exclude-paths removals are not counted here"
+                "exclusion policy (default excludes such as lock files, minified/bundled assets, vendored and build-output trees; --git-staged also counts repository `.keyhogignore` matches here)"
                     .to_string(),
                 0,
             ), // dropped

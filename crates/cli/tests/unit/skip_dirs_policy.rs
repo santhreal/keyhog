@@ -21,6 +21,21 @@ fn bundled_policy_contains_consumer_specific_components() {
     assert!(policy.is_git_discovery_component(".nuxt"));
     assert!(policy.is_git_discovery_component("system volume information"));
     assert!(!policy.is_git_discovery_component(".git"));
+    // Scanner-truth parity: the scanner's default excludes prune no `.cargo`
+    // component, so no CLI surface may skip it either. Re-adding it here
+    // reintroduces the guard coverage hole where edits to a repository's
+    // `.cargo/credentials.toml` never reached the watcher (Row 141).
+    assert!(!policy.is_watch_component(".cargo"));
+    assert!(!policy.is_git_discovery_component(".cargo"));
+
+    // An all-empty section is now valid: source defaults alone are a complete
+    // policy. The bundled file carries `base = []` for exactly that reason.
+    let empty = API
+        .skip_dir_policy_from_toml(
+            "[skip_dirs]\nbase = []\nwatch_extra = [\".svn\"]\ngit_discovery_extra = [\"Library\"]\n",
+        )
+        .expect("empty base list is a valid policy");
+    assert!(empty.is_watch_component("node_modules"));
 }
 
 #[test]

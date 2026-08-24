@@ -14,7 +14,9 @@
 //! Does not catch hardware GPU adapter faults during kernel execution or hardware memory bit flips.
 //! Does not catch OS kernel-level process SIGKILL termination.
 
-use keyhog::exit_codes::{EXIT_CREDENTIALS_FOUND, EXIT_SUCCESS, EXIT_USER_ERROR};
+use keyhog::exit_codes::{
+    EXIT_CREDENTIALS_FOUND, EXIT_SOURCE_FAILED, EXIT_SUCCESS, EXIT_USER_ERROR,
+};
 use keyhog::testing::execution_pack_install::{InstalledArtifactClass, InstalledArtifactRegistry};
 use std::collections::BTreeSet;
 use std::fs;
@@ -218,6 +220,8 @@ fn hook_run_utilizes_execution_pack_zero_runtime_compilations_subsecond() {
         .current_dir(&repo_dir)
         .arg("hook")
         .arg("run")
+        .arg("--backend")
+        .arg("cpu")
         .arg("--profile-out")
         .arg(&profile_output_path)
         .env("PATH", keyhog_path_env())
@@ -302,6 +306,8 @@ fn hook_run_detects_staged_secrets_with_zero_runtime_compilations() {
         .current_dir(&repo_dir)
         .arg("hook")
         .arg("run")
+        .arg("--backend")
+        .arg("cpu")
         .arg("--profile-out")
         .arg(&profile_output_path)
         .env("PATH", keyhog_path_env())
@@ -358,17 +364,20 @@ fn hook_run_fails_closed_when_execution_pack_missing() {
         .output()
         .expect("run hook run");
 
+    // With no packs and no calibrated autoroute decision, the hook's auto
+    // scan fails closed at routing: the batch is reported as NEVER SCANNED
+    // and the run exits EXIT_SOURCE_FAILED (13), never a clean pass.
     assert_eq!(
         hook_out.status.code(),
-        Some(EXIT_USER_ERROR as i32),
-        "hook run must fail closed with exit code 2 when execution pack is missing; stderr:\n{}",
+        Some(i32::from(EXIT_SOURCE_FAILED)),
+        "hook run must fail closed (exit 13) when no pack and no autoroute decision exists; stderr:\n{}",
         String::from_utf8_lossy(&hook_out.stderr)
     );
 
     let stderr = String::from_utf8_lossy(&hook_out.stderr);
     assert!(
-        stderr.contains("keyhog install") || stderr.contains("execution pack"),
-        "stderr must instruct user to run keyhog install; stderr:\n{stderr}"
+        stderr.contains("autoroute calibration required") && stderr.contains("NEVER SCANNED"),
+        "stderr must name the calibration remedy and the unscanned batch; stderr:\n{stderr}"
     );
 }
 

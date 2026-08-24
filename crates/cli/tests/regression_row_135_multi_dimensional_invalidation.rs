@@ -69,14 +69,35 @@ fn prepare_fresh_installation(test_exe: &Path, cache_home: &Path) -> (PathBuf, P
     );
 
     let autoroute_cache = cache_home.join("keyhog/autoroute.json");
-    let cal_result = Command::new(test_exe)
+    let mut calibrate = Command::new(test_exe);
+    calibrate
         .arg("calibrate-autoroute")
         .arg("--quiet")
         .arg("--autoroute-cache")
         .arg(&autoroute_cache)
         .env("XDG_CACHE_HOME", cache_home)
-        .output()
-        .expect("run calibrate autoroute");
+        .env("NO_COLOR", "1");
+    // A ci-lean binary measures the full production ladder unless the fixture
+    // sentinels select the bounded one; without them every test here spends
+    // minutes of CPU recalibrating, which blew the CI lane's time budget.
+    #[cfg(feature = "ci-lean")]
+    {
+        calibrate
+            .env(
+                "KEYHOG_CI_AUTOROUTE_TIMING_FIXTURE",
+                "confidence-separated-v1",
+            )
+            .env(
+                "KEYHOG_CI_AUTOROUTE_FIXTURE_AUTH",
+                "bench-backend-parity-v1",
+            )
+            .env("KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE", "bounded-e2e-v1")
+            .env(
+                "KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE_AUTH",
+                "core-workload-plan-v1",
+            );
+    }
+    let cal_result = calibrate.output().expect("run calibrate autoroute");
     assert!(
         cal_result.status.success(),
         "calibrate autoroute failed: {}",

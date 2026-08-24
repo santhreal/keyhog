@@ -139,6 +139,10 @@ pub(crate) const STALE_TMP_CUTOFF_SECS: u64 = 60 * 60;
 /// lockdown past-findings gate, a rename here moves all three together so the
 /// lockdown scan can never desynchronize from where scan artifacts actually land.
 pub(crate) const KEYHOG_CACHE_SUBDIR: &str = "keyhog";
+/// Subdirectory of [`KEYHOG_CACHE_SUBDIR`] holding signed execution packs.
+/// Contains compiled detector packs and a signing key only, never findings,
+/// so lockdown treats it as clean.
+pub const EXECUTION_PACKS_SUBDIR: &str = "execution-packs";
 /// Sibling of [`KEYHOG_CACHE_SUBDIR`] used for MatcherArtifact `.khm` files.
 pub const KEYHOG_MATCHER_ARTIFACTS_SUBDIR: &str = "keyhog-matcher-artifacts";
 /// On-disk magic for MatcherArtifact cache files (`KHMA`).

@@ -62,6 +62,7 @@ const SEVERITY: &str = "critical";
 const EXIT_SUCCESS: i32 = 0;
 const EXIT_FINDINGS: i32 = 1;
 const EXIT_USER_ERROR: i32 = 2;
+const EXIT_SOURCE_FAILED: i32 = 13;
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
@@ -292,15 +293,17 @@ fn exclude_nonmatching_glob_keeps_both() {
 }
 
 /// A slash-less basename glob (`*.env`) matches at ANY depth (gitignore
-/// semantics), so BOTH the root `a.env` and the nested `skip/b.env` are pruned:
-/// an HONEST empty result (exit 0 and the literal `[]` bytes).
+/// semantics), so BOTH the root `a.env` and the nested `skip/b.env` are pruned.
+/// Pruning every candidate leaves ZERO bytes to scan, and the fail-closed
+/// coverage contract refuses an empty report presented as clean: exit
+/// EXIT_SOURCE_FAILED while stdout stays the literal `[]` bytes.
 #[test]
 fn exclude_star_env_matches_any_depth_empties_result() {
     let dir = plant_skip_tree();
     let (code, findings, stdout, stderr) = run_json(dir.path(), &["--exclude-paths", "*.env"]);
     assert_eq!(
-        code, EXIT_SUCCESS,
-        "every .env excluded -> exit 0; stderr:\n{stderr}"
+        code, EXIT_SOURCE_FAILED,
+        "every .env excluded -> zero-byte coverage -> exit 13; stderr:\n{stderr}"
     );
     assert_eq!(findings.len(), 0, "*.env prunes a.env AND skip/b.env");
     assert_eq!(
@@ -309,13 +312,13 @@ fn exclude_star_env_matches_any_depth_empties_result() {
     );
 }
 
-/// The explicit recursive glob `**/*.env` also strips every `.env` at any depth
-/// same empty, exit-0 result as the bare `*.env` form.
+/// The explicit recursive glob `**/*.env` also strips every `.env` at any depth;
+/// like every full-prune it ends at zero scanned bytes -> EXIT_SOURCE_FAILED.
 #[test]
 fn exclude_recursive_env_glob_empties_result() {
     let dir = plant_skip_tree();
     let (code, findings, stdout, _stderr) = run_json(dir.path(), &["--exclude-paths", "**/*.env"]);
-    assert_eq!(code, EXIT_SUCCESS, "no .env survives -> exit 0");
+    assert_eq!(code, EXIT_SOURCE_FAILED, "no .env survives -> exit 13");
     assert_eq!(findings.len(), 0);
     assert_eq!(stdout, b"[]");
 }
@@ -334,15 +337,16 @@ fn exclude_anchored_relative_path_drops_one() {
 }
 
 /// Multiple `--exclude-paths` operands COMPOSE: excluding both the root file and
-/// the whole skip subtree prunes everything -> exit 0 and `[]`.
+/// the whole skip subtree prunes everything -> zero scanned bytes ->
+/// EXIT_SOURCE_FAILED with `[]` on stdout.
 #[test]
 fn multiple_excludes_compose_to_empty() {
     let dir = plant_skip_tree();
     let (code, findings, stdout, stderr) =
         run_json(dir.path(), &["--exclude-paths", "a.env", "**/skip/**"]);
     assert_eq!(
-        code, EXIT_SUCCESS,
-        "both operands prune everything -> exit 0; stderr:\n{stderr}"
+        code, EXIT_SOURCE_FAILED,
+        "both operands prune everything -> zero-byte coverage -> exit 13; stderr:\n{stderr}"
     );
     assert_eq!(findings.len(), 0, "a.env and skip/** both excluded");
     assert_eq!(stdout, b"[]");

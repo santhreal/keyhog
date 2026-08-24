@@ -2,6 +2,7 @@
 
 ## 0.5.81 - 2026-08-20
 
+- fix(core): `--lockdown` starts on machines with installed execution packs. The past-findings gate treated the signed pack store under `<cache>/keyhog/execution-packs` as a findings-bearing cache; a directory with that exact name is now trusted, and any other entry still fails closed.
 - refactor(core): unify atomic durable writes across state artifacts and scanner caches into keyhog_core::state_file (Row 148).
 - feat(guard): populate GuardPolicyIdentity with canonical default digests and digest calculation helpers for ignore files, suppressions, config, and source policy (Row 142).
 - feat(spec): export `load_detectors_with_gate` so audit surfaces can load a corpus without the fail-closed quality gate.

@@ -232,27 +232,35 @@ fn default_excluded_files_and_suffixes_filtered() {
 }
 
 #[test]
-fn image_and_cargo_credentials_files_are_not_excluded() {
+fn cargo_credentials_not_excluded_by_watcher() {
+    // WHY: the watcher must mirror scanner traversal truth. The scanner's
+    // default excludes prune no `.cargo` component and skip no `.toml`
+    // filename, so `.cargo/credentials.toml` is a scanned leak vector and
+    // its events must reach the guard.
+    //
+    // Extension-based filtering (png, jpg, etc.) happens at the reader pool,
+    // not the watcher path classifier, so media files ARE delivered as events
+    // even though scans ultimately skip them by extension.
     let config = GuardReconciliationConfig::default();
     let (mut watcher, tx) = GuardWatcher::new_with_channel(config);
 
     let root = PathBuf::from("/srv/repo");
     watcher.add_root(root.clone()).expect("add root");
 
-    let scannable_paths = vec![
-        root.join(".cargo/credentials.toml"),
-        root.join("assets/logo.png"),
-        root.join("assets/banner.jpg"),
-    ];
+    assert!(
+        !watcher.is_path_excluded(&root, &root.join(".cargo/credentials.toml")),
+        "scanned path .cargo/credentials.toml must NOT be excluded by watcher"
+    );
+    // Images are NOT excluded at the watcher level (extension denylist feeds
+    // the reader, not the path classifier) so they produce events.
+    assert!(
+        !watcher.is_path_excluded(&root, &root.join("assets/logo.png")),
+        "image extension png is not a watcher-level exclusion"
+    );
 
-    for path in &scannable_paths {
-        assert!(
-            !watcher.is_path_excluded(&root, path),
-            "scannable path {} must NOT be excluded by watcher",
-            path.display()
-        );
+    for path in [".cargo/credentials.toml", "src/main.rs", "assets/logo.png"] {
         let mut event = notify::Event::new(EventKind::Modify(ModifyKind::Any));
-        event.paths.push(path.clone());
+        event.paths.push(root.join(path));
         tx.send(Ok(event)).expect("send event");
     }
 
@@ -260,7 +268,7 @@ fn image_and_cargo_credentials_files_are_not_excluded() {
     assert_eq!(
         polled.len(),
         1,
-        "watcher must emit events for scannable cargo and image files"
+        "watcher must emit all non-excluded file events to the root"
     );
 }
 

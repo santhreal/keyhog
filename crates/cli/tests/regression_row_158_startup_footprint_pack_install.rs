@@ -100,10 +100,57 @@ fn setup_test_pack_environment(temp_dir: &Path) -> (PathBuf, PathBuf) {
     (cache_home, output_dir)
 }
 
+// The ci-lean fixture sentinels select the bounded calibration ladder instead
+// of the full production measurement.
+fn calibrate_autoroute(cache_home: &Path) {
+    let mut calibrate = Command::new(test_bin());
+    calibrate
+        .arg("calibrate-autoroute")
+        .arg("--quiet")
+        .arg("--autoroute-cache")
+        .arg(cache_home.join("keyhog/autoroute.json"))
+        .env("XDG_CACHE_HOME", cache_home)
+        .env(
+            "HOME",
+            cache_home
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_default(),
+        )
+        .env("NO_COLOR", "1");
+    #[cfg(feature = "ci-lean")]
+    {
+        calibrate
+            .env(
+                "KEYHOG_CI_AUTOROUTE_TIMING_FIXTURE",
+                "confidence-separated-v1",
+            )
+            .env(
+                "KEYHOG_CI_AUTOROUTE_FIXTURE_AUTH",
+                "bench-backend-parity-v1",
+            )
+            .env("KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE", "bounded-e2e-v1")
+            .env(
+                "KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE_AUTH",
+                "core-workload-plan-v1",
+            );
+    }
+    let result = calibrate.output().expect("run calibrate autoroute");
+    assert!(
+        result.status.success(),
+        "calibrate autoroute failed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
 #[test]
 fn fresh_state_scan_uses_precompiled_packs_with_zero_runtime_compiles() {
     let temp_dir = create_temp_dir("keyhog-row158-fresh-");
     let (cache_home, _output_dir) = setup_test_pack_environment(temp_dir.path());
+    // Auto routing fails closed without a persisted fastest-correct backend
+    // decision, even with packs installed; calibrate the fresh cache first so
+    // the scan below exercises the precompiled-pack hydration path it names.
+    calibrate_autoroute(&cache_home);
 
     let scan_file = temp_dir.path().join("test_secret.txt");
     fs::write(

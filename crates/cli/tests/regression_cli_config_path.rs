@@ -117,8 +117,8 @@ fn explicit_config_min_confidence_suppresses_below_threshold() {
         "baseline stdout must carry the github-classic-pat finding.\n--- stdout ---\n{stdout}"
     );
     assert!(
-        stdout.contains("\"confidence\":0.9"),
-        "baseline finding confidence must be exactly 0.9.\n--- stdout ---\n{stdout}"
+        stdout.contains("\"evidence_score\":0.9"),
+        "baseline finding evidence score must be exactly 0.9.\n--- stdout ---\n{stdout}"
     );
 
     // A `tool.toml` at min_confidence = 0.95 sits ABOVE the 0.9 finding, so the

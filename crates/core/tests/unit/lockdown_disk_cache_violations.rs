@@ -255,3 +255,48 @@ fn matcher_artifact_tmp_named_file_is_lockdown_violation() {
         );
     });
 }
+
+// WHY: `keyhog install` and the GitHub Action place signed execution packs
+// under `<cache>/keyhog/execution-packs`. Lockdown's past-findings gate used
+// to treat any non-cache-file entry as a violation, so every machine with
+// installed packs failed `--lockdown` at startup. The pack store holds
+// compiled detector packs plus a signing key, which cannot carry findings.
+// Closes the "installed packs block lockdown" class; it does not vet pack
+// contents (signature checks happen when a scan loads packs).
+#[test]
+fn execution_packs_dir_is_not_lockdown_violation() {
+    with_xdg_cache_home(|cache_home| {
+        let keyhog_cache = cache_home.path().join("keyhog");
+        let packs = keyhog_cache.join("execution-packs");
+        std::fs::create_dir_all(packs.join("current")).expect("create packs dir");
+        std::fs::write(packs.join("signing.key"), b"k".repeat(32)).expect("write key");
+        std::fs::write(packs.join("current").join("manifest.json"), b"{}").expect("write manifest");
+
+        assert!(
+            keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
+                &keyhog_core::testing::TestApi,
+            )
+            .is_empty(),
+            "installed execution packs must not fail lockdown"
+        );
+    });
+}
+
+#[test]
+fn execution_packs_named_file_is_lockdown_violation() {
+    with_xdg_cache_home(|cache_home| {
+        let keyhog_cache = cache_home.path().join("keyhog");
+        std::fs::create_dir_all(&keyhog_cache).expect("create cache dir");
+        std::fs::write(keyhog_cache.join("execution-packs"), b"payload")
+            .expect("write impostor file");
+
+        assert_eq!(
+            keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
+                &keyhog_core::testing::TestApi,
+            )
+            .is_empty(),
+            false,
+            "a file named execution-packs is not the pack store and must violate lockdown"
+        );
+    });
+}

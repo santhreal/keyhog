@@ -247,14 +247,16 @@ impl WatchedRoot {
         false
     }
 
-    #[allow(dead_code)]
     fn maybe_reload_ignore_matcher(&self, root: &std::path::Path, path: &std::path::Path) {
         if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-            if file_name == ".keyhogignore" || file_name == ".gitignore" {
-                if file_name == ".keyhog.toml" {
-                    let (new_ignore_paths, _) = resolve_root_exclusions(root);
-                    *self.ignore_paths.write() = new_ignore_paths;
-                }
+            if file_name == ".keyhog.toml" {
+                let (new_ignore_paths, _) = resolve_root_exclusions(root);
+                *self.ignore_paths.write() = new_ignore_paths;
+            }
+            if file_name == ".keyhogignore"
+                || file_name == ".gitignore"
+                || file_name == ".keyhog.toml"
+            {
                 let ignore_paths = self.ignore_paths.read();
                 *self.ignore_matcher.write() = build_root_ignore_matcher(root, &ignore_paths);
             }

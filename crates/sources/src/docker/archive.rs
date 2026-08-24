@@ -110,7 +110,10 @@ pub(super) fn unpack_tar(
     // Disk unpack keeps validate-before-write so a tar-header bomb cannot create
     // entries before the cap refuses the archive. Production layer scanning uses
     // `stream_layer_archive_chunks` instead and never materializes members.
-    unpack_open_tar(file, destination, limits, false, budget)
+    // The OUTER image archive is only a container: its own blob sizes must not
+    // consume the extracted-content budget, or the guard trips on the container
+    // before any layer content is measured (and names a digest, not an entry).
+    unpack_open_tar(file, destination, limits, false, budget, false)
 }
 
 pub(super) fn unpack_layer_archive(
@@ -124,7 +127,9 @@ pub(super) fn unpack_layer_archive(
     file.rewind().map_err(SourceError::Io)?;
 
     match encoding {
-        LayerArchiveEncoding::RawTar => unpack_open_tar(file, destination, limits, true, budget),
+        LayerArchiveEncoding::RawTar => {
+            unpack_open_tar(file, destination, limits, true, budget, true)
+        }
         LayerArchiveEncoding::GzipTar => {
             validate_tar_reader(
                 flate2::read::MultiGzDecoder::new(&mut file),
@@ -139,6 +144,7 @@ pub(super) fn unpack_layer_archive(
                 limits,
                 true,
                 budget,
+                true,
             )
         }
         LayerArchiveEncoding::ZstdTar => {
@@ -159,7 +165,7 @@ pub(super) fn unpack_layer_archive(
                     limits.docker_tar_total_bytes,
                 ))
                 .map_err(SourceError::Io)?;
-            unpack_tar_reader(extract_reader, destination, limits, true, budget)
+            unpack_tar_reader(extract_reader, destination, limits, true, budget, true)
         }
     }
 }
@@ -226,6 +232,7 @@ fn unpack_open_tar(
     limits: crate::SourceLimits,
     enforce_per_file_cap: bool,
     budget: &DockerUnpackBudget,
+    charge_image_budget: bool,
 ) -> Result<DockerExtractReport, SourceError> {
     let mut validation_archive = tar::Archive::new(&mut file);
     validate_docker_archive_plan(
@@ -233,10 +240,18 @@ fn unpack_open_tar(
         limits,
         enforce_per_file_cap,
         budget,
+        charge_image_budget,
     )?;
 
     file.rewind().map_err(SourceError::Io)?;
-    unpack_tar_reader(&mut file, destination, limits, enforce_per_file_cap, budget)
+    unpack_tar_reader(
+        &mut file,
+        destination,
+        limits,
+        enforce_per_file_cap,
+        budget,
+        charge_image_budget,
+    )
 }
 
 fn validate_tar_reader(
@@ -246,7 +261,7 @@ fn validate_tar_reader(
     budget: &DockerUnpackBudget,
 ) -> Result<(), SourceError> {
     let mut archive = tar::Archive::new(reader);
-    validate_docker_archive_plan(&mut archive, limits, enforce_per_file_cap, budget)
+    validate_docker_archive_plan(&mut archive, limits, enforce_per_file_cap, budget, true)
 }
 
 fn unpack_tar_reader(
@@ -255,6 +270,7 @@ fn unpack_tar_reader(
     limits: crate::SourceLimits,
     enforce_per_file_cap: bool,
     budget: &DockerUnpackBudget,
+    charge_image_budget: bool,
 ) -> Result<DockerExtractReport, SourceError> {
     let mut archive = tar::Archive::new(reader);
     extract_docker_archive_entries(
@@ -263,6 +279,7 @@ fn unpack_tar_reader(
         limits,
         enforce_per_file_cap,
         budget,
+        charge_image_budget,
     )
 }
 
@@ -873,11 +890,38 @@ fn validate_extracted_tree_with_limits<R: Read>(
     Ok(())
 }
 
+/// Normalize a tar entry path so a `./` or repeated-curdir prefix cannot dodge
+/// prefix matching.
+fn normalize_entry_path(path: &Path) -> std::path::PathBuf {
+    path.components()
+        .filter(|component| !matches!(component, std::path::Component::CurDir))
+        .collect()
+}
+
+/// Whether an OUTER container entry is itself a layer payload that the scan
+/// re-reads and accounts through its extracted inner entries. Charging its
+/// packaged size in the outer pass would trip the image-wide guard before any
+/// layer content is measured, naming a digest instead of the entry that
+/// actually exceeded the budget. Covers the OCI layout (`blobs/sha256/<digest>`)
+/// and legacy `docker save` layouts (`<layer-id>/layer.tar`). Everything else,
+/// including `manifest.json` and per-layer metadata files, is scanned input and
+/// counts.
+fn outer_entry_is_layer_payload(path: &Path) -> bool {
+    let normalized = normalize_entry_path(path);
+    if normalized.starts_with("blobs") && normalized.components().count() >= 2 {
+        return true;
+    }
+    normalized
+        .file_name()
+        .is_some_and(|name| name == "layer.tar")
+}
+
 fn validate_docker_archive_plan<R: Read>(
     archive: &mut tar::Archive<R>,
     limits: crate::SourceLimits,
     enforce_per_file_cap: bool,
     budget: &DockerUnpackBudget,
+    charge_image_budget: bool,
 ) -> Result<(), SourceError> {
     let mut cumulative_bytes: u64 = 0;
     for (entry_index, entry) in archive.entries().map_err(SourceError::Io)?.enumerate() {
@@ -890,14 +934,19 @@ fn validate_docker_archive_plan<R: Read>(
         let file_type = entry.header().entry_type();
         validate_docker_archive_entry(&path, file_type)?;
 
-        cumulative_bytes = cumulative_bytes.saturating_add(size);
-        if cumulative_bytes > budget.remaining() {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
-            return Err(SourceError::Other(format!(
-                "docker archive cumulative size exceeds {} bytes at entry '{}' (likely zip-bomb)",
-                limits.docker_tar_total_bytes,
-                path.display(),
-            )));
+        // Same spend rule as `extract_docker_archive_entries`, so the
+        // validate-before-write guarantee covers exactly the entries that
+        // extraction will charge.
+        if charge_image_budget || !outer_entry_is_layer_payload(&path) {
+            cumulative_bytes = cumulative_bytes.saturating_add(size);
+            if cumulative_bytes > budget.remaining() {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+                return Err(SourceError::Other(format!(
+                    "docker archive cumulative size exceeds {} bytes at entry '{}' (likely zip-bomb)",
+                    limits.docker_tar_total_bytes,
+                    path.display(),
+                )));
+            }
         }
 
         if enforce_per_file_cap && docker_archive_entry_exceeds_scan_cap(file_type, size, limits) {
@@ -914,6 +963,7 @@ fn extract_docker_archive_entries<R: Read>(
     limits: crate::SourceLimits,
     enforce_per_file_cap: bool,
     budget: &DockerUnpackBudget,
+    charge_image_budget: bool,
 ) -> Result<DockerExtractReport, SourceError> {
     let mut report = DockerExtractReport::default();
     for (entry_index, entry) in archive.entries().map_err(SourceError::Io)?.enumerate() {
@@ -926,8 +976,12 @@ fn extract_docker_archive_entries<R: Read>(
         validate_docker_archive_entry(&path, entry.header().entry_type())?;
 
         // The one site that SPENDS the image budget for disk unpack. Streaming
-        // layer scans charge through `stream_layer_tar_reader` instead.
-        if !budget.charge(size) {
+        // layer scans charge through `stream_layer_tar_reader` instead. In the
+        // outer container pass, layer payloads (see
+        // `outer_entry_is_layer_payload`) are NOT charged here; metadata such
+        // as `manifest.json` IS scanned input and counts.
+        let spends_budget = charge_image_budget || !outer_entry_is_layer_payload(&path);
+        if spends_budget && !budget.charge(size) {
             return Err(docker_image_budget_error(
                 &path,
                 limits.docker_tar_total_bytes,

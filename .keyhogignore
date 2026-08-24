@@ -38,6 +38,7 @@ path:docs/assets/keyhog-banner.svg; reason="reviewed docs banner asset; not scan
 
 # --- Documentation that quotes findings --------------------------------------
 path:CHANGELOG.md; reason="release notes quote example credentials verbatim; documentation about findings, not live material"; approved_by="keyhog-maintainers"
+path:docs/src/workflows/github-action.md; reason="the file documents exact Action version pins of this public repository; generic entropy reads a pinned release tag as a credential-shaped token"; approved_by="keyhog-maintainers"
 
 # --- Test, fixture, and demo trees -------------------------------------------
 # These trees carry exact positive and negative credential examples by design.

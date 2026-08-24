@@ -55,7 +55,40 @@ fn scanner() -> &'static CompiledScanner {
         // `worst_case_backend_parity` test.
         const FUZZ_DETECTOR_CAP: usize = 64;
         let stride = (all.len() / FUZZ_DETECTOR_CAP).max(1);
-        let detectors: Vec<_> = all.into_iter().step_by(stride).take(FUZZ_DETECTOR_CAP).collect();
+        // The plan builder rejects any relation whose target is outside the
+        // compiled set, and a stride sample can split a relation pair (e.g.
+        // notion-integration-token -> notion-api-key), so the raw sample does
+        // not always compile. Close the selection transitively over relation
+        // targets: init stays bounded by the same order of magnitude while the
+        // subset remains compilable.
+        let mut chosen = vec![false; all.len()];
+        for i in (0..all.len()).step_by(stride).take(FUZZ_DETECTOR_CAP) {
+            chosen[i] = true;
+        }
+        {
+            let index: std::collections::HashMap<&str, usize> = all
+                .iter()
+                .enumerate()
+                .map(|(i, d)| (d.id.as_str(), i))
+                .collect();
+            let mut queue: Vec<usize> =
+                (0..all.len()).filter(|&i| chosen[i]).collect();
+            while let Some(i) = queue.pop() {
+                for target in &all[i].detector_relations {
+                    if let Some(&j) = index.get(target.detector_id.as_str()) {
+                        if !chosen[j] {
+                            chosen[j] = true;
+                            queue.push(j);
+                        }
+                    }
+                }
+            }
+        }
+        let detectors: Vec<_> = all
+            .into_iter()
+            .zip(chosen)
+            .filter_map(|(d, keep)| keep.then_some(d))
+            .collect();
 
         CompiledScanner::compile(detectors).expect("scanner compile")
     })

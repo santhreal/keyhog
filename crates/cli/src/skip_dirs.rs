@@ -110,7 +110,7 @@ impl SkipDirPolicy {
     }
 
     fn from_section(section: SkipDirSection) -> std::result::Result<Self, String> {
-        validate_list("base", &section.base)?;
+        validate_optional_list("base", &section.base)?;
         validate_list("watch_extra", &section.watch_extra)?;
         validate_list("git_discovery_extra", &section.git_discovery_extra)?;
 

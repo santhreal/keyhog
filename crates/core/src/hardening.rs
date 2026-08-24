@@ -367,6 +367,16 @@ where
                 return true;
             }
         };
+        // Signed execution packs live under the cache root by product
+        // convention (`<cache>/keyhog/execution-packs`). They hold compiled
+        // detector packs and a signing key, never findings, so a directory
+        // with that exact name is clean. Any other name, or a non-directory
+        // using it, still fails closed.
+        if entry.file_name() == std::ffi::OsStr::new(crate::EXECUTION_PACKS_SUBDIR)
+            && matches!(entry.file_type(), Ok(t) if t.is_dir())
+        {
+            continue;
+        }
         match trusted_compiled_pattern_cache_entry(&entry) {
             Ok(true) => {}
             Ok(false) => return true,
