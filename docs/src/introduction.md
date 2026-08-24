@@ -13,7 +13,7 @@ are evidence from the running binary, not universal defaults.
 $ keyhog scan . --progress
     K E Y H O G
     ───────────
-    v0.5.83 · secret scanner · 934 detectors
+    v0.5.84 · secret scanner · 934 detectors
     by santh
 
   16 cores | SIMD: AVX-512 | Hyperscan | 934 detectors (5820 patterns) io_uring | backend=simd-regex | gpu=none

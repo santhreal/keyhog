@@ -221,7 +221,7 @@ Add the following to `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/santhreal/keyhog
-    rev: v0.5.83
+    rev: v0.5.84
     hooks:
       - id: keyhog
         stages: [pre-commit]

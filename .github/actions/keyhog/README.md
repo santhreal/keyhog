@@ -164,8 +164,8 @@ commits so GitHub updates the same Code Scanning partition.
 ## Pin releases
 
 `santhreal/keyhog@v0` follows the latest published `v0` Action. Use
-`santhreal/keyhog@v0.5.83` when Action code must stay fixed. The optional
-`version: v0.5.83` input pins only the scanner crate, so it is not a substitute
+`santhreal/keyhog@v0.5.84` when Action code must stay fixed. The optional
+`version: v0.5.84` input pins only the scanner crate, so it is not a substitute
 for pinning the Action ref.
 
 Release refs install the exact published crate from crates.io. A missing crate

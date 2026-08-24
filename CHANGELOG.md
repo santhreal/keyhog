@@ -2,6 +2,12 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.84] - 2026-08-24
+
+### Changed
+
+- fix(ci): increase release runner timeout to 90 minutes.
+
 ## [0.5.83] - 2026-08-24
 
 ### Changed

@@ -1,6 +1,10 @@
 # Changelog
 
 
+## 0.5.84 - 2026-08-24
+
+- fix(ci): increase release runner timeout to 90 minutes.
+
 ## 0.5.83 - 2026-08-24
 
 - fix(ci): decouple action-e2e version pin from auto-release contract.
