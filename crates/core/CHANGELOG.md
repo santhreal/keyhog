@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.83 - 2026-08-24
+
+- fix(ci): decouple action-e2e version pin from auto-release contract.
+
 ## 0.5.82 - 2026-08-24
 
 - Offline guard status and list inspectability reading durable store from disk with optional root summary.

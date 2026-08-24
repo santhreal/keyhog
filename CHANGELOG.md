@@ -2,6 +2,12 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.83] - 2026-08-24
+
+### Changed
+
+- fix(ci): decouple action-e2e version pin from auto-release contract.
+
 ## [0.5.82] - 2026-08-24
 
 ### Added

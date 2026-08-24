@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.83 - 2026-08-24
+
+- fix(ci): decouple action-e2e version pin from auto-release contract.
+
 ## 0.5.82 - 2026-08-24
 
 - fix(cli): gate git-staged ScanArgs fields in hook run; enable futures-util sink.
