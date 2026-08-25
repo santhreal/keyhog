@@ -2,6 +2,12 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.86] - 2026-08-25
+
+### Changed
+
+- fix(ci): fall back to GITHUB_TOKEN when MARKETPLACE_RELEASE_TOKEN is expired.
+
 ## [0.5.85] - 2026-08-24
 
 ### Changed

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.86 - 2026-08-25
+
+- fix(ci): fall back to GITHUB_TOKEN when MARKETPLACE_RELEASE_TOKEN is expired.
+
 ## 0.5.85 - 2026-08-24
 
 - fix(ci): increase release runner timeout to 120 minutes.
