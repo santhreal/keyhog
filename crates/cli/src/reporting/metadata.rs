@@ -9,7 +9,7 @@ use keyhog_core::{
 };
 use crate::args::ScanArgs;
 use crate::stable_hash::StableHasher;
-use super::{scan_targets, CoverageCounts};
+use super::{coverage_gap_summary, scan_targets, CoverageCounts};
 
 /// Build the minimal metadata used when a caller reports findings outside a
 /// full scan run (for example a direct `scan --format` invocation).
@@ -177,7 +177,7 @@ fn current_static_recovery_metrics() -> StaticRecoveryMetrics {
 /// sanitisation path, so this cannot describe a policy different from the one
 /// the engine received. Values are strings by contract to keep the manifest
 /// extensible without floating-point equality or schema churn.
-fn resolved_scan_manifest(
+pub(super) fn resolved_scan_manifest(
     args: &ScanArgs,
     scanner: &keyhog_scanner::ScannerConfig,
 ) -> ResolvedScanManifest {
@@ -351,7 +351,7 @@ pub(super) fn scan_report_id(metadata: &ScanReportMetadata) -> String {
         .collect()
 }
 
-pub(super) fn format_gitlab_time(time: DateTime<Utc>) -> String {
+fn format_gitlab_time(time: DateTime<Utc>) -> String {
     time.format("%Y-%m-%dT%H:%M:%S").to_string()
 }
 

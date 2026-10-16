@@ -78,7 +78,8 @@ impl BorrowedMatcherArtifact {
 
     // Public loader compatibility only. The scanner startup path hydrates from
     // `section_bytes` and never materializes this second owned section set.
-    fn to_owned_sections(&self) -> CompiledRouteMatcherSections {
+    #[cfg(test)]
+    pub(super) fn to_owned_sections(&self) -> CompiledRouteMatcherSections {
         let (literal_index, regex_programs, suppression_policy) = self.section_bytes();
         CompiledRouteMatcherSections {
             backend: self.ranges.backend,

@@ -15,8 +15,7 @@ use crate::exit_codes::{
 use crate::style;
 use anyhow::Result;
 use keyhog_core::{VerificationResult, VerifiedFinding};
-use sha2::{Digest, Sha256};
-use std::io::{IsTerminal, Read};
+use std::io::IsTerminal;
 use std::time::Instant;
 
 pub(super) use super::profile_report::profiler_build_identity;

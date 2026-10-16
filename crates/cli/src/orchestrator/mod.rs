@@ -22,10 +22,12 @@ pub(crate) use default_runtime::{
     setup_default_scan_runtime_for_test, DefaultScanFilter, DefaultScanRuntime,
 };
 use default_runtime::compose_detector_min_confidence;
+#[cfg(test)]
+pub(super) use default_runtime::default_runtime_gpu_init_policy;
 
 use crate::args::ScanArgs;
 use crate::orchestrator_config::{
-    auto_discover_detectors, autoroute_config_digest, backend_override_cli_value,
+    auto_discover_detectors, autoroute_config_digest,
     configure_threads, gpu_runtime_policy_from_args, load_effective_detector_corpus,
     parse_backend_override, resolve_scan_config, resolved_scan_config_for_scanner,
     validate_detector_mode_selection, validate_explicit_detector_path, DetectorCorpusProvenance,
@@ -33,7 +35,7 @@ use crate::orchestrator_config::{
 };
 use crate::style;
 use anyhow::{Context, Result};
-use keyhog_core::{Chunk, DetectorSpec, MerkleLoadStatus, RawMatch, Source};
+use keyhog_core::{DetectorSpec, MerkleLoadStatus, RawMatch, Source};
 use keyhog_scanner::{CompiledScanner, GpuInitPolicy};
 #[cfg(feature = "git")]
 use std::path::PathBuf;

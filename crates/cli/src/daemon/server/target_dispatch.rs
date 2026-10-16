@@ -6,15 +6,16 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Instant;
 use anyhow::{Context, Result};
-use keyhog_core::{Chunk, ChunkMetadata, RawMatch, Source};
+use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use tokio::sync::{mpsc, OwnedMutexGuard};
 use crate::daemon::frame;
 use crate::daemon::protocol::{
-    BackendRecoveryStatus, MassScanStats, RequestProfile, Response, SourceCoverageGaps,
-    MASS_BATCH_BYTES, MASS_BATCH_CHUNKS,
+    BackendRecoveryStatus, MassScanStats, RecoveredInputRangeStatus, RequestProfile, Response,
+    SourceCoverageGaps, MASS_BATCH_BYTES, MASS_BATCH_CHUNKS,
 };
 use super::{
-    send_response, MassFilesystemMessage, RequestProfileCapture, ServerState,
+    daemon_scan_path_chunks, send_response, MassFilesystemMessage, RequestProfileCapture,
+    ServerState,
 };
 
 pub(super) struct MassIncrementalState {
@@ -58,7 +59,7 @@ impl MassSession {
             .saturating_add(batch.pathless_findings);
     }
 
-    fn incremental_index(
+    pub(super) fn incremental_index(
         &mut self,
         configured_path: Option<String>,
     ) -> std::result::Result<Option<Arc<keyhog_core::MerkleIndex>>, String> {
@@ -402,7 +403,7 @@ pub(crate) fn resolve_scan_target(
     }
 }
 
-async fn scan_path(
+pub(super) async fn scan_path(
     state: &ServerState,
     path: String,
     working_dir: Option<String>,
@@ -567,7 +568,7 @@ pub(super) struct MassBatchDispatch {
 }
 
 impl MassBatchDispatch {
-    fn error(message: String) -> Self {
+    pub(super) fn error(message: String) -> Self {
         Self {
             response: Response::Error { message },
             chunks: 0,

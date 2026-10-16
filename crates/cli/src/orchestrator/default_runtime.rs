@@ -6,16 +6,18 @@ use keyhog_core::{Chunk, DetectorSpec, RawMatch};
 use keyhog_scanner::{CompiledScanner, GpuInitPolicy};
 use crate::args::ScanArgs;
 use crate::orchestrator_config::{
-    autoroute_config_digest, configure_threads, gpu_runtime_policy_from_args,
-    load_effective_detector_corpus, parse_backend_override, resolve_scan_config,
-    resolved_scan_config_for_scanner, validate_detector_mode_selection,
-    DetectorCorpusProvenance, LoadedDetectorCorpus, ResolvedScanConfig,
+    auto_discover_detectors, autoroute_config_digest, backend_override_cli_value,
+    configure_threads, load_effective_detector_corpus, resolve_scan_config,
+    validate_detector_mode_selection, validate_explicit_detector_path,
+    ResolvedEngineRuntimeSettings,
 };
 use super::{
-    allowlist, collect_detector_signatures, dispatch, filter_disabled_detectors,
-    gpu_init_policy_for_args, installed_pack_for_corpus, pack_rules_digest, postprocess,
-    run, validate_persistent_gpu_initialization, validate_persistent_gpu_warmup,
-    CachedBackendRouter,
+    allowlist, apply_host_runtime_limits, automatic_backend_recovery_allowed,
+    cached_autoroute_router, cached_autoroute_router_for_default_config,
+    collect_detector_signatures, corpus_rules_digest, dispatch, filter_disabled_detectors,
+    gpu_init_policy_for_args, persistent_runtime_requires_gpu, postprocess,
+    router_gpu_participates, run, scan_selected_batch,
+    validate_persistent_gpu_initialization, CachedBackendRouter, GpuUnavailableError,
 };
 
 /// The resolved post-scan suppression policy a [`DefaultScanRuntime`] applies so
@@ -427,7 +429,7 @@ impl DefaultScanRuntime {
     }
 }
 
-fn default_runtime_gpu_init_policy(
+pub(super) fn default_runtime_gpu_init_policy(
     backend_override: Option<keyhog_scanner::ScanBackend>,
 ) -> GpuInitPolicy {
     backend_override.map_or(

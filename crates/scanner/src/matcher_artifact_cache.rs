@@ -22,8 +22,8 @@ pub use storage::{
 use storage::load_borrowed_matcher_artifact;
 #[cfg(test)]
 use storage::{
-    checked_matcher_artifact_len, parse_matcher_artifact_ranges, read_matcher_artifact_bytes,
-    BorrowedMatcherArtifact,
+    checked_matcher_artifact_len, evict_old_matcher_artifacts, parse_matcher_artifact_ranges,
+    read_matcher_artifact_bytes, write_matcher_artifact_atomically, BorrowedMatcherArtifact,
 };
 
 use crate::compiled_scanner::GpuInitPolicy;

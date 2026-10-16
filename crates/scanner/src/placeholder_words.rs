@@ -23,6 +23,7 @@ impl PlaceholderWord {
         &self.upper
     }
 
+    #[cfg(test)]
     pub(crate) fn lower_bytes(&self) -> &[u8] {
         self.lower.as_bytes()
     }
@@ -188,6 +189,7 @@ pub(crate) fn doc_marker_substrings() -> &'static [String] {
 /// Entropy-plausibility case-insensitive substring markers (lowercase), e.g.
 /// `your_`, `mock_`. Matched via `ascii_ci` over raw bytes by
 /// `bytes_contain_entropy_placeholder_marker`.
+#[cfg(test)]
 pub(crate) fn entropy_marker_ci_substrings() -> &'static [String] {
     &VOCAB.entropy_ci_substrings
 }

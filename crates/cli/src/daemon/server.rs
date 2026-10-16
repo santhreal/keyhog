@@ -3,7 +3,7 @@
 
 use crate::daemon::frame;
 use crate::daemon::protocol::{
-    BackendRecoveryStatus, MassScanStats, ProfileStageMeasurement, RecoveredInputRangeStatus,
+    BackendRecoveryStatus, MassScanStats, ProfileStageMeasurement,
     Request, RequestProfile, Response, SourceCoverageGaps, WarmBackendStatus, MASS_BATCH_BYTES,
     MASS_BATCH_CHUNKS, WIRE_VERSION,
 };
@@ -15,13 +15,12 @@ use futures_util::{FutureExt, SinkExt, StreamExt};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch, Source};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::num::NonZeroUsize;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{mpsc, Mutex, Notify, OwnedMutexGuard, Semaphore};
+use tokio::sync::{mpsc, Mutex, Notify, Semaphore};
 
 pub const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
 mod guard_policy;
@@ -33,14 +32,13 @@ pub use guard_policy::{
 };
 use guard_policy::{
     baseline_terminal_transition, guard_attestation_identity, guard_commit_terminal_state,
-    process_guard_events, scrub_guard_roots, spawn_guard_watcher_loop,
+    spawn_guard_watcher_loop,
 };
 pub(crate) use target_dispatch::resolve_scan_target;
 use target_dispatch::{
     backend_recovery_status_from_receipt, file_type_label, pin_regular_file,
-    refused_file_type_message, scan_mass_batch, scan_results_response, scan_text,
-    stream_mass_filesystem, validate_mass_batch, MassBatchDispatch, MassIncrementalState,
-    MassSession, PinnedFile,
+    refused_file_type_message, scan_mass_batch, scan_path, scan_results_response, scan_text,
+    stream_mass_filesystem, validate_mass_batch, MassBatchDispatch, MassSession,
 };
 
 const DEFAULT_REQUEST_READ_TIMEOUT_SECS: u64 = 300;
@@ -2637,8 +2635,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
 /// zeros if the path cannot be stat'd, which is sufficient for
 /// registration; the root existence check happens separately.
 fn filesystem_identity(path: &std::path::Path) -> keyhog_core::guard_state::FilesystemIdentity {
-    use std::os::unix::fs::MetadataExt;
-    match std::fs::symlink_metadata(path) {
+        match std::fs::symlink_metadata(path) {
         Ok(meta) => keyhog_core::guard_state::FilesystemIdentity {
             device: meta.dev(),
             inode: meta.ino(),
@@ -2826,7 +2823,7 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
     }
 }
 
-fn daemon_scan_path_chunks(
+pub(super) fn daemon_scan_path_chunks(
     path: &Path,
     source_telemetry: &Arc<keyhog_sources::SourceSkipTelemetry>,
 ) -> Result<(Vec<Chunk>, SourceCoverageGaps)> {

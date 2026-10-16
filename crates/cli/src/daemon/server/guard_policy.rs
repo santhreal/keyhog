@@ -2,8 +2,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use sha2::Digest;
-use super::{BaselineResult, ServerState};
+use super::{BaselineResult, ServerState, KEYHOG_VERSION};
 
 /// Spawn a background task that polls the guard filesystem watcher and
 /// processes events through the guard state machine. Events are

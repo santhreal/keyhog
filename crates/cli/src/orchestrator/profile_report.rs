@@ -1,8 +1,9 @@
 //! Causal profiler identity construction, cache transition evidence, and operator profile rendering.
 
+use std::io::Read;
+use anyhow::Result;
 use sha2::{Digest, Sha256};
 use keyhog_core::VerifiedFinding;
-use crate::style;
 use super::ScanOrchestrator;
 
 pub(super) fn profiler_build_identity() -> keyhog_profile::BuildIdentityV2 {

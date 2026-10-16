@@ -1,23 +1,21 @@
 //! Report formatting and delivery for the KeyHog CLI.
 
+mod metadata;
+pub(crate) use metadata::{report_metadata_from_scan_run, report_metadata_from_scan_run_with_corpus};
+use metadata::generated_report_metadata;
+#[cfg(test)]
+use metadata::{resolved_scan_manifest, scan_report_id};
+
 use crate::args::{OutputFormat, ScanArgs};
-use crate::stable_hash::StableHasher;
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
 use keyhog_core::{
-    AccessTargetReport, CorrelatedCredential, ReportFormat, ResolvedScanManifest,
-    ScanCompletionStatus, ScanReport, ScanReportMetadata, StaticRecoveryMetrics, VerifiedFinding,
-    STATIC_RECOVERY_METRICS_SCHEMA_VERSION,
+    AccessTargetReport, CorrelatedCredential, ReportFormat, ScanReport, ScanReportMetadata,
+    VerifiedFinding,
 };
 use keyhog_profile::Stage;
-use std::collections::BTreeMap;
 use std::io::{self, BufWriter, IsTerminal, Write};
 
 /// Default buffer capacity in bytes for streaming report writers.
-mod metadata;
-pub(crate) use metadata::{report_metadata_from_scan_run, report_metadata_from_scan_run_with_corpus};
-use metadata::{format_gitlab_time, generated_report_metadata, scan_report_id};
-
 const REPORT_BUFFER_CAPACITY: usize = 64 * 1024;
 
 /// Wrap a writer in a standard buffered writer sized for report streaming.
