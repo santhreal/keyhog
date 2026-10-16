@@ -431,3 +431,49 @@ fn entropy_real_secret_not_suppressed() {
     ));
     assert!(!bytes_contain_entropy_placeholder_marker(b""));
 }
+
+#[test]
+fn precompiled_check_markers_automaton_matches_all_upper_needles() {
+    for word in words() {
+        let candidate = format!("PREFIX_{}_SUFFIX", word.upper());
+        assert!(
+            upper_has_any_doc_or_placeholder_marker(&candidate),
+            "precompiled check_markers AC must match word {}",
+            word.upper()
+        );
+    }
+    for frag in instructional_fragments() {
+        let candidate = format!("{frag}API_SECRET");
+        assert!(
+            upper_has_any_doc_or_placeholder_marker(&candidate),
+            "precompiled check_markers AC must match instructional fragment {frag}"
+        );
+    }
+    for marker in doc_marker_substrings() {
+        let candidate = format!("GHP_{marker}_99");
+        assert!(
+            upper_has_any_doc_or_placeholder_marker(&candidate),
+            "precompiled check_markers AC must match doc marker {marker}"
+        );
+    }
+    for extra in ["EXAMPLEKEY", "TODO", "FIXME"] {
+        assert!(
+            upper_has_any_doc_or_placeholder_marker(extra),
+            "precompiled check_markers AC must match {extra}"
+        );
+    }
+    assert!(!upper_has_any_doc_or_placeholder_marker(
+        "AKIAQYLPMN5HFIQR7XYA"
+    ));
+    assert!(!upper_has_any_doc_or_placeholder_marker(""));
+}
+
+#[test]
+fn precompiled_words_ci_automaton_matches_all_words_case_insensitively() {
+    for word in words() {
+        assert!(bytes_contain_placeholder_word(word.lower_bytes()));
+        assert!(bytes_contain_placeholder_word(word.upper().as_bytes()));
+    }
+    assert!(!bytes_contain_placeholder_word(b"AKIAQYLPMN5HFIQR7XYA"));
+    assert!(!bytes_contain_placeholder_word(b""));
+}

@@ -1486,7 +1486,7 @@ fn file_live_metadata(path: &Path) -> Option<FileLiveMetadata> {
         let secs = meta.ctime();
         let nanos = meta.ctime_nsec();
         u64::try_from(i128::from(secs) * 1_000_000_000 + i128::from(nanos)).ok()
-        // LAW10: out-of-range ctime disables only the Merkle fast-path
+        // LAW10: out-of-range ctime disables only the Merkle fast-path; recall-preserving because the file still scans in full.
     };
     #[cfg(not(unix))]
     let ctime_ns: Option<u64> = None;

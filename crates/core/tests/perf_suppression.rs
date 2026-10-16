@@ -250,3 +250,34 @@ fn suppression_recall_guard_exact_decisions() {
         );
     }
 }
+
+#[test]
+fn normalized_and_unnormalized_paths_produce_identical_suppression_and_attribution() {
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "path:vendor/**/*.json\npath:src/secrets/*.rs\n",
+    );
+    for variant in [
+        "vendor/aws/creds.json",
+        "./vendor/aws/creds.json",
+        "vendor/tmp/../aws/creds.json",
+        "vendor\\aws\\creds.json",
+    ] {
+        assert!(
+            al.is_path_ignored(variant),
+            "path variant {variant:?} must be ignored"
+        );
+        assert!(
+            al.record_path_match(variant),
+            "path variant {variant:?} must record attribution"
+        );
+    }
+    let counts = al.attributed_match_counts();
+    assert_eq!(
+        counts,
+        vec![
+            ("path:vendor/**/*.json".to_string(), 4),
+            ("path:src/secrets/*.rs".to_string(), 0),
+        ]
+    );
+}

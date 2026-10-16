@@ -236,7 +236,7 @@ encoded payload was never decoded, on the default preset, over an ordinary
 file, and your build did not fail. In any file over 1 MiB only the tail is
 decode-reachable, so the same payload is found at the end of the file and
 missed in the middle of it. See
-[Encoded payloads: position determines](../guides/file-shapes.md#encoded-payloads-position-determines).
+[Encoded payloads: position determines](../guides/file-shapes.md#encoded-payloads-position-decides).
 
 A gap that is an *error* also emits a `source emitted error rows` row, and that
 is what produces exit `13`:
