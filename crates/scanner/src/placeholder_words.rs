@@ -379,14 +379,14 @@ pub(crate) fn parse_vocab(raw: &str) -> Result<PlaceholderVocab, String> {
     // Doc-markers are matched against the UPPERCASED credential, so uppercase them
     // at load; entropy-markers are matched over raw bytes (ci_substrings
     // case-insensitively, exact_values case-sensitively), so they stay lowercase.
-    let instructional_fragments = validate_markers(
+    let instructional_fragments: Vec<String> = validate_markers(
         parsed.doc_markers.instructional_fragments,
         "instructional_fragment",
     )?
     .into_iter()
     .map(|marker| marker.to_ascii_uppercase())
     .collect();
-    let marker_substrings =
+    let marker_substrings: Vec<String> =
         validate_markers(parsed.doc_markers.marker_substrings, "marker_substring")?
             .into_iter()
             .map(|marker| marker.to_ascii_uppercase())

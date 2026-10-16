@@ -1,12 +1,3 @@
-mod storage;
-
-pub use storage::{
-    load_matcher_artifact, load_matcher_artifact_with_ir, store_matcher_artifact,
-    LoadedMatcherArtifact,
-};
-pub(crate) use storage::write_matcher_artifact_atomically;
-use storage::evict_old_matcher_artifacts;
-
 //! Persisted compiled matcher / `CompileState` artifact cache.
 //!
 //! This cache stores the eager detector-spec construction that would otherwise
@@ -22,6 +13,19 @@ use storage::evict_old_matcher_artifacts;
 //! Fail closed: a stale or mismatched identity never yields a matcher. Callers
 //! record every consultation through [`keyhog_profile::CacheId::MatcherArtifact`].
 
+mod storage;
+
+pub use storage::{
+    load_matcher_artifact, load_matcher_artifact_with_ir, store_matcher_artifact,
+    LoadedMatcherArtifact,
+};
+use storage::load_borrowed_matcher_artifact;
+#[cfg(test)]
+use storage::{
+    checked_matcher_artifact_len, parse_matcher_artifact_ranges, read_matcher_artifact_bytes,
+    BorrowedMatcherArtifact,
+};
+
 use crate::compiled_scanner::GpuInitPolicy;
 use crate::compiler::compiler_build::CompileState;
 use crate::engine::CompiledScanner;
@@ -33,7 +37,6 @@ use crate::execution_pack::{CanonicalDetectorExecutionIr, ExecutionPackBackend};
 use crate::hw_probe::ScanBackend;
 use crate::types::ScannerTuningConfig;
 use serde::{Deserialize, Serialize};
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -183,7 +186,7 @@ pub fn validate_and_tighten_matcher_artifact_cache_dir(
     Ok(())
 }
 
-fn current_uid() -> u32 {
+pub(super) fn current_uid() -> u32 {
     #[cfg(unix)]
     {
         // SAFETY: geteuid has no preconditions and returns the effective uid.

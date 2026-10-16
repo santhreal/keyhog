@@ -41,7 +41,7 @@ impl Drop for ContextGuard {
     }
 }
 
-pub(super) struct AsyncParentGuard {
+pub(crate) struct AsyncParentGuard {
     pub(super) runtime_key: usize,
     pub(super) span_id: u64,
     pub(super) stack_slot: usize,

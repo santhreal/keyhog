@@ -4,13 +4,13 @@ use std::io::Read;
 use std::ops::Range;
 use std::path::Path;
 
-use crate::execution_pack::matcher_sections::{
-    decode_local_matcher_artifact_compile_state_sections, CompiledRouteMatcherSections,
-};
-use crate::execution_pack::{CanonicalDetectorExecutionIr, ExecutionPackBackend};
+use crate::execution_pack::matcher_sections::CompiledRouteMatcherSections;
+use crate::execution_pack::ExecutionPackBackend;
+#[cfg(unix)]
+use super::current_uid;
 use super::{
-    MatcherArtifactIdentity, ARTIFACT_CLASS, MATCHER_ARTIFACT_FILE_BYTES,
-    MATCHER_ARTIFACT_MAGIC, MATCHER_ARTIFACT_VERSION,
+    validate_and_tighten_matcher_artifact_cache_dir, MatcherArtifactIdentity,
+    MATCHER_ARTIFACT_FILE_BYTES, MATCHER_ARTIFACT_MAGIC, MATCHER_ARTIFACT_VERSION,
 };
 
 /// MatcherArtifact v4 body layout (after the 8-byte magic/version header):
@@ -54,21 +54,21 @@ pub struct LoadedMatcherArtifact {
 }
 
 #[derive(Clone, Debug)]
-struct MatcherArtifactSectionRanges {
-    backend: ExecutionPackBackend,
-    literal_index: Range<usize>,
-    regex_programs: Range<usize>,
-    suppression_policy: Range<usize>,
+pub(super) struct MatcherArtifactSectionRanges {
+    pub(super) backend: ExecutionPackBackend,
+    pub(super) literal_index: Range<usize>,
+    pub(super) regex_programs: Range<usize>,
+    pub(super) suppression_policy: Range<usize>,
 }
 
 #[derive(Debug)]
-struct BorrowedMatcherArtifact {
-    bytes: Vec<u8>,
-    ranges: MatcherArtifactSectionRanges,
+pub(super) struct BorrowedMatcherArtifact {
+    pub(super) bytes: Vec<u8>,
+    pub(super) ranges: MatcherArtifactSectionRanges,
 }
 
 impl BorrowedMatcherArtifact {
-    fn section_bytes(&self) -> (&[u8], &[u8], &[u8]) {
+    pub(super) fn section_bytes(&self) -> (&[u8], &[u8], &[u8]) {
         (
             &self.bytes[self.ranges.literal_index.clone()],
             &self.bytes[self.ranges.regex_programs.clone()],
@@ -89,7 +89,7 @@ impl BorrowedMatcherArtifact {
     }
 }
 
-fn parse_matcher_artifact_ranges(
+pub(super) fn parse_matcher_artifact_ranges(
     path: &Path,
     bytes: &[u8],
     expected_identity: Option<&MatcherArtifactIdentity>,
@@ -200,7 +200,7 @@ fn parse_matcher_artifact_ranges(
     ))
 }
 
-fn load_borrowed_matcher_artifact(
+pub(super) fn load_borrowed_matcher_artifact(
     cache_dir: &Path,
     identity: &MatcherArtifactIdentity,
 ) -> std::result::Result<BorrowedMatcherArtifact, String> {
@@ -248,7 +248,7 @@ fn read_capped_matcher_artifact(
     Ok(bytes)
 }
 
-fn read_matcher_artifact_bytes(path: &Path) -> std::result::Result<Vec<u8>, String> {
+pub(super) fn read_matcher_artifact_bytes(path: &Path) -> std::result::Result<Vec<u8>, String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt, OpenOptionsExt};

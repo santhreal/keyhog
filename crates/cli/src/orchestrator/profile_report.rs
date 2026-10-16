@@ -3,8 +3,9 @@
 use sha2::{Digest, Sha256};
 use keyhog_core::VerifiedFinding;
 use crate::style;
+use super::ScanOrchestrator;
 
-pub(in crate::orchestrator) fn profiler_build_identity() -> keyhog_profile::BuildIdentityV2 {
+pub(super) fn profiler_build_identity() -> keyhog_profile::BuildIdentityV2 {
     let mut features = Vec::new();
     for (enabled, name) in [
         (cfg!(feature = "mimalloc"), "mimalloc"),

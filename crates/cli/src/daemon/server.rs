@@ -158,20 +158,20 @@ pub fn default_socket_path() -> PathBuf {
 /// Process-atomic allocator for per-request profile identities. The daemon
 /// generation string (already advertised in `WarmBackendStatus`) scopes the
 /// sequence so ids stay unique across daemon restarts and processes.
-struct RequestIdAllocator {
+pub(super) struct RequestIdAllocator {
     generation: String,
     sequence: AtomicU64,
 }
 
 impl RequestIdAllocator {
-    fn new(generation: String) -> Self {
+    pub(super) fn new(generation: String) -> Self {
         Self {
             generation,
             sequence: AtomicU64::new(0),
         }
     }
 
-    fn next(&self) -> String {
+    pub(super) fn next(&self) -> String {
         let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
         format!("{}-{:016x}", self.generation, sequence)
     }
@@ -182,27 +182,27 @@ impl RequestIdAllocator {
 /// on the blocking scan thread and propagates to scanner rayon workers via
 /// `keyhog_profile::current_runtime()`, so concurrent profiled requests never
 /// share measurements.
-struct RequestProfileCapture {
+pub(super) struct RequestProfileCapture {
     request_id: String,
     runtime: keyhog_profile::Runtime,
 }
 
 impl RequestProfileCapture {
-    fn new(request_id: String) -> Self {
+    pub(super) fn new(request_id: String) -> Self {
         Self {
             request_id,
             runtime: keyhog_profile::Runtime::new(),
         }
     }
 
-    fn enter(&self) -> keyhog_profile::ContextGuard {
+    pub(super) fn enter(&self) -> keyhog_profile::ContextGuard {
         self.runtime.enter()
     }
 
     /// Drain the isolated runtime into a bounded, privacy-safe payload. Runs
     /// on the scan thread while its context guard is alive so the stage
     /// counter drain reads this request's runtime, never a peer's.
-    fn finish(self, started: Instant) -> RequestProfile {
+    pub(super) fn finish(self, started: Instant) -> RequestProfile {
         let stages = keyhog_profile::take_stage_measurements()
             .into_iter()
             .map(|measurement| ProfileStageMeasurement {
@@ -226,31 +226,31 @@ impl RequestProfileCapture {
     }
 }
 
-struct ServerState {
-    scanner: Arc<CompiledScanner>,
-    router: Arc<crate::orchestrator::CachedBackendRouter>,
-    started_at: Instant,
-    scans_served: AtomicU64,
-    active_scans: AtomicU32,
-    shutdown: Arc<Notify>,
-    detector_count: usize,
-    detector_rules_digest: String,
-    detector_spec_hash: [u8; 32],
-    request_read_timeout: Duration,
-    backend_override: Option<ScanBackend>,
-    backend_recoveries: AtomicU64,
-    last_backend_fault: std::sync::Mutex<Option<BackendRecoveryStatus>>,
-    warm_backend: WarmBackendReadiness,
+pub(super) struct ServerState {
+    pub(super) scanner: Arc<CompiledScanner>,
+    pub(super) router: Arc<crate::orchestrator::CachedBackendRouter>,
+    pub(super) started_at: Instant,
+    pub(super) scans_served: AtomicU64,
+    pub(super) active_scans: AtomicU32,
+    pub(super) shutdown: Arc<Notify>,
+    pub(super) detector_count: usize,
+    pub(super) detector_rules_digest: String,
+    pub(super) detector_spec_hash: [u8; 32],
+    pub(super) request_read_timeout: Duration,
+    pub(super) backend_override: Option<ScanBackend>,
+    pub(super) backend_recoveries: AtomicU64,
+    pub(super) last_backend_fault: std::sync::Mutex<Option<BackendRecoveryStatus>>,
+    pub(super) warm_backend: WarmBackendReadiness,
     // Per-request profile identity: the daemon generation string (the same one
     // `WarmBackendStatus` advertises) plus a process-atomic sequence, so every
     // profiled scan request is attributable to exactly one response.
-    request_identity: RequestIdAllocator,
-    mass_service: bool,
-    mass_gpu_primary_required: bool,
+    pub(super) request_identity: RequestIdAllocator,
+    pub(super) mass_service: bool,
+    pub(super) mass_gpu_primary_required: bool,
     // Fragment reassembly is scanner-owned mutable state. A normal request
     // leases it for one scan; a mass connection leases it from MassBegin
     // through MassEnd so batches preserve seam recall without cross-job state.
-    fragment_scan_lock: Arc<Mutex<()>>,
+    pub(super) fragment_scan_lock: Arc<Mutex<()>>,
     // Caps concurrent in-flight client connections. Without this,
     // every accepted socket spawns an unbounded tokio task that in
     // turn unboundedly spawn_blocks a scanner thread. A burst of
@@ -259,30 +259,30 @@ struct ServerState {
     // Default = 4 × physical cores so a 16-core host serves 64
     // concurrent scans, which is the saturation point for the
     // bounded sync_channel(64) the scanner uses internally.
-    connection_limit: Arc<Semaphore>,
+    pub(super) connection_limit: Arc<Semaphore>,
     // Admission reserved for connections that arrive while every data-plane
     // permit is held. They serve Hello/Health/Shutdown and refuse scan work, so
     // an operator can always observe and stop a saturated daemon.
-    control_limit: Arc<Semaphore>,
+    pub(super) control_limit: Arc<Semaphore>,
     // Set by `Shutdown` before it waits for in-flight scans. New scan and mass
     // requests are refused while it is set, so the drain terminates.
-    draining: AtomicBool,
+    pub(super) draining: AtomicBool,
     // Notified when in-flight work reaches zero, so the drain does not poll.
-    scans_drained: Notify,
+    pub(super) scans_drained: Notify,
     // Work requests currently between dispatch and a written response. Separate
     // from `active_scans`, which covers scanner execution only.
-    active_requests: AtomicU32,
+    pub(super) active_requests: AtomicU32,
     /// Guard runtime: root registry, attestation index, policy identity.
-    guard: Arc<crate::daemon::guard_runtime::GuardRuntime>,
+    pub(super) guard: Arc<crate::daemon::guard_runtime::GuardRuntime>,
     /// Guard filesystem watcher: native watchers for all guard roots.
     /// Guard scan filter: finalizes raw matches through the same
     /// suppression/allowlist/confidence pipeline as `keyhog scan`.
-    guard_filter: Arc<crate::orchestrator::DefaultScanFilter>,
-    guard_watcher: Arc<parking_lot::Mutex<crate::daemon::guard_watcher::GuardWatcher>>,
+    pub(super) guard_filter: Arc<crate::orchestrator::DefaultScanFilter>,
+    pub(super) guard_watcher: Arc<parking_lot::Mutex<crate::daemon::guard_watcher::GuardWatcher>>,
     /// Durable guard store for crash recovery. None when no store path is configured.
-    guard_store: Option<Arc<keyhog_core::guard_store::DurableGuardStore>>,
+    pub(super) guard_store: Option<Arc<keyhog_core::guard_store::DurableGuardStore>>,
     /// Periodic scrub interval in seconds. None disables scrubbing.
-    guard_scrub_interval: Option<std::time::Duration>,
+    pub(super) guard_scrub_interval: Option<std::time::Duration>,
 }
 
 impl ServerState {
@@ -353,13 +353,13 @@ impl ServerState {
         }
     }
 
-    fn begin_scan(&self) {
+    pub(super) fn begin_scan(&self) {
         self.active_scans.fetch_add(1, Ordering::AcqRel);
     }
 
     /// Release one scan slot and wake a waiting drain when the daemon just went
     /// idle. `Shutdown` blocks on this instead of polling.
-    fn finish_scan(&self) {
+    pub(super) fn finish_scan(&self) {
         if self.active_scans.fetch_sub(1, Ordering::AcqRel) == 1 {
             self.scans_drained.notify_waiters();
         }
@@ -433,7 +433,7 @@ impl ServerState {
         }
     }
 
-    fn record_backend_recovery(&self, recovery: BackendRecoveryStatus) -> Result<()> {
+    pub(super) fn record_backend_recovery(&self, recovery: BackendRecoveryStatus) -> Result<()> {
         *self
             .last_backend_fault
             .lock()
@@ -985,7 +985,7 @@ pub(crate) fn is_transient_accept_error(e: &std::io::Error) -> bool {
     false
 }
 
-enum MassFilesystemMessage {
+pub(super) enum MassFilesystemMessage {
     Batch(Vec<Chunk>),
     Complete {
         source_coverage_gaps: SourceCoverageGaps,
@@ -1456,7 +1456,7 @@ impl Drop for RequestSlot<'_> {
 /// the write once the socket buffer fills. Untimed, that permanently consumes
 /// the connection's admission permit; the timeout turns it into a closed
 /// connection and a released slot.
-async fn send_response(transport: &mut frame::ServerTransport, response: Response) -> Result<()> {
+pub(super) async fn send_response(transport: &mut frame::ServerTransport, response: Response) -> Result<()> {
     let kind = crate::daemon::protocol::response_kind(&response);
     match tokio::time::timeout(RESPONSE_WRITE_TIMEOUT, transport.send(response)).await {
         Ok(result) => result,
@@ -2714,7 +2714,7 @@ fn compute_git_blob_oid(
 }
 
 /// Result of a baseline reconciliation scan.
-enum BaselineResult {
+pub(super) enum BaselineResult {
     /// No findings, no coverage gaps.
     Clean,
     /// Unsuppressed findings detected.
@@ -2855,7 +2855,7 @@ fn daemon_scan_path_chunks(
     })
 }
 
-fn source_coverage_gaps_from_counts(counts: &keyhog_sources::SkipCounts) -> SourceCoverageGaps {
+pub(super) fn source_coverage_gaps_from_counts(counts: &keyhog_sources::SkipCounts) -> SourceCoverageGaps {
     SourceCoverageGaps {
         over_max_size: counts.over_max_size,
         binary: counts.binary,

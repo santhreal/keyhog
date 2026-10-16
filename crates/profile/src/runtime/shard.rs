@@ -14,14 +14,14 @@ pub(super) struct ActiveSpan {
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct SpanTrace {
+pub(crate) struct SpanTrace {
     pub(super) record_index: usize,
     pub(super) span_id: u64,
 }
 
 /// One completed span's recording payload, assembled on the guard's drop path.
 #[derive(Clone, Copy)]
-pub(super) struct SpanOutcome {
+pub(crate) struct SpanOutcome {
     pub(super) start_offset_ns: u64,
     pub(super) elapsed_ns: u64,
     pub(super) self_ns: u64,
@@ -123,7 +123,7 @@ pub(super) struct PendingQueueEnqueue {
     pub(super) elapsed_ns: u64,
 }
 
-pub(super) struct WorkerShard {
+pub(crate) struct WorkerShard {
     pub(super) sequence: u64,
     pub(super) elapsed_ns: [AtomicU64; STAGE_COUNT],
     pub(super) calls: [AtomicU64; STAGE_COUNT],

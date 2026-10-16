@@ -6,25 +6,20 @@ pub use api::*;
 pub(crate) use shard::RawStageCounters;
 
 use shard::{
-    latency_bucket_bounds, latency_bucket_index, max_counters, percentile_upper_bound,
-    zero_cache_counters, zero_compile_surface_invocations, zero_compile_surface_loads,
-    zero_counters, zero_event_values, zero_indexed_counters, zero_latency_buckets,
-    zero_metric_values, ActiveSpan, PendingQueueEnqueue, RawSpanHardware, RawSpanRecord,
-    SpanOutcome, SpanTrace, WorkerShard, GAUGE_PRESENT_WORDS,
+    latency_bucket_bounds, latency_bucket_index, percentile_upper_bound,
+    zero_compile_surface_invocations, zero_compile_surface_loads,
+    zero_counters, zero_event_values, zero_metric_values, ActiveSpan, PendingQueueEnqueue,
+    RawSpanHardware, RawSpanRecord, SpanOutcome, SpanTrace, WorkerShard, GAUGE_PRESENT_WORDS,
 };
 use crate::schema::Stage;
 use crate::schema_v2::{
-    AnnotationV2, BatchRouteV2, BlockedWaitRecordV2, CacheEffectivenessV2, DistributionBucketV2,
-    Evidence, EvidenceGap, IndexedCounterRecordV2, LatencyBucketV2, LatencyDistributionV2,
-    MetricDistributionV2, PointEventV2, QueueDepthV2, QueueLinkV2, RetryRecordV2, SpanRecordV2,
-    StageConcurrencyV2, TypedMetricRecordV2, WorkOrigin, WorkerImbalanceV2, WorkerLoadV2,
-    WorkerOccupancyRowV2, WorkerOccupancyV2,
+    AnnotationV2, BatchRouteV2, DistributionBucketV2, Evidence, EvidenceGap, LatencyBucketV2,
+    LatencyDistributionV2, MetricDistributionV2, PointEventV2, QueueLinkV2, SpanRecordV2,
+    TypedMetricRecordV2, WorkOrigin,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::future::{poll_fn, Future};
 use std::marker::PhantomData;
-use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Instant;

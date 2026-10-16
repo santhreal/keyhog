@@ -19,10 +19,9 @@ use sha2::{Digest, Sha256};
 use std::io::{IsTerminal, Read};
 use std::time::Instant;
 
-mod profile_report;
-pub(super) use profile_report::profiler_build_identity;
-pub(crate) use profile_report::render_daemon_request_profile;
-use profile_report::{
+pub(super) use super::profile_report::profiler_build_identity;
+pub(crate) use super::profile_report::render_daemon_request_profile;
+use super::profile_report::{
     profiler_cache_identities, profiler_cache_transitions, profiler_config_identity,
     profiler_detector_identity, profiler_outcome_identity, OperatorProfile,
 };

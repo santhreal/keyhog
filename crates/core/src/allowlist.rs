@@ -27,7 +27,7 @@ use metadata::*;
 // index) is its own subsystem; the `Allowlist` holds a precompiled index and
 // delegates every path decision to it.
 mod glob;
-use glob::{normalize_path, normalize_path_cow, pattern_matches_path, PathGlobIndex};
+use glob::{normalize_path_cow, pattern_matches_path, PathGlobIndex};
 
 static NEXT_OBSERVED_PATHS_ID: AtomicU64 = AtomicU64::new(1);
 

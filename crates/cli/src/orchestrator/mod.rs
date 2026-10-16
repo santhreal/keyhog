@@ -10,6 +10,7 @@ pub(crate) use dispatch::{
     BackendRecoveryPlan, COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB,
 };
 mod postprocess;
+mod profile_report;
 pub(crate) mod reporting;
 mod run;
 mod streaming;
