@@ -1,5 +1,7 @@
 # keyhog-sources
 
+[![santh](https://img.shields.io/badge/santh-alpha-ffd60a?style=flat-square&labelColor=0a0a0a)](https://santh.dev/keyhog/)
+
 Input sources for the KeyHog secret scanner. Each source turns one kind of
 input into a stream of `Chunk` values: the filesystem, the exact Git staged
 index, Git history, diffs and blobs, standard input, container images, archives
@@ -35,11 +37,11 @@ assert!(read > 0);
 - `Source` from `keyhog-core` is the one trait every source implements.
   Consume `chunks()` and handle both arms; an `Err` row means that input was not
   scanned.
-- `create_source` and its `create_source_with_*` variants build the right source
+- `create_source` and its `create_source_with_*` variants build the source
   for a target string plus HTTP config, limits, and policy. Use the factory
-  rather than naming a concrete source when the target comes from a user.
-- `SourceLimits` and `DEFAULT_SOURCE_LIMITS` carry every cap. A cap that trips
-  is recorded, not swallowed.
+  rather than naming a concrete source when the target comes from user input.
+- `SourceLimits` and `DEFAULT_SOURCE_LIMITS` define every source bound. A
+  reached limit is recorded, not ignored.
 - `skip_counts` and `SkipCounts` report what was skipped and why. Read them
   before you treat an empty finding set as a clean result.
 

@@ -118,10 +118,10 @@ keyhog scan mixed-tree/ --format json-envelope -o keyhog.json
 ```
 
 Exit code is `13` when nothing was found in the covered part, and `1` when
-something was. In the `1` case the report still carries the gap. Read
+something was. In the `1` case the report still contains the gap. Read
 `coverage_gap_summary`, not the exit code alone.
 
-Do not raise `--max-file-size` just to clear exit `13`. Raise it when you trust
+Do not raise `--max-file-size` solely to clear exit `13`. Raise it when you trust
 the input and the runner has the memory. Otherwise scan the large file as its
 own job so its cost and its result are separate.
 
@@ -140,7 +140,7 @@ The problem is the filename and the directory.
 ### What the default policy does
 
 A directory containing only `app.min.js` reports no findings and zero
-`source_bytes_scanned`. The file never reaches the scanner. The report carries
+`source_bytes_scanned`. The file never reaches the scanner. The report contains
 two gap rows and exits `13`:
 
 ```json
@@ -154,7 +154,7 @@ two gap rows and exits `13`:
 ```
 
 A scan that reads zero bytes is a loud failure, not a clean result. The second
-row tells you which policy did it.
+row identifies which policy did it.
 
 ### What `--no-default-excludes` now does
 
@@ -186,7 +186,7 @@ The stderr trace names the reason `vendored_minified_path`.
 ### Scan a bundle you own
 
 Pass one first-party bundle as an explicit file, or disable default exclusions
-for the directory that owns it:
+for the directory that defines it:
 
 ```sh
 keyhog scan dist/app.min.js --format json-envelope -o keyhog.json
@@ -268,7 +268,7 @@ be decode-expanded no matter what it contains. That ordering alone accounts for
 merely exceeds the cap. The remaining 422 MB is genuine interior of files over
 1 MiB, which only a subdividing decode path can reach.
 
-The report does say so, in the one place worth reading:
+The report records this in:
 
 ```json
 {
@@ -308,6 +308,6 @@ jq '{bytes: .metadata.source_bytes_scanned, chunks: .metadata.source_chunks_scan
      status: .scan_status, gaps: .coverage_gap_summary}' keyhog.json
 ```
 
-Zero bytes means nothing was scanned, whatever the findings list says.
+Zero bytes means nothing was scanned, regardless of the findings list.
 [Tell a real clean from a skipped input](../reference/coverage-truth.md)
 explains each field and each gap reason.

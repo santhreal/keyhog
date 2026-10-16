@@ -18,7 +18,7 @@ For example, a successful push at `1.2.3` produces `1.2.4`.
 
 Step 5 exists because a tag pushed with the workflow token raises no `push` event. `workflow_dispatch` is one of the two events the workflow token can start, so the bump job dispatches the publish itself. A tag you push by hand publishes through the `push` trigger instead.
 
-The workflow does not run for pull requests, failed CI runs, or cancelled CI runs. It does not build release assets, signatures, attestations, or SBOMs. The GitHub Release carries changelog notes only.
+The workflow does not run for pull requests, failed CI runs, or cancelled CI runs. It does not build release assets, signatures, attestations, or SBOMs. The GitHub Release contains changelog notes only.
 
 ## Write a changelog fragment
 

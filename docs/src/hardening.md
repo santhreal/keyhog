@@ -66,12 +66,12 @@ For `scan`, lockdown:
 - allows validated `KHHS` Hyperscan pattern-database shards because they contain
   compiled detector automata, not findings or credentials;
 - disables incremental cache use with a warning;
-- refuses `--verify` and `--show-secrets`;
+- rejects `--verify` and `--show-secrets`;
 - refuses `--fast`, `--no-default-excludes`, `--no-unicode-norm`,
   `--no-decode`, `--no-entropy`, and `--no-ml`.
 
 The daemon route is not eligible for a lockdown scan. `scan-system --lockdown`
-also refuses `--include-network`. On macOS and Windows, memory locking for this
+also rejects `--include-network`. On macOS and Windows, memory locking for this
 mode is not implemented, so lockdown fails rather than claiming a no-swap
 guarantee.
 

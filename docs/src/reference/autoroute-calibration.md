@@ -73,7 +73,7 @@ select one.
 
 Noncanonical, duplicate, inconsistent, or oversized persisted mixtures
 invalidate the cache instead of being normalized silently.
-Each persisted decision also carries a digest of the complete workload key.
+Each persisted decision also contains a digest of the complete workload key.
 Changing or relabeling any keyed field invalidates the row before routing.
 
 Filesystem producers keep each path's chunks contiguous. KeyHog uses that
@@ -203,7 +203,7 @@ Route decisions are stored under the resolved scan configuration, and a
 `.keyhog.toml` found on the walk-up from the working directory is part of it.
 Run `keyhog calibrate-autoroute` from the repository whose scans it serves.
 Running it elsewhere primes the compiled-in defaults, and a scan inside a
-repository that carries a `.keyhog.toml` then reports `none matching config
+repository that contains a `.keyhog.toml` then reports `none matching config
 digest` and exits 2.
 
 ```sh
@@ -262,13 +262,13 @@ by default; override with `--autoroute-cache <path>` or
 Canonical calibration admits every eligible execution class. The low-level
 `scan --no-autoroute-gpu --autoroute-calibrate` diagnostic measures a CPU-only
 candidate set, and that evidence cannot overwrite or be replayed by a normal
-all-candidate decision. The isolation lives in the persisted host generation,
+all-candidate decision. The isolation is in the persisted host generation,
 not in the config digest. A host generation records the eligible backend census
 plus the complete GPU device, runtime, driver, and batch-limit identity, and a
 scan replays a row only when that whole profile compares equal, so a CPU-only
 measurement is invisible to a scan that admits a GPU.
 
-The resolved config digest deliberately does not record whether a calibration
+The resolved config digest does not record whether a calibration
 excluded a GPU. Recording it there was a guaranteed miss on every host and
 build with no GPU candidate, because the exclusion is vacuous but the digest
 still differed: calibration wrote decisions under a key no scan would ever
@@ -290,7 +290,7 @@ and validated there, and the live cache is replaced once only after the full
 sweep succeeds. A failed probe leaves the live cache byte-identical. Publication
 also compares both the live cache and its runtime-health artifact captured at
 sweep start while holding their canonical locks. If another process changed
-either one, KeyHog preserves the concurrent update and asks the operator to
+either one, KeyHog preserves the concurrent update and prompts the operator to
 rerun instead of overwriting evidence or clearing a new route fault. A
 successful publication clears only the exact route faults remeasured by this
 sweep. The operating system releases a held lock if a writer exits or crashes.
@@ -400,7 +400,7 @@ which backend is fastest:
 - Build identity records the exact running executable SHA-256, package version,
   Git hash, and the CLI and dependency feature sets. GPU and SIMD support are
   read from the scanner library that
-  actually owns and compiled those backends, not inferred from similarly named
+  defines and compiled those backends, not inferred from similarly named
   CLI features. Source capability identity separately records each compiled
   filesystem, archive, forge, cloud, container, and web source feature
   (including GitHub, GitLab, and Bitbucket), while verifier identity records
@@ -448,7 +448,7 @@ which backend is fastest:
 - Workload **shape** matters: a single file, a directory, and a piped `stdin`
   stream are distinct buckets, and `stdin` is content-sensitive.
 
-The host profile is deliberately checked, but it is not a complete performance-
+The host profile is checked, but it is not a complete performance-
 environment fingerprint: for example, CPU governor, system load, and every
 accelerator limit are not all identity fields. Inspection reports each decision's
 persisted calibration timestamp and current age. Decisions do not expire by age.
@@ -470,7 +470,7 @@ byte length inside the numeric range.
 A size band nobody measured is served only by measured invariance. KeyHog
 collects every calibrated decision that shares this workload's pattern band,
 decode state, and source-class set. Two such bands are the minimum: one band
-says nothing about whether the winner depends on size. Their measurements are
+states nothing about whether the winner depends on size. Their measurements are
 then reconciled by the rule that reconciles the repeated points inside a single
 band. The served backend is the lowest-complexity backend measured at every one
 of those bands and proved slower at none. Bands that agree on the backend and
@@ -512,7 +512,7 @@ invalidate the decision instead of being trimmed or substituted.
 - A ready daemon initializes accelerator state before accepting requests and
   chooses from warm accelerator trials. Startup derives its required peer set
   from the validated decision table. It does not warm unrelated eligible peers,
-  and it refuses readiness if any selected peer cannot be warmed.
+  and it rejects readiness if any selected peer cannot be warmed.
 - `keyhog watch` is also a compile-once persistent runtime. It warms every
   selected route before announcing readiness and uses warm evidence for later
   file events; it does not repeatedly price the same cold backend startup.
@@ -660,7 +660,7 @@ meanings:
 | `daemon_backend`, `daemon_phase2_plain_localizer`, `daemon_phase2_keyword_localizer`, `daemon_gpu_pipeline_depth` | Backend, both phase-two localization choices, and resident GPU pipeline depth derived for a ready persistent daemon from warm evidence. |
 | `daemon_confidence_separated`, `daemon_selection_basis`, `daemon_selected_margin_ns` | Daemon-route counterparts, also aggregated conservatively across every measured point. |
 | `source_mixture` | Structured source-class components used by the workload identity: privacy-safe `source_class` for KeyHog-owned classes (`null` for unknown library-provided values), canonical execution-class digest, full-size versus payload provenance, reduced chunk/payload ratios, and maximum source-span bucket. The human-readable `workload` uses `<source_class>@<digest>` for known classes and `custom@<digest>` otherwise, so arbitrary source metadata is never echoed. JSON consumers should use these fields instead of parsing that string. |
-| `candidate_receipts` | Concise summary of the first measured point's receipts. Every receipt identifies the backend, both localization choices, GPU pipeline depth, dispatch capability, and per-slot input and match capacities. Every point carries the complete eligible route set; every result digest must equal its point's scalar/both-off reference, and every evidence digest must recompute exactly or the cache is rejected. |
+| `candidate_receipts` | Concise summary of the first measured point's receipts. Every receipt identifies the backend, both localization choices, GPU pipeline depth, dispatch capability, and per-slot input and match capacities. Every point contains the complete eligible route set; every result digest must equal its point's scalar/both-off reference, and every evidence digest must recompute exactly or the cache is rejected. |
 
 ## Single-backend builds
 

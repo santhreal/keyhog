@@ -35,7 +35,7 @@ You should see a `GitHub Classic PAT` finding with the credential rendered as
 capabilities, and detector counts vary by installation.
 
 KeyHog redacts credential values by default in every output format, including
-the `--output` file, not only the terminal. `--show-secrets` deliberately
+the `--output` file, not only the terminal. `--show-secrets`
 prints plaintext and can leak it into logs, artifacts, or scrollback. Do not
 use that flag for routine scans, and never in CI.
 

@@ -1,7 +1,7 @@
 # Git hook managers
 
 Run KeyHog before a commit or a push leaves the machine. The dedicated
-[pre-commit guide](../precommit.md) owns the supported hook; the recipes here
+[pre-commit guide](../precommit.md) defines the supported hook; the recipes here
 are for hook managers that drive it.
 
 The local recipes pass an explicit `--backend cpu` so they do not depend on

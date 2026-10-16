@@ -109,6 +109,9 @@ pub(crate) struct PlaceholderVocab {
     entropy_structural_bytes: Vec<u8>,
     entropy_length_gated: Vec<LengthGatedSubstring>,
     entropy_compound_shapes: Vec<CompoundShape>,
+    check_markers_upper_ac: aho_corasick::AhoCorasick,
+    words_ci_ac: aho_corasick::AhoCorasick,
+    entropy_ci_ac: aho_corasick::AhoCorasick,
 }
 
 static VOCAB: LazyLock<PlaceholderVocab> = LazyLock::new(|| {
@@ -199,6 +202,10 @@ pub(crate) fn example_word() -> Option<&'static PlaceholderWord> {
     words().iter().find(|word| word.is_example())
 }
 
+pub(crate) fn upper_has_any_doc_or_placeholder_marker(upper: &str) -> bool {
+    VOCAB.check_markers_upper_ac.is_match(upper)
+}
+
 pub(crate) fn contains_placeholder_word(credential: &str) -> bool {
     contains_placeholder_word_with_entropy_hint(credential, None)
 }
@@ -226,18 +233,13 @@ pub(crate) fn contains_non_example_placeholder_word_with_entropy_hint(
 }
 
 pub(crate) fn bytes_contain_placeholder_word(bytes: &[u8]) -> bool {
-    words()
-        .iter()
-        .any(|word| crate::ascii_ci::ci_find(bytes, word.lower_bytes()))
+    VOCAB.words_ci_ac.is_match(bytes)
 }
 
 pub(crate) fn bytes_contain_entropy_placeholder_marker(bytes: &[u8]) -> bool {
     // Category 1: case-insensitive substring markers (Tier-B
     // `[entropy_markers].ci_substrings`).
-    if entropy_marker_ci_substrings()
-        .iter()
-        .any(|marker| crate::ascii_ci::ci_find(bytes, marker.as_bytes()))
-    {
+    if VOCAB.entropy_ci_ac.is_match(bytes) {
         return true;
     }
     // Category 2: length-gated substrings (Tier-B
@@ -399,6 +401,52 @@ pub(crate) fn parse_vocab(raw: &str) -> Result<PlaceholderVocab, String> {
         validate_length_gated(parsed.entropy_markers.length_gated_substrings)?;
     let entropy_compound_shapes = validate_compound_shapes(parsed.entropy_markers.compound_shapes)?;
 
+    let mut upper_needles: Vec<&str> = Vec::with_capacity(
+        words.len() + instructional_fragments.len() + marker_substrings.len() + 3,
+    );
+    for word in &words {
+        upper_needles.push(word.upper());
+    }
+    for frag in &instructional_fragments {
+        upper_needles.push(frag.as_str());
+    }
+    for marker in &marker_substrings {
+        upper_needles.push(marker.as_str());
+    }
+    upper_needles.push("EXAMPLEKEY");
+    upper_needles.push("TODO");
+    upper_needles.push("FIXME");
+    let check_markers_upper_ac = match aho_corasick::AhoCorasick::new(&upper_needles) {
+        Ok(ac) => ac,
+        Err(error) => {
+            return Err(format!(
+                "failed to compile check_markers Aho-Corasick automaton: {error}"
+            ))
+        }
+    };
+    let words_ci_ac = match aho_corasick::AhoCorasickBuilder::new()
+        .ascii_case_insensitive(true)
+        .build(words.iter().map(PlaceholderWord::lower))
+    {
+        Ok(ac) => ac,
+        Err(error) => {
+            return Err(format!(
+                "failed to compile placeholder words Aho-Corasick automaton: {error}"
+            ))
+        }
+    };
+    let entropy_ci_ac = match aho_corasick::AhoCorasickBuilder::new()
+        .ascii_case_insensitive(true)
+        .build(entropy_ci_substrings.iter().map(String::as_str))
+    {
+        Ok(ac) => ac,
+        Err(error) => {
+            return Err(format!(
+                "failed to compile entropy ci_substrings Aho-Corasick automaton: {error}"
+            ))
+        }
+    };
+
     Ok(PlaceholderVocab {
         words,
         instructional_fragments,
@@ -408,6 +456,9 @@ pub(crate) fn parse_vocab(raw: &str) -> Result<PlaceholderVocab, String> {
         entropy_structural_bytes,
         entropy_length_gated,
         entropy_compound_shapes,
+        check_markers_upper_ac,
+        words_ci_ac,
+        entropy_ci_ac,
     })
 }
 

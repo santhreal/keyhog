@@ -57,7 +57,7 @@ keyhog scan app.tar --format json-envelope
 
 For a one-layer image holding a live-shaped credential, that reports the
 finding. A container member is admitted by its own leading bytes when its name
-carries no recognized extension, so an extensionless gzip or tar layer is
+contains no recognized extension, so an extensionless gzip or tar layer is
 descended into rather than treated as opaque.
 
 Extracting the tarball first works too:

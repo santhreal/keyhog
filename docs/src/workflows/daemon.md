@@ -71,7 +71,7 @@ compiled scanner. It does not use the daemon socket and does not appear in
 `daemon status`.
 
 The `watch` and `scan-system` subcommands do not accept `--daemon`. Each
-compiles and owns an in-process scanner. A running daemon neither serves nor
+compiles and defines an in-process scanner. A running daemon neither serves nor
 accelerates those commands.
 
 ## Lifecycle and readiness
@@ -96,7 +96,7 @@ and must be usable as requested. See
 
 GPU startup failures retain their stage and exit `12`. This covers required
 GPU preflight, scanner compilation, an unavailable or incompatible backend,
-and degradation during the readiness warmup. The diagnostic tells the operator
+and degradation during the readiness warmup. The diagnostic reports to the operator
 to run `keyhog backend --self-test`, repair the driver/runtime, or start with
 `--backend simd` or `--backend cpu`. An invalid backend value or unrelated
 daemon configuration error remains exit `2`.
@@ -182,7 +182,7 @@ against 1.80 s in process, and peaked at about 0.3 GB across all eight clients
 against about 4.3 GB.
 
 A daemon that will only ever serve small files still pays the full engine, so
-`daemon start` is worth it when scans are frequent, and not worth it for one
+`daemon start` is suited for frequent scans, not a single
 scan.
 
 ### Footprint over a long session
@@ -209,7 +209,7 @@ scan that arrived behind a 29.8 MB scan took 60 ms instead of its solo 0.8 ms.
 Under heavier load the ratio holds and the penalty grows: at load average 178
 the same queued 13 KB scan took 403 ms against a 2.8 ms solo.
 
-A queued client sees nothing until its result arrives. The protocol has no
+A queued client reads nothing until its result arrives. The protocol has no
 queued notice, no position, and no estimate, so a client waiting on a busy
 daemon is indistinguishable from a hung one. Use `daemon status` from another
 terminal to tell them apart: it reports `active scans`, and the control plane
@@ -235,12 +235,12 @@ keyhog daemon status --socket /private/path/keyhog.sock
 keyhog daemon stop --socket /private/path/keyhog.sock
 ```
 
-The socket carries unredacted matches between same-user processes. The server
+The socket contains unredacted matches between same-user processes. The server
 requires an owned, non-symlinked socket path, tightens a created parent to mode
 `0700`, and requires the socket itself to be mode `0600`. Both client and server
 verify the connected peer UID. A stale entry is removed only when it is an
 owned `0600` Unix socket in a trusted directory and no listener accepts a
-connection. KeyHog refuses ordinary files, symlinks, foreign owners, loose
+connection. KeyHog rejects ordinary files, symlinks, foreign owners, loose
 permissions, and a live socket rather than replacing them.
 An untrusted stale entry is not removed automatically. Correct or remove it
 after verifying the path and owner, then start the daemon again.
@@ -394,7 +394,7 @@ executable. A daemon started inside a checkout that happens to contain
 `--detectors` uses the embedded one. Their rules digests differ, so every
 default client is refused with a `detector rules` identity mismatch until the
 daemon is restarted somewhere else. The ready line names the corpus the daemon
-actually compiled, so read the count before you send work:
+compiled, so read the count before you send work:
 
 ```text
 keyhog daemon ready on <socket> (<count> detectors, wire=12, warm generation=...)
@@ -469,7 +469,7 @@ of these values to match the current client:
 For the default corpus, the detector digest is compared with the client's
 embedded rules. For an explicit replacement corpus, the client derives the
 expected digest from its own selected directory and accepts only an exact match.
-Overlay composition is not daemon-eligible. The handshake also carries the
+Overlay composition is not daemon-eligible. The handshake also contains the
 daemon-owned backend policy. It must be `autoroute` or a canonical forced backend
 label. A scan client rejects an unknown label. `daemon status` and `daemon stop`
 tolerate package, build, and detector identity staleness so you can inspect and
@@ -510,7 +510,7 @@ GPU dispatch failure after readiness returns a request error. An autorouted
 dispatch fault completes against the same stable request through the visible
 recovery contract when full coverage is possible.
 If an `auto` request fails inside the daemon, KeyHog reports the error and
-retries in process; the retry then owns its normal exit semantics, including
+retries in process; the retry then defines its normal exit semantics, including
 automatic backend recovery or `12` when GPU was explicitly required.
 
 A fatal listener accept or connection-handler spawn error prints a failure,
@@ -521,7 +521,7 @@ cleans up the same socket and leaves `daemon start` at exit `0`.
 `daemon status` against an identity-stale but wire-compatible service exits `0`
 and prints a warning. `daemon stop` can stop that service. A wire-incompatible
 service cannot be inspected or stopped through the current protocol. Stop it
-with the matching KeyHog binary or the service manager that owns it.
+with the matching KeyHog binary or the service manager that defines it.
 
 `daemon start --request-timeout-secs <N>` limits how long a connected client
 may take to deliver one complete request frame. The default is `300` seconds.

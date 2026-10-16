@@ -46,7 +46,7 @@ KeyHog also supports Git provider inventories, S3, GCS, and Azure Blob objects,
 Docker images, whole-system audits, CPU, Hyperscan, CUDA, Metal, and WGPU execution, and
 an optional Unix daemon for repeated eligible inputs. [Choose a scanning
 workflow](./capabilities.md) starts with the operator task and links each
-capability to the chapter that owns its contract.
+capability to the chapter that defines its contract.
 
 The detector corpus ships as TOML files under `detectors/`. Run
 `keyhog detectors --format json` to inspect the exact corpus embedded in the
@@ -75,7 +75,7 @@ then fail closed rather than shadowing shipped rules.
 Three things, in order of how much they matter:
 
 1. **Precision.** A scanner that emits one false positive per ten findings
-   teaches developers to ignore it. KeyHog suppresses example credentials
+   trains developers to ignore it. KeyHog suppresses example credentials
    (the Stripe docs key, the AWS sample key, the RFC 7519 specimen JWT),
    vendored bundles (minified jQuery, node_modules), and CI workflow
    `${{ secrets.NAME }}` references by default. Repository dogfood and
@@ -83,7 +83,7 @@ Three things, in order of how much they matter:
    same scanner path users run.
 
 2. **Recall.** The detector corpus is built service-by-service. For every
-   detector, the test suite carries positive shapes (env-var, JSON,
+   detector, the test suite contains positive shapes (env-var, JSON,
    YAML, header, URL), negative shapes (placeholder, EXAMPLE marker),
    and adversarial evasions (split across lines, hex/base64-encoded,
    reversed via Caesar cipher). If a shape isn't in the suite, the

@@ -30,7 +30,7 @@ everything else is data, tooling, docs, or eval harness.
 | Dir | Role |
 |-----|------|
 | `crates/` | Rust workspace: runtime code only (six crates; see [below](#the-crates-and-their-layering)). |
-| `detectors/` | Embedded detector TOMLs (data, not code). One file = one secret type; drop a file to add a detector without rewriting detection logic. The generated catalog owns the current count. See the [detector reference](./detectors.md). |
+| `detectors/` | Embedded detector TOMLs (data, not code). One file = one secret type; drop a file to add a detector without rewriting detection logic. The generated catalog defines the current count. See the [detector reference](./detectors.md). |
 | `rules/` | Tier-B data (e.g. `aws-canary-accounts.toml`); same drop-in model as `detectors/`. |
 | `ml/` | Python pipeline for embedded `weights.bin`: harvest → blend → train → gate (`retrain_loop.sh`). Trains; `crates/scanner` serves. |
 | `benchmarks/` | Eval harness (`bench/`): corpora, scanner adapters, scorer, regression/differential `gate`, README leaderboard. |
@@ -42,7 +42,7 @@ everything else is data, tooling, docs, or eval harness.
 | `demo/` | Self-contained demo deployment (app + infra + scripts). |
 | `metrics/` | Star and project-health metrics. |
 
-Internal execution planning lives in the private Santh monorepo, not in this
+Internal execution planning is in the private Santh monorepo, not in this
 public repository.
 
 ---
@@ -73,28 +73,28 @@ CLI/transport/UI).
 `scanner` and `verifier` depend on `core`. `scanner` also records fixed stages
 through `profile`. `sources` depends on `core` and, for network-enabled source
 features, reuses `verifier` for shared SSRF and request-signing policy. `cli`
-selects features, composes all five libraries, and owns the operator-run profile
+selects features, composes all five libraries, and defines the operator-run profile
 session.
 
-| Crate | Owns | Start reading at |
+| Crate | Defines | Start reading at |
 |-------|------|------------------|
 | **`core`** | Embedded detector loading, detector specs, the `Finding`/`Credential` types, reporters, dedup, allowlists, the Merkle incremental-scan cache, and confidence-calibration data. | `crates/core/src/lib.rs`, `spec.rs`, `finding.rs`, `report/` |
 | **`profile`** | Allocation-free fixed-stage timing, causal run identity, state transitions, process resource sampling, and portable JSON and text profile records. | `crates/profile/src/lib.rs` |
 | **`scanner`** | The detection engine: hardware probing and backend dispatch, prefilters, compile, scan, decode-through, entropy, ML confidence, multiline handling, and suppression. Persisted CLI route selection is intentionally not owned here. | `crates/scanner/src/compiled_scanner/` (construction and lifecycle), `engine/mod.rs` (execution flow), `adjudicate/`, `pipeline/`, `lib.rs` |
 | **`sources`** | Where bytes come from: filesystem, Git (staged/diff/history), stdin, Docker, S3, GCS, Azure Blob, GitHub, GitLab, Bitbucket, web, HAR, strings, and optional binary/decompiler inputs. | `crates/sources/src/lib.rs` |
 | **`verifier`** | Turning a *candidate* into a *verified-live* credential: per-detector verify endpoints, SSRF/bogon guards, OOB, rate limiting. | `crates/verifier/src/lib.rs`, `verify/`, `ssrf.rs` |
-| **`cli`** | The user-facing binary: argument parsing, the scan orchestrator, daemon/watch, baselines, calibrate, hook installer, output formatting. | `crates/cli/src/lib.rs`, `args/`, `orchestrator/`; `main.rs` owns process/signal startup only |
+| **`cli`** | The user-facing binary: argument parsing, the scan orchestrator, daemon/watch, baselines, calibrate, hook installer, output formatting. | `crates/cli/src/lib.rs`, `args/`, `orchestrator/`; `main.rs` defines process/signal startup only |
 
 The crate graph does not imply that every build exposes every source or
 backend. The official and default CLI builds enable the full documented
-network-source set. The `portable`, `ci-lean`, and `ci` profiles deliberately
+network-source set. The `portable`, `ci-lean`, and `ci` profiles
 remove different accelerator or source features. Library callers select their
 own feature set.
 
 ## Load-bearing boundary owner map
 
 The crate DAG is not the whole shipping boundary. The Action entrypoint,
-automatic crates.io publication, and each load-bearing library or CLI handoff
+automatic crates.io publication, and each primary library or CLI handoff
 have one definitional owner. Wrappers may compose these owners; they must not
 restate their policy.
 
@@ -121,7 +121,7 @@ change instead of leaving a plausible but stale owner behind.
 
 ## The pipeline: bytes → finding
 
-The end-to-end flow, stage by stage, each pointing at the crate/module that owns
+The end-to-end flow, stage by stage, each pointing at the crate/module that defines
 it. The scan engine's own header doc
 ([`engine/mod.rs`](https://github.com/santhreal/keyhog/blob/main/crates/scanner/src/engine/mod.rs)) is the authoritative,
 method-level version of steps 2-4.
@@ -139,7 +139,7 @@ method-level version of steps 2-4.
    It produces one "which detectors may match here" bitmap plus optional
    confirmed-anchor and generic-keyword positions per chunk. The fast
    prefilters (`simdsieve`, `bigram_bloom`, `alphabet_filter`, `prefix_trie`)
-   live at `crates/scanner/src/`; detector-to-matcher construction lives in
+   live at `crates/scanner/src/`; detector-to-matcher construction is in
    `compiled_scanner/compile.rs`, `compiler.rs`, and `compiler/`.
 3. **Phase 2: extraction** (the shared tail, identical for CPU and GPU):
    per-chunk `confirmed → phase2 capture → generic → entropy → ML`
@@ -149,7 +149,7 @@ method-level version of steps 2-4.
 4. **Finish raw matches:** scanner-owned suppression, confidence, and
    cross-chunk seam reassembly run in `engine/scan_postprocess/`,
    `engine/process.rs`, and `engine/boundary/mod.rs`. Confidence + ML scoring live in
-   `confidence/`, `ml_scorer.rs`, and `ml_scorer/`; context inference lives in
+   `confidence/`, `ml_scorer.rs`, and `ml_scorer/`; context inference is in
    `context/`. The per-match policy here (suppression gates ·
    example/placeholder · checksum · confidence penalties) is governed by one
    invariant; see **Match adjudication: one policy, one chokepoint** below.
@@ -200,11 +200,11 @@ Within the shared SIMD/GPU coalesced tail, detector, generic, and entropy
 candidates retain their per-chunk state while precomputed ML feature rows are
 scored in one deterministic CPU batch. Final scores return to the originating
 chunk before its cap, decode postprocess, seam handling, and report adjudication
-run. Every backend uses this confidence path; VYRE owns GPU detection only.
+run. Every backend uses this confidence path; VYRE defines GPU detection only.
 
 ### Execution surfaces
 
-The CLI owns process-level routing. The scanner crate exposes explicit backend
+The CLI defines process-level routing. The scanner crate exposes explicit backend
 execution; it does not read the autoroute cache or silently choose from local
 hardware. This keeps library calls deterministic and makes CLI routing
 inspectable.
@@ -271,7 +271,7 @@ The arrows are ownership boundaries:
 | CLI orchestrator | Sources, route decisions, selected runtime, verifier, reporters | Detector-local execution ownership |
 | Reporters | Redacted findings and coverage state | Detector compilation, source acquisition, backend selection |
 
-`install.sh` and `install.ps1` generate a protected 32-byte signing key under the per-user cache root and run `keyhog compile-execution-packs` before autoroute calibration, so detector compilation is paid once at install instead of on every scan. The compiler builds every policy pack in a sibling staging directory, fsyncs every pack, signature, manifest, and directory, moves any current generation aside as a backup, then publishes by one rename and restores the backup if that rename fails. A failed pack build fails the install: the installer refuses the new binary and rolls it back to the previous working one. With no installed generation a scan parses the embedded detector corpus in-process, which is slower and is reported as a warning rather than substituted silently.
+`install.sh` and `install.ps1` generate a protected 32-byte signing key under the per-user cache root and run `keyhog compile-execution-packs` before autoroute calibration, so detector compilation is paid once at install instead of on every scan. The compiler builds every policy pack in a sibling staging directory, fsyncs every pack, signature, manifest, and directory, moves any current generation aside as a backup, then publishes by one rename and restores the backup if that rename fails. A failed pack build fails the install: the installer rejects the new binary and rolls it back to the previous working one. With no installed generation a scan parses the embedded detector corpus in-process, which is slower and is reported as a warning rather than substituted silently.
 
 `keyhog doctor` reports the installed pack path, authenticates the manifest and every detached signature, and fails health when route evidence is missing its pack binding or names a different generation.
 
@@ -382,7 +382,7 @@ fastest-correct.
 ### Process and exit ownership
 
 The library crates do not terminate the process. `core`, `scanner`, `sources`,
-and `verifier` return values or errors to their caller. The CLI owns the
+and `verifier` return values or errors to their caller. The CLI defines the
 operator-visible exit:
 
 1. `crates/cli/src/main.rs` installs the Unix SIGINT handler before starting the
@@ -390,7 +390,7 @@ operator-visible exit:
 2. `crates/cli/src/lib.rs::cli_main` dispatches subcommands. Successful
    subcommands return `std::process::ExitCode`; setup and execution errors pass
    through `cli_error_exit_code`.
-3. `crates/cli/src/orchestrator/run.rs::resolve_scan_exit` owns completed scan
+3. `crates/cli/src/orchestrator/run.rs::resolve_scan_exit` defines completed scan
    precedence: scanner panic, live credentials, findings, incremental-cache
    failure, incomplete source coverage, then clean success. Autoroute
    calibration has its explicit success path.
@@ -448,7 +448,7 @@ The CLI also releases the decoded detector corpus before a non-verifying scan;
 only `--verify` retains it for verifier-plan construction. The flexible
 structure remains a configuration, verification, and introspection schema, not
 a second owner during ordinary scanning.
-The interner owns each unique string once as a lookup-map key, with no parallel
+The interner defines each unique string once as a lookup-map key, with no parallel
 arena. Resolution and cross-detector relation indexes clone those same
 allocations instead of storing another copy of each detector ID.
 
@@ -479,7 +479,7 @@ construction, the existing scanner does not change. Compile another scanner to
 use the new decoder.
 
 **The rule.** Emission paths produce `CandidateMatch` values and typed signals;
-`adjudicate_match` owns the ordered suppression verdict. Path owners may compute
+`adjudicate_match` defines the ordered suppression verdict. Path owners may compute
 context-specific facts (entropy shape, generic bridge boundaries, named
 detector policy), but they do not invent an untyped final drop reason:
 
@@ -496,7 +496,7 @@ adjudicate_match(CandidateMatch, MatchCtx)
    Verdict::Suppressed(stage_name)  |  Verdict::Reported(confidence)
 ```
 
-`MatchCtx` carries one explicit signal family at a time. The `Verdict` names the
+`MatchCtx` contains one explicit signal family at a time. The `Verdict` names the
 deciding `StageId`, which is what dogfood telemetry records. Shared shape policy
 lives under `suppression::shape`; path-specific callers convert its result into
 the matching typed signal before adjudication.
@@ -528,14 +528,14 @@ ml/retrain_loop.sh     one command: harvest → train → (--write) ship weights
 
 Because the model is compile-time-embedded, a new model is only observable after
 a rebuild, which is why `--verify` rebuilds before benching. The adjacent
-`crates/scanner/src/model_card.json` carries the model hash, training inputs,
-and gate metrics; `build.rs` refuses a card/weights mismatch and embeds the
+`crates/scanner/src/model_card.json` contains the model hash, training inputs,
+and gate metrics; `build.rs` rejects a card/weights mismatch and embeds the
 summary shown by `keyhog --version`.
 
 Model-driven confidence reductions require an entry in
 `crates/scanner/src/pattern_calibration.json` for the exact detector corpus
 digest, detector ID, pattern index, candidate channel, source role, and
-pre-verification context. Each entry carries positive and negative held-out
+pre-verification context. Each entry contains positive and negative held-out
 support, recall at the blocking floor, Brier score, and expected calibration
 error. Missing, stale, unsupported, or under-supported entries abstain. Generic
 assignment and entropy channels cannot use pattern calibration.

@@ -104,7 +104,7 @@ Examples include:
 A normal automatic scan needs a valid autoroute decision for the exact workload
 class, detector corpus, config, binary, and host. Without one there is no
 measured-correct backend to select, so the scan fails closed: nothing is
-scanned, stdout carries no findings document, and stderr names the state and the
+scanned, stdout contains no findings document, and stderr names the state and the
 repair. An empty findings document reads as a clean tree, so an unroutable scan
 writes none. KeyHog never benchmarks at scan time and never substitutes scalar
 execution for a missing decision. Inspect the state and repair it with:
@@ -184,10 +184,10 @@ If no finding outcome takes precedence, the scan returns `13`. Fix the source,
 credentials, ref, permissions, or limit and scan the uncovered input again.
 
 The report is always written, including when every source failed to read. That
-report carries `scan covered nothing` plus the reason each source failed, so a
+report contains `scan covered nothing` plus the reason each source failed, so a
 CI job never has to pre-seed a placeholder file to have something to publish.
 
-A report that cannot be written is a different failure and says so. It exits
+A report that cannot be written is a different failure and reports that state. It exits
 `2`, because the output path is operator-correctable, and names the path and
 the I/O error:
 
@@ -200,12 +200,12 @@ The two used to share a signature; they no longer do.
 
 ### Not every coverage gap reaches the exit code
 
-Each gap reason carries one of two severities, and the severity decides whether
+Each gap reason contains one of two severities, and the severity determines whether
 it can produce `13`:
 
 | Severity | What it means | Exit with no findings |
 | --- | --- | --- |
-| Advisory | The bytes were examined. A file was deliberately skipped, or a derived layer such as decode-through was not expanded. | `0` |
+| Advisory | The bytes were examined. A file was skipped, or a derived layer such as decode-through was not expanded. | `0` |
 | Failing | The bytes were not covered, or their line identity is untrustworthy. | `13` |
 
 Advisory reasons include `default exclusion policy (...)`,
@@ -216,9 +216,9 @@ Advisory reasons include `default exclusion policy (...)`,
 include `unreadable (permission denied or I/O error)`,
 `source emitted error rows`, `Git object unreadable or wrong object kind`,
 `archive or container extraction truncated`, and `scan covered nothing`. The
-full split lives in `severity()` in `crates/cli/src/reporting.rs`.
+full split is in `severity()` in `crates/cli/src/reporting.rs`.
 
-One scan can carry both classes, and then the failing one decides. A file over
+One scan can carry both classes, and then the failing one determines. A file over
 `--max-file-size` is advisory on its own, but the source that could not read it
 also emits `source emitted error rows`, which is failing, so that scan exits
 `13`. Read the reasons rather than counting the rows.

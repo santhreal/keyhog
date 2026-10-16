@@ -17,7 +17,7 @@ the original bytes.
 ## Detection mechanisms
 
 KeyHog does not use one universal test for "secret-like." It composes several
-mechanisms, and their roles are deliberately different:
+mechanisms, and their roles are different:
 
 | Mechanism | Role | Can create a candidate? |
 |---|---|---|
@@ -33,7 +33,7 @@ mechanisms, and their roles are deliberately different:
 | Shape, placeholder, path, and context policy | Rejects examples, references, prose, identifiers, and context-specific noise; entropy owners compile their isolated-token floors and lengths from their detector TOML `plausibility` table | No; precision gates |
 | Checksums and structural validators | Proves or rejects formats that carry intrinsic validity bits or grammar | Adjusts acceptance/confidence |
 | On-device MoE scoring | Scores ambiguous candidates using local features; never sends content away | Adjusts confidence |
-| Live verification | Optionally asks the owning service whether a surviving credential is active | Adds a verdict after detection |
+| Live verification | Optionally queries the target service whether a surviving credential is active | Adds a verdict after detection |
 
 Regex, generic extraction, entropy, and decode-through therefore find different
 candidate classes. Named regexes and generic assignment extraction create
@@ -58,7 +58,7 @@ model is therefore not a general regex
 false-positive veto. Its current feature record identifies detector and
 pattern-versus-entropy channel, but not the exact matched pattern. Pattern-local
 weak-anchor policy remains outside model conditioning until that provenance is
-carried end to end. The retrainer refuses mismatched detector/channel records
+carried end to end. The retrainer rejects mismatched detector/channel records
 and now requires positive and negative held-out support for every `blend` or
 `authoritative` channel before writing another model.
 
@@ -188,7 +188,7 @@ invariants, not a second source of per-detector tuning.
 These settings do not all use one generic “last value wins” rule:
 
 - **Generic keyword ownership:** the highest `entropy_policy_priority` among
-  detectors claiming the normalized assignment keyword owns entropy and BPE
+  detectors claiming the normalized assignment keyword defines entropy and BPE
   policy. Equal priorities use stable detector identity, independent of corpus
   order. Custom detector policy keywords join entropy discovery directly;
   they do not need to be repeated in `[scan].secret_keywords`.
@@ -197,12 +197,12 @@ These settings do not all use one generic “last value wins” rule:
   `service` string and detector-ID length do not change specificity. Unknown
   finding identities fail checked resolution instead of inheriting embedded or
   service-name behavior.
-- **Entropy entry roles:** `entropy_roles` selects the detector that owns each
+- **Entropy entry roles:** `entropy_roles` selects the detector that defines each
   corpus-level entry path. A compiled corpus may have at most one owner for
   each role. Missing roles remain disabled, and duplicate owners fail scanner
   construction. Role selection never depends on a detector ID spelling.
 - **Weak anchors:** detector-level `weak_anchor = true` applies to every pattern,
-  while the same field inside `[[detector.patterns]]` governs that exact regex. Each such detector owns `entropy_high`
+  while the same field inside `[[detector.patterns]]` governs that exact regex. Each such detector defines `entropy_high`
   and length-bucketed `entropy_floor`. Scanner construction rejects an explicit
   weak anchor without that local policy. KeyHog never guesses this semantic
   choice from regex text, and `min_confidence` does not disable it. The compiled
@@ -225,7 +225,7 @@ These settings do not all use one generic “last value wins” rule:
   into concrete detector-indexed values; a missing field is an error, not a
   runtime default. Schema defaults remain only for non-owning programmatic
   detector values that never supply entropy policy. The scan-wide
-  `entropy_threshold` is deliberately not a blanket
+  `entropy_threshold` is not a blanket
   replacement for all four bands. On the phase-2 generic bridge it tightens
   only when it exceeds the owning detector's high band. On the entropy scanner,
   a value above that high band tightens keyword and isolated candidates; a
@@ -247,7 +247,7 @@ These settings do not all use one generic “last value wins” rule:
   detector-local threshold for active entropy owners. Equaling
   `entropy_very_high` means no sensitive-path relaxation; a lower declared
   value is an explicit detector-owned recall choice.
-- **Credential plausibility:** the required detector `plausibility` block owns
+- **Credential plausibility:** the required detector `plausibility` block defines
   its entropy floors, length carve-out, alphabetic admission, and repeated,
   identifier, and dash-segment rejection choices. There is no production-path
   fallback for an active entropy owner.
@@ -316,7 +316,7 @@ separate:
 - The autoroute **rules identity** also describes the active detector
   specifications. Operator confidence-floor overrides are composed later so
   different scan presets can coexist in one calibration cache. It is the
-  canonical corpus identity an execution pack carries, so a scan that compiles
+  canonical corpus identity an execution pack contains, so a scan that compiles
   the corpus and a scan that hydrates an installed generation of that same
   corpus read the same calibrated table. Self-test fixtures and declaration
   order are excluded.
@@ -350,7 +350,7 @@ cross-source deduplication, verification, and output formatting run after
 selection. Missing or stale exact evidence is an error. Calibration never
 relaxes a detector to make a backend look faster.
 
-Two kinds of change exist, and keeping them apart is the whole point of the
+Two kinds of change exist, and keeping them apart is the purpose of the
 parity model. A **policy** change is allowed to change findings. An
 **execution** change is not. A finding-set difference across an execution change
 is a parity failure, which KeyHog treats as a defect rather than a result.
@@ -409,7 +409,7 @@ A file becomes one or more **chunks**. A chunk is `{data: str, metadata:
   build/, etc.).
 - Splits files larger than the 1 MiB window size into overlapping ~1 MiB
   windows so a single giant log file doesn't blow scratch memory. Each
-  window carries its absolute base byte offset and base line so findings
+  window contains its absolute base byte offset and base line so findings
   report the real file `offset`/`line`, not the per-window one.
   Cross-window secrets are reassembled in stage 4.
 - Decodes UTF-16 BOM files into UTF-8 (PowerShell / .NET configs).
@@ -431,7 +431,7 @@ Three gates, in order, each cheaper than the next:
 
 2. **Bigram bloom.** A 4096-bit bloom filter of 2-byte sequences from
    detector keyword prefixes. A chunk with no overlapping bigram becomes a
-   prefilter miss. This cheaply recognizes source that carries no relevant
+   prefilter miss. This cheaply recognizes source that contains no relevant
    anchor vocabulary.
 
 After these screens, ordinary misses stop. Decode-shaped misses instead take
@@ -464,7 +464,7 @@ explicit patterns for strongly structured envelopes such as JSON `"secret"`,
 `"token"`, or `"apiKey"` fields; both mechanisms remain owned by the same
 detector TOML instead of a central compatibility detector.
 
-A detector's `.toml` carries:
+A detector's `.toml` contains:
 
 - `id`, `name`, `service`, `severity`, `keywords`
 - zero or more `patterns`, each with `regex` + `group` + optional `description`
@@ -481,7 +481,7 @@ Detectors fall into two camps:
 - **Service-anchored.** Regex requires a service-specific keyword
   (`AWS_SECRET_ACCESS_KEY=`, `stripe.com/v1/`, `dn_` Deepnote prefix).
   These have HIGH precision: the keyword itself is positive evidence,
-  not just a hint.
+  not only a hint.
 
 - **Generic / entropy discovery** (`generic-password`, `entropy-api-key`,
   `entropy-token`). Triggered by entropy + assignment shape only -
@@ -489,7 +489,7 @@ Detectors fall into two camps:
   precision; suppression filters do most of the work.
 
   Surviving candidates also pass a BPE token-efficiency gate. Shannon entropy
-  asks how evenly bytes are distributed; token efficiency asks how readily a
+  measures how evenly bytes are distributed; token efficiency measures how readily a
   fixed subword vocabulary compresses the value. Dotted API names and prose can
   have high Shannon entropy but tokenize into a few common pieces, while opaque
   secrets usually require many short tokens. The mechanisms are complementary,
@@ -532,7 +532,7 @@ Even a regex match isn't always a credential. Stage 4 filters:
     cases. A generic `token=<uuid>` remains an identifier; an
     `Authorization: Bearer <uuid>` value is a credential because the Bearer
     envelope supplies the missing evidence. Public salts and nonces are not
-    generic secrets. A detector for a product whose field is genuinely secret
+    generic secrets. A detector for a product whose field is secret
     despite that name must own the product syntax explicitly.
 - **Path-based suppressions** - vendored bundles (`node_modules/`,
   `wp-includes/`, `bower_components/`), CI workflow files (where
@@ -597,7 +597,7 @@ decoded text proves, at the offset of the encoded value.
 
 ## Pattern provenance and secret-safe evidence
 
-Every finding emitted by KeyHog carries a structured `provenance` record inside
+Every finding emitted by KeyHog contains a structured `provenance` record inside
 its `evidence` block. This metadata identifies the exact pattern and context
 that produced the match without disclosing secret material:
 

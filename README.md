@@ -521,7 +521,7 @@ only when the workflow requires it:
 | Lower-noise large inventory | `--precision` | In process for repository collections, history, and cloud sources | The preset raises confidence floors and disables entropy discovery. It can miss lower-confidence credentials. |
 | TB-scale directory, history, archive, remote, or cloud inventory on Unix | Default | `keyhog daemon start --mass`, then `--daemon=mass` | Batches stay bounded at 8 MiB and 1,024 chunks. Preserve the terminal coverage report and GPU execution receipt. |
 | Live credential validation | Default | In process | Add `--verify` explicitly. Verification sends credential-derived requests to providers. |
-| Linux no-swap scan | Default plus `--lockdown` | In process; incremental cache disabled | Lockdown refuses verification, plaintext secrets, fast mode, and completeness-reducing switches. |
+| Linux no-swap scan | Default plus `--lockdown` | In process; incremental cache disabled | Lockdown rejects verification, plaintext secrets, fast mode, and completeness-reducing switches. |
 
 `--fast`, `--deep`, and `--precision` are mutually exclusive detection presets.
 `--lockdown` is a fail-closed execution mode, not a fourth preset. Explicit
@@ -655,7 +655,7 @@ Browse detector authoring and inspection in the
   bounded findings from another detector. Resolution stays deterministic across
   input order, and invalid targets, contradictions, or dependency cycles fail
   corpus compilation.
-- **Evidence verdicts.** Every finding carries an exact `review`, `likely`, or
+- **Evidence verdicts.** Every finding includes a `review`, `likely`, or
   `confirmed` tier plus a canonical reason code. Intrinsic checksum or grammar
   proof, required companions, and live verification produce confirmed evidence;
   strong vendor-specific shape in a credential-bearing role produces likely
@@ -852,7 +852,7 @@ keyhog scan . --daemon=off --lockdown
 ```
 
 It locks current and future memory, disables core dumps and the incremental
-cache, remains in process, and refuses verification, plaintext output, fast
+cache, remains in process, and rejects verification, plaintext output, fast
 mode, and completeness-reducing switches. It fails on unsupported platforms or
 insufficient locked-memory capacity. See
 [hardening and data handling](https://santhreal.github.io/keyhog/hardening.html).
@@ -880,11 +880,11 @@ plaintext. Convert them with `RawMatch::to_redacted`, or use final
 
 The [architecture guide](docs/src/architecture.md) defines crate ownership,
 backend contracts, recovery receipts, source helpers, and safe reporting
-boundaries. Crate-level Rust documentation owns the complete API.
+boundaries. Crate-level Rust documentation defines the complete API.
 
 ## Configure policy with explicit precedence
 
-Repository policy lives in `.keyhog.toml`:
+Repository policy is defined in `.keyhog.toml`:
 
 ```toml
 verify = false
@@ -915,13 +915,13 @@ KeyHog keeps orchestration at the edge and domain behavior in libraries:
 ```text
 sources -> scanner -> suppression/evidence -> reporting
                  \-> optional verifier
-CLI and Action own process, transport, and exit semantics.
+CLI and Action control process, transport, and exit semantics.
 ```
 
-Detector definitions remain data under `detectors/`. `keyhog-core` owns
-detector and finding types, `keyhog-scanner` owns matching and execution
-backends, `keyhog-sources` owns input acquisition, `keyhog-verifier` owns live
-checks, and `keyhog-cli` owns operator workflows.
+Detector definitions remain data under `detectors/`. `keyhog-core` defines
+detector and finding types, `keyhog-scanner` implements matching and execution
+backends, `keyhog-sources` implements input acquisition, `keyhog-verifier` implements live
+checks, and `keyhog-cli` implements operator workflows.
 
 Start with the [architecture guide](docs/src/architecture.md) for the repository
 map, dependency direction, bytes-to-finding pipeline, routing ownership, and

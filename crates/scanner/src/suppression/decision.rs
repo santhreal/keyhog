@@ -57,9 +57,9 @@ pub(super) fn evasion_decoder_reason(source_type: Option<&str>) -> Option<&'stat
 /// 16-byte floor and an all-lowercase arm) (the two thresholds differ by design).
 pub(crate) fn looks_like_prose_whitespace_run(s: &str) -> bool {
     s.len() > 30
-        && s.chars().filter(|c| c.is_whitespace()).count() >= 2
+        && s.chars().filter(|c| c.is_whitespace()).take(2).count() >= 2
         && s.split_whitespace()
-            .any(|tok| tok.len() >= 3 && tok.chars().all(|c| c.is_ascii_lowercase()))
+            .any(|tok| tok.len() >= 3 && tok.bytes().all(|b| b.is_ascii_lowercase()))
 }
 
 pub(super) fn suppression_stage_inner(
@@ -192,14 +192,11 @@ pub(super) fn suppression_stage_inner(
     // stripping). Substring matches in long credentials produce false
     // suppressions on real secrets.
     if !bypass_shape_gates {
+        let cred_len = credential.len().max(1);
         for seq in &*FAKE_SEQUENCES {
-            if upper.contains(seq.as_str()) {
-                // Only suppress short credentials dominated by the fake sequence,
-                // not long ones where it's a small substring.
-                let seq_ratio = seq.len() as f64 / credential.len().max(1) as f64;
-                if seq_ratio > 0.4 {
-                    return suppress("fake_sequence");
-                }
+            let seq_ratio = seq.len() as f64 / cred_len as f64;
+            if seq_ratio > 0.4 && upper.contains(seq.as_str()) {
+                return suppress("fake_sequence");
             }
         }
     }
@@ -450,15 +447,18 @@ pub(super) fn suppression_stage_inner(
         context::CodeContext::Documentation | context::CodeContext::Comment
     ) {
         let trimmed = credential.trim_matches(|c: char| !c.is_alphanumeric());
-        let trimmed_upper = trimmed.to_uppercase();
-        if trimmed_upper == "TOKEN"
-            || trimmed_upper == "KEY"
-            || trimmed_upper == "SECRET"
-            || trimmed_upper == "PASSWORD"
-            || trimmed_upper == "API_KEY"
-            || trimmed_upper == "API_TOKEN"
-            || trimmed_upper == "YOUR_TOKEN"
-            || trimmed_upper == "YOUR_API_KEY"
+        if [
+            "TOKEN",
+            "KEY",
+            "SECRET",
+            "PASSWORD",
+            "API_KEY",
+            "API_TOKEN",
+            "YOUR_TOKEN",
+            "YOUR_API_KEY",
+        ]
+        .iter()
+        .any(|word| trimmed.eq_ignore_ascii_case(word))
         {
             return suppress("doc_placeholder_word");
         }
@@ -466,9 +466,9 @@ pub(super) fn suppression_stage_inner(
 
     // ── 8. Path-based heuristic ──
     if let Some(path) = path {
-        let is_example_path =
-            crate::platform_compat::path_has_any_component(path, &*EXAMPLE_PATH_COMPONENTS);
-        if is_example_path && super::doc_markers::upper_contains_token(&upper, "EXAMPLE") {
+        if super::doc_markers::upper_contains_token(&upper, "EXAMPLE")
+            && crate::platform_compat::path_has_any_component(path, &*EXAMPLE_PATH_COMPONENTS)
+        {
             return suppress("example_path_marker");
         }
     }

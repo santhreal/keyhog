@@ -1,6 +1,6 @@
 # Detectors
 
-A **detector** is a single TOML file that teaches KeyHog one shape of
+A **detector** is a single TOML file that defines one shape of
 credential. The embedded corpus is generated from `detectors/*.toml`; query the
 running binary for its exact corpus size rather than relying on a number copied
 into documentation.
@@ -11,7 +11,7 @@ KeyHog counts **detectors** and **patterns** separately. A detector is one
 TOML file; each file may define one or more `[[detector.patterns]]` rows.
 The startup banner's parenthesized pattern total is the compiled scanner
 count after the engine expands those rows (and related trigger keywords)
-into the literal and regex slots it actually runs, so it is always larger
+into the literal and regex slots it runs, so it is always larger
 than the raw TOML row count. Use `keyhog detectors --format json | jq length` for
 the embedded detector count; the banner line shows the live compiled total
 for your binary.
@@ -62,7 +62,7 @@ follows the same shape.
 Verification success and metadata `json_path` fields use the single rooted
 response-selector grammar documented in [Verification](./verification.md#what-live-means).
 
-Each shipped detector owns at least one canonical positive/negative truth pair:
+Each shipped detector defines at least one canonical positive/negative truth pair:
 
 ```toml
 [[detector.tests]]
@@ -113,7 +113,7 @@ model evidence without letting an uncalibrated model veto structural evidence;
 extraction. Normal scans use these detector values. An explicitly supplied
 `--ml-weight` is a scan-wide diagnostic or benchmark override. Detectors that
 do not own entropy policy set `entropy_mode = "disabled"`.
-The model input also carries detector facts from this same TOML: exact service
+The model input also contains detector facts from this same TOML: exact service
 context, entropy-policy/phase-2 ownership, weak-anchor and structural-password-slot
 classification, verification, required companions, and the pattern or entropy
 candidate channel. Entropy candidates additionally carry a one-hot family read
@@ -136,7 +136,7 @@ define the long-value penalty. The seven context multipliers define how
 assignment, string-literal, unknown, documentation, comment, test, and encrypted
 source contexts affect this detector before and after model scoring. The two
 context-suppression thresholds decide when a comment, test, documentation, or
-encrypted candidate is too weak to report. The nested `post_match` policy owns
+encrypted candidate is too weak to report. The nested `post_match` policy defines
 the placeholder, byte-diversity, repeated-run, decoded-envelope, fixture-path,
 and post-model context adjustments. `data_envelope_multiplier` is present only
 when decoded payload evidence applies to that detector. A named detector declares
@@ -271,7 +271,7 @@ abstaining confidence and never suppresses a finding.
 schema-3 finding policy. Unknown enum spellings, `unknown` source-role entries,
 and duplicate list entries fail corpus validation.
 
-`detector.patterns[]` - one or more regexes. Each carries:
+`detector.patterns[]` - one or more regexes. Each contains:
 
 - `regex` - the pattern. Every regex is compiled `case_insensitive`, so
   it matches both cases without explicit alternation. To make a single
@@ -352,7 +352,7 @@ localhost, a generic decoder site, or an unresolved tenant placeholder to make
 a non-verifiable detector appear live-capable.
 
 `detector.verify.metadata[]` maps provider responses to report evidence. Each
-entry owns three fields in this detector TOML:
+entry defines three fields in this detector TOML:
 
 - `name`: a reviewed provider-neutral semantic role. Unknown and duplicate
   canonical roles fail detector validation.
@@ -424,9 +424,9 @@ Each lift stops at its declared maximum, and the final score stops at
 *   **`sensitive_path_entropy_very_high`** (float, required for active entropy owners): Per-detector keyword-free threshold for clearly sensitive paths. It must not exceed `entropy_very_high`; omission is invalid rather than an undocumented scanner-wide discount.
 *   **`plausibility.keyword_free_operator_margin`** (float, required only for the `keyword-free` role owner): Margin added to the resolved Tier-A `entropy_threshold` before keyword-free admission. The effective floor is `max(path-specific entropy_very_high, entropy_threshold + keyword_free_operator_margin)`; no scanner-owned margin is applied.
 *   **`entropy_fallback`** (table, required for active entropy owners): Identity metadata for synthetic entropy findings owned by this detector. `class` is one of `generic`, `password`, `token`, or `api-key`; `id` must use the `entropy-` namespace; and `name`/`service` must be non-empty. Both regex-kind detectors that set `entropy_policy_priority` and phase-2 generic owners must declare this block. The primary detector's reporting `service` may name any taxonomy and does not grant or deny entropy ownership. Omitting the block is a compile error, never a compatibility identity.
-*   **`entropy_fallback_confidence`** (inline table, required for active entropy owners): Maps this detector's Shannon evidence to report confidence. `low_entropy_max` caps candidates below `entropy_high`; `high_entropy` and `very_high_entropy` are the base scores for those detector thresholds; `keyword_lift` applies only when a configured keyword owns the candidate; and `max_confidence` caps the result. Every value must be a finite probability, and the three base tiers must be monotonic. The scanner does not supply confidence tiers for an omitted policy.
-*   **`generic_assignment_confidence`** (table, required for active entropy owners): Maps generic assignment evidence to confidence for the detector that owns the assignment keyword. The five context fields choose the base score. `entropy_reference`, `entropy_gain_per_bit`, and `entropy_lift_max` define the entropy lift. `length_reference`, `length_gain_per_byte`, and `length_lift_max` define the byte-length lift. Every base, gain, lift cap, and maximum must be a finite value from 0 to 1. `entropy_reference` must be from 0 to 8. The scanner does not supply a hidden assignment-confidence policy.
-*   **`entropy_roles`** (string array): Corpus-level entry roles owned by this detector. `keyword-free` owns anchor-free high-entropy candidates, `isolated-bare` owns detector-shaped bare candidates, and `unclaimed-keyword` owns configured credential keywords not claimed by another detector. A role may have only one owner in a compiled corpus. Omission disables that entry path for a focused custom corpus; the scanner never substitutes a built-in detector ID or global policy.
+*   **`entropy_fallback_confidence`** (inline table, required for active entropy owners): Maps this detector's Shannon evidence to report confidence. `low_entropy_max` caps candidates below `entropy_high`; `high_entropy` and `very_high_entropy` are the base scores for those detector thresholds; `keyword_lift` applies only when a configured keyword defines the candidate; and `max_confidence` caps the result. Every value must be a finite probability, and the three base tiers must be monotonic. The scanner does not supply confidence tiers for an omitted policy.
+*   **`generic_assignment_confidence`** (table, required for active entropy owners): Maps generic assignment evidence to confidence for the detector that defines the assignment keyword. The five context fields choose the base score. `entropy_reference`, `entropy_gain_per_bit`, and `entropy_lift_max` define the entropy lift. `length_reference`, `length_gain_per_byte`, and `length_lift_max` define the byte-length lift. Every base, gain, lift cap, and maximum must be a finite value from 0 to 1. `entropy_reference` must be from 0 to 8. The scanner does not supply a hidden assignment-confidence policy.
+*   **`entropy_roles`** (string array): Corpus-level entry roles owned by this detector. `keyword-free` defines anchor-free high-entropy candidates, `isolated-bare` defines detector-shaped bare candidates, and `unclaimed-keyword` defines configured credential keywords not claimed by another detector. A role may have only one owner in a compiled corpus. Omission disables that entry path for a focused custom corpus; the scanner never substitutes a built-in detector ID or global policy.
 *   **`entropy_shapes`** (one array-table entry required for active entropy owners): Declarative isolated-shape policy owned by this detector. The entry declares a `charset`, `entropy_floor`, `special_min_length`, optional fixed-width `grouping`, and explicit diversity requirements such as `require_group_alpha_digit` or `require_non_hex_alpha`. A grouped candidate's exact length is derived from its group count, group width, and separator, so adding a shape family does not require a scanner enum variant. Multiple entries are rejected rather than silently ignored or ambiguously combined.
 *   **`plausibility`** (inline table, required for active entropy owners): Complete strict candidate-shape policy. Its entropy floors, length boundaries, diversity requirements, isolated-token shapes, and rejection switches are all required detector data. `second_half_min_len`, `unique_chars_min_len`, `min_unique_chars`, `unanchored_hex_max_len`, `identical_char_max_len`, `structured_dotted_min_len`, and `leading_slash_base64_min_len` own boundaries that were formerly scanner literals. `isolated_mixed_entropy_floor` governs contiguous or underscore-delimited mixed tokens. The three isolated-symbolic fields govern the shorter symbol-rich exception's byte length, minimum symbol count, and whether one symbol must differ from underscore. `reject_program_identifiers` covers pure source-language names, while `reject_source_symbol_identifiers` independently controls digit-bearing mixed alphanumeric names. An exact lower-dash layout declared by `entropy_shapes` cannot bypass its shape-specific rules. The `keyword-free` role owner additionally declares `keyword_free_operator_margin`; no detector inherits an invisible family decision from scanner code.
 *   **`entropy_floor`** (array of tables, required for active entropy owners and detectors or patterns using `weak_anchor`): Length-bucketed low-entropy suppression floor mapping maximum lengths to minimum entropy scores. Weak-anchor regex findings read their own table; they never borrow another detector's calibration.
@@ -484,7 +484,7 @@ Each lift stops at its declared maximum, and the final score stops at
     resolve the same policy; there is no format-specific override. For
     example, `generic-api-key.toml` admits 64-hex only for its explicit
     cryptographic roles such as `signing_key`, `encryption_key`, and
-    `hmac_secret`, while `generic-secret.toml` owns `private_key`,
+    `hmac_secret`, while `generic-secret.toml` defines `private_key`,
     `signing_secret`, and its declared vendor suffixes. Neither turns a broad
     `api_key=<sha256>` assignment into a finding. Canonical hex admitted by
     this policy skips BPE token efficiency
@@ -596,7 +596,7 @@ keyhog detectors --detectors "$PWD/.keyhog/detectors" --format json
 The last command names one corpus explicitly. KeyHog does not search another
 location or fall back to the embedded corpus when that path is explicit.
 
-Structured listings include a `policy` object for every detector. It carries
+Structured listings include a `policy` object for every detector. It contains
 the loaded detector-local kind, entropy/BPE/length thresholds, stopwords,
 allowlists, classifications, and credential shape; absent optional fields are
 `null`, not silently filled with an undocumented value.
@@ -770,7 +770,7 @@ cannot declare.
 
 Schema 4 adds typed `capture_role`, `anchor_role`, `allowed_source_roles`, and
 `required_evidence` declarations. Omission preserves the schema-3 finding
-policy and carries no semantic proof.
+policy and contains no semantic proof.
 Declaring any of these fields under a schema-1, schema-2, or schema-3 manifest
 fails the complete corpus load.
 
@@ -785,7 +785,7 @@ For compatibility, a directory without `corpus.toml` is schema 1, as is a
 manifest that explicitly declares `schema_version = 1`. Schema-1 success
 tables written before policy classification are normalized to
 `status_with_error_backstop`: an accepted status is necessary, but a known
-error-shaped response still prevents a live verdict. This is deliberately not
+error-shaped response still prevents a live verdict. This is not
 the more permissive `status_authoritative` policy. New corpora should declare
 schema 5 and serialize every policy rather than relying on legacy
 normalization.
@@ -793,7 +793,7 @@ normalization.
 Manifest typos, unsupported schema versions, and schema-2 through schema-5
 success tables with missing policies fail closed. A bounded newer schema
 declaration may be parsed only to produce compatibility diagnostics; a gated
-load refuses the complete corpus rather than skipping fields or detector files
+load rejects the complete corpus rather than skipping fields or detector files
 it cannot interpret. The effective corpus digest binds the normalized schema
 and manifest identity, so legacy and schema-2 through schema-5 corpora cannot
 share an identity merely because their detector fields otherwise match.
@@ -920,7 +920,7 @@ mistakes that show up in most first drafts.
 The short version:
 
 1. Find a real example of the credential format, a lookalike that is not one,
-   and the form your provider actually deploys.
+   and the form your provider deploys.
 2. Write the regex with a keyword anchor. Set `group` to the capture holding the
    credential, not `0`.
 3. Add `detectors/<service>-<thing>.toml` with `id`, `keywords`, `patterns`, and

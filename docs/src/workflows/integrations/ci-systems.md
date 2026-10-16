@@ -1,6 +1,6 @@
 # CI systems
 
-One recipe per CI system. [CI secret scanning](../ci.md) owns the contract:
+One recipe per CI system. [CI secret scanning](../ci.md) defines the contract:
 what to fail on, how to preserve coverage, and which exit codes mean what.
 These are the platform-specific ways to invoke it.
 
@@ -17,12 +17,12 @@ workflow needs direct CLI flags such as `--git-history` or `--git-blobs`.
 
 ## GitLab CI
 
-Use the canonical [GitLab CI workflow](../ci.md#gitlab-ci). It owns installation,
+Use the canonical [GitLab CI workflow](../ci.md#gitlab-ci). It defines installation,
 GitLab SAST output, artifact retention, and exit semantics.
 
 ## CircleCI
 
-Use the canonical [CircleCI workflow](../ci.md#circleci). It owns shell setup,
+Use the canonical [CircleCI workflow](../ci.md#circleci). It defines shell setup,
 scan status, and artifact handling.
 
 ## Drone CI

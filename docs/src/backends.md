@@ -94,7 +94,7 @@ another is available. Diagnose exact engines with `--backend simd`
 
 ## Library backend contract
 
-The Rust library deliberately has a different default contract. Calling
+The Rust library has a different default contract. Calling
 `CompiledScanner::scan` or `scan_coalesced` without a backend uses the portable
 `cpu-fallback` reference, so identical library code does not change execution
 with host hardware or local calibration files. Library callers that want
@@ -151,7 +151,7 @@ values or deterministic value fingerprints. Normal automatic scans do not
 benchmark or silently replace a rejected backend.
 
 Each backend is measured with phase-two plain-pattern localization disabled and
-enabled. The persisted route owns both choices, so concurrent scans never mutate
+enabled. The persisted route defines both choices, so concurrent scans never mutate
 scanner-global tuning and decode or recovery replays retain the selected route.
 
 Among parity-correct candidates, routing uses complete trial distributions,

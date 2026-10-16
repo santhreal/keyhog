@@ -39,11 +39,11 @@ The two boundaries differ by more than cost. A credential committed on a
 branch you never checked out, or left behind by `git commit --amend`, is
 reachable through `--git-blobs` and invisible to `--git-history`.
 
-A committed archive is a known gap in both. `--git-blobs` refuses a blob that
+A committed archive is a known gap in both. `--git-blobs` rejects a blob that
 decodes as binary, so `bundles/payload.tar.gz` is reported as
 `Git object unreadable` and the scan exits `13` rather than reporting the
 archive clean. Scan the checked-out working tree as well when the repository
-carries archives: the filesystem source does extract them.
+contains archives: the filesystem source does extract them.
 
 Neither boundary reaches sibling repositories, provider organizations, cloud
 buckets, or mounted filesystems. Run those boundaries as separate jobs and
@@ -217,7 +217,7 @@ Deep runs the normal detector corpus and expands bounded recovery around it:
 
 Static program recovery does not execute JavaScript or invoke Node.js. It
 accepts a small side-effect-free grammar and rejects dynamic operands. The
-implementation lives in `crates/scanner/src/decode/javascript_static.rs` and
+implementation is in `crates/scanner/src/decode/javascript_static.rs` and
 its `aes.rs` and `cryptojs.rs` submodules.
 
 The grammar reads spellings, not one canonical style. Within the XOR and
@@ -238,7 +238,7 @@ escape; `new Buffer(size)`; any algorithm other than AES-256-CBC; and any
 operand that is not a literal. A refused program produces no plaintext, and
 the original source stays in the ordinary scan path.
 
-The CryptoJS rule is deliberately stricter and stays at `const` or `let`. It
+The CryptoJS rule is stricter and stays at `const` or `let`. It
 resolves names through scope analysis rather than the whole-source occurrence
 count the other rules use, and `var` hoisting could let a sibling-scope
 binding win.

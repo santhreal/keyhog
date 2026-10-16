@@ -151,7 +151,7 @@ Add `baseline` per partition when each team reviews its own exceptions:
       baseline: ${{ matrix.path }}/.keyhog-baseline.json
 ```
 
-One root baseline works just as well when a single team reviews every
+One root baseline works equally well when a single team reviews every
 exception, because matching ignores the path. Choose by ownership. The
 [CI guide](./ci.md#monorepos-one-baseline-or-several) compares both layouts.
 

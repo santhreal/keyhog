@@ -28,7 +28,6 @@ pub use gpu_region_dispatch::{GpuResidentExecutionPermit, GpuResidentExecutionPo
 mod gpu_region_dispatch_helpers;
 #[cfg(feature = "gpu")]
 pub(crate) use crate::gpu::GpuResidentLiteralSlot;
-mod gpu_stack;
 mod hot_patterns;
 pub mod phase2;
 pub(crate) mod phase2_anchor;

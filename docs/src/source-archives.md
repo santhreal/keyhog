@@ -20,7 +20,7 @@ container and member, such as `submission.tar//paper/main.tex`.
 ## How a member is admitted
 
 A member's extension is consulted first, so a named member always resolves to
-the format it has always resolved to. A member whose name carries no recognized
+the format it has always resolved to. A member whose name contains no recognized
 extension is admitted on its own leading bytes: gzip, zstd, xz, LZ4, Snappy,
 bzip2, ZIP, and tar all have a signature at a fixed offset. An extensionless
 gzip layer inside a tarball, a `.zip` renamed `.dat`, and a `.dat` that is
@@ -76,7 +76,7 @@ printf 'keyhog exit=%s\n' "$rc"
 
 KeyHog does not extract members into the filesystem or execute their contents. Compressed tarballs are streamed member-by-member so nested layers do not each retain a full decompressed image in resident memory.
 It rejects archive paths that are absolute, contain traversal, use ambiguous
-encoding, or name a special file. It also refuses a top-level archive reached
+encoding, or name a special file. It also rejects a top-level archive reached
 through a symbolic link. Decoded bytes per member, nested depth, and aggregate
 output are bounded. Formats with compression-ratio metadata also apply a ratio
 guard.

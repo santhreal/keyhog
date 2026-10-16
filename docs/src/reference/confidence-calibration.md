@@ -60,9 +60,9 @@ as it did before you enabled calibration until real history accumulates.
 
 ## Cache integrity
 
-The cache carries a schema version. A version this binary does not understand,
+The cache contains a schema version. A version this binary does not understand,
 a truncated/corrupt file, an out-of-range counter, or an empty detector id is
 rejected on load (the scan fails closed rather than silently scoring against a
 damaged cache). Counters are keyed by detector id; if you rename or retire a
-detector, its old counters simply stop being consulted; re-record outcomes for
+detector, its old counters stop being consulted; re-record outcomes for
 the new id.

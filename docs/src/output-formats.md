@@ -55,7 +55,7 @@ same recovery warning on stderr as text.
 Each metadata projection retains the failed backend, recovery backend,
 recovered byte count, and `keyhog calibrate-autoroute` remediation.
 
-Every finding also carries `companions_redacted`, a sorted JSON object of
+Every finding also contains `companions_redacted`, a sorted JSON object of
 nearby credential or context values captured by the detector. Companion values
 are redacted at the same boundary as the primary credential, so plaintext
 never enters verification results or reports. JSON, JSONL, and HTML expose the
@@ -97,7 +97,7 @@ and screenshots. Colors auto-detect TTY; pipe through `cat` (or set
   1 secret found · 1 unverified
 ```
 
-Each finding is a severity-colored box: the header carries the severity and
+Each finding is a severity-colored box: the header contains the severity and
 detector name, then `Secret:` (the credential redacted to its first and last
 few characters), `Location:` (`file:line:offset`), `Evidence:` with the exact
 tier/reason and optional score bar, and an `Action:`/`Docs:` remediation hint.
@@ -173,7 +173,7 @@ listed in `cross_detector.*` companions. See
 [Pattern provenance and secret-safe evidence](./detection.md#pattern-provenance-and-secret-safe-evidence)
 and [Triage and feedback interchange](./guides/triage-feedback.md).
 Do not enable `--show-secrets` when stdout or `--output` is retained by CI,
-uploaded as an artifact, or sent to another process. That option deliberately
+uploaded as an artifact, or sent to another process. That option
 replaces `credential_redacted` with plaintext. `credential_hash` is safe from
 accidental plaintext disclosure, but it is a stable SHA-256 correlation value.
 Treat every report as security-sensitive data.
@@ -209,7 +209,7 @@ omitted only for library-created reports that have no resolved CLI scan policy.
 
 ### Cross-file correlation
 
-Report schema 2.0 carries an optional `correlations` array after `findings`. It
+Report schema 2.0 contains an optional `correlations` array after `findings`. It
 is present only when the scan ran with `--correlate`; without the flag the key
 is absent, not empty, and the rest of the report is unchanged. Correlation
 never adds, drops, reorders, or edits a finding, so a `--correlate` run and a
@@ -263,7 +263,7 @@ Do not derive scan completeness from the process exit code:
 A scanner panic exits `11`, a required or explicitly selected GPU that is
 unavailable exits `12`, and Ctrl-C exits `130`. Blocking and live findings take
 precedence over an input-coverage failure in process-exit selection. A partial
-scan with such findings can therefore exit `1` or `10`. Its envelope still says
+scan with such findings can therefore exit `1` or `10`. Its envelope still reports
 `"scan_status":"partial"`. This is why detached consumers must inspect
 `scan_status` and `coverage_gap_summary`.
 
@@ -281,8 +281,8 @@ the status.
 
 A scan that read nothing is a third case. `--exclude-paths '**'`, a
 `.keyhogignore` containing `path:**`, and an empty stdin stream all read zero
-source bytes. That now exits `13` and carries a `scan covered nothing` gap row,
-and the text report says so instead of `No secrets detected`. Assert it anyway
+source bytes. That now exits `13` and contains a `scan covered nothing` gap row,
+and the text report states this instead of `No secrets detected`. Assert it anyway
 in any gate whose input path can change, because the assertion is cheap and it
 names the problem in the job log:
 
@@ -293,7 +293,7 @@ jq -e '.metadata.source_bytes_scanned > 0' keyhog.json
 
 That command exits `1` when the scan read nothing.
 
-[Tell a real clean from a skipped input](./reference/coverage-truth.md) owns
+[Tell a real clean from a skipped input](./reference/coverage-truth.md) defines
 the complete rule, including what each counter means and the shipped cases
 where a clean scan is wrong.
 
@@ -399,7 +399,7 @@ message contains only the redacted credential:
 The full document also contains `$schema`, `tool.driver`, rules, taxonomies,
 optional fixes, and partial fingerprints. Consume those fields from the file
 rather than treating the abbreviated example as a complete SARIF document.
-`runs[0].properties["keyhog.scan.status"]` carries the terminal state. When
+`runs[0].properties["keyhog.scan.status"]` contains the terminal state. When
 coverage gaps exist, SARIF includes `invocations[0]`,
 `executionSuccessful` is `false`, and the exact reasons appear in
 `toolExecutionNotifications`. Consumers must still read `keyhog.scan.status`
@@ -441,7 +441,7 @@ keyhog scan . --format github-annotations
 ```
 
 Critical and high findings render as `error` annotations, medium and low as
-`warning`, and info as `notice`. Each annotation carries the file, line, title,
+`warning`, and info as `notice`. Each annotation contains the file, line, title,
 detector, service, redacted credential, verification state, exact evidence
 tier and reason code, and optional evidence score. The plaintext credential is
 not emitted.
@@ -452,7 +452,7 @@ also emits `::notice title=keyhog scan::scan status: success|partial|cancelled|f
 legacy library-only `ReportFormat::GithubAnnotations` variant remains finding-
 only for compatibility.
 
-SARIF carries the same terminal state in `runs[0].properties["keyhog.scan.status"]`;
+SARIF contains the same terminal state in `runs[0].properties["keyhog.scan.status"]`;
 coverage gaps remain detailed in `invocations[].toolExecutionNotifications`.
 
 ## `--format gitlab-sast`
@@ -574,7 +574,7 @@ never appear in a pipe, a file, or CI logs), and the structured formats
 (`json`, `json-envelope`, `jsonl`, `jsonl-envelope`, `sarif`, `csv`,
 `github-annotations`, `gitlab-sast`, `junit`) carry structured findings and
 format-specific coverage metadata, with no banner or footer prose. So a CI script
-that wants machine output just selects a structured format:
+that requires machine output selects a structured format:
 
 ```sh
 keyhog scan . --format json

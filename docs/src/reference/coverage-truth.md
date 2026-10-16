@@ -6,7 +6,7 @@ those apart on any workload.
 
 The most dangerous ambiguity is no longer a total source failure: a read-nothing
 scan exits `13`. It is a partially read scan whose only missing content is
-classified as an advisory skip. That scan can exit `0` while the envelope says
+classified as an advisory skip. That scan can exit `0` while the envelope reports
 `partial`, so neither an empty findings list nor the process code proves that
 the specific files you care about reached the detector pipeline. Check the byte
 count and gap reasons together.
@@ -18,7 +18,7 @@ keyhog scan . --format json-envelope -o keyhog.json
 jq '.metadata.source_bytes_scanned' keyhog.json
 ```
 
-`source_bytes_scanned` is the count of source bytes that actually entered the
+`source_bytes_scanned` is the count of source bytes that entered the
 detector pipeline. `0` means nothing was scanned. A read-nothing scan now also
 exits `13`, which makes this check louder rather than redundant: a scan that
 read SOME bytes but not the ones you cared about still exits `0`, and this
@@ -122,7 +122,7 @@ jq -e '[.coverage_gap_summary[]
 That expression exits non-zero when any gap other than the exclusion-policy gap
 is present. On the sample above it exits `1`, because of the `binary` row, which
 is the behavior you want: the exclusion gap is expected and the binary gap is
-worth a look. Add `.metadata.source_bytes_scanned > 0` to the same expression
+requires inspection. Add `.metadata.source_bytes_scanned > 0` to the same expression
 when the input is one you can size in advance.
 
 ## Gap reasons
@@ -220,7 +220,7 @@ writing. Give every scan its own output path, or delete the path before you
 write to it.
 
 Exit `13` does not track coverage gaps. It tracks source error rows. That
-distinction decides whether your CI job notices.
+distinction determines whether your CI job notices.
 
 A gap that is a *skip* leaves the exit code alone. The scan reports `partial`
 and exits `0`:
@@ -236,7 +236,7 @@ encoded payload was never decoded, on the default preset, over an ordinary
 file, and your build did not fail. In any file over 1 MiB only the tail is
 decode-reachable, so the same payload is found at the end of the file and
 missed in the middle of it. See
-[Encoded payloads: position decides](../guides/file-shapes.md#encoded-payloads-position-decides).
+[Encoded payloads: position determines](../guides/file-shapes.md#encoded-payloads-position-determines).
 
 A gap that is an *error* also emits a `source emitted error rows` row, and that
 is what produces exit `13`:
@@ -335,8 +335,8 @@ in scope. See
 ### A total ignore rule scans nothing (fixed)
 
 A `.keyhogignore` containing `path:**` matches every path, so the scan reads
-zero source bytes. That now exits `13` and carries a `scan covered nothing` gap
-row, and the text report says the scan covered nothing instead of reporting no
+zero source bytes. That now exits `13` and contains a `scan covered nothing` gap
+row, and the text report states that the scan covered nothing instead of reporting no
 secrets. Path rules in `.keyhogignore` and `--exclude-paths` still record no
 gap of their own, so a too-broad rule that leaves SOME bytes readable stays
 invisible in the report. Only the read-nothing case is loud.
@@ -376,6 +376,6 @@ keyhog scan /tmp/keyhog-canary --format json-envelope | jq '.findings | length'
 Expect `1`. If your pipeline reports `0` for that input, the pipeline is broken,
 not the repository.
 
-Put the canary inside the shape you actually scan. A canary in a plain file
+Put the canary inside the shape you scan. A canary in a plain file
 proves nothing about a scan whose real input is a container layer, an archive
 member, or a Git commit that no longer exists in the working tree.

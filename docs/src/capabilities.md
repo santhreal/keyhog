@@ -56,15 +56,15 @@ partitioning and coverage.
 
 | Policy | Command | Resolved behavior |
 |---|---|---|
-| Default | `keyhog scan .` | Decode depth 10, ML enabled, and entropy evidence for eligible structured candidates. Decoding is capped at `--decode-size-limit`, 512K by default, applied per chunk rather than per file. Generic source-file entropy discovery is off. The global confidence floor is 0.40 unless detector policy owns a different floor. |
+| Default | `keyhog scan .` | Decode depth 10, ML enabled, and entropy evidence for eligible structured candidates. Decoding is capped at `--decode-size-limit`, 512K by default, applied per chunk rather than per file. Generic source-file entropy discovery is off. The global confidence floor is 0.40 unless detector policy defines a different floor. |
 | Fast preset | `keyhog scan . --fast` | Named regex and multiline matching remain. Decode, entropy discovery, and ML are off in the base preset. An explicit compatible option such as `--decode-depth 2` can refine it. |
 | Deep preset | `keyhog scan . --deep` | Source-file entropy and comment scanning at full confidence, heuristic evidence beside entropy ML, decode depth 10, and prepared decode chunks up to 1 MiB. |
 | Precision preset | `keyhog scan . --precision` | Entropy discovery and the relaxed keyword bridge are off, ML remains on for eligible candidates, decode depth is 1, and every confidence floor is at least 0.85. |
-| Lockdown mode | `keyhog scan . --lockdown` | Linux-only fail-closed process protection. It is a security execution mode, not a detection preset. It requires sufficient locked-memory capacity and refuses incompatible completeness-reducing, network, daemon, cache, and plaintext-output requests. |
+| Lockdown mode | `keyhog scan . --lockdown` | Linux-only fail-closed process protection. It is a security execution mode, not a detection preset. It requires sufficient locked-memory capacity and rejects incompatible completeness-reducing, network, daemon, cache, and plaintext-output requests. |
 
 The three presets are mutually exclusive bases. Compatible explicit options
 refine them; a precision confidence override may raise but never lower 0.85.
-Lockdown refuses fast and other completeness-reducing switches, and always runs
+Lockdown rejects fast and other completeness-reducing switches, and always runs
 in process. See [Configuration](./reference/configuration.md#presets) and
 [Hardening](./hardening.md#lockdown-mode).
 
@@ -82,7 +82,7 @@ file size    keyhog scan <file>                       with --deep
 600K         0 findings, exit 0, status partial       1 finding, exit 1
 ```
 
-The miss is reported, but only in the envelope. `coverage_gap_summary` carries
+The miss is reported, but only in the envelope. `coverage_gap_summary` contains
 `scanner decode-through declined by --decode-size-limit`, and `scan_status`
 becomes `partial`. The exit code stays `0`, so a CI gate that branches on the
 exit code alone passes over a real credential. Gate on the gap reason, not the
@@ -142,7 +142,7 @@ participates in the corpus:
 | Replace | `--detectors ./reviewed --detectors-mode replace` | Uses only the custom directory. This is also the compatibility behavior when an explicit custom directory omits the mode. |
 | Overlay | `--detectors ./extra --detectors-mode overlay` | Adds the custom directory to the embedded corpus. Duplicate detector IDs fail corpus loading. |
 
-The selected corpus owns matching, validation, entropy, suppression, ML, and
+The selected corpus defines matching, validation, entropy, suppression, ML, and
 declared decode-transform policy. Replace mode does not inherit detector-local
 policy from the embedded corpus. See [Detectors](./detectors.md).
 
@@ -217,9 +217,9 @@ that does it.
 |---|---|---|
 | Local default | local filesystem, Git, stdin, archive, decoding, and detector work do not send findings or telemetry | [Hardening and data handling](./hardening.md) |
 | In-process scan hardening | Linux and macOS in-process scans attempt core-dump and debugger-attachment protections before reading input | [Hardening and data handling](./hardening.md) |
-| Linux lockdown mode | `--lockdown` fails closed unless memory locking and dump protections apply, and it refuses network verification and plaintext output | [Hardening and data handling](./hardening.md) |
+| Linux lockdown mode | `--lockdown` fails closed unless memory locking and dump protections apply, and it rejects network verification and plaintext output | [Hardening and data handling](./hardening.md) |
 | Credential buffer zeroization | the report credential buffer is zeroized on drop; reports redact unless `--show-secrets` is explicit | [Hardening and data handling](./hardening.md) |
-| Authenticated execution packs | `keyhog install` compiles, signs, and verifies the execution-pack generation it publishes, and a scan refuses artifacts whose identity or verification key does not match | [Install](./install.md) |
+| Authenticated execution packs | `keyhog install` compiles, signs, and verifies the execution-pack generation it publishes, and a scan rejects artifacts whose identity or verification key does not match | [Install](./install.md) |
 
 ## Every subcommand
 

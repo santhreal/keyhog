@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "Precompile Aho-Corasick automata for disclaimer and placeholder suppression, eliminate heap allocations on normalized allowlist path matching, decompose monolithic workspace modules, and standardize documentation to man-page register."
+crates = ["core", "profile", "scanner", "sources", "verifier", "cli"]

@@ -1,6 +1,6 @@
 # keyhog-core SPEC
 
-`keyhog-core` defines the shared data model for KeyHog. It owns detector specifications, match and finding types, source traits, allowlist handling, report structures, and detector validation.
+`keyhog-core` defines the shared data model for KeyHog. It defines detector specifications, match and finding types, source traits, allowlist handling, report structures, and detector validation.
 
 ## Guarantees
 
@@ -11,4 +11,4 @@
 
 ## Boundaries
 
-This crate does not scan input, verify credentials, or enumerate sources. Scanner execution lives in `keyhog-scanner`; live verification lives in `keyhog-verifier`; source enumeration lives in `keyhog-sources`.
+This crate does not scan input, verify credentials, or enumerate sources. Scanner execution is in `keyhog-scanner`; live verification is in `keyhog-verifier`; source enumeration is in `keyhog-sources`.

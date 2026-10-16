@@ -216,7 +216,7 @@ findings that should remain visible but not block adoption:
   distinct nonzero exit semantics for invalid configuration, system failures,
   unavailable required GPU execution, and incomplete sources.
 
-An exclusion decides which bytes are read. A baseline decides which findings
+An exclusion determines which bytes are read. A baseline determines which findings
 count as new. Reach for an exclusion only when the content should not be
 scanned at all; otherwise use
 [Fail only on new secrets](#fail-only-on-new-secrets). In a monorepo, never
@@ -344,7 +344,7 @@ exit "$scan_status"
 Configure the CI artifact publisher to retain `keyhog.json`, `keyhog.stderr`,
 and `keyhog.exit-code` on both success and failure. When the output path is
 writable, KeyHog writes the report even when every source failed to read; that
-report then carries `scan covered nothing` and the reason each source failed.
+report then contains `scan covered nothing` and the reason each source failed.
 An output-path failure exits `2` and cannot produce that report. Evaluate a
 present report together with `keyhog.exit-code`.
 
@@ -461,7 +461,7 @@ raw exit code, source inventory, and coverage state before aggregating results.
   `0` after scanning zero bytes when `<BASE>` and `HEAD` are the same commit,
   which is what a shallow clone gives you for `origin/main`. The gate passes
   without examining anything. A base ref that is missing from the clone is
-  safe by comparison: that exits `13` and refuses to report clean.
+  safe by comparison: that exits `13` and rejects attempts to report clean.
 - **LFS files:** keyhog reads the LFS pointer file, not the
   contents. To scan LFS-stored binaries, enable LFS in checkout
   (`lfs: true`) and let the scanner pull the real file.

@@ -76,7 +76,7 @@ exit "$overall"
 
 The envelope records scan-wide coverage and the resolved policy. Keep
 `status.tsv` with the reports; an aggregator must not discard a nonzero status
-just because another partition was clean. If a partition is retried, replace
+merely because another partition was clean. If a partition is retried, replace
 its report atomically and append a new attempt column or manifest row rather
 than overwriting the only evidence.
 
@@ -282,10 +282,10 @@ its finding count proves nothing. Fix the cause, rerun that partition alone,
 and replace only its report. The `findings` total is trustworthy once
 `incomplete` is empty.
 
-The envelope carries coverage state, not the process exit code, so keep
+The envelope contains coverage state, not the process exit code, so keep
 `status.tsv` beside the reports. The wrapper in
 [Local partitions](#local-partitions) already exits nonzero when any partition
-did; `status.tsv` is what tells a reviewer which partition produced which raw
+did; `status.tsv` is what shows a reviewer which partition produced which raw
 code, because one aggregate exit code cannot express two different failures.
 
 Preserve the partition identity, source inventory, resolved policy, coverage

@@ -2,7 +2,7 @@
 
 ## Execution Rules (local)
 
-- Work on `main` unless the user explicitly asks for another branch.
+- Work on `main` unless the user explicitly requests another branch.
 - Read the code before edits. Don’t invent behavior from memory.
 - Keep changes scoped; do not revert unrelated local edits.
 - Never block productive work on a gate. Run independent tests, builds, and benchmarks in the background and advance another concrete lane while they run. A required gate may block the affected commit or release verdict, but it must never make the main thread wait, idle, repeatedly poll, or stop disjoint implementation and investigation.
@@ -16,9 +16,7 @@
 ## Paths and environments
 
 - Work from the repository root.
-- Keep the Cargo target directory OUTSIDE the source tree; set `CARGO_TARGET_DIR`
-  to a path on a fast local disk. This keeps multi-gigabyte build artifacts out of
-  the working copy and out of the dogfood self-scan.
+- Use the host's configured Cargo target directory (which already points outside the source tree). Do not export `CARGO_TARGET_DIR` or `CARGO_BUILD_TARGET_DIR`, and do not pass `--target-dir`.
 
 ## Simplicity rule
 

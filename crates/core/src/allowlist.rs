@@ -27,7 +27,7 @@ use metadata::*;
 // index) is its own subsystem; the `Allowlist` holds a precompiled index and
 // delegates every path decision to it.
 mod glob;
-use glob::{normalize_path, pattern_matches_path, PathGlobIndex};
+use glob::{normalize_path, normalize_path_cow, pattern_matches_path, PathGlobIndex};
 
 static NEXT_OBSERVED_PATHS_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -766,7 +766,7 @@ impl Allowlist {
         let detector_ignored = self.ignored_detectors.contains(&*finding.detector_id);
 
         let path_ignored = finding.location.file_path.as_ref().is_some_and(|path| {
-            let normalized_path = normalize_path(path);
+            let normalized_path = normalize_path_cow(path);
             self.path_matches(&normalized_path)
         });
 
@@ -821,7 +821,7 @@ impl Allowlist {
     /// # Ok(()) }
     /// ```
     pub fn is_path_ignored(&self, path: &str) -> bool {
-        let normalized = normalize_path(path);
+        let normalized = normalize_path_cow(path);
         self.path_matches(&normalized)
     }
 
@@ -857,6 +857,14 @@ impl Allowlist {
 
     /// Record a match against allowlist rules for a verified finding.
     pub fn record_match(&self, finding: &VerifiedFinding) -> bool {
+        let normalized_path = finding
+            .location
+            .file_path
+            .as_deref()
+            .map(normalize_path_cow);
+        let path_ignored = normalized_path
+            .as_deref()
+            .is_some_and(|norm| self.path_matches(norm));
         let mut matched = false;
         for rule in &self.rules {
             match &rule.kind {
@@ -873,11 +881,12 @@ impl Allowlist {
                     }
                 }
                 AllowlistRuleKind::Path(p) => {
-                    if let Some(path) = finding.location.file_path.as_deref() {
-                        let normalized = normalize_path(path);
-                        if self.path_matches(&normalized) && pattern_matches_path(p, &normalized) {
-                            rule.matches.fetch_add(1, Ordering::Relaxed);
-                            matched = true;
+                    if path_ignored {
+                        if let Some(norm) = normalized_path.as_deref() {
+                            if pattern_matches_path(p, norm) {
+                                rule.matches.fetch_add(1, Ordering::Relaxed);
+                                matched = true;
+                            }
                         }
                     }
                 }
@@ -888,7 +897,7 @@ impl Allowlist {
 
     /// Record a match on an ignored path.
     pub fn record_path_match(&self, path: &str) -> bool {
-        let normalized = normalize_path(path);
+        let normalized = normalize_path_cow(path);
         let mut matched = false;
         for rule in &self.rules {
             if let AllowlistRuleKind::Path(p) = &rule.kind {

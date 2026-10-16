@@ -1,5 +1,7 @@
 # keyhog-scanner
 
+[![santh](https://img.shields.io/badge/santh-alpha-ffd60a?style=flat-square&labelColor=0a0a0a)](https://santh.dev/keyhog/)
+
 High-performance secret detection engine with a portable CPU reference,
 Hyperscan trigger matching, VYRE GPU region presence, entropy/BPE policy,
 decode-through scanning, and bounded static recovery of embedded JavaScript
@@ -38,7 +40,7 @@ lifetime, and workload class.
 Every scan method returns a typed `Result`; initialization and runtime backend
 failures return `ScanError` without terminating the embedding process. A
 successful result contains in-process `RawMatch` values. `Credential`,
-`SensitiveString`, `RawMatch`, `DedupedMatch`, and `Chunk` refuse implicit
+`SensitiveString`, `RawMatch`, `DedupedMatch`, and `Chunk` reject implicit
 serialization because they can contain plaintext or encoded secret bytes. Use
 `RawMatch::to_redacted` or the final `VerifiedFinding` shape for JSON, logging,
 disk, or network output. Explicit secret access is reserved for a protected
@@ -54,7 +56,7 @@ applies the same quality gate used by the TOML loader. Invalid fields or
 duplicate detector IDs return a configuration error before matcher or backend
 construction.
 
-A detector that owns entropy fallback or sets `bpe_enabled = true` requires the
+A detector with entropy fallback or `bpe_enabled = true` requires the
 scanner `entropy` feature. Scanner construction returns an actionable
 configuration error when the artifact cannot execute a declared mechanism. It
 never compiles a weaker detector under the same detector identity.

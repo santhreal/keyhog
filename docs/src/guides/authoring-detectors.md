@@ -1,6 +1,6 @@
 # Write a detector
 
-A detector is one TOML file that tells KeyHog what a credential looks like, how
+A detector is one TOML file that defines what a credential looks like, how
 confident to be about a match, and how to check whether the credential is live.
 
 This page takes you from an example credential to a detector that passes the
@@ -16,7 +16,7 @@ write a line of TOML:
 - The credential itself.
 - Something that looks like it but is not one. A request ID with the same
   alphabet, a hash of the same length.
-- The form your provider actually emits in production, which is often not the
+- The form your provider emits in production, which is often not the
   form in the docs.
 
 If you cannot produce all three, you do not yet know the format well enough to
@@ -85,7 +85,7 @@ Loaded 1 detectors (/tmp/acme-detectors):
     - acme-api-key
 ```
 
-An invalid one refuses the whole corpus rather than scanning with a hole in it:
+An invalid one rejects the whole corpus rather than scanning with a hole in it:
 
 ```text
 error: loading detectors from directory: 1 of 1 detector file(s) from
@@ -163,7 +163,7 @@ secret key beside an access key. Companions are bounded:
 
 ### Entropy policy
 
-A detector that owns an entropy policy must declare all of it. There is no
+A detector that defines an entropy policy must declare all of it. There is no
 runtime fallback to a scanner constant. An active entropy owner must declare
 `entropy_floor`, `detector.entropy_shapes` with exactly one entry,
 `bpe_enabled`, `entropy_fallback`, `entropy_fallback_confidence`,
@@ -172,7 +172,7 @@ any of them fails the load.
 
 Most detectors are not entropy owners. In the shipped corpus, 929 of 934
 detectors set `entropy_mode = "disabled"`. Write a regex detector unless you are
-deliberately adding a generic channel.
+adding a generic channel.
 
 ### Lengths
 
@@ -248,7 +248,7 @@ Write at least two of each:
   `Authorization:` header form when the provider uses bearer tokens.
 - Two negatives. A placeholder and a same-alphabet non-credential. These are the
   cases that decide whether your detector is usable in a real repository.
-- Two evasions. The shape your provider actually deploys, and the credential
+- Two evasions. The shape your provider deploys, and the credential
   nested in a structured format such as XML, YAML, or JSON.
 
 Do not use the vendor's documentation sample as a positive. KeyHog suppresses
@@ -276,7 +276,7 @@ rejected by the gate, and if it were not, it would report every hash in every
 lockfile. Anchor on the vendor prefix or on the assignment keyword.
 
 **The negatives are too easy.** A negative that is obviously not a credential
-proves nothing. Use the value your users will actually have in the repository: a
+proves nothing. Use the value your users will have in the repository: a
 placeholder, a truncated key, a request ID with the same alphabet.
 
 **The detector claims entropy ownership by accident.** Setting one entropy field
@@ -304,12 +304,12 @@ Overlay rejects an id that collides with an embedded detector, so a custom
 corpus cannot silently shadow a shipped one. A named directory that does not
 exist is an error, never a quiet fallback to the embedded corpus.
 
-Confirm the corpus that actually loaded:
+Confirm the corpus that loaded:
 
 ```sh
 keyhog detectors --detectors /tmp/acme-detectors
 ```
 
-Then confirm the count in a report. `metadata.resolved_scan.effective` carries
+Then confirm the count in a report. `metadata.resolved_scan.effective` contains
 `detector_corpus_source`, `detector_corpus_mode`, `detector_corpus_digest`, and
 the custom and embedded counts, so a report proves which corpus produced it.

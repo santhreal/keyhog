@@ -63,7 +63,7 @@ CPU calls. Explicit `scan_with_backend` and `scan_coalesced_with_backend` calls
 return typed `ScanError` values when a selected backend cannot initialize or
 finish. They never terminate the embedding process and never substitute a
 different engine. You can probe startup eligibility with `warm_backend`; the
-CLI owns the separate mapping from terminal scanner errors to process exit
+CLI defines the separate mapping from terminal scanner errors to process exit
 status.
 
 Successful calls return `Vec<RawMatch>` inside the typed `Result`. `Credential`,

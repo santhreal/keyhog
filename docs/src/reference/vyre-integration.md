@@ -2,12 +2,12 @@
 
 KeyHog pins six VYRE runtime crates to exact version `=0.7.2` at reviewed
 upstream commit `8be30afe43fb54e38965dd9e9ae46a1b39b824a2`. Every workspace
-crate shares that immutable source identity through `Cargo.lock`; KeyHog carries
+crate shares that immutable source identity through `Cargo.lock`; KeyHog contains
 no vendored VYRE tree and never resolves VYRE through machine-local paths.
 
 ## Production ownership
 
-VYRE supplies accelerated primitives. KeyHog still owns detector compilation,
+VYRE supplies accelerated primitives. KeyHog still defines detector compilation,
 backend eligibility, persisted autoroute evidence, extraction, suppression,
 confidence, verification, and reporting. A VYRE result is therefore never a
 second interpretation of a detector and never bypasses the shared finding

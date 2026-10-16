@@ -275,7 +275,6 @@ fn is_provider_token_byte(byte: u8) -> bool {
 /// `sensitive_file`). Extracted so `extract_grouped_matches`,
 /// `extract_plain_matches`, and the shared-anchor path share one lazy
 /// `OnceCell` init closure body (Rust can't `impl FnOnce<>` to share inline).
-/// Lives here (not `scan.rs`) to keep that file under the standard 500-LOC cap.
 pub(super) fn compute_pattern_signals(
     entry: &crate::types::CompiledPattern,
     execution_policy: &crate::detector_execution_policy::CompiledDetectorExecutionPolicy,

@@ -202,7 +202,7 @@ The one-tier downgrade is the canonical `Severity::downgrade_one`
 step (`critical` -> `high` -> `medium` -> `low` -> `client-safe` ->
 `info`); it never collapses to a fixed level. A dead or revoked
 credential is still a leak (developer typed it into a file once), so
-KeyHog doesn't drop it entirely. The downgrade just means "this is
+KeyHog doesn't drop it entirely. The downgrade indicates "this is
 less urgent than a credential someone could authenticate with right
 now." A credential found only in non-HEAD git history is downgraded
 once on that axis too, so a `dead` credential in git history drops two
@@ -251,7 +251,7 @@ specifies a localhost URL by mistake. If a project configures a proxy
 but a particular run must be direct, pass `--proxy off`; shell proxy
 variables are ignored by design.
 
-`verify.service` inherits the detector's service when omitted. It owns rate
+`verify.service` inherits the detector's service when omitted. It defines rate
 limiting and remains a compatibility source for custom detectors that use the
 built-in provider map. The shipped corpus uses detector-local
 `allowed_domains`, so the endpoint and its network authority are reviewed in
@@ -283,7 +283,7 @@ in-flight at a time) on top of the rate cap.
 
 Concurrency is a separate bound: `--verify-concurrency <N>` (or
 `.keyhog.toml` `verify_concurrency`) sets the maximum in-flight verification
-requests per service, default `5`. `--verify-rate` owns the requests/second
+requests per service, default `5`. `--verify-rate` defines the requests/second
 dimension. Zero is invalid rather than silently becoming one.
 
 If you have hundreds of candidates and want parallelism, the right

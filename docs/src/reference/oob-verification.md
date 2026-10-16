@@ -177,7 +177,7 @@ errors.
 
 ## Collector privacy
 
-The collector sees the session and per-finding correlation IDs. It also sees
+The collector reads the session and per-finding correlation IDs. It also reads
 the callback source IP, timestamp, protocol, and raw callback payload. That
 payload can contain provider-selected headers or body data. Review the detector
 probe and the provider's callback behavior before using a public collector.

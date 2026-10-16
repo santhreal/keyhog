@@ -935,7 +935,7 @@ keyhog backend
 heuristic matrix only; neither changes the corpus nor predicts persisted
 autoroute. On an eligible GPU host, `--self-test` reports two VYRE-owned probes:
 `vyre_literal_set` for the direct match-triple diagnostic and
-`gpu_region_presence` for the production scan route. The production probe owns
+`gpu_region_presence` for the production scan route. The production probe defines
 scan eligibility. A direct-mode limitation is reported as `known` when
 classified and `warning` otherwise, but only a production-path or required GPU
 capability failure makes the health report fail.

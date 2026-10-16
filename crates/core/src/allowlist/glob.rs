@@ -12,6 +12,8 @@
 use std::collections::HashMap;
 use std::path::Component;
 use std::path::Path;
+use std::borrow::Cow;
+use smallvec::SmallVec;
 
 use super::ObservedPaths;
 
@@ -174,9 +176,9 @@ pub(super) fn pattern_matches_path(pattern: &str, normalized_path: &str) -> bool
     glob_match_segments(&p_segs, &path_segs)
 }
 
-pub(super) fn split_segments(path: &str) -> Vec<&str> {
+pub(super) fn split_segments(path: &str) -> SmallVec<[&str; 16]> {
     if path.is_empty() {
-        Vec::new()
+        SmallVec::new()
     } else {
         path.split(['/', '\\']).collect()
     }
@@ -189,11 +191,10 @@ pub(super) fn split_segments(path: &str) -> Vec<&str> {
 /// byte-for-byte the original automaton - only the pattern element type was
 /// generalized, so suppression decisions are identical.
 fn glob_match_segments<S: AsRef<str>>(pattern: &[S], path: &[&str]) -> bool {
-    // Two reusable state rows swapped per segment - the previous code allocated
-    // a fresh `next` Vec for every pattern segment (O(pattern) heap allocs per
-    // finding); reusing two buffers makes it two allocations total.
-    let mut states = vec![false; path.len() + 1];
-    let mut next = vec![false; path.len() + 1];
+    let mut states_buf = [false; MAX_GLOB_SEGMENTS + 1];
+    let mut next_buf = [false; MAX_GLOB_SEGMENTS + 1];
+    let mut states = &mut states_buf[..=path.len()];
+    let mut next = &mut next_buf[..=path.len()];
     states[0] = true;
 
     for segment in pattern {
@@ -269,7 +270,34 @@ where
     pi == pattern.len()
 }
 
+fn is_already_normalized_relative_posix_path(path: &str) -> bool {
+    if path.is_empty() {
+        return true;
+    }
+    let bytes = path.as_bytes();
+    if bytes[0] == b'/' || bytes[bytes.len() - 1] == b'/' || bytes.contains(&b'\\') || bytes.contains(&b':') {
+        return false;
+    }
+    for seg in path.split('/') {
+        if seg.is_empty() || seg == "." || seg == ".." {
+            return false;
+        }
+    }
+    true
+}
+
+pub(super) fn normalize_path_cow(path: &str) -> Cow<'_, str> {
+    if is_already_normalized_relative_posix_path(path) {
+        Cow::Borrowed(path)
+    } else {
+        Cow::Owned(normalize_path(path))
+    }
+}
+
 pub(super) fn normalize_path(path: &str) -> String {
+    if is_already_normalized_relative_posix_path(path) {
+        return path.to_string();
+    }
     let path = path.replace('\\', "/");
     let mut parts = Vec::new();
     for component in Path::new(&path).components() {

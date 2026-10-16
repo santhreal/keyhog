@@ -51,7 +51,7 @@ extension:
 
 Findings are tagged `source: "web:js"`, `web:sourcemap`,
 `web:sourcemap:raw`, or `web:wasm`. Anything scanned as plain text
-(including the "everything else" case above) carries `web:js`; there is
+(including the "everything else" case above) contains `web:js`; there is
 no separate `web:other` tag. The original URL is the `file_path`.
 
 Use URLs without credentials, signed query strings, or secret fragments. Scan
@@ -61,7 +61,7 @@ Do not add `--show-secrets` to a retained report.
 
 ### SSRF defense
 
-`--url` refuses to fetch:
+`--url` rejects attempts to fetch:
 
 - Private RFC1918 ranges (`10.0.0.0/8`, `172.16.0.0/12`,
   `192.168.0.0/16`).
@@ -104,7 +104,7 @@ proxy does not fall back to a direct connection.
 
 Any file with a `.har` extension is recognised by the filesystem
 source and expanded into one chunk per request and one chunk per
-response. Each chunk carries a source-type that tells you which
+response. Each chunk contains a source-type that identifies which
 side of the exchange it came from:
 
 | Chunk            | `source_type`         | What it contains                                              |
@@ -172,7 +172,7 @@ curl -s https://api.example.com/v1/me \
 | keyhog scan --stdin
 ```
 
-Or just pipe a saved response:
+Or pipe a saved response:
 
 ```sh
 keyhog scan --stdin < response.txt
@@ -240,7 +240,7 @@ scanned. KeyHog records the reason as a coverage gap and makes metadata-bearing
 artifacts `partial`.
 
 When no finding blocks the active evidence policy, incomplete source coverage
-exits `13` and stderr says KeyHog is not reporting the scan as complete. A
+exits `13` and stderr states that KeyHog is not reporting the scan as complete. A
 blocking or live finding takes exit `1` or `10` precedence. Consume the
 artifact's `scan_status` and `coverage_gap_summary`; never use a finding count
 or process exit alone as a completeness signal.
@@ -281,4 +281,4 @@ Pair it with `--hide-client-safe` (see
 [CLI reference](./reference/cli.md)) to filter out keys that the
 vendor designed to ship in client bundles (Sentry DSN, Stripe
 `pk_*`, Mapbox `pk.`, PostHog `phc_`, etc.) and you're left with
-the keys that actually represent an exfiltration boundary.
+the keys that represent an exfiltration boundary.

@@ -4,12 +4,12 @@ Treat a timing as comparable only when the executable, detector corpus, configur
 
 ## Canonical receipts
 
-The repository owns two canonical generated evidence surfaces:
+The repository defines two canonical generated evidence surfaces:
 
 - [`readme-matrix.json`](https://github.com/santhreal/keyhog/blob/main/benchmarks/reports/readme-matrix.json) records scanner configuration, executable SHA-256, detector-corpus SHA-256, workload SHA-256, host resources, findings, precision, recall, wall time, throughput, and peak RSS. It also binds the generated README tables to the workload-catalog digest. `make -C benchmarks readme-matrix-check` rejects prose or table bytes that do not match the receipt.
 - [`readme-scaling.json`](https://github.com/santhreal/keyhog/blob/main/benchmarks/reports/readme-scaling.json) records thread and process scaling with every trial, effective core count, page-cache state, storage class, workload size, findings, wall time, and peak RSS.
 
-The benchmark index in [`benchmarks/README.md`](https://github.com/santhreal/keyhog/blob/main/benchmarks/README.md) owns focused receipts for Bloom filtering, autoroute, daemon routing, recovery, and competitive accuracy. Read the linked JSON receipt before quoting a generated Markdown report.
+The benchmark index in [`benchmarks/README.md`](https://github.com/santhreal/keyhog/blob/main/benchmarks/README.md) defines focused receipts for Bloom filtering, autoroute, daemon routing, recovery, and competitive accuracy. Read the linked JSON receipt before quoting a generated Markdown report.
 
 ## Comparison boundary
 

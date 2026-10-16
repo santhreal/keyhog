@@ -6,10 +6,10 @@ can hide a different credential later.
 
 KeyHog has three layers, and only the last two are suppression:
 
-- The directory walker, which decides whether a file is read at all. See
+- The directory walker, which determines whether a file is read at all. See
   [Files the walker never reads](#files-the-walker-never-reads) below. This
   layer is the one that surprises people, because a file it drops produces no
-  finding and no detector ever sees it.
+  finding and no detector ever reads it.
 - Operator surfaces that you configure, such as allowlists, inline directives,
   per-detector floors, and baselines.
 - Always-on shape and path heuristics. These remove shapes that are not
@@ -21,7 +21,7 @@ KeyHog has three layers, and only the last two are suppression:
 > existed. Current `.keyhog.toml` parsing rejects unknown tables and keys
 > before scanning, so `[suppress]` fails loudly instead of creating a silent
 > no-op. Use the surfaces below instead. Per-detector control lives under
-> `[detector.<id>]`; hash/path/detector allowlisting lives in `.keyhogignore`.
+> `[detector.<id>]`; hash/path/detector allowlisting is in `.keyhogignore`.
 
 ## Files the walker never reads
 
@@ -37,7 +37,7 @@ WARN 1 path(s) skipped by the exclusion policy (default excludes such as lock fi
 ```
 
 The warning goes to stderr and the exit code stays `0`, so a CI job that reads
-only stdout and the exit status sees a clean scan.
+only stdout and the exit status reads a clean scan.
 
 Discovery prunes a default-excluded directory as soon as its name matches, so
 an 80,000-file `node_modules` tree contributes one Excluded path rather than
@@ -70,7 +70,7 @@ keyhog scan vendor/
 ```
 
 Minified and vendored paths get a second rule that runs after matching, not
-just at the walker. A finding in `.min.js`, `.bundle.js`, `.min.css`, or under
+only at the walker. A finding in `.min.js`, `.bundle.js`, `.min.css`, or under
 a vendored tree is dropped by default, because random bytes in a third-party
 bundle collide with credential shapes often. The drop is counted and reported
 as its own coverage-gap row naming how many matches were dropped, and
@@ -170,7 +170,7 @@ training observations. A `pattern-feedback-only` decision appears only in
 training feedback and can never become runtime suppression.
 
 The envelope and both outputs have independent version fields. Each record
-carries a finding hash, a stable detector ID, the exact public
+contains a finding hash, a stable detector ID, the exact public
 `evidence.provenance` object from the scanner, a bounded context digest, a typed
 reason, and one scope. Provenance binds the 16-hex active detector digest,
 nullable pattern index, candidate channel, source role, context class, and the
@@ -415,7 +415,7 @@ Baseline schema 2 records the finding's required evidence verdict and
 schema-1 candidate provenance. Schema 1 baselines and entries without exact
 evidence provenance are rejected; regenerate them before scanning.
 
-That key decides every outcome:
+That key determines every outcome:
 
 | Change in the repository | Result |
 |---|---|
@@ -524,7 +524,7 @@ for vendor-prefixed names. A named regex detector declares a length-only rule;
 the matched pattern is its scope. The shipped generic API-key detector admits
 32/48-hex for strong key roles and vendor-prefixed `*_key`/`*_secret` names, and 64-hex
 only for its explicit cryptographic roles such as `encryption_key`,
-`signing_key`, and `hmac_secret`; the generic-secret detector separately owns
+`signing_key`, and `hmac_secret`; the generic-secret detector separately defines
 `private_key`, `signing_secret`, `secret`, and its vendor-prefixed forms. Bare
 `key` and `license_key` remain suppressed. There is no scanner-global service-key
 width fallback: omitting the detector policy leaves the value digest-suppressed.
@@ -569,7 +569,7 @@ blanket suppression for secret-scanner paths. If a predicate suppresses a real
 credential under a mechanism shown as scanned, report it as a recall bug.
 
 > Not a suppression surface: `[lockdown] require = true` in `.keyhog.toml` (and
-> `--lockdown`) is a fail-*closed* hardening control: it refuses to run, mlocks
+> `--lockdown`) is a fail-*closed* hardening control: it rejects attempts to run, mlocks
 > memory, and forbids disk cache / `--verify` / `--show-secrets`. It never hides
 > a finding. Likewise `audit.toml` is cargo-audit's RustSec advisory ignore-list
 > for keyhog's *own* dependencies (a supply-chain CI gate), unrelated to scan

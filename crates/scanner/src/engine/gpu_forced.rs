@@ -21,4 +21,12 @@ impl CompiledScanner {
         self.gpu_degrade_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
+
+    /// True when a runtime literal source or packed matcher, backend handle, and
+    /// compiled matcher are all present.
+    pub(crate) fn gpu_stack_usable_for(&self, backend: crate::hw_probe::ScanBackend) -> bool {
+        (self.gpu_literals.is_some() || self.gpu_matcher.get().is_some_and(Option::is_some))
+            && self.gpu_backend(backend).is_some()
+            && self.gpu_matcher().is_some()
+    }
 }

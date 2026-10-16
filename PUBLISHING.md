@@ -33,7 +33,7 @@ After CI succeeds, `.github/workflows/release.yml` performs this transaction:
 
 A tag you push yourself also publishes: the `push` event on `v*` runs the same publish job.
 
-The workflow does not create signed tags, signatures, attestations, SBOMs, or release assets. The GitHub Release carries notes only.
+The workflow does not create signed tags, signatures, attestations, SBOMs, or release assets. The GitHub Release contains notes only.
 
 ## Add an optional change fragment
 

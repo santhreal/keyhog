@@ -26,13 +26,13 @@ block, which is why the example shows one there.
 
 That ordering is the whole guarantee. A file written while the scanner was
 compiling, or between compilation and watch registration, is still reported,
-because the startup pass sees it on disk. It is reported once: the same
+because the startup pass reads it on disk. It is reported once: the same
 deduplication that collapses an editor's event burst also collapses a file
 caught by both the startup pass and an event.
 
 A large tree makes startup slower for the same reason. The watcher is scanning
 it. If a root holds more than 10000 files, the startup pass stops at that
-limit and says so, naming the `keyhog scan` command that covers the rest.
+limit and reports that state, naming the `keyhog scan` command that covers the rest.
 
 Watch still reports changes, not state. Run a full scan again after the watcher
 exits for any reason, because every change while it was down is unobserved:
@@ -53,7 +53,7 @@ files it already contained. This covers `mv ~/Downloads/config-dump src/`,
 `cp -r`, `tar -xf`, and a dependency vendoring step. The kernel reports one
 event for the directory and none for its contents, so the watcher walks the
 new subtree itself rather than waiting for events that never come. The walk
-stops at 10000 files or 64 levels and says so; it does not follow a symlinked
+stops at 10000 files or 64 levels and reports that state; it does not follow a symlinked
 directory out of the watched root.
 
 A modified file is rescanned in full. Every finding in that file is printed
@@ -82,7 +82,7 @@ one you lack permission for, does count.
 
 Deleting a watched root removes its watch. The kernel discards the watch along
 with the directory, so there is nothing left to observe and no way to tell that
-apart from a quiet tree. The watcher says so and then waits up to 30 seconds
+apart from a quiet tree. The watcher reports this state and waits up to 30 seconds
 for the directory to come back, because a root is more often replaced than
 deleted:
 

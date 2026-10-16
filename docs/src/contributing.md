@@ -14,7 +14,7 @@ welcome.
 | Add a detector                    | Add one detector TOML with its inline truth pair, then add its adversarial contract. |
 | Fix an FP                         | Find the regex / shape gate that's firing. Tighten it. Add a negative test that would catch the regression. |
 | Document something undocumented   | Edit the canonical page under `docs/src/`; the site rebuilds from that mdBook source. |
-| Describe an operator-visible change | Add one validated TOML under `changes/`; the release preparer owns every changelog. |
+| Describe an operator-visible change | Add one validated TOML under `changes/`; the release preparer defines every changelog. |
 
 ## Repo layout
 
@@ -140,7 +140,7 @@ suppressions. The flow:
    policy already have separate owners.
 
 3. **Wire it through the shared policy boundary.** `suppression/api.rs` exposes
-   the composed shape decisions and `adjudicate/` owns the final suppression
+   the composed shape decisions and `adjudicate/` defines the final suppression
    verdict. Do not add an emission-path-only `looks_like_*` check: CPU, SIMD,
    GPU, generic, entropy, and fast-prefix paths must reach the same decision.
 

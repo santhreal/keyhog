@@ -38,7 +38,7 @@ cd /tmp/allowlist-demo && printf 'STRIPE_SECRET_KEY=%s\n' "$VALUE" | keyhog scan
 The first exits `1` with one finding. The second exits `0` with none, over
 identical bytes. There is no coverage gap, `source_bytes_scanned` is the same
 `51` in both runs, and `scan_status` is `complete_after_recovery` either way.
-Every field that normally distinguishes a skipped input from a scanned one says
+Every field that normally distinguishes a skipped input from a scanned one reports
 this was a real scan that found nothing.
 
 This matters because the recommended pipeline above is usually run from a
@@ -106,7 +106,7 @@ if [ -s changed.diff ]; then
 fi
 ```
 
-There is deliberately no flag that turns the failure off.
+There is no flag that turns the failure off.
 
 Check the byte count, always:
 
@@ -227,10 +227,10 @@ boundary: scanner-side gaps such as the decode-cap skip below do not cross the
 daemon wire, so the two routes can report a different `coverage_gap_summary`
 for the same input even when the findings match.
 
-What the pipeline cannot tell you is whether the daemon was actually used.
+What the pipeline cannot tell you is whether the daemon was used.
 Omitting the flag prints nothing on either path, so a daemon you started but
 are not reaching looks exactly like one that is working. Pass `--daemon=auto`
-explicitly when that matters, and it says so on stderr when it fell back:
+explicitly when that matters, and it reports that fallback on stderr when it fell back:
 
 ```text
 keyhog: daemon route not used (no daemon is listening on <socket>);

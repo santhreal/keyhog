@@ -157,7 +157,7 @@ compiled `SourceLimits::default()` → `.keyhog.toml` `[limits]` → CLI
 | Ghidra output bytes | 50 MiB | `[limits].binary_decompiled_bytes` | `--limit-binary-decompiled-bytes` |
 
 Every one of these caps is exact and inclusive. A cap of `N` bytes admits an
-input of exactly `N` bytes and refuses `N + 1`. A cap of `N` items admits
+input of exactly `N` bytes and rejects `N + 1`. A cap of `N` items admits
 exactly `N` items.
 
 ```console
@@ -193,7 +193,7 @@ matches the input you are scanning.
 Two derived caps have no flag and follow `--max-file-size`. Archive and
 compressed-stream extraction stops at four times the per-file cap, so the
 default 100 MiB file cap allows 400 MiB of expansion per container. A CRX
-package additionally refuses any entry whose compression ratio exceeds 1000.
+package additionally rejects any entry whose compression ratio exceeds 1000.
 
 ### What you see when a limit is exceeded
 
@@ -203,7 +203,7 @@ for reports a clean that was never measured.
 
 You get, in every case: a `WARN` naming the input, its measured size, and the
 cap; a source error row in the report; and a non-zero exit. When the cap
-excluded every requested input, the run refuses to report a result at all.
+excluded every requested input, the run rejects attempts to report a result at all.
 
 ```console
 $ keyhog scan --git-blobs . --limit-git-blob-bytes 64B
@@ -218,7 +218,7 @@ A count of zero is refused up front rather than accepted as a scan of nothing.
 `--limit-hosted-git-pages 0` all fail at argument parsing.
 
 A hosted-git listing that does not fit its page budget is the one case that
-refuses even a partial result. Repositories the listing never reached would
+rejects even a partial result. Repositories the listing never reached would
 otherwise be reported clean, so the whole source fails instead.
 
 ### Availability in this build
@@ -261,7 +261,7 @@ cannot be used with a flag that assumes that path is active.
 
 `--lockdown` is not a fourth preset. It is a Linux-only, fail-closed execution
 security mode and may be required by `[lockdown] require = true`; that config
-key does not enable it. Lockdown refuses fast and other
+key does not enable it. Lockdown rejects fast and other
 completeness-reducing switches, and the scan remains in process.
 
 `--profile` is not a named configuration profile. It emits low-overhead fixed

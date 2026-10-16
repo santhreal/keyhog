@@ -63,7 +63,7 @@ It generates an ephemeral keypair, shares the public half with the configured
 Interactsh server, and decrypts one server-pushed OAEP-wrapped session key
 locally. KeyHog returns neither a validity verdict nor decryption timing to a
 caller, and transport is HTTPS through the verifier's screened/pinned client.
-The Interactsh server already generated and therefore knows the wrapped AES
+The Interactsh server already generated and therefore has the wrapped AES
 session key. There is no remote RSA decryption oracle exposed by KeyHog.
 
 #### RUSTSEC-2026-0002 - `lru 0.12.5` IterMut Stacked Borrows violation

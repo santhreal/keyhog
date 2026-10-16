@@ -129,6 +129,19 @@ static DISCLAIMER_PHRASES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLoc
     }
 });
 
+static DISCLAIMER_PHRASES_AC: std::sync::LazyLock<aho_corasick::AhoCorasick> =
+    std::sync::LazyLock::new(|| {
+        match aho_corasick::AhoCorasickBuilder::new()
+            .ascii_case_insensitive(true)
+            .build(DISCLAIMER_PHRASES.iter().map(String::as_str))
+        {
+            Ok(ac) => ac,
+            Err(error) => panic!(
+                "crates/scanner/data/disclaimer-phrases.toml Aho-Corasick build failed: {error}"
+            ),
+        }
+    });
+
 #[derive(serde::Deserialize)]
 struct DisclaimerFile {
     schema_version: u32,
@@ -171,7 +184,9 @@ pub(crate) fn parse_disclaimer_phrases(raw: &str) -> Result<Vec<String>, String>
 /// (comment markers + disclaimer phrases) are all ASCII lowercase already,
 /// so we match the haystack against them case-insensitively via `ci_find`.
 pub(crate) fn has_disclaimer_comment_bytes(bytes: &[u8]) -> bool {
-    let phrases: &[String] = &DISCLAIMER_PHRASES;
+    if !DISCLAIMER_PHRASES_AC.is_match(bytes) {
+        return false;
+    }
     for marker in COMMENT_MARKERS.iter().map(|m| m.as_bytes()) {
         let m_len = marker.len();
         let first_lower = marker[0];
@@ -241,10 +256,8 @@ pub(crate) fn has_disclaimer_comment_bytes(bytes: &[u8]) -> bool {
             let line_end = memchr::memchr(b'\n', &bytes[tail_start..])
                 .map_or(bytes.len(), |nl| tail_start + nl);
             let comment_tail = &bytes[tail_start..line_end];
-            for phrase in phrases {
-                if ci_find(comment_tail, phrase.as_bytes()) {
-                    return true;
-                }
+            if DISCLAIMER_PHRASES_AC.is_match(comment_tail) {
+                return true;
             }
             break;
         }

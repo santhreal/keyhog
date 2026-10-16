@@ -21,8 +21,7 @@ adversarial test alongside the proving test.
 - `crates/verifier/` - live credential probes (auth/identity
   endpoints) for `--verify`.
 - `crates/cli/` - the `keyhog` binary, subcommands, args, daemon.
-- `detectors/` - TOML detector specs, the project's moat. No
-  Rust code touched when you add one.
+- `detectors/` - TOML detector specs. Adding a detector requires no Rust code changes.
 - `fuzz/` - cargo-fuzz harnesses, one target per parser/scanner sink.
 - `ml/` - Python model training and Rust/Python feature-parity checks
   for the scanner's embedded MoE weights.
@@ -42,7 +41,7 @@ cp detectors/stripe-secret-key.toml detectors/my-service-key.toml
 $EDITOR detectors/my-service-key.toml
 ```
 
-The required keys live under `[detector]` and one or more
+The required keys are defined under `[detector]` and one or more
 `[[detector.patterns]]` blocks. Fields:
 
 - `id` - unique kebab-case identifier, matches the filename.
@@ -83,7 +82,7 @@ cargo run --release -- scan .
 
 ## How to add a new source backend
 
-Source backends live in `crates/sources/src/`. Each implements
+Source backends are defined in `crates/sources/src/`. Each implements
 `keyhog_core::Source` (`crates/core/src/source.rs`).
 
 1. Add a new module under `crates/sources/src/` and gate it behind
@@ -99,7 +98,7 @@ Source backends live in `crates/sources/src/`. Each implements
 
 ## How to add a new output format
 
-Reporters live in `crates/core/src/report/` and the dispatch lives
+Reporters are defined in `crates/core/src/report/` and dispatch is defined
 in `crates/cli/src/reporting.rs`. Each reporter implements the
 `keyhog_core::Reporter` trait (`crates/core/src/report.rs`):
 
@@ -121,9 +120,8 @@ pub trait Reporter: Send {
 
 ## How to run tests
 
-The workspace uses standard `cargo` commands. There is no
-Makefile; the few one-off scripts live in `scripts/`. The most
-commonly-used commands:
+The workspace uses standard `cargo` commands. Helper scripts are in `scripts/`.
+Common commands:
 
 ```bash
 cargo test --workspace                      # full test suite
@@ -169,7 +167,7 @@ Before opening a PR:
 - [ ] No stubs (`todo!()`, `unimplemented!()`, no-op loops,
       `// TODO` placeholders).
 - [ ] New public items are documented.
-- [ ] Commit messages explain *why*, not just *what*.
+- [ ] Commit messages explain *why*, not only *what*.
 
 ## Reporting a vulnerability
 

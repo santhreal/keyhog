@@ -31,7 +31,7 @@ accidentally act as an unreviewed runtime bypass.
 ## Input envelope format
 
 The input file is a versioned JSON envelope containing reviewed finding records.
-Every record carries cryptographic digests and provenance metadata; no
+Every record contains cryptographic digests and provenance metadata; no
 plaintext credentials, context snippets, or raw file paths are accepted.
 
 ```json

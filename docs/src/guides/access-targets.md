@@ -1,6 +1,6 @@
 # Access targets: what the credential opens
 
-A finding tells you where a credential is. It does not tell you what that
+A finding reports where a credential is, not what that
 credential reaches, which is the first thing you need in order to decide whether
 to page someone.
 
@@ -102,10 +102,10 @@ jq -r '.access_targets.targets[]
 
 ## Three ways a target is tied to a credential
 
-`evidence.relation` says which, and it is the primary sort key.
+`evidence.relation` states which, and it is the primary sort key.
 
 - `decoded`. Recovered from the credential itself, offline, with no file read.
-  An `AKIA` key carries its AWS account id. This cannot be a coincidence of
+  An `AKIA` key contains its AWS account id. This cannot be a coincidence of
   proximity, so it scores highest.
 - `same_line`. Found on the finding's own line. The usual case for a connection
   string, where the password and the host are the same token.
@@ -116,7 +116,7 @@ jq -r '.access_targets.targets[]
 
 ## Which providers are understood
 
-Every rule lives in `crates/core/data/access-targets.toml`. There is no provider
+Every rule is in `crates/core/data/access-targets.toml`. There is no provider
 match arm in the Rust. Adding a provider is a data edit reviewable in one diff,
 the same as the detector corpus.
 
@@ -171,7 +171,7 @@ On the 3,000-secret mirror corpus that count is `0`.
 
 ## Telling "no door" from "never looked"
 
-An empty target list means one of two very different things, so the report says
+An empty target list means one of two very different things, so the report states
 which.
 
 ```sh
@@ -205,7 +205,7 @@ The reasons:
 | --- | --- |
 | `historical_content` | the finding is at a commit; the working-tree file may have changed since |
 | `source_not_readable` | the backend exposes no re-readable local file (container layer, cloud object, stdin) |
-| `no_file_path` | the finding carries no path |
+| `no_file_path` | the finding contains no path |
 | `transient_read_failed` | the file was removed, replaced, or locked between the scan and this pass, so a rerun may cover it |
 | `permanent_read_failed` | the file cannot be read and a rerun will not change that: permissions, or not a regular file |
 | `not_utf8` | the prefix is not valid UTF-8, so byte offsets cannot become lines |

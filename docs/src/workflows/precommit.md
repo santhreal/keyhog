@@ -12,7 +12,7 @@ From inside a git repo:
 keyhog hook install
 ```
 
-If a non-KeyHog pre-commit hook already exists, installation refuses to replace
+If a non-KeyHog pre-commit hook already exists, installation rejects attempts to replace
 it. Pass `keyhog hook install --force` only when replacement is intentional;
 `keyhog hook uninstall` removes only the KeyHog-owned hook.
 
@@ -109,7 +109,7 @@ is about to commit), not the working tree. Why this matters:
   free to keep credentials in scratch files as long as you don't
   stage them.
 - A file you've staged then modified gets scanned in the staged
-  form, not the working-tree form. The scanner sees what `git
+  form, not the working-tree form. The scanner reads what `git
   commit` would commit.
 
 The walk only includes files that are part of this commit. Runtime depends on
@@ -169,7 +169,7 @@ A better pattern when a legitimate-looking credential needs to ship
    hash:5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
    ```
 2. Commit the suppression file alongside the credential.
-3. The next commit sees the hash and skips it.
+3. The next commit reads the hash and skips it.
 
 This way the next contributor doesn't have to learn the trick.
 
@@ -193,7 +193,7 @@ in-process execution when absent.
 keyhog hook uninstall
 ```
 
-This removes `.git/hooks/pre-commit` only when it carries the generated KeyHog
-marker. If you edited the hook, `keyhog hook uninstall` refuses to touch it.
+This removes `.git/hooks/pre-commit` only when it contains the generated KeyHog
+marker. If you edited the hook, `keyhog hook uninstall` rejects attempts to touch it.
 Remove that hook by hand. For the `pre-commit` framework, delete the KeyHog
 stanza from `.pre-commit-config.yaml` and run `pre-commit clean`.

@@ -60,6 +60,21 @@ pub(super) fn check_markers(
     _path: Option<&str>,
     entropy_hint: Option<f64>,
 ) -> MarkerVerdict {
+    if !crate::placeholder_words::upper_has_any_doc_or_placeholder_marker(upper) {
+        if credential.contains(RFC7519_EXAMPLE_JWT_PREFIX) {
+            return MarkerVerdict::Suppress("rfc7519_example_jwt");
+        }
+        let known_prefix_body = crate::confidence::known_prefix_body(credential);
+        if let Some(body) = known_prefix_body {
+            if looks_like_prefixed_masked_sequence(body) {
+                return MarkerVerdict::Suppress("prefixed_masked_sequence");
+            }
+            if !credential.starts_with("TESTKEY_") {
+                return MarkerVerdict::Allow;
+            }
+        }
+        return MarkerVerdict::KeepChecking;
+    }
     // ── 1. Universal placeholder keywords (case-insensitive) ──
     if crate::placeholder_words::contains_non_example_placeholder_word_with_entropy_hint(
         credential,
@@ -172,7 +187,7 @@ pub(super) fn check_markers(
     // `upper`); see the `contains_EXAMPLE_token` site for why matching
     // `credential` case-sensitively over-suppressed secrets beside an
     // `Example.com` / `EXAMPLE.COM` mention.
-    if !from_evasion_decoder && !upper_mentions_reserved_example_domain(upper) {
+    if !from_evasion_decoder {
         for marker in crate::placeholder_words::doc_marker_substrings() {
             let marker = marker.as_str();
             if upper.contains(marker) {
@@ -180,6 +195,9 @@ pub(super) fn check_markers(
                     && (marker == "TESTKEY" || marker == "TEST_KEY")
                 {
                     continue;
+                }
+                if upper_mentions_reserved_example_domain(upper) {
+                    break;
                 }
                 return MarkerVerdict::Suppress("doc_marker_substring");
             }

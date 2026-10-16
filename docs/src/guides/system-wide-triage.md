@@ -89,7 +89,7 @@ histories untouched. Reaching the ceiling records a coverage gap. Raise the
 limit and rerun when complete host coverage is required.
 
 The command retains at most 1,000,000 redacted findings in memory and continues
-counting additional findings. A warning says when detail was dropped. Preserve
+counting additional findings. A warning states when detail was dropped. Preserve
 the stderr summary with the JSON output.
 
 The terminal states are:
@@ -134,11 +134,11 @@ files being triaged. Use `--respect-gitignore` only when that narrower scope is
 intentional.
 
 Every system sweep disables core dumps and ptrace when the host permits it.
-`--lockdown` also requires the stronger protections to succeed and refuses
+`--lockdown` also requires the stronger protections to succeed and rejects
 network mounts. It cannot be combined with `--include-network`.
 
 For recovery, address every warning before treating the host as covered. Fix
 permissions for unreadable paths, raise the byte ceiling, repair corrupt Git
-objects, or rerun a deliberately reduced scope. See the
+objects, or rerun a reduced scope. See the
 [CLI reference](../reference/cli.md#keyhog-scan-system) for the full flag list
 and [exit codes](../reference/exit-codes.md) for shared failures.

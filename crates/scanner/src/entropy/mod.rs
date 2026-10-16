@@ -12,6 +12,7 @@ pub(crate) mod keywords;
 pub(crate) mod plausibility;
 pub(crate) mod policy;
 pub(crate) mod scanner;
+mod scanner_policy;
 
 // Fast Shannon-entropy primitives, relocated here from the crate root so all
 // entropy code shares one home. `fast` is the scalar dispatcher that routes to

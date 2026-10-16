@@ -1,5 +1,7 @@
 # keyhog-core
 
+[![santh](https://img.shields.io/badge/santh-alpha-ffd60a?style=flat-square&labelColor=0a0a0a)](https://santh.dev/keyhog/)
+
 Shared domain types for the KeyHog secret scanner: the detector spec model, the
 embedded detector corpus, chunk and finding types, redaction, and the
 report-safe boundary every other crate projects through.
@@ -33,13 +35,12 @@ assert!(!safe.contains("IOSFODNN7"));
   typed error naming every detector that failed. It never returns a partial set.
 - `embedded_detector_specs` is the one materialized corpus. Borrow from it
   rather than re-parsing, and `detector_spec_by_id` indexes it.
-- `embedded_detector_count`, `detector_digest`, and `git_hash` identify exactly
-  which corpus and build you are running. Benchmarks and caches key on these.
+- `embedded_detector_count`, `detector_digest`, and `git_hash` identify the
+  active corpus and build. Benchmarks and caches key on these digests.
 - `Credential` and `SensitiveString` hold plaintext. `redact` and the report
-  types in `report` are the projection you use before anything leaves the
-  process.
-- `spec` owns detector validation. A detector that does not validate is a build
-  or authoring error, never a scan-time condition.
+  types in `report` project findings before output leaves the process.
+- `spec` defines detector validation. A detector that fails validation is a
+  build or authoring error, never a scan-time condition.
 
 ## Failure behavior
 

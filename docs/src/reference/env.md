@@ -69,7 +69,7 @@ explicit credential-forwarding flag. Proxy and TLS behavior also remain
 explicit. `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` do not route KeyHog
 verification or HTTP source requests. Use `--proxy`, `[http] proxy`,
 `--insecure`, or `[http] insecure_tls`.
-KeyHog deliberately does NOT read `KEYHOG_INSECURE_TLS`.
+KeyHog does NOT read `KEYHOG_INSECURE_TLS`.
 No proxy or TLS environment variable participates in routing or certificate
 policy.
 
